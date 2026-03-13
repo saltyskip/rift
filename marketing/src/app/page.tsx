@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import dynamic from "next/dynamic";
 import { TerminalDemo } from "@/components/terminal-demo";
@@ -16,7 +17,41 @@ const fade = (delay: number) => ({
   transition: { duration: 0.5, delay, ease: "easeOut" as const },
 });
 
+const heroPhrases = ["Built for humans.", "Ready for agents."];
+
 export default function Home() {
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [visibleText, setVisibleText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    const phrase = heroPhrases[phraseIndex];
+    const atFullPhrase = visibleText === phrase;
+    const atEmptyPhrase = visibleText.length === 0;
+
+    const timeout = window.setTimeout(() => {
+      if (!isDeleting) {
+        if (atFullPhrase) {
+          setIsDeleting(true);
+          return;
+        }
+
+        setVisibleText(phrase.slice(0, visibleText.length + 1));
+        return;
+      }
+
+      if (atEmptyPhrase) {
+        setIsDeleting(false);
+        setPhraseIndex((current) => (current + 1) % heroPhrases.length);
+        return;
+      }
+
+      setVisibleText(phrase.slice(0, visibleText.length - 1));
+    }, atFullPhrase ? 1400 : isDeleting ? 45 : 75);
+
+    return () => window.clearTimeout(timeout);
+  }, [isDeleting, phraseIndex, visibleText]);
+
   return (
     <>
       {/* ─── HERO ─── */}
@@ -28,7 +63,7 @@ export default function Home() {
           <motion.div {...fade(0.2)} className="mb-6">
             <span className="inline-flex items-center gap-2 text-[12px] text-[#52525b] font-mono tracking-wide">
               <span className="size-1.5 rounded-full bg-[#2dd4bf] dot-pulse" />
-              v0.1.0
+              API-first link infrastructure
             </span>
           </motion.div>
 
@@ -36,17 +71,25 @@ export default function Home() {
             {...fade(0.35)}
             className="text-[clamp(2.5rem,6vw,5rem)] font-semibold leading-[1.05] tracking-[-0.04em] max-w-3xl"
           >
-            One link.
-            <br />
-            <span className="text-[#2dd4bf]">Two audiences.</span>
+            <span className="sr-only">
+              Deep linking and attribution API. Built for humans. Ready for agents.
+            </span>
+            <span aria-hidden="true">
+              Deep linking and attribution API
+              <br />
+              <span className="text-[#2dd4bf] inline-flex min-h-[1.2em] items-center">
+                {visibleText}
+                <span className="ml-1 cursor-blink text-[#5eead4]">|</span>
+              </span>
+            </span>
           </motion.h1>
 
           <motion.p
             {...fade(0.5)}
             className="mt-6 text-lg text-[#71717a] leading-relaxed max-w-xl"
           >
-            Smart deep links with built-in attribution. Humans click and land in your app.
-            AI agents resolve and get structured data. One URL, full-funnel tracking.
+            A lighter, cheaper way to power links for both user journeys and
+            agent-driven actions.
           </motion.p>
 
           <motion.div {...fade(0.65)} className="mt-8 flex items-center gap-4">
@@ -54,13 +97,13 @@ export default function Home() {
               href="#"
               className="inline-flex items-center gap-2 bg-[#2dd4bf] text-[#042f2e] text-sm font-medium px-5 py-2.5 rounded-lg hover:bg-[#5eead4] transition-colors glow-teal-sm"
             >
-              Get API Key
+              Create your first link
             </a>
             <a
               href="/docs"
               className="inline-flex items-center gap-2 text-sm text-[#71717a] hover:text-[#fafafa] transition-colors"
             >
-              Read the docs
+              Read quickstart
               <span className="text-[#3f3f46]">&rarr;</span>
             </a>
           </motion.div>
@@ -84,11 +127,10 @@ export default function Home() {
         <div className="mx-auto max-w-6xl">
           <motion.div {...fade(0)}>
             <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">How it works</p>
-            <h2 className="text-3xl font-semibold tracking-[-0.03em] mb-3">Same URL, different response</h2>
+            <h2 className="text-3xl font-semibold tracking-[-0.03em] mb-3">The same link works in two ways</h2>
             <p className="text-[#71717a] mb-10 max-w-lg">
-              Content negotiation at the edge. Browsers get a redirect. Anything
-              that sends <code className="text-[13px] text-[#a1a1aa] bg-[#18181b] px-1.5 py-0.5 rounded">Accept: application/json</code> gets
-              structured data.
+              For users, the link behaves like a normal deep link. For agents, the
+              same URL resolves into structured metadata and actions instead of a blind redirect.
             </p>
           </motion.div>
           <motion.div {...fade(0.2)}>
@@ -103,10 +145,12 @@ export default function Home() {
       <section className="py-24 px-6">
         <div className="mx-auto max-w-6xl">
           <motion.div {...fade(0)}>
-            <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">Use cases</p>
-            <h2 className="text-3xl font-semibold tracking-[-0.03em] mb-4">One link, three workflows</h2>
-            <p className="text-[#71717a] mb-12 max-w-lg">
-              The same Rift link works across marketing, agent integrations, and full-funnel attribution.
+            <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">Why it matters</p>
+            <h2 className="text-3xl font-semibold tracking-[-0.03em] mb-4">Keep customers moving through your product in the age of agents</h2>
+            <p className="text-[#71717a] mb-12 max-w-2xl">
+              As more journeys start in chat, assistants, and AI-driven interfaces,
+              your links still need to route people to the right place, preserve intent,
+              and create a path to action.
             </p>
           </motion.div>
 
@@ -116,18 +160,18 @@ export default function Home() {
                 <div className="size-8 rounded-lg bg-[#2dd4bf]/10 flex items-center justify-center">
                   <span className="text-[#2dd4bf] text-sm">1</span>
                 </div>
-                <span className="text-[12px] font-mono text-[#52525b] uppercase tracking-wider">Marketing</span>
+                <span className="text-[12px] font-mono text-[#52525b] uppercase tracking-wider">Journey</span>
               </div>
-              <h3 className="text-lg font-medium mb-3">Share a link, track the funnel</h3>
+              <h3 className="text-lg font-medium mb-3">Keep the journey intact</h3>
               <p className="text-sm text-[#71717a] leading-relaxed mb-5">
-                Drop <code className="text-[#a1a1aa] bg-[#18181b] px-1 rounded">riftl.ink/r/summer-promo</code> in an email,
-                ad, or tweet. See every click, every app install, every conversion — without bolting on a heavy SDK.
+                Route users into the right app screen or webpage instead of losing
+                them in dead-end links and broken handoffs.
               </p>
               <div className="mt-auto bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 font-mono text-[12px] space-y-1">
-                <div className="text-[#3f3f46]">{`// your dashboard`}</div>
-                <div><span className="syn-key">clicks</span><span className="text-[#52525b]">: </span><span className="syn-num">4,219</span></div>
-                <div><span className="syn-key">installs</span><span className="text-[#52525b]">: </span><span className="syn-num">887</span></div>
-                <div><span className="syn-key">conversion</span><span className="text-[#52525b]">: </span><span className="syn-num">21.0%</span></div>
+                <div className="text-[#3f3f46]">{`// one care link`}</div>
+                <div><span className="syn-key">surface</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;patient portal, chat, sms&quot;</span></div>
+                <div><span className="syn-key">destination</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;app or scheduling page&quot;</span></div>
+                <div><span className="syn-key">handoff</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;follow_up_visit&quot;</span></div>
               </div>
             </motion.div>
 
@@ -136,19 +180,18 @@ export default function Home() {
                 <div className="size-8 rounded-lg bg-[#a78bfa]/10 flex items-center justify-center">
                   <span className="text-[#a78bfa] text-sm">2</span>
                 </div>
-                <span className="text-[12px] font-mono text-[#52525b] uppercase tracking-wider">Agents</span>
+                <span className="text-[12px] font-mono text-[#52525b] uppercase tracking-wider">Intent</span>
               </div>
-              <h3 className="text-lg font-medium mb-3">Let AI understand your links</h3>
+              <h3 className="text-lg font-medium mb-3">Preserve intent across interfaces</h3>
               <p className="text-sm text-[#71717a] leading-relaxed mb-5">
-                A user pastes your link into ChatGPT or Claude. Instead of a blind redirect,
-                the agent resolves it and gets structured metadata — what the link does, where it goes,
-                and how to take action.
+                The same link can carry enough context for agents to understand what
+                the user is trying to do, not just where to redirect.
               </p>
               <div className="mt-auto bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 font-mono text-[12px] space-y-1">
-                <div className="text-[#3f3f46]">{`// agent resolves the link`}</div>
-                <div><span className="syn-key">action</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;book_table&quot;</span></div>
-                <div><span className="syn-key">location</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;downtown-nyc&quot;</span></div>
-                <div><span className="syn-key">endpoint</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;/v1/book&quot;</span></div>
+                <div className="text-[#3f3f46]">{`// agent-readable context`}</div>
+                <div><span className="syn-key">action</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;schedule_appointment&quot;</span></div>
+                <div><span className="syn-key">visit</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;annual_checkup&quot;</span></div>
+                <div><span className="syn-key">provider</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;cityhealth_primary_care&quot;</span></div>
               </div>
             </motion.div>
 
@@ -157,18 +200,18 @@ export default function Home() {
                 <div className="size-8 rounded-lg bg-[#f59e0b]/10 flex items-center justify-center">
                   <span className="text-[#f59e0b] text-sm">3</span>
                 </div>
-                <span className="text-[12px] font-mono text-[#52525b] uppercase tracking-wider">Attribution</span>
+                <span className="text-[12px] font-mono text-[#52525b] uppercase tracking-wider">Action</span>
               </div>
-              <h3 className="text-lg font-medium mb-3">Close the loop, end to end</h3>
+              <h3 className="text-lg font-medium mb-3">Turn resolution into action</h3>
               <p className="text-sm text-[#71717a] leading-relaxed mb-5">
-                Lightweight mobile SDK reports installs and links them to the originating click.
-                Deferred deep linking works even if the app wasn&apos;t installed yet. Full funnel, not just last click.
+                When agents can resolve structured actions, your links do more than
+                send traffic. They help complete the task.
               </p>
               <div className="mt-auto bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 font-mono text-[12px] space-y-1">
-                <div className="text-[#3f3f46]">{`// 3 lines in your app`}</div>
-                <div><span className="syn-method">Rift</span><span className="text-[#52525b]">.</span><span className="text-[#fafafa]">init</span><span className="text-[#52525b]">(</span><span className="syn-str">&quot;rift_live_...&quot;</span><span className="text-[#52525b]">)</span></div>
-                <div><span className="syn-method">Rift</span><span className="text-[#52525b]">.</span><span className="text-[#fafafa]">trackInstall</span><span className="text-[#52525b]">()</span></div>
-                <div><span className="syn-method">Rift</span><span className="text-[#52525b]">.</span><span className="text-[#fafafa]">linkUser</span><span className="text-[#52525b]">(</span><span className="syn-str">&quot;user_123&quot;</span><span className="text-[#52525b]">)</span></div>
+                <div className="text-[#3f3f46]">{`// outcome, not just traffic`}</div>
+                <div><span className="syn-key">resolved</span><span className="text-[#52525b]">: </span><span className="syn-num">1</span></div>
+                <div><span className="syn-key">completed</span><span className="text-[#52525b]">: </span><span className="syn-num">1</span></div>
+                <div><span className="syn-key">status</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;scheduled&quot;</span></div>
               </div>
             </motion.div>
           </div>
@@ -182,9 +225,11 @@ export default function Home() {
         <div className="mx-auto max-w-6xl">
           <motion.div {...fade(0)}>
             <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">Why Rift</p>
-            <h2 className="text-3xl font-semibold tracking-[-0.03em] mb-4">Replace your link stack</h2>
+            <h2 className="text-3xl font-semibold tracking-[-0.03em] mb-4">Most link platforms are expensive, bloated, and painful to build on</h2>
             <p className="text-[#71717a] mb-12 max-w-lg">
-              Bitly for short links. Branch for deep links. A spreadsheet for UTM tracking. Rift is one API that does all three.
+              If you&apos;ve fought heavyweight link tooling before, Rift is the alternative:
+              simpler to integrate, easier to reason about, and ready for both human
+              traffic today and agent-driven workflows over time.
             </p>
           </motion.div>
 
@@ -238,7 +283,7 @@ export default function Home() {
         <div className="mx-auto max-w-6xl">
           <motion.div {...fade(0)}>
             <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">Under the hood</p>
-            <h2 className="text-3xl font-semibold tracking-[-0.03em] mb-12">Built for developers, not marketers</h2>
+            <h2 className="text-3xl font-semibold tracking-[-0.03em] mb-12">API-first link infrastructure</h2>
           </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -418,7 +463,7 @@ export default function Home() {
                       : "border border-[#222225] text-[#a1a1aa] hover:border-[#2dd4bf]/30 hover:text-[#fafafa]"
                   }`}
                 >
-                  {tier.accent ? "Get Started" : "Learn more"}
+                  {tier.accent ? "Create your first link" : "Read quickstart"}
                 </a>
               </motion.div>
             ))}
@@ -443,13 +488,13 @@ export default function Home() {
                 href="#"
                 className="inline-flex items-center gap-2 bg-[#2dd4bf] text-[#042f2e] text-sm font-medium px-6 py-2.5 rounded-lg hover:bg-[#5eead4] transition-colors glow-teal-sm"
               >
-                Get API Key
+                Create your first link
               </a>
               <a
                 href="/docs"
                 className="inline-flex items-center gap-2 text-sm text-[#71717a] hover:text-[#fafafa] transition-colors"
               >
-                API Reference <span className="text-[#3f3f46]">&rarr;</span>
+                Read quickstart <span className="text-[#3f3f46]">&rarr;</span>
               </a>
             </div>
           </motion.div>
