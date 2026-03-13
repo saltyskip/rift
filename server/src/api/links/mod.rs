@@ -1,0 +1,28 @@
+pub mod models;
+pub mod repo;
+pub mod routes;
+
+use axum::middleware;
+use axum::routing::{get, post, put};
+use axum::Router;
+use std::sync::Arc;
+
+use super::auth::middleware::auth_gate;
+use crate::api::AppState;
+
+pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
+    // Authenticated routes (link management) — auth_gate injects TenantId.
+    let authenticated = Router::new()
+        .route("/v1/links", post(routes::create_link))
+        .route("/v1/links", get(routes::list_links))
+        .route("/v1/links/{link_id}/stats", get(routes::get_link_stats))
+        .route("/v1/attribution/link", put(routes::link_attribution))
+        .layer(middleware::from_fn_with_state(state, auth_gate));
+
+    // Public routes (no auth required).
+    let public = Router::new()
+        .route("/r/{link_id}", get(routes::resolve_link))
+        .route("/v1/attribution", post(routes::report_attribution));
+
+    Router::new().merge(authenticated).merge(public)
+}
