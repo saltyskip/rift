@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 
-const HUMAN_FLOW = [
+type Line = { type: string; text?: string; k?: string; v?: string };
+
+const HUMAN_FLOW: Line[] = [
   { type: "comment", text: "# A human clicks the link" },
   { type: "cmd", text: "GET /r/summer-launch" },
   { type: "blank" },
@@ -13,7 +15,7 @@ const HUMAN_FLOW = [
   { type: "comment", text: "# → Redirected to the app" },
 ];
 
-const AGENT_FLOW = [
+const AGENT_FLOW: Line[] = [
   { type: "comment", text: "# An agent resolves the same link" },
   { type: "cmd", text: "GET /r/summer-launch" },
   { type: "header", text: "Accept: application/json" },
@@ -29,7 +31,7 @@ const AGENT_FLOW = [
   { type: "json-close", text: "}" },
 ];
 
-function TerminalLine({ line, visible }: { line: typeof HUMAN_FLOW[0]; visible: boolean }) {
+function TerminalLine({ line, visible }: { line: Line; visible: boolean }) {
   if (!visible) return null;
 
   if (line.type === "blank") return <div className="h-3" />;
@@ -40,23 +42,23 @@ function TerminalLine({ line, visible }: { line: typeof HUMAN_FLOW[0]; visible: 
   if (line.type === "json-open" || line.type === "json-close") return <div className="font-mono text-[13px] text-[#a1a1aa]">{line.text}</div>;
   if (line.type === "json-key") return (
     <div className="font-mono text-[13px] pl-4">
-      <span className="syn-key">&quot;{(line as { k: string }).k}&quot;</span>
+      <span className="syn-key">&quot;{line.k}&quot;</span>
       <span className="text-[#52525b]">: </span>
-      <span className="syn-str">{(line as { v: string }).v}</span>
+      <span className="syn-str">{line.v}</span>
     </div>
   );
   if (line.type === "json-nested-open") return (
     <div className="font-mono text-[13px] pl-4">
-      <span className="syn-key">&quot;{(line as { k: string }).k}&quot;</span>
+      <span className="syn-key">&quot;{line.k}&quot;</span>
       <span className="text-[#52525b]">: </span>
       <span className="text-[#a1a1aa]">{"{"}</span>
     </div>
   );
   if (line.type === "json-nested-key") return (
     <div className="font-mono text-[13px] pl-8">
-      <span className="syn-key">&quot;{(line as { k: string }).k}&quot;</span>
+      <span className="syn-key">&quot;{line.k}&quot;</span>
       <span className="text-[#52525b]">: </span>
-      <span className="syn-str">{(line as { v: string }).v}</span>
+      <span className="syn-str">{line.v}</span>
     </div>
   );
   if (line.type === "json-nested-close") return <div className="font-mono text-[13px] pl-4 text-[#a1a1aa]">{"}"}</div>;
@@ -64,7 +66,7 @@ function TerminalLine({ line, visible }: { line: typeof HUMAN_FLOW[0]; visible: 
   return null;
 }
 
-function Terminal({ title, lines, delay = 0 }: { title: string; lines: typeof HUMAN_FLOW; delay?: number }) {
+function Terminal({ title, lines, delay = 0 }: { title: string; lines: Line[]; delay?: number }) {
   const [visibleCount, setVisibleCount] = useState(0);
 
   useEffect(() => {
