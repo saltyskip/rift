@@ -57,3 +57,4 @@ Public endpoints (landing page, attribution reporting) resolve the tenant from t
 | `X402_PRICE` | No | Price per request in USDC (default `0.01`) |
 | `X402_DESCRIPTION` | No | Resource description shown to payers |
 | `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | No | Coinbase Developer Platform keys for x402 |
+| `PRIMARY_DOMAIN` | No | Primary domain for link resolution (default `riftl.ink`) |

@@ -44,6 +44,7 @@ export function Navbar() {
             ["How it works", "#how-it-works"],
             ["Pricing", "#pricing"],
             ["Docs", "/docs"],
+            ["API Reference", "/api-reference"],
           ].map(([label, href]) => (
             <a
               key={label}
@@ -56,7 +57,7 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <a href="/docs" className="text-[13px] text-[#71717a] hover:text-[#fafafa] transition-colors hidden sm:block">
+          <a href="/api-reference" className="text-[13px] text-[#71717a] hover:text-[#fafafa] transition-colors hidden sm:block">
             API Reference
           </a>
           <a

@@ -22,6 +22,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     // Public routes (no auth required).
     let public = Router::new()
         .route("/r/{link_id}", get(routes::resolve_link))
+        .route("/{link_id}", get(routes::resolve_link_custom))
         .route("/v1/attribution", post(routes::report_attribution));
 
     Router::new().merge(authenticated).merge(public)

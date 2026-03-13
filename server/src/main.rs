@@ -13,6 +13,7 @@ use x402_chain_eip155::{KnownNetworkEip155, V1Eip155Exact};
 use x402_types::networks::USDC;
 
 use crate::api::auth::repo::AuthRepo;
+use crate::api::domains::repo::DomainsRepo;
 use crate::api::links::repo::LinksRepo;
 use crate::api::AppState;
 use crate::core::config::Config;
@@ -37,20 +38,21 @@ async fn main() {
         .init();
 
     // Connect to MongoDB (optional — server boots without it).
-    let (auth_repo, links_repo) = if cfg.mongo_uri.is_empty() {
-        tracing::warn!("MONGO_URI not set — auth and links disabled");
-        (None, None)
+    let (auth_repo, links_repo, domains_repo) = if cfg.mongo_uri.is_empty() {
+        tracing::warn!("MONGO_URI not set — auth, links, and domains disabled");
+        (None, None, None)
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
             Some(database) => {
                 tracing::info!(uri = %cfg.mongo_uri, db = %cfg.mongo_db, "Connected to MongoDB");
                 let auth = AuthRepo::new(&database).await;
                 let links = LinksRepo::new(&database).await;
-                (Some(auth), Some(links))
+                let domains = DomainsRepo::new(&database).await;
+                (Some(auth), Some(links), Some(domains))
             }
             None => {
-                tracing::warn!("Failed to connect to MongoDB — auth and links disabled");
-                (None, None)
+                tracing::warn!("Failed to connect to MongoDB — auth, links, and domains disabled");
+                (None, None, None)
             }
         }
     };
@@ -83,6 +85,7 @@ async fn main() {
     let state = Arc::new(AppState {
         auth_repo,
         links_repo,
+        domains_repo,
         config: cfg.clone(),
         facilitator,
         x402_price_tags,

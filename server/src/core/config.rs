@@ -28,6 +28,9 @@ pub struct Config {
 
     // ── x402 resource description (shown to payers) ──
     pub x402_description: String,
+
+    // ── Custom domains ──
+    pub primary_domain: String,
 }
 
 impl Config {
@@ -67,6 +70,9 @@ impl Config {
 
             x402_description: std::env::var("X402_DESCRIPTION")
                 .unwrap_or_else(|_| "Relay API request".to_string()),
+
+            primary_domain: std::env::var("PRIMARY_DOMAIN")
+                .unwrap_or_else(|_| "riftl.ink".to_string()),
         }
     }
 

@@ -13,9 +13,9 @@ COPY src ./src
 RUN touch src/main.rs && cargo build --release
 
 # ── Stage 2: Runtime ──
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates libssl3 dnsutils && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/relay /usr/local/bin/server
 

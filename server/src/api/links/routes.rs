@@ -6,6 +6,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use super::models::*;
+use super::repo::LinksRepo;
 use crate::api::auth::middleware::TenantId;
 use crate::api::AppState;
 
@@ -179,10 +180,83 @@ pub async fn resolve_link(
         return (StatusCode::NOT_FOUND, Json(json!({ "error": "Link not found", "code": "not_found" }))).into_response();
     };
 
+    do_resolve(repo, link, &link_id, &headers).await
+}
+
+// ── GET /{link_id} — Resolve via custom domain (public) ──
+// Only responds when X-Forwarded-Host is present and is a verified custom domain.
+
+#[utoipa::path(
+    get,
+    path = "/{link_id}",
+    tag = "Links",
+    params(("link_id" = String, Path, description = "Link ID")),
+    responses(
+        (status = 302, description = "Redirect to destination"),
+        (status = 200, description = "Link metadata (JSON)", body = ResolvedLink),
+        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
+    ),
+)]
+#[tracing::instrument(skip(state, headers))]
+pub async fn resolve_link_custom(
+    State(state): State<Arc<AppState>>,
+    Path(link_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if !is_valid_link_id(&link_id) {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Link not found", "code": "not_found" }))).into_response();
+    }
+
+    // Only handle custom domain requests (via X-Forwarded-Host from the edge worker).
+    let host = headers
+        .get("x-forwarded-host")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_lowercase());
+
+    let Some(host) = host else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Link not found", "code": "not_found" }))).into_response();
+    };
+
+    if host == state.config.primary_domain {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Link not found", "code": "not_found" }))).into_response();
+    }
+
+    // Look up the custom domain.
+    let Some(domains_repo) = &state.domains_repo else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Link not found", "code": "not_found" }))).into_response();
+    };
+
+    let Some(domain) = domains_repo.find_by_domain(&host).await.ok().flatten() else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Link not found", "code": "not_found" }))).into_response();
+    };
+
+    if !domain.verified {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Domain not verified", "code": "not_found" }))).into_response();
+    }
+
+    // Look up the link.
+    let Some(repo) = &state.links_repo else {
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "Database not configured", "code": "no_database" }))).into_response();
+    };
+
+    let Some(link) = repo.find_link_by_id(&link_id).await.ok().flatten() else {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Link not found", "code": "not_found" }))).into_response();
+    };
+
+    // Ensure the link belongs to the same tenant as the domain.
+    if link.tenant_id != domain.tenant_id {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Link not found", "code": "not_found" }))).into_response();
+    }
+
+    do_resolve(repo, link, &link_id, &headers).await
+}
+
+/// Shared resolve logic: record click + content negotiation.
+async fn do_resolve(repo: &LinksRepo, link: Link, link_id: &str, headers: &HeaderMap) -> Response {
     // Record click (fire-and-forget).
     let user_agent = headers.get("user-agent").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
     let referer = headers.get("referer").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
-    if let Err(e) = repo.record_click(link.tenant_id, &link_id, user_agent, referer).await {
+    if let Err(e) = repo.record_click(link.tenant_id, link_id, user_agent, referer).await {
         tracing::warn!(error = %e, "Failed to record click");
     }
 

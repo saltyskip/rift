@@ -25,16 +25,26 @@ export function Footer() {
 
           <div className="flex gap-16">
             {Object.entries({
-              Product: ["API Docs", "Pricing", "Changelog"],
-              Resources: ["OpenAPI Spec", "Status"],
-              Legal: ["Privacy", "Terms"],
+              Product: [
+                ["Quick Setup", "/docs"],
+                ["API Reference", "/api-reference"],
+                ["Pricing", "/#pricing"],
+              ],
+              Resources: [
+                ["OpenAPI Spec", "/api-reference"],
+                ["Status", "#"],
+              ],
+              Legal: [
+                ["Privacy", "#"],
+                ["Terms", "#"],
+              ],
             }).map(([heading, links]) => (
               <div key={heading}>
                 <p className="text-[11px] font-medium text-[#52525b] uppercase tracking-widest mb-3">{heading}</p>
                 <ul className="space-y-2">
-                  {links.map((link) => (
-                    <li key={link}>
-                      <a href="#" className="text-[13px] text-[#71717a] hover:text-[#fafafa] transition-colors">{link}</a>
+                  {(links as string[][]).map(([label, href]) => (
+                    <li key={label}>
+                      <a href={href} className="text-[13px] text-[#71717a] hover:text-[#fafafa] transition-colors">{label}</a>
                     </li>
                   ))}
                 </ul>
