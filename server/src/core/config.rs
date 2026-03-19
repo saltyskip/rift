@@ -10,6 +10,7 @@ pub struct Config {
 
     // ── Resend (email) ──
     pub resend_api_key: String,
+    pub resend_from_email: String,
 
     // ── Auth / rate limits ──
     pub public_url: String,
@@ -47,6 +48,8 @@ impl Config {
                 .unwrap_or_else(|_| "relay".to_string()),
 
             resend_api_key: std::env::var("RESEND_API_KEY").unwrap_or_default(),
+            resend_from_email: std::env::var("RESEND_FROM_EMAIL")
+                .unwrap_or_else(|_| "Relay <noreply@updates.riftl.ink>".to_string()),
 
             public_url: std::env::var("PUBLIC_URL")
                 .unwrap_or_else(|_| "http://localhost:3000".to_string()),
