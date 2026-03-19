@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 const API_SPEC_URL =
   process.env.NEXT_PUBLIC_API_URL
     ? `${process.env.NEXT_PUBLIC_API_URL}/openapi.json`
-    : "http://localhost:3000/openapi.json";
+    : "https://api.riftl.ink/openapi.json";
 
 export function ScalarDocs() {
   const containerRef = useRef<HTMLDivElement>(null);
