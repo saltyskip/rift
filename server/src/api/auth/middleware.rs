@@ -11,7 +11,7 @@ use x402_axum::paygate::PaygateProtocol;
 use x402_types::proto::v1;
 
 use super::keys;
-use super::repo::{self, AuthRepo, UsageDoc};
+use super::repo::{self, AuthRepository, UsageDoc};
 use crate::api::AppState;
 
 /// Tenant identity injected by the auth middleware.
@@ -32,7 +32,7 @@ pub async fn auth_gate(
     next: Next,
 ) -> Response {
     let auth_repo = match &state.auth_repo {
-        Some(r) => r,
+        Some(r) => r.as_ref(),
         None => return next.run(req).await,
     };
 
@@ -153,7 +153,12 @@ fn extract_bearer(req: &Request) -> Option<String> {
     token.starts_with("rl_").then(|| token.to_string())
 }
 
-async fn record_usage(auth_repo: &AuthRepo, api_key_id: Option<ObjectId>, ip: String, endpoint: &str) {
+async fn record_usage(
+    auth_repo: &dyn AuthRepository,
+    api_key_id: Option<ObjectId>,
+    ip: String,
+    endpoint: &str,
+) {
     auth_repo
         .record_usage(UsageDoc {
             id: None,
@@ -165,7 +170,10 @@ async fn record_usage(auth_repo: &AuthRepo, api_key_id: Option<ObjectId>, ip: St
         .await;
 }
 
-async fn validate_api_key(auth_repo: &AuthRepo, raw_key: &str) -> Result<ObjectId, Response> {
+async fn validate_api_key(
+    auth_repo: &dyn AuthRepository,
+    raw_key: &str,
+) -> Result<ObjectId, Response> {
     let hash = keys::hash_key(raw_key);
     let key_doc = auth_repo.find_key_by_hash(&hash).await.ok_or_else(|| {
         (
@@ -205,6 +213,7 @@ async fn validate_api_key(auth_repo: &AuthRepo, raw_key: &str) -> Result<ObjectI
     Ok(key_id)
 }
 
+#[allow(clippy::result_large_err)]
 fn decode_payment_header(
     header_bytes: &[u8],
     price_tags: &[v1::PriceTag],
@@ -248,7 +257,7 @@ fn decode_payment_header(
 
 async fn check_anonymous_limit(
     state: &AppState,
-    auth_repo: &AuthRepo,
+    auth_repo: &dyn AuthRepository,
     ip: &str,
 ) -> Result<(), Response> {
     let today_start = Utc::now()

@@ -6,7 +6,10 @@ const KEY_RANDOM_BYTES: usize = 24;
 
 /// Generate a new API key. Returns (full_key, sha256_hash, display_prefix).
 pub fn generate_api_key() -> (String, String, String) {
-    let random_bytes: Vec<u8> = rand::rng().random_iter::<u8>().take(KEY_RANDOM_BYTES).collect();
+    let random_bytes: Vec<u8> = rand::rng()
+        .random_iter::<u8>()
+        .take(KEY_RANDOM_BYTES)
+        .collect();
     let random_hex = hex::encode(&random_bytes);
     let full_key = format!("{KEY_PREFIX}{random_hex}");
 

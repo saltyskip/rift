@@ -29,29 +29,52 @@ pub async fn create_domain(
     Json(req): Json<CreateDomainRequest>,
 ) -> Response {
     let Some(repo) = &state.domains_repo else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "Database not configured", "code": "no_database" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
     let domain = req.domain.trim().to_lowercase();
 
     if let Err(e) = validate_domain(&domain, &state.config.primary_domain) {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": e, "code": "invalid_domain" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e, "code": "invalid_domain" })),
+        )
+            .into_response();
     }
 
     // Check if already registered.
     if repo.find_by_domain(&domain).await.ok().flatten().is_some() {
-        return (StatusCode::CONFLICT, Json(json!({ "error": "Domain already registered", "code": "domain_taken" }))).into_response();
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Domain already registered", "code": "domain_taken" })),
+        )
+            .into_response();
     }
 
     let token = generate_verification_token();
-    let created = match repo.create_domain(tenant.0, domain.clone(), token.clone()).await {
+    let created = match repo
+        .create_domain(tenant.0, domain.clone(), token.clone())
+        .await
+    {
         Ok(d) => d,
         Err(e) if e.to_string().contains("E11000") => {
-            return (StatusCode::CONFLICT, Json(json!({ "error": "Domain already registered", "code": "domain_taken" }))).into_response();
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({ "error": "Domain already registered", "code": "domain_taken" })),
+            )
+                .into_response();
         }
         Err(e) => {
             tracing::error!("Failed to create domain: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal error", "code": "db_error" }))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response();
         }
     };
 
@@ -64,7 +87,11 @@ pub async fn create_domain(
         cname_target: state.config.primary_domain.clone(),
     };
 
-    (StatusCode::CREATED, Json(serde_json::to_value(resp).unwrap())).into_response()
+    (
+        StatusCode::CREATED,
+        Json(serde_json::to_value(resp).unwrap()),
+    )
+        .into_response()
 }
 
 // ── GET /v1/domains — List tenant's custom domains ──
@@ -84,7 +111,11 @@ pub async fn list_domains(
     axum::Extension(tenant): axum::Extension<TenantId>,
 ) -> Response {
     let Some(repo) = &state.domains_repo else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "Database not configured", "code": "no_database" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
     match repo.list_by_tenant(&tenant.0).await {
@@ -101,7 +132,11 @@ pub async fn list_domains(
         }
         Err(e) => {
             tracing::error!("Failed to list domains: {e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal error", "code": "db_error" }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
         }
     }
 }
@@ -126,15 +161,27 @@ pub async fn delete_domain(
     Path(domain): Path<String>,
 ) -> Response {
     let Some(repo) = &state.domains_repo else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "Database not configured", "code": "no_database" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
     match repo.delete_domain(&tenant.0, &domain).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Domain not found", "code": "not_found" }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Domain not found", "code": "not_found" })),
+        )
+            .into_response(),
         Err(e) => {
             tracing::error!("Failed to delete domain: {e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal error", "code": "db_error" }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
         }
     }
 }
@@ -159,15 +206,27 @@ pub async fn verify_domain(
     Path(domain): Path<String>,
 ) -> Response {
     let Some(repo) = &state.domains_repo else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "Database not configured", "code": "no_database" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
     let Some(existing) = repo.find_by_domain(&domain).await.ok().flatten() else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Domain not found", "code": "not_found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Domain not found", "code": "not_found" })),
+        )
+            .into_response();
     };
 
     if existing.tenant_id != tenant.0 {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Domain not found", "code": "not_found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Domain not found", "code": "not_found" })),
+        )
+            .into_response();
     }
 
     if existing.verified {
@@ -196,7 +255,11 @@ pub async fn verify_domain(
     if verified {
         if let Err(e) = repo.mark_verified(&domain).await {
             tracing::error!("Failed to mark domain verified: {e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal error", "code": "db_error" }))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response();
         }
     }
 
@@ -223,7 +286,9 @@ fn validate_domain(domain: &str, primary_domain: &str) -> Result<(), String> {
         return Err("Domain must not contain protocol, path, or port".to_string());
     }
     if domain == primary_domain {
-        return Err(format!("Cannot register the primary domain '{primary_domain}'"));
+        return Err(format!(
+            "Cannot register the primary domain '{primary_domain}'"
+        ));
     }
     // Basic label validation.
     for label in domain.split('.') {

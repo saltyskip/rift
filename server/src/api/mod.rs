@@ -8,9 +8,11 @@ use axum::Router;
 use std::sync::Arc;
 use utoipa::OpenApi;
 
-use crate::api::auth::repo::AuthRepo;
-use crate::api::domains::repo::DomainsRepo;
-use crate::api::links::repo::LinksRepo;
+use std::sync::Arc as StdArc;
+
+use crate::api::auth::repo::AuthRepository;
+use crate::api::domains::repo::DomainsRepository;
+use crate::api::links::repo::LinksRepository;
 use crate::core::config::Config;
 
 use x402_types::proto::v1;
@@ -19,9 +21,9 @@ use crate::core::cdp::CdpFacilitator;
 
 /// Shared application state available to all route handlers.
 pub struct AppState {
-    pub auth_repo: Option<AuthRepo>,
-    pub links_repo: Option<LinksRepo>,
-    pub domains_repo: Option<DomainsRepo>,
+    pub auth_repo: Option<StdArc<dyn AuthRepository>>,
+    pub links_repo: Option<StdArc<dyn LinksRepository>>,
+    pub domains_repo: Option<StdArc<dyn DomainsRepository>>,
     pub config: Config,
     pub facilitator: Option<CdpFacilitator>,
     pub x402_price_tags: Vec<v1::PriceTag>,

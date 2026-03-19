@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use mongodb::bson::{self, doc, oid::ObjectId};
 use mongodb::options::{IndexOptions, UpdateOptions};
@@ -39,6 +40,19 @@ pub fn now_bson() -> bson::DateTime {
     to_bson_dt(Utc::now())
 }
 
+// ── Trait ──
+
+#[async_trait]
+pub trait AuthRepository: Send + Sync {
+    async fn find_key_by_hash(&self, hash: &str) -> Option<ApiKeyDoc>;
+    async fn find_key_by_email(&self, email: &str) -> Option<ApiKeyDoc>;
+    async fn upsert_key(&self, key_doc: &ApiKeyDoc) -> Result<(), String>;
+    async fn verify_key(&self, token: &str) -> bool;
+    async fn record_usage(&self, usage_doc: UsageDoc);
+    async fn count_key_usage_since(&self, key_id: &ObjectId, since: DateTime<Utc>) -> i64;
+    async fn count_ip_usage_since(&self, ip: &str, since: DateTime<Utc>) -> i64;
+}
+
 // ── Repository ──
 
 #[derive(Clone)]
@@ -55,9 +69,7 @@ impl AuthRepo {
         macro_rules! ensure_index {
             ($col:expr, $keys:expr, $opts:expr, $name:expr) => {
                 if let Err(e) = $col
-                    .create_index(
-                        IndexModel::builder().keys($keys).options($opts).build(),
-                    )
+                    .create_index(IndexModel::builder().keys($keys).options($opts).build())
                     .await
                 {
                     tracing::error!(index = $name, "Failed to create index: {e}");
@@ -98,8 +110,11 @@ impl AuthRepo {
 
         AuthRepo { api_keys, usage }
     }
+}
 
-    pub async fn find_key_by_hash(&self, hash: &str) -> Option<ApiKeyDoc> {
+#[async_trait]
+impl AuthRepository for AuthRepo {
+    async fn find_key_by_hash(&self, hash: &str) -> Option<ApiKeyDoc> {
         self.api_keys
             .find_one(doc! { "key_hash": hash, "verified": true })
             .await
@@ -107,7 +122,7 @@ impl AuthRepo {
             .flatten()
     }
 
-    pub async fn find_key_by_email(&self, email: &str) -> Option<ApiKeyDoc> {
+    async fn find_key_by_email(&self, email: &str) -> Option<ApiKeyDoc> {
         self.api_keys
             .find_one(doc! { "email": email })
             .await
@@ -115,7 +130,7 @@ impl AuthRepo {
             .flatten()
     }
 
-    pub async fn upsert_key(&self, key_doc: &ApiKeyDoc) -> mongodb::error::Result<()> {
+    async fn upsert_key(&self, key_doc: &ApiKeyDoc) -> Result<(), String> {
         let opts = UpdateOptions::builder().upsert(true).build();
         self.api_keys
             .update_one(
@@ -135,11 +150,12 @@ impl AuthRepo {
                 },
             )
             .with_options(opts)
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
-    pub async fn verify_key(&self, token: &str) -> bool {
+    async fn verify_key(&self, token: &str) -> bool {
         let result = self
             .api_keys
             .update_one(
@@ -153,15 +169,11 @@ impl AuthRepo {
         matches!(result, Ok(r) if r.modified_count > 0)
     }
 
-    pub async fn record_usage(&self, usage_doc: UsageDoc) {
+    async fn record_usage(&self, usage_doc: UsageDoc) {
         let _ = self.usage.insert_one(usage_doc).await;
     }
 
-    pub async fn count_key_usage_since(
-        &self,
-        key_id: &ObjectId,
-        since: DateTime<Utc>,
-    ) -> i64 {
+    async fn count_key_usage_since(&self, key_id: &ObjectId, since: DateTime<Utc>) -> i64 {
         self.usage
             .count_documents(doc! {
                 "api_key_id": key_id,
@@ -171,7 +183,7 @@ impl AuthRepo {
             .unwrap_or(0) as i64
     }
 
-    pub async fn count_ip_usage_since(&self, ip: &str, since: DateTime<Utc>) -> i64 {
+    async fn count_ip_usage_since(&self, ip: &str, since: DateTime<Utc>) -> i64 {
         self.usage
             .count_documents(doc! {
                 "api_key_id": null,

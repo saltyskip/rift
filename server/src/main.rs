@@ -45,9 +45,12 @@ async fn main() {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
             Some(database) => {
                 tracing::info!(uri = %cfg.mongo_uri, db = %cfg.mongo_db, "Connected to MongoDB");
-                let auth = AuthRepo::new(&database).await;
-                let links = LinksRepo::new(&database).await;
-                let domains = DomainsRepo::new(&database).await;
+                let auth: Arc<dyn crate::api::auth::repo::AuthRepository> =
+                    Arc::new(AuthRepo::new(&database).await);
+                let links: Arc<dyn crate::api::links::repo::LinksRepository> =
+                    Arc::new(LinksRepo::new(&database).await);
+                let domains: Arc<dyn crate::api::domains::repo::DomainsRepository> =
+                    Arc::new(DomainsRepo::new(&database).await);
                 (Some(auth), Some(links), Some(domains))
             }
             None => {
@@ -64,10 +67,13 @@ async fn main() {
             &cfg.cdp_api_key_secret,
             &cfg.x402_facilitator_url,
         );
-        let addr: x402_chain_eip155::chain::ChecksummedAddress = cfg.x402_recipient.parse()
+        let addr: x402_chain_eip155::chain::ChecksummedAddress = cfg
+            .x402_recipient
+            .parse()
             .expect("Invalid X402_RECIPIENT address");
         let usdc = USDC::base();
-        let amount = usdc.parse(cfg.x402_price_display.as_str())
+        let amount = usdc
+            .parse(cfg.x402_price_display.as_str())
             .expect("Invalid X402_PRICE");
         let price_tag = V1Eip155Exact::price_tag(addr, amount);
         tracing::info!(
@@ -103,7 +109,5 @@ async fn main() {
         .await
         .expect("Failed to bind to address");
 
-    axum::serve(listener, app)
-        .await
-        .expect("Server error");
+    axum::serve(listener, app).await.expect("Server error");
 }
