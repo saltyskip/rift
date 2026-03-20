@@ -12,6 +12,7 @@ use tracing_subscriber::EnvFilter;
 use x402_chain_eip155::{KnownNetworkEip155, V1Eip155Exact};
 use x402_types::networks::USDC;
 
+use crate::api::apps::repo::AppsRepo;
 use crate::api::auth::repo::AuthRepo;
 use crate::api::domains::repo::DomainsRepo;
 use crate::api::links::repo::LinksRepo;
@@ -38,9 +39,9 @@ async fn main() {
         .init();
 
     // Connect to MongoDB (optional — server boots without it).
-    let (auth_repo, links_repo, domains_repo) = if cfg.mongo_uri.is_empty() {
-        tracing::warn!("MONGO_URI not set — auth, links, and domains disabled");
-        (None, None, None)
+    let (auth_repo, links_repo, domains_repo, apps_repo) = if cfg.mongo_uri.is_empty() {
+        tracing::warn!("MONGO_URI not set — auth, links, domains, and apps disabled");
+        (None, None, None, None)
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
             Some(database) => {
@@ -51,11 +52,15 @@ async fn main() {
                     Arc::new(LinksRepo::new(&database).await);
                 let domains: Arc<dyn crate::api::domains::repo::DomainsRepository> =
                     Arc::new(DomainsRepo::new(&database).await);
-                (Some(auth), Some(links), Some(domains))
+                let apps: Arc<dyn crate::api::apps::repo::AppsRepository> =
+                    Arc::new(AppsRepo::new(&database).await);
+                (Some(auth), Some(links), Some(domains), Some(apps))
             }
             None => {
-                tracing::warn!("Failed to connect to MongoDB — auth, links, and domains disabled");
-                (None, None, None)
+                tracing::warn!(
+                    "Failed to connect to MongoDB — auth, links, domains, and apps disabled"
+                );
+                (None, None, None, None)
             }
         }
     };
@@ -92,6 +97,7 @@ async fn main() {
         auth_repo,
         links_repo,
         domains_repo,
+        apps_repo,
         config: cfg.clone(),
         facilitator,
         x402_price_tags,

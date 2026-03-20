@@ -25,7 +25,11 @@ impl LinksRepository for MockLinksRepo {
         &self,
         tenant_id: ObjectId,
         link_id: String,
-        destination: Option<String>,
+        ios_deep_link: Option<String>,
+        android_deep_link: Option<String>,
+        web_url: Option<String>,
+        ios_store_url: Option<String>,
+        android_store_url: Option<String>,
         metadata: Option<Document>,
     ) -> Result<Link, String> {
         let mut links = self.links.lock().unwrap();
@@ -36,7 +40,11 @@ impl LinksRepository for MockLinksRepo {
             id: ObjectId::new(),
             tenant_id,
             link_id,
-            destination,
+            ios_deep_link,
+            android_deep_link,
+            web_url,
+            ios_store_url,
+            android_store_url,
             metadata,
             created_at: DateTime::now(),
         };
@@ -71,6 +79,8 @@ impl LinksRepository for MockLinksRepo {
         link_id: &str,
         user_agent: Option<String>,
         referer: Option<String>,
+        platform: Option<String>,
+        token: Option<String>,
     ) -> Result<(), String> {
         self.clicks.lock().unwrap().push(Click {
             id: ObjectId::new(),
@@ -79,8 +89,20 @@ impl LinksRepository for MockLinksRepo {
             clicked_at: DateTime::now(),
             user_agent,
             referer,
+            platform,
+            token,
         });
         Ok(())
+    }
+
+    async fn find_click_by_token(&self, token: &str) -> Result<Option<Click>, String> {
+        Ok(self
+            .clicks
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|c| c.token.as_deref() == Some(token))
+            .cloned())
     }
 
     async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {

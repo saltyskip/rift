@@ -10,6 +10,36 @@ use super::repo::LinksRepository;
 use crate::api::auth::middleware::TenantId;
 use crate::api::AppState;
 
+// ── Platform Detection ──
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Platform {
+    Ios,
+    Android,
+    Other,
+}
+
+impl Platform {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Platform::Ios => "ios",
+            Platform::Android => "android",
+            Platform::Other => "other",
+        }
+    }
+}
+
+fn detect_platform(user_agent: &str) -> Platform {
+    let ua = user_agent.to_lowercase();
+    if ua.contains("iphone") || ua.contains("ipad") || ua.contains("ipod") {
+        Platform::Ios
+    } else if ua.contains("android") {
+        Platform::Android
+    } else {
+        Platform::Other
+    }
+}
+
 // ── POST /v1/links — Create a new deep link (authenticated) ──
 
 #[utoipa::path(
@@ -60,11 +90,20 @@ pub async fn create_link(
         .and_then(|v| mongodb::bson::to_document(&v).ok());
 
     match repo
-        .create_link(tenant.0, link_id.clone(), req.destination, metadata)
+        .create_link(
+            tenant.0,
+            link_id.clone(),
+            req.ios_deep_link,
+            req.android_deep_link,
+            req.web_url,
+            req.ios_store_url,
+            req.android_store_url,
+            metadata,
+        )
         .await
     {
         Ok(_) => {}
-        Err(e) if e.to_string().contains("E11000") => {
+        Err(e) if e.contains("E11000") => {
             return (StatusCode::CONFLICT, Json(json!({ "error": format!("'{}' is already taken", link_id), "code": "link_id_taken" }))).into_response();
         }
         Err(e) => {
@@ -116,7 +155,11 @@ pub async fn list_links(
                 .map(|l| LinkDetail {
                     link_id: l.link_id.clone(),
                     url: format!("{}/r/{}", state.config.public_url, l.link_id),
-                    destination: l.destination.clone(),
+                    ios_deep_link: l.ios_deep_link.clone(),
+                    android_deep_link: l.android_deep_link.clone(),
+                    web_url: l.web_url.clone(),
+                    ios_store_url: l.ios_store_url.clone(),
+                    android_store_url: l.android_store_url.clone(),
                     created_at: l.created_at.try_to_rfc3339_string().unwrap_or_default(),
                 })
                 .collect();
@@ -197,7 +240,6 @@ pub async fn get_link_stats(
 }
 
 // ── GET /r/{link_id} — Resolve/redirect (public) ──
-// Returns JSON for agents (Accept: application/json), 302 redirect for humans.
 
 #[utoipa::path(
     get,
@@ -240,11 +282,10 @@ pub async fn resolve_link(
             .into_response();
     };
 
-    do_resolve(repo.as_ref(), link, &link_id, &headers).await
+    do_resolve(&state, repo.as_ref(), link, &link_id, &headers).await
 }
 
 // ── GET /{link_id} — Resolve via custom domain (public) ──
-// Only responds when X-Forwarded-Host is present and is a verified custom domain.
 
 #[utoipa::path(
     get,
@@ -271,7 +312,6 @@ pub async fn resolve_link_custom(
             .into_response();
     }
 
-    // Only handle custom domain requests (via X-Forwarded-Host from the edge worker).
     let host = headers
         .get("x-forwarded-host")
         .and_then(|v| v.to_str().ok())
@@ -293,7 +333,6 @@ pub async fn resolve_link_custom(
             .into_response();
     }
 
-    // Look up the custom domain.
     let Some(domains_repo) = &state.domains_repo else {
         return (
             StatusCode::NOT_FOUND,
@@ -318,7 +357,6 @@ pub async fn resolve_link_custom(
             .into_response();
     }
 
-    // Look up the link.
     let Some(repo) = &state.links_repo else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -335,7 +373,6 @@ pub async fn resolve_link_custom(
             .into_response();
     };
 
-    // Ensure the link belongs to the same tenant as the domain.
     if link.tenant_id != domain.tenant_id {
         return (
             StatusCode::NOT_FOUND,
@@ -344,17 +381,17 @@ pub async fn resolve_link_custom(
             .into_response();
     }
 
-    do_resolve(repo.as_ref(), link, &link_id, &headers).await
+    do_resolve(&state, repo.as_ref(), link, &link_id, &headers).await
 }
 
-/// Shared resolve logic: record click + content negotiation.
+/// Shared resolve logic: detect platform, record click with token, content negotiation.
 async fn do_resolve(
+    state: &Arc<AppState>,
     repo: &dyn LinksRepository,
     link: Link,
     link_id: &str,
     headers: &HeaderMap,
 ) -> Response {
-    // Record click (fire-and-forget).
     let user_agent = headers
         .get("user-agent")
         .and_then(|v| v.to_str().ok())
@@ -363,14 +400,34 @@ async fn do_resolve(
         .get("referer")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
+
+    let platform = user_agent
+        .as_deref()
+        .map(detect_platform)
+        .unwrap_or(Platform::Other);
+
+    // Generate a deferred deep link token for mobile platforms.
+    let token = if platform == Platform::Ios || platform == Platform::Android {
+        Some(generate_token())
+    } else {
+        None
+    };
+
     if let Err(e) = repo
-        .record_click(link.tenant_id, link_id, user_agent, referer)
+        .record_click(
+            link.tenant_id,
+            link_id,
+            user_agent,
+            referer,
+            Some(platform.as_str().to_string()),
+            token.clone(),
+        )
         .await
     {
         tracing::warn!(error = %e, "Failed to record click");
     }
 
-    // Agents get JSON, humans get a redirect.
+    // Agents get JSON, humans get a smart landing page or redirect.
     let wants_json = headers
         .get("accept")
         .and_then(|v| v.to_str().ok())
@@ -381,16 +438,91 @@ async fn do_resolve(
         let metadata = link.metadata.and_then(|d| serde_json::to_value(&d).ok());
         return Json(json!({
             "link_id": link.link_id,
-            "destination": link.destination,
+            "ios_deep_link": link.ios_deep_link,
+            "android_deep_link": link.android_deep_link,
+            "web_url": link.web_url,
+            "ios_store_url": link.ios_store_url,
+            "android_store_url": link.android_store_url,
             "metadata": metadata,
         }))
         .into_response();
     }
 
-    match &link.destination {
-        Some(dest) => Redirect::temporary(dest).into_response(),
+    // If this link has per-platform destinations, serve the smart landing page.
+    let has_platform_destinations = link.ios_deep_link.is_some()
+        || link.android_deep_link.is_some()
+        || link.ios_store_url.is_some()
+        || link.android_store_url.is_some();
+
+    if has_platform_destinations {
+        // Fetch app branding from apps_repo, preferring the detected platform.
+        let (app_name, icon_url, theme_color) = if let Some(apps_repo) = &state.apps_repo {
+            let preferred = match platform {
+                Platform::Ios => "ios",
+                Platform::Android => "android",
+                Platform::Other => "ios",
+            };
+            let fallback = match platform {
+                Platform::Ios => "android",
+                Platform::Android => "ios",
+                Platform::Other => "android",
+            };
+            let app = apps_repo
+                .find_by_tenant_platform(&link.tenant_id, preferred)
+                .await
+                .ok()
+                .flatten()
+                .or(
+                    apps_repo
+                        .find_by_tenant_platform(&link.tenant_id, fallback)
+                        .await
+                        .ok()
+                        .flatten(),
+                );
+            (
+                app.as_ref().and_then(|a| a.app_name.clone()),
+                app.as_ref().and_then(|a| a.icon_url.clone()),
+                app.as_ref().and_then(|a| a.theme_color.clone()),
+            )
+        } else {
+            (None, None, None)
+        };
+
+        // Extract link-level metadata for OG tags.
+        let meta_title = link
+            .metadata
+            .as_ref()
+            .and_then(|d| d.get_str("title").ok())
+            .map(|s| s.to_string());
+        let meta_description = link
+            .metadata
+            .as_ref()
+            .and_then(|d| d.get_str("description").ok())
+            .map(|s| s.to_string());
+        let meta_image = link
+            .metadata
+            .as_ref()
+            .and_then(|d| d.get_str("image").ok())
+            .map(|s| s.to_string());
+
+        let html = render_smart_landing_page(
+            platform,
+            &link,
+            token.as_deref(),
+            app_name.as_deref(),
+            icon_url.as_deref(),
+            theme_color.as_deref(),
+            meta_title.as_deref(),
+            meta_description.as_deref(),
+            meta_image.as_deref(),
+        );
+        return (StatusCode::OK, axum::response::Html(html)).into_response();
+    }
+
+    // Plain web_url redirect or minimal page.
+    match &link.web_url {
+        Some(url) => Redirect::temporary(url).into_response(),
         None => {
-            // No destination — show a minimal page.
             let html = format!(
                 r#"<!DOCTYPE html>
 <html lang="en">
@@ -431,6 +563,80 @@ async fn do_resolve(
     }
 }
 
+// ── POST /v1/deferred — Recover link data from deferred deep link token (public) ──
+
+#[utoipa::path(
+    post,
+    path = "/v1/deferred",
+    tag = "Links",
+    request_body = DeferredLinkRequest,
+    responses(
+        (status = 200, description = "Deferred link result", body = DeferredLinkResponse),
+    ),
+)]
+#[tracing::instrument(skip(state))]
+pub async fn resolve_deferred(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<DeferredLinkRequest>,
+) -> Response {
+    if req.token.is_empty() || req.install_id.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "token and install_id are required", "code": "bad_request" })),
+        )
+            .into_response();
+    }
+
+    let Some(repo) = &state.links_repo else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    let not_matched = Json(json!({
+        "matched": false,
+        "link_id": null,
+        "ios_deep_link": null,
+        "android_deep_link": null,
+        "metadata": null,
+    }));
+
+    let Some(click) = repo.find_click_by_token(&req.token).await.ok().flatten() else {
+        return not_matched.into_response();
+    };
+
+    // Reject tokens older than 48 hours.
+    let token_age_ms = mongodb::bson::DateTime::now().timestamp_millis()
+        - click.clicked_at.timestamp_millis();
+    if token_age_ms > 48 * 60 * 60 * 1000 {
+        return not_matched.into_response();
+    }
+
+    let Some(link) = repo.find_link_by_id(&click.link_id).await.ok().flatten() else {
+        return not_matched.into_response();
+    };
+
+    // Create attribution record.
+    if let Err(e) = repo
+        .upsert_attribution(link.tenant_id, &link.link_id, &req.install_id, "deferred")
+        .await
+    {
+        tracing::warn!(error = %e, "Failed to create deferred attribution");
+    }
+
+    let metadata = link.metadata.and_then(|d| serde_json::to_value(&d).ok());
+    Json(json!({
+        "matched": true,
+        "link_id": link.link_id,
+        "ios_deep_link": link.ios_deep_link,
+        "android_deep_link": link.android_deep_link,
+        "metadata": metadata,
+    }))
+    .into_response()
+}
+
 // ── POST /v1/attribution — Report an install attribution (public) ──
 
 #[utoipa::path(
@@ -465,7 +671,6 @@ pub async fn report_attribution(
             .into_response();
     };
 
-    // Resolve tenant from the link.
     let Some(link) = repo.find_link_by_id(&req.link_id).await.ok().flatten() else {
         return (
             StatusCode::NOT_FOUND,
@@ -529,7 +734,6 @@ pub async fn link_attribution(
             .into_response();
     };
 
-    // For now, use the install_id as user_id (caller can pass a real user_id in the future).
     let linked = repo
         .link_attribution_to_user(&tenant.0, &req.install_id, &req.install_id)
         .await;
@@ -554,6 +758,208 @@ pub async fn link_attribution(
     }
 }
 
+// ── Smart Landing Page ──
+
+fn render_smart_landing_page(
+    platform: Platform,
+    link: &Link,
+    token: Option<&str>,
+    app_name: Option<&str>,
+    icon_url: Option<&str>,
+    theme_color: Option<&str>,
+    meta_title: Option<&str>,
+    meta_description: Option<&str>,
+    meta_image: Option<&str>,
+) -> String {
+    let app_name_display = app_name.unwrap_or("App");
+    let theme = theme_color.unwrap_or("#0d9488");
+    let token_js = token.map(|t| js_escape(t)).unwrap_or_default();
+    let platform_js = js_escape(platform.as_str());
+
+    let deep_link = match platform {
+        Platform::Ios => link.ios_deep_link.as_deref().unwrap_or(""),
+        Platform::Android => link.android_deep_link.as_deref().unwrap_or(""),
+        Platform::Other => "",
+    };
+    let deep_link_js = js_escape(deep_link);
+
+    let store_url = match platform {
+        Platform::Ios => link.ios_store_url.as_deref().unwrap_or(""),
+        Platform::Android => link.android_store_url.as_deref().unwrap_or(""),
+        Platform::Other => "",
+    };
+
+    // For Android, append referrer with token to store URL.
+    let store_url_with_referrer =
+        if platform == Platform::Android && !store_url.is_empty() && token.is_some() {
+            let sep = if store_url.contains('?') { "&" } else { "?" };
+            format!(
+                "{}{}referrer={}",
+                store_url,
+                sep,
+                urlencoding(&format!("relay_token={}", token.unwrap_or("")))
+            )
+        } else {
+            store_url.to_string()
+        };
+    let store_url_js = js_escape(&store_url_with_referrer);
+
+    let web_url = link.web_url.as_deref().unwrap_or("");
+    let web_url_js = js_escape(web_url);
+
+    let og_title = meta_title.unwrap_or(app_name_display);
+    let og_description = meta_description.unwrap_or("Open in app");
+
+    let og_image_tag = meta_image
+        .map(|img| {
+            format!(
+                r#"    <meta property="og:image" content="{}" />"#,
+                html_escape(img)
+            )
+        })
+        .unwrap_or_default();
+
+    let icon_html = icon_url
+        .map(|url| {
+            format!(
+                r#"<img src="{}" alt="{}" style="width:64px;height:64px;border-radius:14px;margin-bottom:16px;" />"#,
+                html_escape(url),
+                html_escape(app_name_display),
+            )
+        })
+        .unwrap_or_default();
+
+    let title_html = meta_title
+        .map(|t| {
+            format!(
+                r#"<h1 style="font-size:20px;font-weight:600;margin-bottom:8px;">{}</h1>"#,
+                html_escape(t)
+            )
+        })
+        .unwrap_or_default();
+
+    let desc_html = meta_description
+        .map(|d| {
+            format!(
+                r#"<p style="color:#a3a3a3;font-size:14px;margin-bottom:24px;">{}</p>"#,
+                html_escape(d)
+            )
+        })
+        .unwrap_or_default();
+
+    format!(
+        r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{og_title} — Relay</title>
+    <meta property="og:title" content="{og_title_escaped}" />
+    <meta property="og:description" content="{og_desc_escaped}" />
+{og_image_tag}
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            background: #0a0a0a;
+            color: #fafafa;
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+        }}
+        .container {{ text-align: center; max-width: 400px; }}
+        .btn {{
+            display: inline-block;
+            padding: 14px 32px;
+            background: {theme};
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 12px;
+            text-decoration: none;
+            margin-top: 12px;
+        }}
+        .sub {{ color: #737373; font-size: 12px; margin-top: 16px; }}
+        .sub a {{ color: #a3a3a3; text-decoration: underline; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        {icon_html}
+        <div style="color:{theme};font-size:14px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:16px;">{app_name_escaped}</div>
+        {title_html}
+        {desc_html}
+        <a id="open-btn" class="btn" href="#">Open in {app_name_escaped}</a>
+        <p class="sub" id="fallback-msg"></p>
+    </div>
+    <script>
+    (function() {{
+        var platform = "{platform_js}";
+        var deepLink = "{deep_link_js}";
+        var storeUrl = "{store_url_js}";
+        var webUrl = "{web_url_js}";
+        var token = "{token_js}";
+
+        if (platform === "ios" && token && navigator.clipboard) {{
+            navigator.clipboard.writeText("relay:" + token).catch(function(){{}});
+        }}
+
+        if (platform === "other") {{
+            if (webUrl) {{
+                window.location.replace(webUrl);
+            }}
+            return;
+        }}
+
+        var btn = document.getElementById("open-btn");
+        var msg = document.getElementById("fallback-msg");
+
+        if (deepLink) {{
+            btn.href = deepLink;
+            var timeout = setTimeout(function() {{
+                if (storeUrl) {{
+                    msg.textContent = "App not installed? ";
+                    var a = document.createElement("a");
+                    a.href = storeUrl;
+                    a.textContent = "Get it here";
+                    msg.appendChild(a);
+                }} else if (webUrl) {{
+                    window.location.replace(webUrl);
+                }}
+            }}, 1500);
+
+            window.addEventListener("pagehide", function() {{
+                clearTimeout(timeout);
+            }});
+        }} else if (storeUrl) {{
+            btn.href = storeUrl;
+            btn.textContent = "Get the App";
+        }} else if (webUrl) {{
+            window.location.replace(webUrl);
+        }}
+    }})();
+    </script>
+</body>
+</html>"##,
+        og_title = html_escape(og_title),
+        og_title_escaped = html_escape(og_title),
+        og_desc_escaped = html_escape(og_description),
+        og_image_tag = og_image_tag,
+        theme = html_escape(theme),
+        icon_html = icon_html,
+        app_name_escaped = html_escape(app_name_display),
+        title_html = title_html,
+        desc_html = desc_html,
+        platform_js = platform_js,
+        deep_link_js = deep_link_js,
+        store_url_js = store_url_js,
+        web_url_js = web_url_js,
+        token_js = token_js,
+    )
+}
+
 // ── Helpers ──
 
 fn generate_link_id() -> String {
@@ -564,6 +970,13 @@ fn generate_link_id() -> String {
         .take(8)
         .collect::<String>()
         .to_uppercase()
+}
+
+fn generate_token() -> String {
+    use rand::Rng;
+    let mut rng = rand::rng();
+    let bytes: [u8; 16] = rng.random();
+    hex::encode(bytes)
 }
 
 fn is_valid_link_id(id: &str) -> bool {
@@ -581,4 +994,44 @@ fn validate_custom_id(id: &str) -> Result<(), String> {
         return Err("custom_id must not start or end with a hyphen".to_string());
     }
     Ok(())
+}
+
+fn js_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\'' => out.push_str("\\'"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '<' => out.push_str("\\x3c"),
+            '>' => out.push_str("\\x3e"),
+            '&' => out.push_str("\\x26"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn urlencoding(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => {
+                out.push_str(&format!("%{:02X}", b));
+            }
+        }
+    }
+    out
 }

@@ -106,7 +106,7 @@ pub async fn signup(
     );
 
     if let Err(e) =
-        send_verification_email(&state.config.resend_api_key, &email, &verify_url, &full_key).await
+        send_verification_email(&state.config.resend_api_key, &state.config.resend_from_email, &email, &verify_url, &full_key).await
     {
         tracing::error!("Failed to send verification email: {e}");
         return (
