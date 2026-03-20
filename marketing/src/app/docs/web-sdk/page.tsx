@@ -1,19 +1,13 @@
 "use client";
 
 import { useState } from "react";
-
-function CodeBlock({ children }: { children: string }) {
-  return (
-    <pre className="bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 overflow-x-auto text-[13px] leading-relaxed font-mono text-[#a1a1aa]">
-      <code>{children}</code>
-    </pre>
-  );
-}
+import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 
 const FRAMEWORKS = [
   {
     id: "html",
     label: "HTML",
+    lang: "html",
     code: `<script src="https://cdn.riftl.ink/relay.js"></script>
 
 <button onclick="Relay.open('summer-sale')">
@@ -24,6 +18,7 @@ const FRAMEWORKS = [
   {
     id: "nextjs",
     label: "Next.js",
+    lang: "jsx",
     code: `"use client";
 import Script from "next/script";
 
@@ -45,6 +40,7 @@ export function DownloadButton({ linkId }) {
   {
     id: "svelte",
     label: "Svelte",
+    lang: "svelte",
     code: `<svelte:head>
   <script src="https://cdn.riftl.ink/relay.js"></script>
 </svelte:head>
@@ -57,6 +53,7 @@ export function DownloadButton({ linkId }) {
   {
     id: "vue",
     label: "Vue / Nuxt",
+    lang: "vue",
     code: `<script setup>
 import { onMounted, ref } from "vue";
 const ready = ref(false);
@@ -112,7 +109,7 @@ export default function WebSdkPage() {
               </button>
             ))}
           </div>
-          <CodeBlock>{fw.code}</CodeBlock>
+          <CodeBlock lang={fw.lang}>{fw.code}</CodeBlock>
           <p className="text-[14px] text-[#a1a1aa]">{fw.notes}</p>
         </section>
 
@@ -168,7 +165,7 @@ export default function WebSdkPage() {
               Fetches link data without navigating. Returns a Promise with the link metadata.
               Useful for building custom UI based on link data.
             </p>
-            <CodeBlock>{`const link = await Relay.getLink("summer-sale");
+            <CodeBlock lang="javascript">{`const link = await Relay.getLink("summer-sale");
 document.getElementById("title").textContent = link.metadata.title;`}</CodeBlock>
           </div>
         </section>
@@ -181,14 +178,14 @@ document.getElementById("title").textContent = link.metadata.title;`}</CodeBlock
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">Self-hosted API</h3>
-            <CodeBlock>{`Relay.open("summer-sale", {
+            <CodeBlock lang="javascript">{`Relay.open("summer-sale", {
   baseUrl: "https://api.yourcompany.com"
 });`}</CodeBlock>
           </div>
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">Custom callback</h3>
-            <CodeBlock>{`Relay.open("summer-sale", {
+            <CodeBlock lang="javascript">{`Relay.open("summer-sale", {
   onComplete: function(data) {
     console.log("Platform:", data.platform);
     console.log("Token:", data.token);

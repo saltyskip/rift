@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
+import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 
 export const metadata: Metadata = {
   title: "Universal Links — Rift Docs",
   description: "Configure iOS Associated Domains and Android App Links with Relay.",
 };
-
-function CodeBlock({ children }: { children: string }) {
-  return (
-    <pre className="bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 overflow-x-auto text-[13px] leading-relaxed font-mono text-[#a1a1aa]">
-      <code>{children}</code>
-    </pre>
-  );
-}
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
@@ -68,7 +61,7 @@ export default function UniversalLinksPage() {
             <p>
               Add an intent filter to your <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">AndroidManifest.xml</code>:
             </p>
-            <CodeBlock>{`<activity android:name=".MainActivity">
+            <CodeBlock lang="xml">{`<activity android:name=".MainActivity">
     <intent-filter android:autoVerify="true">
         <action android:name="android.intent.action.VIEW" />
         <category android:name="android.intent.category.DEFAULT" />

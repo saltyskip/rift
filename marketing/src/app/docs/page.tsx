@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
+import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 
 export const metadata: Metadata = {
   title: "Quick Start — Rift Docs",
   description: "Get your API key and start creating deep links in under 5 minutes.",
 };
-
-function CodeBlock({ children }: { children: string }) {
-  return (
-    <pre className="bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 overflow-x-auto text-[13px] leading-relaxed font-mono text-[#a1a1aa]">
-      <code>{children}</code>
-    </pre>
-  );
-}
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (

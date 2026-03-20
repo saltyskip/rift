@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
+import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 
 export const metadata: Metadata = {
   title: "Custom Domains — Rift Docs",
   description: "Use your own brand domain for deep links with Relay custom domains.",
 };
-
-function CodeBlock({ children }: { children: string }) {
-  return (
-    <pre className="bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 overflow-x-auto text-[13px] leading-relaxed font-mono text-[#a1a1aa]">
-      <code>{children}</code>
-    </pre>
-  );
-}
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
@@ -46,7 +39,7 @@ export default function DomainsPage() {
   -H "Content-Type: application/json" \\
   -d '{"domain": "go.yourcompany.com"}'`}</CodeBlock>
             <p>Response:</p>
-            <CodeBlock>{`{
+            <CodeBlock lang="json">{`{
   "domain": "go.yourcompany.com",
   "verified": false,
   "verification_token": "a1b2c3d4e5f6...",
@@ -87,7 +80,7 @@ export default function DomainsPage() {
               Relay needs a lightweight Cloudflare Worker on your domain to forward requests
               to the API. Create a new Worker in your Cloudflare dashboard with this code:
             </p>
-            <CodeBlock>{`export default {
+            <CodeBlock lang="javascript">{`export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const host = url.hostname;

@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
+import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 
 export const metadata: Metadata = {
   title: "Attribution — Rift Docs",
   description: "Track installs, attribute them to links, and view conversion analytics.",
 };
-
-function CodeBlock({ children }: { children: string }) {
-  return (
-    <pre className="bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 overflow-x-auto text-[13px] leading-relaxed font-mono text-[#a1a1aa]">
-      <code>{children}</code>
-    </pre>
-  );
-}
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
@@ -67,7 +60,7 @@ export default function AttributionPage() {
             <CodeBlock>{`curl https://api.riftl.ink/v1/links/summer-sale/stats \\
   -H "Authorization: Bearer rl_live_YOUR_KEY"`}</CodeBlock>
             <p>Response:</p>
-            <CodeBlock>{`{
+            <CodeBlock lang="json">{`{
   "link_id": "summer-sale",
   "click_count": 1234,
   "install_count": 89,

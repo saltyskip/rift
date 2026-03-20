@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
+import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 
 export const metadata: Metadata = {
   title: "Deferred Deep Linking — Rift Docs",
   description: "Route users to specific content even if they didn't have the app installed when they clicked.",
 };
-
-function CodeBlock({ children }: { children: string }) {
-  return (
-    <pre className="bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 overflow-x-auto text-[13px] leading-relaxed font-mono text-[#a1a1aa]">
-      <code>{children}</code>
-    </pre>
-  );
-}
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
@@ -51,7 +44,7 @@ export default function DeferredPage() {
           </Step>
 
           <Step n={2} title="iOS — Read from clipboard">
-            <CodeBlock>{`func checkDeferredDeepLink() {
+            <CodeBlock lang="swift">{`func checkDeferredDeepLink() {
     guard let clipboard = UIPasteboard.general.string,
           clipboard.hasPrefix("relay:") else { return }
 
@@ -62,7 +55,7 @@ export default function DeferredPage() {
           </Step>
 
           <Step n={3} title="Android — Read from install referrer">
-            <CodeBlock>{`val client = InstallReferrerClient.newBuilder(this).build()
+            <CodeBlock lang="kotlin">{`val client = InstallReferrerClient.newBuilder(this).build()
 client.startConnection(object : InstallReferrerStateListener {
     override fun onInstallReferrerSetupFinished(code: Int) {
         if (code == InstallReferrerResponse.OK) {
@@ -85,7 +78,7 @@ client.startConnection(object : InstallReferrerStateListener {
     "install_id": "device-uuid-here"
   }'`}</CodeBlock>
             <p>Response (matched):</p>
-            <CodeBlock>{`{
+            <CodeBlock lang="json">{`{
   "matched": true,
   "link_id": "summer-sale",
   "ios_deep_link": "myapp://promo/summer-sale",
@@ -93,7 +86,7 @@ client.startConnection(object : InstallReferrerStateListener {
   "metadata": { "title": "Summer Sale — 50% Off" }
 }`}</CodeBlock>
             <p>Response (not matched):</p>
-            <CodeBlock>{`{ "matched": false }`}</CodeBlock>
+            <CodeBlock lang="json">{`{ "matched": false }`}</CodeBlock>
           </Step>
         </section>
       </div>

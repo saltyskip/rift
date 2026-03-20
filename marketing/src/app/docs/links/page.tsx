@@ -1,17 +1,10 @@
 import type { Metadata } from "next";
+import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 
 export const metadata: Metadata = {
   title: "Create Links — Rift Docs",
   description: "Create deep links with per-platform destinations, metadata, and smart resolution.",
 };
-
-function CodeBlock({ children }: { children: string }) {
-  return (
-    <pre className="bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 overflow-x-auto text-[13px] leading-relaxed font-mono text-[#a1a1aa]">
-      <code>{children}</code>
-    </pre>
-  );
-}
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
@@ -57,7 +50,7 @@ export default function LinksPage() {
     }
   }'`}</CodeBlock>
             <p>Response:</p>
-            <CodeBlock>{`{
+            <CodeBlock lang="json">{`{
   "link_id": "summer-sale",
   "url": "https://api.riftl.ink/r/summer-sale"
 }`}</CodeBlock>
@@ -81,7 +74,7 @@ export default function LinksPage() {
               Agents sending <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">Accept: application/json</code> receive
               all destinations and metadata as JSON:
             </p>
-            <CodeBlock>{`curl https://api.riftl.ink/r/summer-sale \\
+            <CodeBlock lang="json">{`curl https://api.riftl.ink/r/summer-sale \\
   -H "Accept: application/json"
 
 {
@@ -102,7 +95,7 @@ export default function LinksPage() {
           <h2 className="text-2xl font-bold text-[#fafafa]">Handle incoming links</h2>
 
           <Step n={4} title="iOS — SceneDelegate or AppDelegate">
-            <CodeBlock>{`// SceneDelegate.swift
+            <CodeBlock lang="swift">{`// SceneDelegate.swift
 func scene(_ scene: UIScene,
            continue userActivity: NSUserActivity) {
     guard userActivity.activityType ==
@@ -116,7 +109,7 @@ func scene(_ scene: UIScene,
           </Step>
 
           <Step n={5} title="Android — Intent handling">
-            <CodeBlock>{`// MainActivity.kt
+            <CodeBlock lang="kotlin">{`// MainActivity.kt
 override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     intent?.data?.let { uri ->
