@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime};
 use std::sync::Mutex;
 
-use relay::api::domains::models::Domain;
-use relay::api::domains::repo::DomainsRepository;
+use rift::api::domains::models::Domain;
+use rift::api::domains::repo::DomainsRepository;
 
 #[derive(Default)]
 pub struct MockDomainsRepo {

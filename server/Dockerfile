@@ -17,7 +17,7 @@ FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y ca-certificates libssl3 dnsutils && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/relay /usr/local/bin/server
+COPY --from=builder /app/target/release/rift /usr/local/bin/server
 
 ENV HOST=0.0.0.0
 EXPOSE 3000

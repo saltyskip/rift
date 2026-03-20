@@ -22,6 +22,6 @@ async fn openapi_json_returns_spec() {
 
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert!(body["info"]["title"].as_str().unwrap().contains("Relay"));
+    assert!(body["info"]["title"].as_str().unwrap().contains("Rift"));
     assert!(!body["paths"].as_object().unwrap().is_empty());
 }

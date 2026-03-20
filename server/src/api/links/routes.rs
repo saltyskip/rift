@@ -313,7 +313,7 @@ pub async fn resolve_link_custom(
     }
 
     let host = headers
-        .get("x-relay-host")
+        .get("x-rift-host")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_lowercase());
 
@@ -529,7 +529,7 @@ async fn do_resolve(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Relay — {link_id}</title>
+    <title>Rift — {link_id}</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
@@ -550,7 +550,7 @@ async fn do_resolve(
 </head>
 <body>
     <div class="container">
-        <div class="logo">Relay</div>
+        <div class="logo">Rift</div>
         <h1>Link: {link_id}</h1>
         <p>No destination configured for this link.</p>
     </div>
@@ -561,6 +561,97 @@ async fn do_resolve(
             (StatusCode::OK, axum::response::Html(html)).into_response()
         }
     }
+}
+
+// ── POST /v1/sdk/click — SDK-initiated click (public) ──
+
+#[utoipa::path(
+    post,
+    path = "/v1/sdk/click",
+    tag = "Links",
+    request_body = SdkClickRequest,
+    responses(
+        (status = 200, description = "Click recorded, link data returned", body = SdkClickResponse),
+        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
+    ),
+)]
+#[tracing::instrument(skip(state, headers))]
+pub async fn sdk_click(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<SdkClickRequest>,
+) -> Response {
+    if req.link_id.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "link_id is required", "code": "bad_request" })),
+        )
+            .into_response();
+    }
+
+    let Some(repo) = &state.links_repo else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    let Some(link) = repo.find_link_by_id(&req.link_id).await.ok().flatten() else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Link not found", "code": "not_found" })),
+        )
+            .into_response();
+    };
+
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let referer = headers
+        .get("referer")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let platform = user_agent
+        .as_deref()
+        .map(detect_platform)
+        .unwrap_or(Platform::Other);
+
+    let token = if platform == Platform::Ios || platform == Platform::Android {
+        Some(generate_token())
+    } else {
+        None
+    };
+
+    if let Err(e) = repo
+        .record_click(
+            link.tenant_id,
+            &req.link_id,
+            user_agent,
+            referer,
+            Some(platform.as_str().to_string()),
+            token.clone(),
+        )
+        .await
+    {
+        tracing::warn!(error = %e, "Failed to record click");
+    }
+
+    let metadata = link.metadata.and_then(|d| serde_json::to_value(&d).ok());
+    Json(json!({
+        "token": token,
+        "platform": platform.as_str(),
+        "ios_deep_link": link.ios_deep_link,
+        "android_deep_link": link.android_deep_link,
+        "web_url": link.web_url,
+        "ios_store_url": link.ios_store_url,
+        "android_store_url": link.android_store_url,
+        "metadata": metadata,
+    }))
+    .into_response()
 }
 
 // ── POST /v1/deferred — Recover link data from deferred deep link token (public) ──
@@ -797,7 +888,7 @@ fn render_smart_landing_page(
                 "{}{}referrer={}",
                 store_url,
                 sep,
-                urlencoding(&format!("relay_token={}", token.unwrap_or("")))
+                urlencoding(&format!("rift_token={}", token.unwrap_or("")))
             )
         } else {
             store_url.to_string()
@@ -853,7 +944,7 @@ fn render_smart_landing_page(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{og_title} — Relay</title>
+    <title>{og_title} — Rift</title>
     <meta property="og:title" content="{og_title_escaped}" />
     <meta property="og:description" content="{og_desc_escaped}" />
 {og_image_tag}
@@ -904,7 +995,7 @@ fn render_smart_landing_page(
 
         // Copy deferred deep link token to clipboard (iOS only).
         if (platform === "ios" && token && navigator.clipboard) {{
-            navigator.clipboard.writeText("relay:" + token).catch(function(){{}});
+            navigator.clipboard.writeText("rift:" + token).catch(function(){{}});
         }}
 
         var btn = document.getElementById("open-btn");

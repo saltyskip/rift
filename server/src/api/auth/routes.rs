@@ -190,17 +190,17 @@ async fn send_verification_email(
     let body = json!({
         "from": from_email,
         "to": [to],
-        "subject": "Verify your Relay API key",
+        "subject": "Verify your Rift API key",
         "html": format!(
             r#"<div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
                 <h2 style="margin-bottom: 24px;">Verify your email</h2>
-                <p>Click the button below to activate your Relay API key:</p>
+                <p>Click the button below to activate your Rift API key:</p>
                 <a href="{verify_url}" style="display: inline-block; padding: 12px 24px; background: #0d9488; color: white; text-decoration: none; border-radius: 6px; margin: 20px 0;">Verify Email</a>
                 <p style="margin-top: 24px;">Your API key:</p>
                 <code style="display: block; padding: 12px; background: #f4f4f5; border-radius: 6px; word-break: break-all; font-size: 14px;">{api_key}</code>
                 <p style="color: #71717a; font-size: 13px; margin-top: 24px;">Save this key — we can't show it again. The key won't work until you verify your email.</p>
                 <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 32px 0;" />
-                <p style="color: #a1a1aa; font-size: 12px;">Relay — Deep links for humans and agents</p>
+                <p style="color: #a1a1aa; font-size: 12px;">Rift — Deep links for humans and agents</p>
             </div>"#
         ),
     });
