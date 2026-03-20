@@ -180,6 +180,7 @@ pub async fn verify_email(
 
 async fn send_verification_email(
     resend_api_key: &str,
+    from_email: &str,
     to: &str,
     verify_url: &str,
     api_key: &str,
@@ -187,7 +188,7 @@ async fn send_verification_email(
     let client = reqwest::Client::new();
 
     let body = json!({
-        "from": "Relay <noreply@relay.dev>",
+        "from": from_email,
         "to": [to],
         "subject": "Verify your Relay API key",
         "html": format!(
