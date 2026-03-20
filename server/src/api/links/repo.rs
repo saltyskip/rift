@@ -1,8 +1,55 @@
+use async_trait::async_trait;
 use mongodb::bson::{doc, oid::ObjectId, DateTime, Document};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database, IndexModel};
 
 use super::models::{Attribution, Click, Link};
+
+// ── Trait ──
+
+#[async_trait]
+pub trait LinksRepository: Send + Sync {
+    async fn create_link(
+        &self,
+        tenant_id: ObjectId,
+        link_id: String,
+        destination: Option<String>,
+        metadata: Option<Document>,
+    ) -> Result<Link, String>;
+
+    async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String>;
+
+    async fn list_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Link>, String>;
+
+    async fn record_click(
+        &self,
+        tenant_id: ObjectId,
+        link_id: &str,
+        user_agent: Option<String>,
+        referer: Option<String>,
+    ) -> Result<(), String>;
+
+    async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
+
+    async fn upsert_attribution(
+        &self,
+        tenant_id: ObjectId,
+        link_id: &str,
+        install_id: &str,
+        app_version: &str,
+    ) -> Result<(), String>;
+
+    async fn link_attribution_to_user(
+        &self,
+        tenant_id: &ObjectId,
+        install_id: &str,
+        user_id: &str,
+    ) -> Result<bool, String>;
+
+    async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
+}
+
+// ── Repository ──
 
 #[derive(Clone)]
 pub struct LinksRepo {
@@ -45,7 +92,11 @@ impl LinksRepo {
         );
         ensure_index!(links, doc! { "tenant_id": 1 }, "links_tenant");
 
-        ensure_index!(clicks, doc! { "tenant_id": 1, "link_id": 1 }, "clicks_tenant_link");
+        ensure_index!(
+            clicks,
+            doc! { "tenant_id": 1, "link_id": 1 },
+            "clicks_tenant_link"
+        );
 
         // install_id is unique per tenant.
         ensure_index!(
@@ -54,20 +105,29 @@ impl LinksRepo {
             IndexOptions::builder().unique(true).build(),
             "attr_tenant_install_unique"
         );
-        ensure_index!(attributions, doc! { "tenant_id": 1, "link_id": 1 }, "attr_tenant_link");
+        ensure_index!(
+            attributions,
+            doc! { "tenant_id": 1, "link_id": 1 },
+            "attr_tenant_link"
+        );
 
-        LinksRepo { links, clicks, attributions }
+        LinksRepo {
+            links,
+            clicks,
+            attributions,
+        }
     }
+}
 
-    // ── Links ──
-
-    pub async fn create_link(
+#[async_trait]
+impl LinksRepository for LinksRepo {
+    async fn create_link(
         &self,
         tenant_id: ObjectId,
         link_id: String,
         destination: Option<String>,
         metadata: Option<Document>,
-    ) -> Result<Link, mongodb::error::Error> {
+    ) -> Result<Link, String> {
         let link = Link {
             id: ObjectId::new(),
             tenant_id,
@@ -76,37 +136,43 @@ impl LinksRepo {
             metadata,
             created_at: DateTime::now(),
         };
-        self.links.insert_one(&link).await?;
+        self.links
+            .insert_one(&link)
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(link)
     }
 
-    pub async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, mongodb::error::Error> {
-        self.links.find_one(doc! { "link_id": link_id }).await
+    async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String> {
+        self.links
+            .find_one(doc! { "link_id": link_id })
+            .await
+            .map_err(|e| e.to_string())
     }
 
-    pub async fn list_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Link>, mongodb::error::Error> {
-        let mut cursor = self.links
+    async fn list_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Link>, String> {
+        let mut cursor = self
+            .links
             .find(doc! { "tenant_id": tenant_id })
             .sort(doc! { "created_at": -1 })
             .limit(100)
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
 
         let mut links = Vec::new();
-        while cursor.advance().await? {
-            links.push(cursor.deserialize_current()?);
+        while cursor.advance().await.map_err(|e| e.to_string())? {
+            links.push(cursor.deserialize_current().map_err(|e| e.to_string())?);
         }
         Ok(links)
     }
 
-    // ── Clicks ──
-
-    pub async fn record_click(
+    async fn record_click(
         &self,
         tenant_id: ObjectId,
         link_id: &str,
         user_agent: Option<String>,
         referer: Option<String>,
-    ) -> Result<(), mongodb::error::Error> {
+    ) -> Result<(), String> {
         let click = Click {
             id: ObjectId::new(),
             tenant_id,
@@ -115,25 +181,27 @@ impl LinksRepo {
             user_agent,
             referer,
         };
-        self.clicks.insert_one(&click).await?;
+        self.clicks
+            .insert_one(&click)
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
-    pub async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, mongodb::error::Error> {
+    async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
         self.clicks
             .count_documents(doc! { "tenant_id": tenant_id, "link_id": link_id })
             .await
+            .map_err(|e| e.to_string())
     }
 
-    // ── Attributions ──
-
-    pub async fn upsert_attribution(
+    async fn upsert_attribution(
         &self,
         tenant_id: ObjectId,
         link_id: &str,
         install_id: &str,
         app_version: &str,
-    ) -> Result<(), mongodb::error::Error> {
+    ) -> Result<(), String> {
         self.attributions
             .update_one(
                 doc! { "tenant_id": &tenant_id, "install_id": install_id },
@@ -149,16 +217,17 @@ impl LinksRepo {
                 },
             )
             .upsert(true)
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
-    pub async fn link_attribution_to_user(
+    async fn link_attribution_to_user(
         &self,
         tenant_id: &ObjectId,
         install_id: &str,
         user_id: &str,
-    ) -> Result<bool, mongodb::error::Error> {
+    ) -> Result<bool, String> {
         let result = self
             .attributions
             .update_one(
@@ -173,14 +242,15 @@ impl LinksRepo {
                 },
                 doc! { "$set": { "user_id": user_id } },
             )
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(result.modified_count > 0 || result.matched_count > 0)
     }
 
-    pub async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, mongodb::error::Error> {
+    async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
         self.attributions
             .count_documents(doc! { "tenant_id": tenant_id, "link_id": link_id })
             .await
+            .map_err(|e| e.to_string())
     }
 }
-

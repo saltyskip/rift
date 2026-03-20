@@ -1,8 +1,31 @@
+use async_trait::async_trait;
 use mongodb::bson::{doc, oid::ObjectId, DateTime};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database, IndexModel};
 
 use super::models::Domain;
+
+// ── Trait ──
+
+#[async_trait]
+pub trait DomainsRepository: Send + Sync {
+    async fn create_domain(
+        &self,
+        tenant_id: ObjectId,
+        domain: String,
+        verification_token: String,
+    ) -> Result<Domain, String>;
+
+    async fn find_by_domain(&self, domain: &str) -> Result<Option<Domain>, String>;
+
+    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Domain>, String>;
+
+    async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String>;
+
+    async fn mark_verified(&self, domain: &str) -> Result<(), String>;
+}
+
+// ── Repository ──
 
 macro_rules! ensure_index {
     ($col:expr, $keys:expr, $opts:expr, $name:expr) => {
@@ -42,13 +65,16 @@ impl DomainsRepo {
 
         DomainsRepo { domains }
     }
+}
 
-    pub async fn create_domain(
+#[async_trait]
+impl DomainsRepository for DomainsRepo {
+    async fn create_domain(
         &self,
         tenant_id: ObjectId,
         domain: String,
         verification_token: String,
-    ) -> Result<Domain, mongodb::error::Error> {
+    ) -> Result<Domain, String> {
         let doc = Domain {
             id: ObjectId::new(),
             tenant_id,
@@ -57,47 +83,52 @@ impl DomainsRepo {
             verification_token,
             created_at: DateTime::now(),
         };
-        self.domains.insert_one(&doc).await?;
+        self.domains
+            .insert_one(&doc)
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(doc)
     }
 
-    pub async fn find_by_domain(&self, domain: &str) -> Result<Option<Domain>, mongodb::error::Error> {
-        self.domains.find_one(doc! { "domain": domain }).await
+    async fn find_by_domain(&self, domain: &str) -> Result<Option<Domain>, String> {
+        self.domains
+            .find_one(doc! { "domain": domain })
+            .await
+            .map_err(|e| e.to_string())
     }
 
-    pub async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Domain>, mongodb::error::Error> {
+    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Domain>, String> {
         let mut cursor = self
             .domains
             .find(doc! { "tenant_id": tenant_id })
             .sort(doc! { "created_at": -1 })
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
 
         let mut domains = Vec::new();
-        while cursor.advance().await? {
-            domains.push(cursor.deserialize_current()?);
+        while cursor.advance().await.map_err(|e| e.to_string())? {
+            domains.push(cursor.deserialize_current().map_err(|e| e.to_string())?);
         }
         Ok(domains)
     }
 
-    pub async fn delete_domain(
-        &self,
-        tenant_id: &ObjectId,
-        domain: &str,
-    ) -> Result<bool, mongodb::error::Error> {
+    async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String> {
         let result = self
             .domains
             .delete_one(doc! { "tenant_id": tenant_id, "domain": domain })
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)
     }
 
-    pub async fn mark_verified(&self, domain: &str) -> Result<(), mongodb::error::Error> {
+    async fn mark_verified(&self, domain: &str) -> Result<(), String> {
         self.domains
             .update_one(
                 doc! { "domain": domain },
                 doc! { "$set": { "verified": true } },
             )
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 }

@@ -128,7 +128,9 @@ impl CdpFacilitator {
             .map_err(|e| format!("HTTP error: {e}"))?;
 
         if resp.status().is_success() {
-            resp.json().await.map_err(|e| format!("JSON parse error: {e}"))
+            resp.json()
+                .await
+                .map_err(|e| format!("JSON parse error: {e}"))
         } else {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
@@ -136,10 +138,7 @@ impl CdpFacilitator {
         }
     }
 
-    pub async fn verify(
-        &self,
-        request: &VerifyRequest,
-    ) -> Result<proto::VerifyResponse, String> {
+    pub async fn verify(&self, request: &VerifyRequest) -> Result<proto::VerifyResponse, String> {
         self.post("/verify", request).await
     }
 

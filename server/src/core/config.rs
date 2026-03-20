@@ -44,8 +44,7 @@ impl Config {
                 .unwrap_or(3000),
 
             mongo_uri: std::env::var("MONGO_URI").unwrap_or_default(),
-            mongo_db: std::env::var("MONGO_DB")
-                .unwrap_or_else(|_| "relay".to_string()),
+            mongo_db: std::env::var("MONGO_DB").unwrap_or_else(|_| "relay".to_string()),
 
             resend_api_key: std::env::var("RESEND_API_KEY").unwrap_or_default(),
             resend_from_email: std::env::var("RESEND_FROM_EMAIL")
@@ -63,8 +62,7 @@ impl Config {
             x402_facilitator_url: std::env::var("X402_FACILITATOR_URL")
                 .unwrap_or_else(|_| "https://facilitator.x402.org".to_string()),
             x402_recipient: std::env::var("X402_RECIPIENT").unwrap_or_default(),
-            x402_price_display: std::env::var("X402_PRICE")
-                .unwrap_or_else(|_| "0.01".to_string()),
+            x402_price_display: std::env::var("X402_PRICE").unwrap_or_else(|_| "0.01".to_string()),
             x402_enabled: std::env::var("X402_ENABLED")
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
