@@ -215,7 +215,7 @@ export default function DocsPage() {
     const origin = "https://api.riftl.ink";
     const upstream = new URL(url.pathname + url.search, origin);
     const headers = new Headers(request.headers);
-    headers.set("X-Forwarded-Host", host);
+    headers.set("X-Relay-Host", host);
     const response = await fetch(upstream.toString(), {
       method: request.method,
       headers,
