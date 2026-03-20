@@ -1,3 +1,4 @@
+pub mod apps;
 pub mod auth;
 pub mod domains;
 pub mod health;
@@ -10,6 +11,7 @@ use utoipa::OpenApi;
 
 use std::sync::Arc as StdArc;
 
+use crate::api::apps::repo::AppsRepository;
 use crate::api::auth::repo::AuthRepository;
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::links::repo::LinksRepository;
@@ -24,6 +26,7 @@ pub struct AppState {
     pub auth_repo: Option<StdArc<dyn AuthRepository>>,
     pub links_repo: Option<StdArc<dyn LinksRepository>>,
     pub domains_repo: Option<StdArc<dyn DomainsRepository>>,
+    pub apps_repo: Option<StdArc<dyn AppsRepository>>,
     pub config: Config,
     pub facilitator: Option<CdpFacilitator>,
     pub x402_price_tags: Vec<v1::PriceTag>,
@@ -48,10 +51,16 @@ pub struct AppState {
         links::routes::resolve_link_custom,
         links::routes::report_attribution,
         links::routes::link_attribution,
+        links::routes::resolve_deferred,
         domains::routes::create_domain,
         domains::routes::list_domains,
         domains::routes::delete_domain,
         domains::routes::verify_domain,
+        apps::routes::create_app,
+        apps::routes::list_apps,
+        apps::routes::delete_app,
+        apps::routes::serve_aasa,
+        apps::routes::serve_assetlinks,
     ),
     components(schemas(
         health::models::HealthResponse,
@@ -67,10 +76,14 @@ pub struct AppState {
         links::models::ReportAttributionRequest,
         links::models::AttributionResponse,
         links::models::LinkAttributionRequest,
+        links::models::DeferredLinkRequest,
+        links::models::DeferredLinkResponse,
         domains::models::CreateDomainRequest,
         domains::models::CreateDomainResponse,
         domains::models::DomainDetail,
         domains::models::VerifyDomainResponse,
+        apps::models::CreateAppRequest,
+        apps::models::AppDetail,
     )),
     security(
         ("api_key" = []),
@@ -82,6 +95,7 @@ pub struct AppState {
         (name = "Authentication", description = "Email-based API key signup and verification"),
         (name = "System", description = "Health checks and operational endpoints"),
         (name = "Domains", description = "Custom domain management"),
+        (name = "Apps", description = "App configuration and association files"),
     )
 )]
 struct ApiDoc;
@@ -97,5 +111,6 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(auth::router())
         .merge(links::router(state.clone()))
         .merge(domains::router(state.clone()))
+        .merge(apps::router(state.clone()))
         .merge(openapi_json)
 }

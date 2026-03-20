@@ -23,7 +23,8 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     let public = Router::new()
         .route("/r/{link_id}", get(routes::resolve_link))
         .route("/{link_id}", get(routes::resolve_link_custom))
-        .route("/v1/attribution", post(routes::report_attribution));
+        .route("/v1/attribution", post(routes::report_attribution))
+        .route("/v1/deferred", post(routes::resolve_deferred));
 
     Router::new().merge(authenticated).merge(public)
 }

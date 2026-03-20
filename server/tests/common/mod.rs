@@ -9,7 +9,7 @@ use relay::api::auth::repo::{ApiKeyDoc, AuthRepository};
 use relay::api::AppState;
 use relay::core::config::Config;
 
-use mocks::{MockAuthRepo, MockDomainsRepo, MockLinksRepo};
+use mocks::{MockAppsRepo, MockAuthRepo, MockDomainsRepo, MockLinksRepo};
 
 #[allow(dead_code)]
 pub struct TestApp {
@@ -18,6 +18,7 @@ pub struct TestApp {
     pub auth_repo: Arc<MockAuthRepo>,
     pub links_repo: Arc<MockLinksRepo>,
     pub domains_repo: Arc<MockDomainsRepo>,
+    pub apps_repo: Arc<MockAppsRepo>,
 }
 
 impl TestApp {
@@ -30,6 +31,7 @@ pub async fn spawn_app() -> TestApp {
     let auth_repo = Arc::new(MockAuthRepo::default());
     let links_repo = Arc::new(MockLinksRepo::default());
     let domains_repo = Arc::new(MockDomainsRepo::default());
+    let apps_repo = Arc::new(MockAppsRepo::default());
 
     let config = Config {
         host: "127.0.0.1".to_string(),
@@ -37,6 +39,7 @@ pub async fn spawn_app() -> TestApp {
         mongo_uri: String::new(),
         mongo_db: String::new(),
         resend_api_key: String::new(),
+        resend_from_email: String::new(),
         public_url: "http://localhost:0".to_string(),
         free_daily_limit: 5,
         sentry_dsn: String::new(),
@@ -54,8 +57,9 @@ pub async fn spawn_app() -> TestApp {
         auth_repo: Some(auth_repo.clone() as Arc<dyn AuthRepository>),
         links_repo: Some(links_repo.clone() as Arc<dyn relay::api::links::repo::LinksRepository>),
         domains_repo: Some(
-            domains_repo.clone() as Arc<dyn relay::api::domains::repo::DomainsRepository>
+            domains_repo.clone() as Arc<dyn relay::api::domains::repo::DomainsRepository>,
         ),
+        apps_repo: Some(apps_repo.clone() as Arc<dyn relay::api::apps::repo::AppsRepository>),
         config,
         facilitator: None,
         x402_price_tags: vec![],
@@ -78,6 +82,7 @@ pub async fn spawn_app() -> TestApp {
         auth_repo,
         links_repo,
         domains_repo,
+        apps_repo,
     }
 }
 

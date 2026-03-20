@@ -10,7 +10,7 @@ async fn create_link_returns_201() {
         .post(app.url("/v1/links"))
         .header("Authorization", format!("Bearer {key}"))
         .json(&serde_json::json!({
-            "destination": "https://example.com"
+            "web_url": "https://example.com"
         }))
         .send()
         .await
@@ -33,7 +33,7 @@ async fn create_link_with_custom_id() {
         .header("Authorization", format!("Bearer {key}"))
         .json(&serde_json::json!({
             "custom_id": "my-link",
-            "destination": "https://example.com"
+            "web_url": "https://example.com"
         }))
         .send()
         .await
@@ -45,13 +45,52 @@ async fn create_link_with_custom_id() {
 }
 
 #[tokio::test]
+async fn create_link_with_platform_destinations() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "platform-test",
+            "ios_deep_link": "myapp://product/123",
+            "android_deep_link": "myapp://product/123",
+            "web_url": "https://example.com/product/123",
+            "ios_store_url": "https://apps.apple.com/app/id123",
+            "android_store_url": "https://play.google.com/store/apps/details?id=com.example"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 201);
+
+    // Verify all fields are returned via JSON resolve.
+    let resp = app
+        .client
+        .get(app.url("/r/platform-test"))
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .unwrap();
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["ios_deep_link"], "myapp://product/123");
+    assert_eq!(body["android_deep_link"], "myapp://product/123");
+    assert_eq!(body["web_url"], "https://example.com/product/123");
+    assert_eq!(body["ios_store_url"], "https://apps.apple.com/app/id123");
+}
+
+#[tokio::test]
 async fn duplicate_custom_id_returns_409() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;
 
     let payload = serde_json::json!({
         "custom_id": "taken",
-        "destination": "https://example.com"
+        "web_url": "https://example.com"
     });
 
     let resp1 = app
@@ -83,11 +122,11 @@ async fn list_links_returns_created_links() {
     let (key, _) = common::seed_api_key(&app).await;
 
     // Create two links.
-    for dest in ["https://a.com", "https://b.com"] {
+    for url in ["https://a.com", "https://b.com"] {
         app.client
             .post(app.url("/v1/links"))
             .header("Authorization", format!("Bearer {key}"))
-            .json(&serde_json::json!({ "destination": dest }))
+            .json(&serde_json::json!({ "web_url": url }))
             .send()
             .await
             .unwrap();
@@ -111,14 +150,13 @@ async fn get_link_stats() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;
 
-    // Create a link.
     let resp = app
         .client
         .post(app.url("/v1/links"))
         .header("Authorization", format!("Bearer {key}"))
         .json(&serde_json::json!({
             "custom_id": "stats-test",
-            "destination": "https://example.com"
+            "web_url": "https://example.com"
         }))
         .send()
         .await
@@ -158,7 +196,7 @@ async fn create_link_invalid_custom_id() {
         .header("Authorization", format!("Bearer {key}"))
         .json(&serde_json::json!({
             "custom_id": "ab",
-            "destination": "https://example.com"
+            "web_url": "https://example.com"
         }))
         .send()
         .await

@@ -13,7 +13,11 @@ pub trait LinksRepository: Send + Sync {
         &self,
         tenant_id: ObjectId,
         link_id: String,
-        destination: Option<String>,
+        ios_deep_link: Option<String>,
+        android_deep_link: Option<String>,
+        web_url: Option<String>,
+        ios_store_url: Option<String>,
+        android_store_url: Option<String>,
         metadata: Option<Document>,
     ) -> Result<Link, String>;
 
@@ -27,7 +31,11 @@ pub trait LinksRepository: Send + Sync {
         link_id: &str,
         user_agent: Option<String>,
         referer: Option<String>,
+        platform: Option<String>,
+        token: Option<String>,
     ) -> Result<(), String>;
+
+    async fn find_click_by_token(&self, token: &str) -> Result<Option<Click>, String>;
 
     async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
 
@@ -83,7 +91,6 @@ impl LinksRepo {
         let clicks = database.collection::<Click>("clicks");
         let attributions = database.collection::<Attribution>("attributions");
 
-        // link_id is globally unique (across all tenants).
         ensure_index!(
             links,
             doc! { "link_id": 1 },
@@ -98,7 +105,16 @@ impl LinksRepo {
             "clicks_tenant_link"
         );
 
-        // install_id is unique per tenant.
+        ensure_index!(
+            clicks,
+            doc! { "token": 1 },
+            IndexOptions::builder()
+                .unique(true)
+                .sparse(true)
+                .build(),
+            "clicks_token_sparse_unique"
+        );
+
         ensure_index!(
             attributions,
             doc! { "tenant_id": 1, "install_id": 1 },
@@ -125,14 +141,22 @@ impl LinksRepository for LinksRepo {
         &self,
         tenant_id: ObjectId,
         link_id: String,
-        destination: Option<String>,
+        ios_deep_link: Option<String>,
+        android_deep_link: Option<String>,
+        web_url: Option<String>,
+        ios_store_url: Option<String>,
+        android_store_url: Option<String>,
         metadata: Option<Document>,
     ) -> Result<Link, String> {
         let link = Link {
             id: ObjectId::new(),
             tenant_id,
             link_id,
-            destination,
+            ios_deep_link,
+            android_deep_link,
+            web_url,
+            ios_store_url,
+            android_store_url,
             metadata,
             created_at: DateTime::now(),
         };
@@ -172,6 +196,8 @@ impl LinksRepository for LinksRepo {
         link_id: &str,
         user_agent: Option<String>,
         referer: Option<String>,
+        platform: Option<String>,
+        token: Option<String>,
     ) -> Result<(), String> {
         let click = Click {
             id: ObjectId::new(),
@@ -180,12 +206,21 @@ impl LinksRepository for LinksRepo {
             clicked_at: DateTime::now(),
             user_agent,
             referer,
+            platform,
+            token,
         };
         self.clicks
             .insert_one(&click)
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    async fn find_click_by_token(&self, token: &str) -> Result<Option<Click>, String> {
+        self.clicks
+            .find_one(doc! { "token": token })
+            .await
+            .map_err(|e| e.to_string())
     }
 
     async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
