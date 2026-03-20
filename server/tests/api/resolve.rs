@@ -239,3 +239,166 @@ async fn deferred_deep_link_round_trip() {
     assert_eq!(resp.status(), 400);
     let _ = token; // suppress unused warning
 }
+
+#[tokio::test]
+async fn sdk_click_returns_link_data_and_token() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    // Create a link with full platform destinations.
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "sdk-test",
+            "ios_deep_link": "myapp://sdk/test",
+            "android_deep_link": "myapp://sdk/test",
+            "web_url": "https://example.com/sdk",
+            "ios_store_url": "https://apps.apple.com/app/id999",
+            "android_store_url": "https://play.google.com/store/apps/details?id=com.example",
+            "metadata": { "campaign": "sdk-test" }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // SDK click with iOS user agent.
+    let resp = app
+        .client
+        .post(app.url("/v1/sdk/click"))
+        .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)")
+        .json(&serde_json::json!({ "link_id": "sdk-test" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["platform"], "ios");
+    assert!(body["token"].is_string());
+    assert_eq!(body["ios_deep_link"], "myapp://sdk/test");
+    assert_eq!(body["android_deep_link"], "myapp://sdk/test");
+    assert_eq!(body["web_url"], "https://example.com/sdk");
+    assert_eq!(body["metadata"]["campaign"], "sdk-test");
+}
+
+#[tokio::test]
+async fn sdk_click_missing_link_returns_404() {
+    let app = common::spawn_app().await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/sdk/click"))
+        .json(&serde_json::json!({ "link_id": "nonexistent" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "not_found");
+}
+
+#[tokio::test]
+async fn sdk_click_empty_link_id_returns_400() {
+    let app = common::spawn_app().await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/sdk/click"))
+        .json(&serde_json::json!({ "link_id": "" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+}
+
+#[tokio::test]
+async fn sdk_click_records_click() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "sdk-click-count",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Fire 2 SDK clicks.
+    for _ in 0..2 {
+        app.client
+            .post(app.url("/v1/sdk/click"))
+            .json(&serde_json::json!({ "link_id": "sdk-click-count" }))
+            .send()
+            .await
+            .unwrap();
+    }
+
+    // Verify click count.
+    let resp = app
+        .client
+        .get(app.url("/v1/links/sdk-click-count/stats"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["click_count"], 2);
+}
+
+#[tokio::test]
+async fn sdk_click_desktop_returns_no_token() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "sdk-desktop",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url("/v1/sdk/click"))
+        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
+        .json(&serde_json::json!({ "link_id": "sdk-desktop" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["platform"], "other");
+    assert!(body["token"].is_null());
+}
+
+#[tokio::test]
+async fn serve_relay_js() {
+    let app = common::spawn_app().await;
+
+    let resp = app
+        .client
+        .get(app.url("/sdk/relay.js"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
+    assert!(ct.contains("javascript"));
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("Relay"));
+    assert!(body.contains("/v1/sdk/click"));
+}

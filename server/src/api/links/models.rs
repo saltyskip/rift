@@ -162,6 +162,32 @@ pub struct ResolvedLink {
     pub metadata: Option<serde_json::Value>,
 }
 
+// ── SDK Click Models ──
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SdkClickRequest {
+    /// Link ID to resolve.
+    pub link_id: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SdkClickResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    pub platform: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ios_deep_link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub android_deep_link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub web_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ios_store_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub android_store_url: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
 // ── Deferred Deep Linking Models ──
 
 #[derive(Debug, Deserialize, ToSchema)]

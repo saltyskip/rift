@@ -52,6 +52,7 @@ pub struct AppState {
         links::routes::report_attribution,
         links::routes::link_attribution,
         links::routes::resolve_deferred,
+        links::routes::sdk_click,
         domains::routes::create_domain,
         domains::routes::list_domains,
         domains::routes::delete_domain,
@@ -78,6 +79,8 @@ pub struct AppState {
         links::models::LinkAttributionRequest,
         links::models::DeferredLinkRequest,
         links::models::DeferredLinkResponse,
+        links::models::SdkClickRequest,
+        links::models::SdkClickResponse,
         domains::models::CreateDomainRequest,
         domains::models::CreateDomainResponse,
         domains::models::DomainDetail,
@@ -100,6 +103,17 @@ pub struct AppState {
 )]
 struct ApiDoc;
 
+async fn serve_relay_js() -> impl axum::response::IntoResponse {
+    (
+        axum::http::StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, "application/javascript; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=3600"),
+        ],
+        include_str!("../sdk/relay.js"),
+    )
+}
+
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     let spec = ApiDoc::openapi();
     let openapi_json = Router::new().route(
@@ -107,10 +121,13 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         get(move || async move { axum::Json(spec) }),
     );
 
+    let sdk = Router::new().route("/sdk/relay.js", get(serve_relay_js));
+
     health::router()
         .merge(auth::router())
         .merge(links::router(state.clone()))
         .merge(domains::router(state.clone()))
         .merge(apps::router(state.clone()))
         .merge(openapi_json)
+        .merge(sdk)
 }
