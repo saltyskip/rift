@@ -57,7 +57,7 @@ export default function LinksPage() {
           </Step>
 
           <Step n={2} title="How resolution works">
-            <p>When a user clicks the link, Relay detects their platform and serves a smart landing page that:</p>
+            <p>When a user clicks the link, Rift detects their platform and serves a smart landing page that:</p>
             <ul className="list-disc pl-5 space-y-1">
               <li><strong className="text-[#fafafa]">iOS</strong> — attempts to open the deep link, falls back to the App Store</li>
               <li><strong className="text-[#fafafa]">Android</strong> — attempts to open the deep link, falls back to the Play Store</li>

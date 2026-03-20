@@ -385,12 +385,12 @@ async fn sdk_click_desktop_returns_no_token() {
 }
 
 #[tokio::test]
-async fn serve_relay_js() {
+async fn serve_rift_js() {
     let app = common::spawn_app().await;
 
     let resp = app
         .client
-        .get(app.url("/sdk/relay.js"))
+        .get(app.url("/sdk/rift.js"))
         .send()
         .await
         .unwrap();
@@ -399,6 +399,6 @@ async fn serve_relay_js() {
     let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
     assert!(ct.contains("javascript"));
     let body = resp.text().await.unwrap();
-    assert!(body.contains("Relay"));
+    assert!(body.contains("Rift"));
     assert!(body.contains("/v1/sdk/click"));
 }

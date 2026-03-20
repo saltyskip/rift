@@ -246,17 +246,17 @@ export default function Home() {
                 </thead>
                 <tbody>
                   {[
-                    { feature: "Short links", bitly: true, branch: true, relay: true },
-                    { feature: "Deep links", bitly: false, branch: true, relay: true },
-                    { feature: "Install attribution", bitly: false, branch: true, relay: true },
-                    { feature: "Agent-readable", bitly: false, branch: false, relay: true },
-                    { feature: "Self-serve API", bitly: false, branch: false, relay: true },
-                    { feature: "Lightweight SDK", bitly: null, branch: false, relay: true },
-                    { feature: "Pay per request", bitly: false, branch: false, relay: true },
+                    { feature: "Short links", bitly: true, branch: true, rift: true },
+                    { feature: "Deep links", bitly: false, branch: true, rift: true },
+                    { feature: "Install attribution", bitly: false, branch: true, rift: true },
+                    { feature: "Agent-readable", bitly: false, branch: false, rift: true },
+                    { feature: "Self-serve API", bitly: false, branch: false, rift: true },
+                    { feature: "Lightweight SDK", bitly: null, branch: false, rift: true },
+                    { feature: "Pay per request", bitly: false, branch: false, rift: true },
                   ].map((row, i) => (
                     <tr key={row.feature} className={i % 2 === 0 ? "bg-[#111113]" : "bg-[#0e0e10]"}>
                       <td className="px-5 py-3 text-[#a1a1aa] border-b border-[#222225]/50">{row.feature}</td>
-                      {[row.bitly, row.branch, row.relay].map((val, j) => (
+                      {[row.bitly, row.branch, row.rift].map((val, j) => (
                         <td key={j} className="text-center px-5 py-3 border-b border-[#222225]/50">
                           {val === true ? (
                             <span className={j === 2 ? "text-[#2dd4bf]" : "text-[#52525b]"}>&#10003;</span>

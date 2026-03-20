@@ -26,7 +26,7 @@ export default function DeferredPage() {
         <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Deferred Deep Linking</h1>
         <p className="text-lg text-[#71717a] leading-relaxed">
           Route users to specific content even if they didn&apos;t have the app installed when they clicked.
-          Relay generates a token on click and delivers it to the app after install.
+          Rift generates a token on click and delivers it to the app after install.
         </p>
       </div>
 
@@ -34,9 +34,9 @@ export default function DeferredPage() {
         <section className="space-y-6">
           <Step n={1} title="How it works">
             <ol className="list-decimal pl-5 space-y-1">
-              <li>User clicks a Relay link on mobile</li>
-              <li>Relay generates a token and stores it with the click</li>
-              <li><strong className="text-[#fafafa]">iOS:</strong> token is copied to clipboard as <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">relay:&lt;token&gt;</code></li>
+              <li>User clicks a Rift link on mobile</li>
+              <li>Rift generates a token and stores it with the click</li>
+              <li><strong className="text-[#fafafa]">iOS:</strong> token is copied to clipboard as <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">rift:&lt;token&gt;</code></li>
               <li><strong className="text-[#fafafa]">Android:</strong> token is appended to the Play Store URL as an install referrer</li>
               <li>User installs the app and opens it</li>
               <li>App reads the token and sends it to <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">POST /v1/deferred</code></li>
@@ -46,9 +46,9 @@ export default function DeferredPage() {
           <Step n={2} title="iOS — Read from clipboard">
             <CodeBlock lang="swift">{`func checkDeferredDeepLink() {
     guard let clipboard = UIPasteboard.general.string,
-          clipboard.hasPrefix("relay:") else { return }
+          clipboard.hasPrefix("rift:") else { return }
 
-    let token = String(clipboard.dropFirst("relay:".count))
+    let token = String(clipboard.dropFirst("rift:".count))
     UIPasteboard.general.string = ""  // Clear after reading
     resolveDeferred(token: token)
 }`}</CodeBlock>
@@ -61,7 +61,7 @@ client.startConnection(object : InstallReferrerStateListener {
         if (code == InstallReferrerResponse.OK) {
             val referrer = client.installReferrer.installReferrer
             val token = Uri.parse("?\$referrer")
-                .getQueryParameter("relay_token")
+                .getQueryParameter("rift_token")
             if (token != null) resolveDeferred(token)
         }
         client.endConnection()

@@ -109,7 +109,7 @@ async fn main() {
         .layer(CorsLayer::permissive());
 
     let addr = cfg.bind_addr();
-    tracing::info!("Starting Relay on {addr}");
+    tracing::info!("Starting Rift on {addr}");
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await

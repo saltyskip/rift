@@ -15,7 +15,7 @@ export function Logo({ className, size = 22 }: LogoProps) {
         R
       </span>
       <span className="text-[15px] font-semibold tracking-[-0.02em]">
-        Relay
+        Rift
       </span>
     </span>
   );

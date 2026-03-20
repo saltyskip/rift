@@ -3,7 +3,7 @@ import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 
 export const metadata: Metadata = {
   title: "Custom Domains — Rift Docs",
-  description: "Use your own brand domain for deep links with Relay custom domains.",
+  description: "Use your own brand domain for deep links with Rift custom domains.",
 };
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
@@ -77,7 +77,7 @@ export default function DomainsPage() {
 
           <Step n={3} title="Deploy the edge worker">
             <p>
-              Relay needs a lightweight Cloudflare Worker on your domain to forward requests
+              Rift needs a lightweight Cloudflare Worker on your domain to forward requests
               to the API. Create a new Worker in your Cloudflare dashboard with this code:
             </p>
             <CodeBlock lang="javascript">{`export default {
@@ -87,7 +87,7 @@ export default function DomainsPage() {
     const origin = "https://api.riftl.ink";
     const upstream = new URL(url.pathname + url.search, origin);
     const headers = new Headers(request.headers);
-    headers.set("X-Relay-Host", host);
+    headers.set("X-Rift-Host", host);
     const response = await fetch(upstream.toString(), {
       method: request.method,
       headers,
@@ -116,7 +116,7 @@ export default function DomainsPage() {
                   </tr>
                   <tr>
                     <td className="px-4 py-2.5">Worker</td>
-                    <td className="px-4 py-2.5 font-mono">your-relay-worker</td>
+                    <td className="px-4 py-2.5 font-mono">your-rift-worker</td>
                   </tr>
                 </tbody>
               </table>

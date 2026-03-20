@@ -61,7 +61,7 @@ export default function QuickStartPage() {
               { title: "Register Your App", desc: "Configure iOS & Android app details for branding and association files.", href: "/docs/apps" },
               { title: "Custom Domains", desc: "Use your own brand for links: go.yourcompany.com/summer-sale.", href: "/docs/domains" },
               { title: "Create Links", desc: "Create deep links with per-platform destinations and metadata.", href: "/docs/links" },
-              { title: "Web SDK", desc: "Add download buttons to your website with relay.js.", href: "/docs/web-sdk" },
+              { title: "Web SDK", desc: "Add download buttons to your website with rift.js.", href: "/docs/web-sdk" },
             ].map((item) => (
               <a
                 key={item.title}

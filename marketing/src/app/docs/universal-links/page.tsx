@@ -3,7 +3,7 @@ import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 
 export const metadata: Metadata = {
   title: "Universal Links — Rift Docs",
-  description: "Configure iOS Associated Domains and Android App Links with Relay.",
+  description: "Configure iOS Associated Domains and Android App Links with Rift.",
 };
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
@@ -25,7 +25,7 @@ export default function UniversalLinksPage() {
         <p className="text-[13px] font-medium text-[#2dd4bf] uppercase tracking-widest mb-3">Deep Linking</p>
         <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Universal Links</h1>
         <p className="text-lg text-[#71717a] leading-relaxed">
-          Once your app is registered and domain verified, Relay automatically serves
+          Once your app is registered and domain verified, Rift automatically serves
           the association files. You just need to configure your apps to use them.
         </p>
       </div>
@@ -50,7 +50,7 @@ export default function UniversalLinksPage() {
             </p>
             <CodeBlock>{`applinks:go.yourcompany.com`}</CodeBlock>
             <p>
-              Relay serves the AASA file at{" "}
+              Rift serves the AASA file at{" "}
               <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">
                 https://go.yourcompany.com/.well-known/apple-app-site-association
               </code>
@@ -71,7 +71,7 @@ export default function UniversalLinksPage() {
     </intent-filter>
 </activity>`}</CodeBlock>
             <p>
-              Relay serves the assetlinks file at{" "}
+              Rift serves the assetlinks file at{" "}
               <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">
                 https://go.yourcompany.com/.well-known/assetlinks.json
               </code>

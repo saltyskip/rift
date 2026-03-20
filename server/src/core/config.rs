@@ -48,7 +48,7 @@ impl Config {
 
             resend_api_key: std::env::var("RESEND_API_KEY").unwrap_or_default(),
             resend_from_email: std::env::var("RESEND_FROM_EMAIL")
-                .unwrap_or_else(|_| "Relay <noreply@updates.riftl.ink>".to_string()),
+                .unwrap_or_else(|_| "Rift <noreply@updates.riftl.ink>".to_string()),
 
             public_url: std::env::var("PUBLIC_URL")
                 .unwrap_or_else(|_| "http://localhost:3000".to_string()),
@@ -70,7 +70,7 @@ impl Config {
             cdp_api_key_secret: std::env::var("CDP_API_KEY_SECRET").unwrap_or_default(),
 
             x402_description: std::env::var("X402_DESCRIPTION")
-                .unwrap_or_else(|_| "Relay API request".to_string()),
+                .unwrap_or_else(|_| "Rift API request".to_string()),
 
             primary_domain: std::env::var("PRIMARY_DOMAIN")
                 .unwrap_or_else(|_| "riftl.ink".to_string()),

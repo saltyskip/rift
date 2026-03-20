@@ -313,7 +313,7 @@ pub async fn resolve_link_custom(
     }
 
     let host = headers
-        .get("x-relay-host")
+        .get("x-rift-host")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_lowercase());
 
@@ -529,7 +529,7 @@ async fn do_resolve(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Relay — {link_id}</title>
+    <title>Rift — {link_id}</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
@@ -550,7 +550,7 @@ async fn do_resolve(
 </head>
 <body>
     <div class="container">
-        <div class="logo">Relay</div>
+        <div class="logo">Rift</div>
         <h1>Link: {link_id}</h1>
         <p>No destination configured for this link.</p>
     </div>
@@ -888,7 +888,7 @@ fn render_smart_landing_page(
                 "{}{}referrer={}",
                 store_url,
                 sep,
-                urlencoding(&format!("relay_token={}", token.unwrap_or("")))
+                urlencoding(&format!("rift_token={}", token.unwrap_or("")))
             )
         } else {
             store_url.to_string()
@@ -944,7 +944,7 @@ fn render_smart_landing_page(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{og_title} — Relay</title>
+    <title>{og_title} — Rift</title>
     <meta property="og:title" content="{og_title_escaped}" />
     <meta property="og:description" content="{og_desc_escaped}" />
 {og_image_tag}
@@ -995,7 +995,7 @@ fn render_smart_landing_page(
 
         // Copy deferred deep link token to clipboard (iOS only).
         if (platform === "ios" && token && navigator.clipboard) {{
-            navigator.clipboard.writeText("relay:" + token).catch(function(){{}});
+            navigator.clipboard.writeText("rift:" + token).catch(function(){{}});
         }}
 
         var btn = document.getElementById("open-btn");

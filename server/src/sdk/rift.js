@@ -9,7 +9,7 @@
     return "other";
   }
 
-  var Relay = {
+  var Rift = {
     open: function(linkId, opts) {
       if (typeof window === "undefined") return;
       opts = opts || {};
@@ -24,7 +24,7 @@
       .then(function(r) { return r.json(); })
       .then(function(data) {
         if (platform === "ios" && data.token && navigator.clipboard) {
-          navigator.clipboard.writeText("relay:" + data.token).catch(function(){});
+          navigator.clipboard.writeText("rift:" + data.token).catch(function(){});
         }
 
         var deepLink = platform === "ios" ? data.ios_deep_link
@@ -36,7 +36,7 @@
 
         if (platform === "android" && storeUrl && data.token) {
           var sep = storeUrl.indexOf("?") >= 0 ? "&" : "?";
-          storeUrl += sep + "referrer=" + encodeURIComponent("relay_token=" + data.token);
+          storeUrl += sep + "referrer=" + encodeURIComponent("rift_token=" + data.token);
         }
 
         if (deepLink) {
@@ -66,6 +66,6 @@
     }
   };
 
-  if (typeof window !== "undefined") window.Relay = Relay;
-  if (typeof module !== "undefined") module.exports = Relay;
+  if (typeof window !== "undefined") window.Rift = Rift;
+  if (typeof module !== "undefined") module.exports = Rift;
 })();

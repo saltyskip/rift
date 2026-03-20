@@ -25,7 +25,7 @@ export default function AppsPage() {
         <p className="text-[13px] font-medium text-[#2dd4bf] uppercase tracking-widest mb-3">Getting Started</p>
         <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Register Your App</h1>
         <p className="text-lg text-[#71717a] leading-relaxed">
-          Register your iOS and/or Android app so Relay can serve association files
+          Register your iOS and/or Android app so Rift can serve association files
           (AASA &amp; assetlinks) and display your branding on smart landing pages.
         </p>
       </div>

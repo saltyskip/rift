@@ -1,8 +1,8 @@
 /**
- * Relay Edge Worker
+ * Rift Edge Worker
  *
- * Routes custom domain traffic to the Relay API origin,
- * forwarding the original Host as X-Relay-Host (custom header
+ * Routes custom domain traffic to the Rift API origin,
+ * forwarding the original Host as X-Rift-Host (custom header
  * to avoid Cloudflare overwriting X-Forwarded-Host on outbound fetches).
  */
 
@@ -15,9 +15,9 @@ export default {
     const origin = env.API_ORIGIN || "https://api.riftl.ink";
     const upstream = new URL(url.pathname + url.search, origin);
 
-    // Forward the request with the original Host as X-Relay-Host.
+    // Forward the request with the original Host as X-Rift-Host.
     const headers = new Headers(request.headers);
-    headers.set("X-Relay-Host", host);
+    headers.set("X-Rift-Host", host);
 
     const response = await fetch(upstream.toString(), {
       method: request.method,

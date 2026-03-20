@@ -8,12 +8,12 @@ const FRAMEWORKS = [
     id: "html",
     label: "HTML",
     lang: "html",
-    code: `<script src="https://cdn.riftl.ink/relay.js"></script>
+    code: `<script src="https://cdn.riftl.ink/rift.js"></script>
 
-<button onclick="Relay.open('summer-sale')">
+<button onclick="Rift.open('summer-sale')">
   Get the App
 </button>`,
-    notes: "Drop the script tag anywhere in your page. The global `Relay` object is available immediately after load.",
+    notes: "Drop the script tag anywhere in your page. The global `Rift` object is available immediately after load.",
   },
   {
     id: "nextjs",
@@ -26,26 +26,26 @@ export function DownloadButton({ linkId }) {
   return (
     <>
       <Script
-        src="https://cdn.riftl.ink/relay.js"
+        src="https://cdn.riftl.ink/rift.js"
         strategy="lazyOnload"
       />
-      <button onClick={() => window.Relay?.open(linkId)}>
+      <button onClick={() => window.Rift?.open(linkId)}>
         Get the App
       </button>
     </>
   );
 }`,
-    notes: 'Must be a Client Component ("use client") in the App Router. Use `window.Relay?.open()` with optional chaining since the script loads async. `strategy="lazyOnload"` avoids blocking page render.',
+    notes: 'Must be a Client Component ("use client") in the App Router. Use `window.Rift?.open()` with optional chaining since the script loads async. `strategy="lazyOnload"` avoids blocking page render.',
   },
   {
     id: "svelte",
     label: "Svelte",
     lang: "svelte",
     code: `<svelte:head>
-  <script src="https://cdn.riftl.ink/relay.js"></script>
+  <script src="https://cdn.riftl.ink/rift.js"></script>
 </svelte:head>
 
-<button on:click={() => window.Relay?.open('summer-sale')}>
+<button on:click={() => window.Rift?.open('summer-sale')}>
   Get the App
 </button>`,
     notes: "Use `<svelte:head>` to load the script. Optional chaining handles cases where the script hasn't loaded yet.",
@@ -59,14 +59,14 @@ import { onMounted, ref } from "vue";
 const ready = ref(false);
 onMounted(() => {
   const s = document.createElement("script");
-  s.src = "https://cdn.riftl.ink/relay.js";
+  s.src = "https://cdn.riftl.ink/rift.js";
   s.onload = () => { ready.value = true; };
   document.head.appendChild(s);
 });
 </script>
 
 <template>
-  <button @click="window.Relay?.open('summer-sale')">
+  <button @click="window.Rift?.open('summer-sale')">
     Get the App
   </button>
 </template>`,
@@ -121,7 +121,7 @@ export default function WebSdkPage() {
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">
-              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">Relay.open(linkId, opts?)</code>
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">Rift.open(linkId, opts?)</code>
             </h3>
             <p className="text-[15px] text-[#a1a1aa]">
               Records a click, writes the deferred deep link token, and navigates the user
@@ -159,13 +159,13 @@ export default function WebSdkPage() {
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">
-              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">Relay.getLink(linkId, opts?)</code>
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">Rift.getLink(linkId, opts?)</code>
             </h3>
             <p className="text-[15px] text-[#a1a1aa]">
               Fetches link data without navigating. Returns a Promise with the link metadata.
               Useful for building custom UI based on link data.
             </p>
-            <CodeBlock lang="javascript">{`const link = await Relay.getLink("summer-sale");
+            <CodeBlock lang="javascript">{`const link = await Rift.getLink("summer-sale");
 document.getElementById("title").textContent = link.metadata.title;`}</CodeBlock>
           </div>
         </section>
@@ -178,14 +178,14 @@ document.getElementById("title").textContent = link.metadata.title;`}</CodeBlock
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">Self-hosted API</h3>
-            <CodeBlock lang="javascript">{`Relay.open("summer-sale", {
+            <CodeBlock lang="javascript">{`Rift.open("summer-sale", {
   baseUrl: "https://api.yourcompany.com"
 });`}</CodeBlock>
           </div>
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">Custom callback</h3>
-            <CodeBlock lang="javascript">{`Relay.open("summer-sale", {
+            <CodeBlock lang="javascript">{`Rift.open("summer-sale", {
   onComplete: function(data) {
     console.log("Platform:", data.platform);
     console.log("Token:", data.token);
@@ -195,7 +195,7 @@ document.getElementById("title").textContent = link.metadata.title;`}</CodeBlock
     });
   },
   onError: function(err) {
-    console.error("Relay error:", err);
+    console.error("Rift error:", err);
   }
 });`}</CodeBlock>
           </div>
@@ -208,13 +208,13 @@ document.getElementById("title").textContent = link.metadata.title;`}</CodeBlock
           <h2 className="text-2xl font-bold text-[#fafafa]">How it works</h2>
           <ol className="list-decimal pl-5 space-y-2 text-[15px] text-[#a1a1aa]">
             <li>
-              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">Relay.open()</code>{" "}
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">Rift.open()</code>{" "}
               sends a <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/sdk/click</code> to
               record the click and get a deferred deep link token.
             </li>
             <li>
               <strong className="text-[#fafafa]">iOS:</strong> the token is written to the clipboard
-              as <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">relay:&lt;token&gt;</code> for
+              as <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">rift:&lt;token&gt;</code> for
               deferred deep linking.
             </li>
             <li>
