@@ -203,7 +203,59 @@ export default function DocsPage() {
               </div>
             </Step>
 
-            <Step n={7} title="Verify ownership">
+            <Step n={7} title="Deploy the edge worker">
+              <p>
+                Relay needs a lightweight Cloudflare Worker on your domain to forward requests
+                to the API. Create a new Worker in your Cloudflare dashboard with this code:
+              </p>
+              <CodeBlock>{`export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const host = url.hostname;
+    const origin = "https://api.riftl.ink";
+    const upstream = new URL(url.pathname + url.search, origin);
+    const headers = new Headers(request.headers);
+    headers.set("X-Forwarded-Host", host);
+    const response = await fetch(upstream.toString(), {
+      method: request.method,
+      headers,
+      body: request.method !== "GET" && request.method !== "HEAD"
+        ? request.body : undefined,
+      redirect: "manual",
+    });
+    return response;
+  },
+};`}</CodeBlock>
+              <p>
+                Then add a <strong className="text-[#fafafa]">Worker Route</strong> on your zone:
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px] border border-[#1e1e22] rounded-lg overflow-hidden">
+                  <thead>
+                    <tr className="bg-[#0c0c0e]">
+                      <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Setting</th>
+                      <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-[#a1a1aa]">
+                    <tr className="border-b border-[#1e1e22]">
+                      <td className="px-4 py-2.5">Route pattern</td>
+                      <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">go.yourcompany.com/*</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-2.5">Worker</td>
+                      <td className="px-4 py-2.5 font-mono">your-relay-worker</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p>
+                Make sure the CNAME record for your subdomain is set to{" "}
+                <strong className="text-[#fafafa]">Proxied</strong> (orange cloud) in Cloudflare.
+              </p>
+            </Step>
+
+            <Step n={8} title="Verify ownership">
               <p>Once DNS has propagated:</p>
               <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/domains/go.yourcompany.com/verify \\
   -H "Authorization: Bearer rl_live_YOUR_KEY"`}</CodeBlock>
@@ -220,7 +272,7 @@ export default function DocsPage() {
               the association files. You just need to configure your apps to use them.
             </p>
 
-            <Step n={8} title="iOS — Associated Domains">
+            <Step n={9} title="iOS — Associated Domains">
               <p>
                 In Xcode, go to <strong className="text-[#fafafa]">Signing &amp; Capabilities</strong> &rarr;{" "}
                 <strong className="text-[#fafafa]">+ Capability</strong> &rarr;{" "}
@@ -235,7 +287,7 @@ export default function DocsPage() {
               </p>
             </Step>
 
-            <Step n={9} title="Android — Intent Filters">
+            <Step n={10} title="Android — Intent Filters">
               <p>
                 Add an intent filter to your <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">AndroidManifest.xml</code>:
               </p>
@@ -262,7 +314,7 @@ export default function DocsPage() {
           {/* ── 5. Create a deep link ── */}
           <section className="space-y-6">
             <SectionHeading id="create-link">5. Create a deep link</SectionHeading>
-            <Step n={10} title="Create a link with per-platform destinations">
+            <Step n={11} title="Create a link with per-platform destinations">
               <p>
                 Specify where each platform should go — deep link URI, store URL, and web fallback:
               </p>
@@ -289,7 +341,7 @@ export default function DocsPage() {
 }`}</CodeBlock>
             </Step>
 
-            <Step n={11} title="How resolution works">
+            <Step n={12} title="How resolution works">
               <p>When a user clicks the link, Relay detects their platform and serves a smart landing page that:</p>
               <ul className="list-disc pl-5 space-y-1">
                 <li><strong className="text-[#fafafa]">iOS</strong> — attempts to open the deep link, falls back to the App Store</li>
@@ -325,7 +377,7 @@ export default function DocsPage() {
           <section className="space-y-6">
             <SectionHeading id="handle-links">6. Handle incoming links</SectionHeading>
 
-            <Step n={12} title="iOS — SceneDelegate or AppDelegate">
+            <Step n={13} title="iOS — SceneDelegate or AppDelegate">
               <CodeBlock>{`// SceneDelegate.swift
 func scene(_ scene: UIScene,
            continue userActivity: NSUserActivity) {
@@ -339,7 +391,7 @@ func scene(_ scene: UIScene,
 }`}</CodeBlock>
             </Step>
 
-            <Step n={13} title="Android — Intent handling">
+            <Step n={14} title="Android — Intent handling">
               <CodeBlock>{`// MainActivity.kt
 override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -361,7 +413,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
               Relay generates a token on click and delivers it to the app after install.
             </p>
 
-            <Step n={14} title="How it works">
+            <Step n={15} title="How it works">
               <ol className="list-decimal pl-5 space-y-1">
                 <li>User clicks a Relay link on mobile</li>
                 <li>Relay generates a token and stores it with the click</li>
@@ -372,7 +424,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
               </ol>
             </Step>
 
-            <Step n={15} title="iOS — Read from clipboard">
+            <Step n={16} title="iOS — Read from clipboard">
               <CodeBlock>{`func checkDeferredDeepLink() {
     guard let clipboard = UIPasteboard.general.string,
           clipboard.hasPrefix("relay:") else { return }
@@ -383,7 +435,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
 }`}</CodeBlock>
             </Step>
 
-            <Step n={16} title="Android — Read from install referrer">
+            <Step n={17} title="Android — Read from install referrer">
               <CodeBlock>{`val client = InstallReferrerClient.newBuilder(this).build()
 client.startConnection(object : InstallReferrerStateListener {
     override fun onInstallReferrerSetupFinished(code: Int) {
@@ -399,7 +451,7 @@ client.startConnection(object : InstallReferrerStateListener {
 })`}</CodeBlock>
             </Step>
 
-            <Step n={17} title="Resolve the token">
+            <Step n={18} title="Resolve the token">
               <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/deferred \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -425,7 +477,7 @@ client.startConnection(object : InstallReferrerStateListener {
           <section className="space-y-6">
             <SectionHeading id="attribution">8. Attribution</SectionHeading>
 
-            <Step n={18} title="Report an install">
+            <Step n={19} title="Report an install">
               <p>After the app is installed and opened, report the attribution:</p>
               <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/attribution \\
   -H "Content-Type: application/json" \\
@@ -436,7 +488,7 @@ client.startConnection(object : InstallReferrerStateListener {
   }'`}</CodeBlock>
             </Step>
 
-            <Step n={19} title="Link attribution to a user">
+            <Step n={20} title="Link attribution to a user">
               <p>After the user signs up or logs in, connect the attribution to their account:</p>
               <CodeBlock>{`curl -X PUT https://api.riftl.ink/v1/attribution/link \\
   -H "Authorization: Bearer rl_live_YOUR_KEY" \\
@@ -451,7 +503,7 @@ client.startConnection(object : InstallReferrerStateListener {
           <section className="space-y-6">
             <SectionHeading id="analytics">9. Analytics</SectionHeading>
 
-            <Step n={20} title="View link stats">
+            <Step n={21} title="View link stats">
               <CodeBlock>{`curl https://api.riftl.ink/v1/links/summer-sale/stats \\
   -H "Authorization: Bearer rl_live_YOUR_KEY"`}</CodeBlock>
               <p>Response:</p>
