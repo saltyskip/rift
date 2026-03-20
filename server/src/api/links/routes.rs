@@ -313,7 +313,7 @@ pub async fn resolve_link_custom(
     }
 
     let host = headers
-        .get("x-forwarded-host")
+        .get("x-relay-host")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_lowercase());
 

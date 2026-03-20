@@ -242,10 +242,10 @@ pub async fn serve_assetlinks(
 
 // ── Helpers ──
 
-/// Resolve tenant from X-Forwarded-Host header (same pattern as resolve_link_custom).
+/// Resolve tenant from X-Relay-Host header (custom header to avoid Cloudflare overwriting X-Forwarded-Host).
 async fn resolve_tenant_from_host(state: &Arc<AppState>, headers: &HeaderMap) -> Option<ObjectId> {
     let host = headers
-        .get("x-forwarded-host")
+        .get("x-relay-host")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_lowercase())?;
 

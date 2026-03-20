@@ -2,8 +2,8 @@
  * Relay Edge Worker
  *
  * Routes custom domain traffic to the Relay API origin,
- * forwarding the original Host header as X-Forwarded-Host
- * so the API can resolve links for the correct tenant.
+ * forwarding the original Host as X-Relay-Host (custom header
+ * to avoid Cloudflare overwriting X-Forwarded-Host on outbound fetches).
  */
 
 export default {
@@ -15,9 +15,9 @@ export default {
     const origin = env.API_ORIGIN || "https://api.riftl.ink";
     const upstream = new URL(url.pathname + url.search, origin);
 
-    // Forward the request with the original Host as X-Forwarded-Host.
+    // Forward the request with the original Host as X-Relay-Host.
     const headers = new Headers(request.headers);
-    headers.set("X-Forwarded-Host", host);
+    headers.set("X-Relay-Host", host);
 
     const response = await fetch(upstream.toString(), {
       method: request.method,
