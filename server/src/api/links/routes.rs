@@ -455,19 +455,30 @@ async fn do_resolve(
         || link.android_store_url.is_some();
 
     if has_platform_destinations {
-        // Fetch app branding from apps_repo.
+        // Fetch app branding from apps_repo, preferring the detected platform.
         let (app_name, icon_url, theme_color) = if let Some(apps_repo) = &state.apps_repo {
-            let ios_app = apps_repo
-                .find_by_tenant_platform(&link.tenant_id, "ios")
+            let preferred = match platform {
+                Platform::Ios => "ios",
+                Platform::Android => "android",
+                Platform::Other => "ios",
+            };
+            let fallback = match platform {
+                Platform::Ios => "android",
+                Platform::Android => "ios",
+                Platform::Other => "android",
+            };
+            let app = apps_repo
+                .find_by_tenant_platform(&link.tenant_id, preferred)
                 .await
                 .ok()
-                .flatten();
-            let android_app = apps_repo
-                .find_by_tenant_platform(&link.tenant_id, "android")
-                .await
-                .ok()
-                .flatten();
-            let app = ios_app.or(android_app);
+                .flatten()
+                .or(
+                    apps_repo
+                        .find_by_tenant_platform(&link.tenant_id, fallback)
+                        .await
+                        .ok()
+                        .flatten(),
+                );
             (
                 app.as_ref().and_then(|a| a.app_name.clone()),
                 app.as_ref().and_then(|a| a.icon_url.clone()),
@@ -595,6 +606,13 @@ pub async fn resolve_deferred(
     let Some(click) = repo.find_click_by_token(&req.token).await.ok().flatten() else {
         return not_matched.into_response();
     };
+
+    // Reject tokens older than 48 hours.
+    let token_age_ms = mongodb::bson::DateTime::now().timestamp_millis()
+        - click.clicked_at.timestamp_millis();
+    if token_age_ms > 48 * 60 * 60 * 1000 {
+        return not_matched.into_response();
+    }
 
     let Some(link) = repo.find_link_by_id(&click.link_id).await.ok().flatten() else {
         return not_matched.into_response();
@@ -902,7 +920,11 @@ fn render_smart_landing_page(
             btn.href = deepLink;
             var timeout = setTimeout(function() {{
                 if (storeUrl) {{
-                    msg.innerHTML = "App not installed? <a href=\"" + storeUrl + "\">Get it here</a>";
+                    msg.textContent = "App not installed? ";
+                    var a = document.createElement("a");
+                    a.href = storeUrl;
+                    a.textContent = "Get it here";
+                    msg.appendChild(a);
                 }} else if (webUrl) {{
                     window.location.replace(webUrl);
                 }}
@@ -953,7 +975,7 @@ fn generate_link_id() -> String {
 fn generate_token() -> String {
     use rand::Rng;
     let mut rng = rand::rng();
-    let bytes: [u8; 8] = rng.random();
+    let bytes: [u8; 16] = rng.random();
     hex::encode(bytes)
 }
 

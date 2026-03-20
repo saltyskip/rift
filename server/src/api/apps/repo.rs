@@ -87,7 +87,11 @@ impl AppsRepository for AppsRepo {
             .upsert(true)
             .await
             .map_err(|e| e.to_string())?;
-        Ok(app)
+
+        // Re-fetch so we return the actual document (correct _id and created_at).
+        self.find_by_tenant_platform(&app.tenant_id, &app.platform)
+            .await?
+            .ok_or_else(|| "App not found after upsert".to_string())
     }
 
     async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<App>, String> {
