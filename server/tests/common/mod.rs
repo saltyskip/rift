@@ -5,9 +5,9 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-use relay::api::auth::repo::{ApiKeyDoc, AuthRepository};
-use relay::api::AppState;
-use relay::core::config::Config;
+use rift::api::auth::repo::{ApiKeyDoc, AuthRepository};
+use rift::api::AppState;
+use rift::core::config::Config;
 
 use mocks::{MockAppsRepo, MockAuthRepo, MockDomainsRepo, MockLinksRepo};
 
@@ -55,17 +55,17 @@ pub async fn spawn_app() -> TestApp {
 
     let state = Arc::new(AppState {
         auth_repo: Some(auth_repo.clone() as Arc<dyn AuthRepository>),
-        links_repo: Some(links_repo.clone() as Arc<dyn relay::api::links::repo::LinksRepository>),
+        links_repo: Some(links_repo.clone() as Arc<dyn rift::api::links::repo::LinksRepository>),
         domains_repo: Some(
-            domains_repo.clone() as Arc<dyn relay::api::domains::repo::DomainsRepository>,
+            domains_repo.clone() as Arc<dyn rift::api::domains::repo::DomainsRepository>,
         ),
-        apps_repo: Some(apps_repo.clone() as Arc<dyn relay::api::apps::repo::AppsRepository>),
+        apps_repo: Some(apps_repo.clone() as Arc<dyn rift::api::apps::repo::AppsRepository>),
         config,
         facilitator: None,
         x402_price_tags: vec![],
     });
 
-    let app = relay::api::router(state.clone())
+    let app = rift::api::router(state.clone())
         .with_state(state)
         .into_make_service();
 

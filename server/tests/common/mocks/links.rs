@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
 use std::sync::Mutex;
 
-use relay::api::links::models::{Click, Link};
-use relay::api::links::repo::LinksRepository;
+use rift::api::links::models::{Click, Link};
+use rift::api::links::repo::LinksRepository;
 
 struct Attribution {
     tenant_id: ObjectId,
