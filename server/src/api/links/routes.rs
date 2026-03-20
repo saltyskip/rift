@@ -902,42 +902,42 @@ fn render_smart_landing_page(
         var webUrl = "{web_url_js}";
         var token = "{token_js}";
 
+        // Copy deferred deep link token to clipboard (iOS only).
         if (platform === "ios" && token && navigator.clipboard) {{
             navigator.clipboard.writeText("relay:" + token).catch(function(){{}});
-        }}
-
-        if (platform === "other") {{
-            if (webUrl) {{
-                window.location.replace(webUrl);
-            }}
-            return;
         }}
 
         var btn = document.getElementById("open-btn");
         var msg = document.getElementById("fallback-msg");
 
-        if (deepLink) {{
-            btn.href = deepLink;
-            var timeout = setTimeout(function() {{
-                if (storeUrl) {{
-                    msg.textContent = "App not installed? ";
-                    var a = document.createElement("a");
-                    a.href = storeUrl;
-                    a.textContent = "Get it here";
-                    msg.appendChild(a);
-                }} else if (webUrl) {{
-                    window.location.replace(webUrl);
-                }}
-            }}, 1500);
-
-            window.addEventListener("pagehide", function() {{
-                clearTimeout(timeout);
-            }});
-        }} else if (storeUrl) {{
-            btn.href = storeUrl;
-            btn.textContent = "Get the App";
-        }} else if (webUrl) {{
-            window.location.replace(webUrl);
+        if (platform === "ios" || platform === "android") {{
+            if (deepLink) {{
+                // Mobile with deep link: button opens app, fallback to store.
+                btn.href = deepLink;
+                btn.addEventListener("click", function() {{
+                    setTimeout(function() {{
+                        if (storeUrl) {{
+                            window.location.href = storeUrl;
+                        }}
+                    }}, 1500);
+                }});
+            }} else if (storeUrl) {{
+                // Mobile without deep link: button goes to store.
+                btn.href = storeUrl;
+                btn.textContent = "Get {app_name_escaped}";
+            }} else if (webUrl) {{
+                btn.href = webUrl;
+                btn.textContent = "Continue";
+            }}
+        }} else {{
+            // Desktop: button goes to web URL or store.
+            if (webUrl) {{
+                btn.href = webUrl;
+                btn.textContent = "Continue";
+            }} else if (storeUrl) {{
+                btn.href = storeUrl;
+                btn.textContent = "Get {app_name_escaped}";
+            }}
         }}
     }})();
     </script>
