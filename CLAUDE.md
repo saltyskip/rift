@@ -42,6 +42,14 @@ Public endpoints (landing page, attribution reporting) resolve the tenant from t
 - All route handlers must have `#[tracing::instrument]` for Sentry visibility
 - `ErrorResponse` lives in `error.rs` and is shared across all slices
 
+## Clippy & Warnings
+
+- **Always run `cargo clippy -- -D warnings`** — CI treats warnings as errors, so must you
+- **Never suppress warnings** with `#[allow(...)]` — fix the root cause instead
+- If clippy complains about too many arguments, use a struct or builder pattern
+- If clippy complains about redundant closures, pass the function directly
+- If an import is unused, remove it — don't `#[allow(unused_imports)]`
+
 ## Environment Variables
 
 | Variable | Required | Purpose |
