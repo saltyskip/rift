@@ -1,6 +1,7 @@
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect, Response};
+use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -8,6 +9,7 @@ use uuid::Uuid;
 use super::models::*;
 use super::repo::LinksRepository;
 use crate::api::auth::middleware::TenantId;
+use crate::api::domains::repo::DomainsRepository;
 use crate::api::AppState;
 
 // ── Platform Detection ──
@@ -77,7 +79,23 @@ pub async fn create_link(
                 )
                     .into_response();
             }
-            if repo.find_link_by_id(custom).await.ok().flatten().is_some() {
+
+            // Custom IDs require a verified custom domain.
+            if !tenant_has_verified_domain(state.domains_repo.as_deref(), &tenant.0).await {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "Custom IDs require a verified custom domain", "code": "no_verified_domain" })),
+                )
+                    .into_response();
+            }
+
+            if repo
+                .find_link_by_tenant_and_id(&tenant.0, custom)
+                .await
+                .ok()
+                .flatten()
+                .is_some()
+            {
                 return (StatusCode::CONFLICT, Json(json!({ "error": format!("'{}' is already taken", custom), "code": "link_id_taken" }))).into_response();
             }
             custom.clone()
@@ -89,19 +107,27 @@ pub async fn create_link(
         .metadata
         .and_then(|v| mongodb::bson::to_document(&v).ok());
 
-    match repo
-        .create_link(
-            tenant.0,
-            link_id.clone(),
-            req.ios_deep_link,
-            req.android_deep_link,
-            req.web_url,
-            req.ios_store_url,
-            req.android_store_url,
-            metadata,
-        )
-        .await
-    {
+    let mut input = CreateLinkInput::new(tenant.0, link_id.clone());
+    if let Some(v) = req.ios_deep_link {
+        input = input.ios_deep_link(v);
+    }
+    if let Some(v) = req.android_deep_link {
+        input = input.android_deep_link(v);
+    }
+    if let Some(v) = req.web_url {
+        input = input.web_url(v);
+    }
+    if let Some(v) = req.ios_store_url {
+        input = input.ios_store_url(v);
+    }
+    if let Some(v) = req.android_store_url {
+        input = input.android_store_url(v);
+    }
+    if let Some(v) = metadata {
+        input = input.metadata(v);
+    }
+
+    match repo.create_link(input).await {
         Ok(_) => {}
         Err(e) if e.contains("E11000") => {
             return (StatusCode::CONFLICT, Json(json!({ "error": format!("'{}' is already taken", link_id), "code": "link_id_taken" }))).into_response();
@@ -203,21 +229,18 @@ pub async fn get_link_stats(
             .into_response();
     };
 
-    let Some(link) = repo.find_link_by_id(&link_id).await.ok().flatten() else {
+    let Some(_link) = repo
+        .find_link_by_tenant_and_id(&tenant.0, &link_id)
+        .await
+        .ok()
+        .flatten()
+    else {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Link not found", "code": "not_found" })),
         )
             .into_response();
     };
-
-    if link.tenant_id != tenant.0 {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Link not found", "code": "not_found" })),
-        )
-            .into_response();
-    }
 
     let click_count = repo.count_clicks(&tenant.0, &link_id).await.unwrap_or(0);
     let install_count = repo
@@ -365,21 +388,18 @@ pub async fn resolve_link_custom(
             .into_response();
     };
 
-    let Some(link) = repo.find_link_by_id(&link_id).await.ok().flatten() else {
+    let Some(link) = repo
+        .find_link_by_tenant_and_id(&domain.tenant_id, &link_id)
+        .await
+        .ok()
+        .flatten()
+    else {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Link not found", "code": "not_found" })),
         )
             .into_response();
     };
-
-    if link.tenant_id != domain.tenant_id {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Link not found", "code": "not_found" })),
-        )
-            .into_response();
-    }
 
     do_resolve(&state, repo.as_ref(), link, &link_id, &headers).await
 }
@@ -472,13 +492,11 @@ async fn do_resolve(
                 .await
                 .ok()
                 .flatten()
-                .or(
-                    apps_repo
-                        .find_by_tenant_platform(&link.tenant_id, fallback)
-                        .await
-                        .ok()
-                        .flatten(),
-                );
+                .or(apps_repo
+                    .find_by_tenant_platform(&link.tenant_id, fallback)
+                    .await
+                    .ok()
+                    .flatten());
             (
                 app.as_ref().and_then(|a| a.app_name.clone()),
                 app.as_ref().and_then(|a| a.icon_url.clone()),
@@ -505,17 +523,17 @@ async fn do_resolve(
             .and_then(|d| d.get_str("image").ok())
             .map(|s| s.to_string());
 
-        let html = render_smart_landing_page(
+        let html = render_smart_landing_page(&LandingPageContext {
             platform,
-            &link,
-            token.as_deref(),
-            app_name.as_deref(),
-            icon_url.as_deref(),
-            theme_color.as_deref(),
-            meta_title.as_deref(),
-            meta_description.as_deref(),
-            meta_image.as_deref(),
-        );
+            link: &link,
+            token: token.as_deref(),
+            app_name: app_name.as_deref(),
+            icon_url: icon_url.as_deref(),
+            theme_color: theme_color.as_deref(),
+            meta_title: meta_title.as_deref(),
+            meta_description: meta_description.as_deref(),
+            meta_image: meta_image.as_deref(),
+        });
         return (StatusCode::OK, axum::response::Html(html)).into_response();
     }
 
@@ -598,7 +616,43 @@ pub async fn sdk_click(
             .into_response();
     };
 
-    let Some(link) = repo.find_link_by_id(&req.link_id).await.ok().flatten() else {
+    // If a domain is provided, scope the lookup to that domain's tenant.
+    let link = if let Some(ref domain_name) = req.domain {
+        let Some(domains_repo) = &state.domains_repo else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        };
+        let Some(domain) = domains_repo
+            .find_by_domain(domain_name)
+            .await
+            .ok()
+            .flatten()
+        else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        };
+        if !domain.verified {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        }
+        repo.find_link_by_tenant_and_id(&domain.tenant_id, &req.link_id)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        repo.find_link_by_id(&req.link_id).await.ok().flatten()
+    };
+
+    let Some(link) = link else {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Link not found", "code": "not_found" })),
@@ -699,13 +753,18 @@ pub async fn resolve_deferred(
     };
 
     // Reject tokens older than 48 hours.
-    let token_age_ms = mongodb::bson::DateTime::now().timestamp_millis()
-        - click.clicked_at.timestamp_millis();
+    let token_age_ms =
+        mongodb::bson::DateTime::now().timestamp_millis() - click.clicked_at.timestamp_millis();
     if token_age_ms > 48 * 60 * 60 * 1000 {
         return not_matched.into_response();
     }
 
-    let Some(link) = repo.find_link_by_id(&click.link_id).await.ok().flatten() else {
+    let Some(link) = repo
+        .find_link_by_tenant_and_id(&click.tenant_id, &click.link_id)
+        .await
+        .ok()
+        .flatten()
+    else {
         return not_matched.into_response();
     };
 
@@ -762,7 +821,43 @@ pub async fn report_attribution(
             .into_response();
     };
 
-    let Some(link) = repo.find_link_by_id(&req.link_id).await.ok().flatten() else {
+    // If a domain is provided, scope the lookup to that domain's tenant.
+    let link = if let Some(ref domain_name) = req.domain {
+        let Some(domains_repo) = &state.domains_repo else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        };
+        let Some(domain) = domains_repo
+            .find_by_domain(domain_name)
+            .await
+            .ok()
+            .flatten()
+        else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        };
+        if !domain.verified {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        }
+        repo.find_link_by_tenant_and_id(&domain.tenant_id, &req.link_id)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        repo.find_link_by_id(&req.link_id).await.ok().flatten()
+    };
+
+    let Some(link) = link else {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Link not found", "code": "not_found" })),
@@ -851,20 +946,25 @@ pub async fn link_attribution(
 
 // ── Smart Landing Page ──
 
-fn render_smart_landing_page(
+struct LandingPageContext<'a> {
     platform: Platform,
-    link: &Link,
-    token: Option<&str>,
-    app_name: Option<&str>,
-    icon_url: Option<&str>,
-    theme_color: Option<&str>,
-    meta_title: Option<&str>,
-    meta_description: Option<&str>,
-    meta_image: Option<&str>,
-) -> String {
-    let app_name_display = app_name.unwrap_or("App");
-    let theme = theme_color.unwrap_or("#0d9488");
-    let token_js = token.map(|t| js_escape(t)).unwrap_or_default();
+    link: &'a Link,
+    token: Option<&'a str>,
+    app_name: Option<&'a str>,
+    icon_url: Option<&'a str>,
+    theme_color: Option<&'a str>,
+    meta_title: Option<&'a str>,
+    meta_description: Option<&'a str>,
+    meta_image: Option<&'a str>,
+}
+
+fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
+    let app_name_display = ctx.app_name.unwrap_or("App");
+    let theme = ctx.theme_color.unwrap_or("#0d9488");
+    let token_js = ctx.token.map(js_escape).unwrap_or_default();
+    let platform = ctx.platform;
+    let link = ctx.link;
+    let token = ctx.token;
     let platform_js = js_escape(platform.as_str());
 
     let deep_link = match platform {
@@ -898,10 +998,11 @@ fn render_smart_landing_page(
     let web_url = link.web_url.as_deref().unwrap_or("");
     let web_url_js = js_escape(web_url);
 
-    let og_title = meta_title.unwrap_or(app_name_display);
-    let og_description = meta_description.unwrap_or("Open in app");
+    let og_title = ctx.meta_title.unwrap_or(app_name_display);
+    let og_description = ctx.meta_description.unwrap_or("Open in app");
 
-    let og_image_tag = meta_image
+    let og_image_tag = ctx
+        .meta_image
         .map(|img| {
             format!(
                 r#"    <meta property="og:image" content="{}" />"#,
@@ -910,7 +1011,8 @@ fn render_smart_landing_page(
         })
         .unwrap_or_default();
 
-    let icon_html = icon_url
+    let icon_html = ctx
+        .icon_url
         .map(|url| {
             format!(
                 r#"<img src="{}" alt="{}" style="width:64px;height:64px;border-radius:14px;margin-bottom:16px;" />"#,
@@ -920,7 +1022,8 @@ fn render_smart_landing_page(
         })
         .unwrap_or_default();
 
-    let title_html = meta_title
+    let title_html = ctx
+        .meta_title
         .map(|t| {
             format!(
                 r#"<h1 style="font-size:20px;font-weight:600;margin-bottom:8px;">{}</h1>"#,
@@ -929,7 +1032,8 @@ fn render_smart_landing_page(
         })
         .unwrap_or_default();
 
-    let desc_html = meta_description
+    let desc_html = ctx
+        .meta_description
         .map(|d| {
             format!(
                 r#"<p style="color:#a3a3a3;font-size:14px;margin-bottom:24px;">{}</p>"#,
@@ -1052,6 +1156,20 @@ fn render_smart_landing_page(
 }
 
 // ── Helpers ──
+
+async fn tenant_has_verified_domain(
+    domains_repo: Option<&dyn DomainsRepository>,
+    tenant_id: &ObjectId,
+) -> bool {
+    let Some(repo) = domains_repo else {
+        return false;
+    };
+    repo.list_by_tenant(tenant_id)
+        .await
+        .ok()
+        .map(|domains| domains.iter().any(|d| d.verified))
+        .unwrap_or(false)
+}
 
 fn generate_link_id() -> String {
     Uuid::new_v4()

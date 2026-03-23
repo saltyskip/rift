@@ -1,8 +1,8 @@
 use async_trait::async_trait;
-use mongodb::bson::{oid::ObjectId, DateTime, Document};
+use mongodb::bson::{oid::ObjectId, DateTime};
 use std::sync::Mutex;
 
-use rift::api::links::models::{Click, Link};
+use rift::api::links::models::{Click, CreateLinkInput, Link};
 use rift::api::links::repo::LinksRepository;
 
 struct Attribution {
@@ -21,31 +21,24 @@ pub struct MockLinksRepo {
 
 #[async_trait]
 impl LinksRepository for MockLinksRepo {
-    async fn create_link(
-        &self,
-        tenant_id: ObjectId,
-        link_id: String,
-        ios_deep_link: Option<String>,
-        android_deep_link: Option<String>,
-        web_url: Option<String>,
-        ios_store_url: Option<String>,
-        android_store_url: Option<String>,
-        metadata: Option<Document>,
-    ) -> Result<Link, String> {
+    async fn create_link(&self, input: CreateLinkInput) -> Result<Link, String> {
         let mut links = self.links.lock().unwrap();
-        if links.iter().any(|l| l.link_id == link_id) {
+        if links
+            .iter()
+            .any(|l| l.tenant_id == input.tenant_id && l.link_id == input.link_id)
+        {
             return Err("E11000 duplicate key".to_string());
         }
         let link = Link {
             id: ObjectId::new(),
-            tenant_id,
-            link_id,
-            ios_deep_link,
-            android_deep_link,
-            web_url,
-            ios_store_url,
-            android_store_url,
-            metadata,
+            tenant_id: input.tenant_id,
+            link_id: input.link_id,
+            ios_deep_link: input.ios_deep_link,
+            android_deep_link: input.android_deep_link,
+            web_url: input.web_url,
+            ios_store_url: input.ios_store_url,
+            android_store_url: input.android_store_url,
+            metadata: input.metadata,
             created_at: DateTime::now(),
         };
         links.push(link.clone());
@@ -59,6 +52,20 @@ impl LinksRepository for MockLinksRepo {
             .unwrap()
             .iter()
             .find(|l| l.link_id == link_id)
+            .cloned())
+    }
+
+    async fn find_link_by_tenant_and_id(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+    ) -> Result<Option<Link>, String> {
+        Ok(self
+            .links
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|l| &l.tenant_id == tenant_id && l.link_id == link_id)
             .cloned())
     }
 

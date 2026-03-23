@@ -29,7 +29,11 @@ pub async fn create_app(
     Json(req): Json<CreateAppRequest>,
 ) -> Response {
     let Some(repo) = &state.apps_repo else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "Database not configured", "code": "no_database" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
     let platform = req.platform.to_lowercase();
@@ -42,7 +46,11 @@ pub async fn create_app(
     }
 
     if platform == "android" && req.package_name.is_none() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Android apps require package_name", "code": "missing_fields" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Android apps require package_name", "code": "missing_fields" })),
+        )
+            .into_response();
     }
 
     let app = super::models::App {
@@ -62,11 +70,19 @@ pub async fn create_app(
     match repo.create_or_update(app.clone()).await {
         Ok(created) => {
             let detail = to_detail(&created);
-            (StatusCode::CREATED, Json(serde_json::to_value(detail).unwrap())).into_response()
+            (
+                StatusCode::CREATED,
+                Json(serde_json::to_value(detail).unwrap()),
+            )
+                .into_response()
         }
         Err(e) => {
             tracing::error!("Failed to create app: {e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal error", "code": "db_error" }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
         }
     }
 }
@@ -88,7 +104,11 @@ pub async fn list_apps(
     axum::Extension(tenant): axum::Extension<TenantId>,
 ) -> Response {
     let Some(repo) = &state.apps_repo else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "Database not configured", "code": "no_database" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
     match repo.list_by_tenant(&tenant.0).await {
@@ -98,7 +118,11 @@ pub async fn list_apps(
         }
         Err(e) => {
             tracing::error!("Failed to list apps: {e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal error", "code": "db_error" }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
         }
     }
 }
@@ -123,19 +147,35 @@ pub async fn delete_app(
     Path(app_id): Path<String>,
 ) -> Response {
     let Some(repo) = &state.apps_repo else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "Database not configured", "code": "no_database" }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
     let Ok(oid) = ObjectId::parse_str(&app_id) else {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Invalid app_id", "code": "invalid_id" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid app_id", "code": "invalid_id" })),
+        )
+            .into_response();
     };
 
     match repo.delete_app(&tenant.0, &oid).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "App not found", "code": "not_found" }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "App not found", "code": "not_found" })),
+        )
+            .into_response(),
         Err(e) => {
             tracing::error!("Failed to delete app: {e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "Internal error", "code": "db_error" }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
         }
     }
 }
@@ -152,24 +192,42 @@ pub async fn delete_app(
     ),
 )]
 #[tracing::instrument(skip(state, headers))]
-pub async fn serve_aasa(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn serve_aasa(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     let Some(tenant_id) = resolve_tenant_from_host(&state, &headers).await else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Domain not found", "code": "not_found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Domain not found", "code": "not_found" })),
+        )
+            .into_response();
     };
 
     let Some(repo) = &state.apps_repo else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "No apps configured", "code": "not_found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "No apps configured", "code": "not_found" })),
+        )
+            .into_response();
     };
 
-    let Some(ios_app) = repo.find_by_tenant_platform(&tenant_id, "ios").await.ok().flatten() else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "No iOS app configured", "code": "not_found" }))).into_response();
+    let Some(ios_app) = repo
+        .find_by_tenant_platform(&tenant_id, "ios")
+        .await
+        .ok()
+        .flatten()
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "No iOS app configured", "code": "not_found" })),
+        )
+            .into_response();
     };
 
     let (Some(team_id), Some(bundle_id)) = (&ios_app.team_id, &ios_app.bundle_id) else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "iOS app missing team_id or bundle_id", "code": "not_found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "iOS app missing team_id or bundle_id", "code": "not_found" })),
+        )
+            .into_response();
     };
 
     let app_id = format!("{team_id}.{bundle_id}");
@@ -187,7 +245,8 @@ pub async fn serve_aasa(
         StatusCode::OK,
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         Json(aasa),
-    ).into_response()
+    )
+        .into_response()
 }
 
 // ── GET /.well-known/assetlinks.json — Serve Android assetlinks (public) ──
@@ -202,24 +261,42 @@ pub async fn serve_aasa(
     ),
 )]
 #[tracing::instrument(skip(state, headers))]
-pub async fn serve_assetlinks(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn serve_assetlinks(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     let Some(tenant_id) = resolve_tenant_from_host(&state, &headers).await else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Domain not found", "code": "not_found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Domain not found", "code": "not_found" })),
+        )
+            .into_response();
     };
 
     let Some(repo) = &state.apps_repo else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "No apps configured", "code": "not_found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "No apps configured", "code": "not_found" })),
+        )
+            .into_response();
     };
 
-    let Some(android_app) = repo.find_by_tenant_platform(&tenant_id, "android").await.ok().flatten() else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "No Android app configured", "code": "not_found" }))).into_response();
+    let Some(android_app) = repo
+        .find_by_tenant_platform(&tenant_id, "android")
+        .await
+        .ok()
+        .flatten()
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "No Android app configured", "code": "not_found" })),
+        )
+            .into_response();
     };
 
     let Some(package_name) = &android_app.package_name else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Android app missing package_name", "code": "not_found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Android app missing package_name", "code": "not_found" })),
+        )
+            .into_response();
     };
 
     let fingerprints = android_app.sha256_fingerprints.clone().unwrap_or_default();
@@ -237,7 +314,8 @@ pub async fn serve_assetlinks(
         StatusCode::OK,
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         Json(assetlinks),
-    ).into_response()
+    )
+        .into_response()
 }
 
 // ── Helpers ──

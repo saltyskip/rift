@@ -20,8 +20,14 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
 
     // Public routes (association files served via custom domain).
     let public = Router::new()
-        .route("/.well-known/apple-app-site-association", get(routes::serve_aasa))
-        .route("/.well-known/assetlinks.json", get(routes::serve_assetlinks));
+        .route(
+            "/.well-known/apple-app-site-association",
+            get(routes::serve_aasa),
+        )
+        .route(
+            "/.well-known/assetlinks.json",
+            get(routes::serve_assetlinks),
+        );
 
     Router::new().merge(authenticated).merge(public)
 }

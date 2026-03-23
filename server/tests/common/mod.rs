@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 
 use rift::api::auth::repo::{ApiKeyDoc, AuthRepository};
+use rift::api::domains::repo::DomainsRepository;
 use rift::api::AppState;
 use rift::core::config::Config;
 
@@ -57,7 +58,7 @@ pub async fn spawn_app() -> TestApp {
         auth_repo: Some(auth_repo.clone() as Arc<dyn AuthRepository>),
         links_repo: Some(links_repo.clone() as Arc<dyn rift::api::links::repo::LinksRepository>),
         domains_repo: Some(
-            domains_repo.clone() as Arc<dyn rift::api::domains::repo::DomainsRepository>,
+            domains_repo.clone() as Arc<dyn rift::api::domains::repo::DomainsRepository>
         ),
         apps_repo: Some(apps_repo.clone() as Arc<dyn rift::api::apps::repo::AppsRepository>),
         config,
@@ -86,9 +87,22 @@ pub async fn spawn_app() -> TestApp {
     }
 }
 
+/// Seed a verified custom domain for a tenant.
+pub async fn seed_verified_domain(app: &TestApp, tenant_id: &ObjectId, domain: &str) {
+    app.domains_repo
+        .create_domain(*tenant_id, domain.to_string(), "tok".to_string())
+        .await
+        .unwrap();
+    app.domains_repo.mark_verified(domain).await.unwrap();
+}
+
 /// Seed a verified API key and return (raw_key, ObjectId).
 pub async fn seed_api_key(app: &TestApp) -> (String, ObjectId) {
-    let raw_key = "rl_live_test1234567890abcdef1234567890abcdef12345678";
+    seed_api_key_with(app, "rl_live_test1234567890abcdef1234567890abcdef12345678").await
+}
+
+/// Seed a verified API key with a specific raw key and return (raw_key, ObjectId).
+pub async fn seed_api_key_with(app: &TestApp, raw_key: &str) -> (String, ObjectId) {
     let hash = hex::encode(Sha256::digest(raw_key.as_bytes()));
     let key_id = ObjectId::new();
 
@@ -96,7 +110,7 @@ pub async fn seed_api_key(app: &TestApp) -> (String, ObjectId) {
         id: Some(key_id),
         email: format!("test-{}@example.com", key_id.to_hex()),
         key_hash: hash,
-        key_prefix: "rl_live_test1234...".to_string(),
+        key_prefix: format!("{}...", &raw_key[..18]),
         verified: true,
         verify_token: None,
         monthly_quota: 1000,
