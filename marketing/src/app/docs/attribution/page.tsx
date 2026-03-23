@@ -38,8 +38,14 @@ export default function AttributionPage() {
   -d '{
     "link_id": "summer-sale",
     "install_id": "device-uuid-here",
-    "app_version": "1.0.0"
+    "app_version": "1.0.0",
+    "domain": "go.yourcompany.com"
   }'`}</CodeBlock>
+            <p>
+              The <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">domain</code> field
+              is optional but recommended when using custom IDs. It scopes the link lookup to your tenant,
+              ensuring the correct link is matched when multiple tenants share the same slug.
+            </p>
           </Step>
 
           <Step n={2} title="Link attribution to a user">

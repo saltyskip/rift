@@ -18,6 +18,19 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
+function Callout({ type, children }: { type: "info" | "warning"; children: React.ReactNode }) {
+  const styles = {
+    info: "border-[#60a5fa]/30 bg-[#60a5fa]/5 text-[#93bbfd]",
+    warning: "border-[#f59e0b]/30 bg-[#f59e0b]/5 text-[#fbbf24]",
+  };
+  const labels = { info: "Note", warning: "Important" };
+  return (
+    <div className={`rounded-lg border px-4 py-3 text-[13px] leading-relaxed ${styles[type]}`}>
+      <strong>{labels[type]}:</strong> {children}
+    </div>
+  );
+}
+
 export default function LinksPage() {
   return (
     <div className="max-w-3xl">
@@ -54,6 +67,19 @@ export default function LinksPage() {
   "link_id": "summer-sale",
   "url": "https://api.riftl.ink/r/summer-sale"
 }`}</CodeBlock>
+            <Callout type="warning">
+              Custom IDs (vanity slugs like <code>summer-sale</code>) require a{" "}
+              <a href="/docs/domains" className="underline">verified custom domain</a>.
+              They are unique per tenant — different tenants can use the same slug on their own domains
+              (e.g. <code>go.acme.com/summer-sale</code> and <code>go.brand.com/summer-sale</code>).
+              Links with custom IDs resolve via your custom domain, not the primary <code>riftl.ink/r/</code> path.
+            </Callout>
+            <p>
+              If you omit <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">custom_id</code>,
+              Rift auto-generates a short ID (e.g. <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">A1B2C3D4</code>).
+              Auto-generated links work for all tenants and resolve via <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">riftl.ink/r/A1B2C3D4</code> —
+              no custom domain required.
+            </p>
           </Step>
 
           <Step n={2} title="How resolution works">
@@ -72,9 +98,14 @@ export default function LinksPage() {
           <Step n={3} title="JSON resolution for agents">
             <p>
               Agents sending <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">Accept: application/json</code> receive
-              all destinations and metadata as JSON:
+              all destinations and metadata as JSON. Use your custom domain for custom IDs:
             </p>
-            <CodeBlock lang="json">{`curl https://api.riftl.ink/r/summer-sale \\
+            <CodeBlock lang="json">{`# Custom ID via custom domain
+curl https://go.yourcompany.com/summer-sale \\
+  -H "Accept: application/json"
+
+# Auto-generated ID via primary domain
+curl https://api.riftl.ink/r/A1B2C3D4 \\
   -H "Accept: application/json"
 
 {

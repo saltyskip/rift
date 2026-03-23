@@ -143,6 +143,15 @@ export default function WebSdkPage() {
                     <td className="px-4 py-2.5">API base URL. Default: <code className="text-[#71717a]">https://api.riftl.ink</code></td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">domain</td>
+                    <td className="px-4 py-2.5 font-mono">string</td>
+                    <td className="px-4 py-2.5">
+                      Custom domain for tenant-scoped link resolution.
+                      Defaults to <code className="text-[#71717a]">location.hostname</code>.
+                      Set this explicitly if the page is not hosted on your custom domain.
+                    </td>
+                  </tr>
+                  <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">onComplete</td>
                     <td className="px-4 py-2.5 font-mono">function</td>
                     <td className="px-4 py-2.5">Called with the link data after the click is recorded.</td>
@@ -175,6 +184,18 @@ document.getElementById("title").textContent = link.metadata.title;`}</CodeBlock
         {/* Advanced */}
         <section className="space-y-6">
           <h2 className="text-2xl font-bold text-[#fafafa]">Advanced usage</h2>
+
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-[#fafafa]">Explicit domain</h3>
+            <p className="text-[15px] text-[#a1a1aa]">
+              The SDK auto-detects <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">location.hostname</code> and
+              sends it to the API to scope the link to your tenant. If the SDK is embedded on a page that isn&apos;t
+              your custom domain (e.g. a third-party site), pass the domain explicitly:
+            </p>
+            <CodeBlock lang="javascript">{`Rift.open("summer-sale", {
+  domain: "go.yourcompany.com"
+});`}</CodeBlock>
+          </div>
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">Self-hosted API</h3>
