@@ -107,7 +107,10 @@ async fn serve_rift_js() -> impl axum::response::IntoResponse {
     (
         axum::http::StatusCode::OK,
         [
-            (axum::http::header::CONTENT_TYPE, "application/javascript; charset=utf-8"),
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
             (axum::http::header::CACHE_CONTROL, "public, max-age=3600"),
         ],
         include_str!("../sdk/rift.js"),

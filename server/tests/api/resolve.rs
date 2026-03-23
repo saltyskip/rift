@@ -166,7 +166,10 @@ async fn resolve_ios_deep_link_shows_smart_landing() {
     let resp = app
         .client
         .get(app.url("/r/ios-link"))
-        .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)")
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+        )
         .send()
         .await
         .unwrap();
@@ -199,7 +202,10 @@ async fn deferred_deep_link_round_trip() {
     // Resolve with iPhone UA to generate a token.
     app.client
         .get(app.url("/r/deferred-test"))
-        .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)")
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+        )
         .send()
         .await
         .unwrap();
@@ -275,7 +281,10 @@ async fn sdk_click_returns_link_data_and_token() {
     let resp = app
         .client
         .post(app.url("/v1/sdk/click"))
-        .header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)")
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+        )
         .json(&serde_json::json!({ "link_id": "sdk-test" }))
         .send()
         .await
@@ -383,7 +392,10 @@ async fn sdk_click_desktop_returns_no_token() {
     let resp = app
         .client
         .post(app.url("/v1/sdk/click"))
-        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        )
         .json(&serde_json::json!({ "link_id": "sdk-desktop" }))
         .send()
         .await
@@ -523,7 +535,11 @@ async fn resolve_custom_domain_unverified_returns_404() {
 
     // Create an unverified domain (seed without marking verified).
     app.domains_repo
-        .create_domain(tenant_id, "unverified.example.com".to_string(), "tok".to_string())
+        .create_domain(
+            tenant_id,
+            "unverified.example.com".to_string(),
+            "tok".to_string(),
+        )
         .await
         .unwrap();
 
@@ -622,7 +638,11 @@ async fn sdk_click_with_unverified_domain_returns_404() {
 
     // Create an unverified domain.
     app.domains_repo
-        .create_domain(tenant_id, "unverified.example.com".to_string(), "tok".to_string())
+        .create_domain(
+            tenant_id,
+            "unverified.example.com".to_string(),
+            "tok".to_string(),
+        )
         .await
         .unwrap();
 
@@ -663,7 +683,12 @@ async fn serve_rift_js() {
         .unwrap();
 
     assert_eq!(resp.status(), 200);
-    let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert!(ct.contains("javascript"));
     let body = resp.text().await.unwrap();
     assert!(body.contains("Rift"));

@@ -58,7 +58,7 @@ pub async fn spawn_app() -> TestApp {
         auth_repo: Some(auth_repo.clone() as Arc<dyn AuthRepository>),
         links_repo: Some(links_repo.clone() as Arc<dyn rift::api::links::repo::LinksRepository>),
         domains_repo: Some(
-            domains_repo.clone() as Arc<dyn rift::api::domains::repo::DomainsRepository>,
+            domains_repo.clone() as Arc<dyn rift::api::domains::repo::DomainsRepository>
         ),
         apps_repo: Some(apps_repo.clone() as Arc<dyn rift::api::apps::repo::AppsRepository>),
         config,

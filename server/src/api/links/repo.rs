@@ -106,10 +106,7 @@ impl LinksRepo {
         ensure_index!(
             clicks,
             doc! { "token": 1 },
-            IndexOptions::builder()
-                .unique(true)
-                .sparse(true)
-                .build(),
+            IndexOptions::builder().unique(true).sparse(true).build(),
             "clicks_token_sparse_unique"
         );
 

@@ -1,4 +1,4 @@
-use mongodb::bson::{DateTime, oid::ObjectId};
+use mongodb::bson::{oid::ObjectId, DateTime};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 

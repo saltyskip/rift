@@ -127,8 +127,7 @@ pub async fn create_link(
         input = input.metadata(v);
     }
 
-    match repo.create_link(input).await
-    {
+    match repo.create_link(input).await {
         Ok(_) => {}
         Err(e) if e.contains("E11000") => {
             return (StatusCode::CONFLICT, Json(json!({ "error": format!("'{}' is already taken", link_id), "code": "link_id_taken" }))).into_response();
@@ -493,13 +492,11 @@ async fn do_resolve(
                 .await
                 .ok()
                 .flatten()
-                .or(
-                    apps_repo
-                        .find_by_tenant_platform(&link.tenant_id, fallback)
-                        .await
-                        .ok()
-                        .flatten(),
-                );
+                .or(apps_repo
+                    .find_by_tenant_platform(&link.tenant_id, fallback)
+                    .await
+                    .ok()
+                    .flatten());
             (
                 app.as_ref().and_then(|a| a.app_name.clone()),
                 app.as_ref().and_then(|a| a.icon_url.clone()),
@@ -628,7 +625,12 @@ pub async fn sdk_click(
             )
                 .into_response();
         };
-        let Some(domain) = domains_repo.find_by_domain(domain_name).await.ok().flatten() else {
+        let Some(domain) = domains_repo
+            .find_by_domain(domain_name)
+            .await
+            .ok()
+            .flatten()
+        else {
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "Link not found", "code": "not_found" })),
@@ -751,8 +753,8 @@ pub async fn resolve_deferred(
     };
 
     // Reject tokens older than 48 hours.
-    let token_age_ms = mongodb::bson::DateTime::now().timestamp_millis()
-        - click.clicked_at.timestamp_millis();
+    let token_age_ms =
+        mongodb::bson::DateTime::now().timestamp_millis() - click.clicked_at.timestamp_millis();
     if token_age_ms > 48 * 60 * 60 * 1000 {
         return not_matched.into_response();
     }
@@ -828,7 +830,12 @@ pub async fn report_attribution(
             )
                 .into_response();
         };
-        let Some(domain) = domains_repo.find_by_domain(domain_name).await.ok().flatten() else {
+        let Some(domain) = domains_repo
+            .find_by_domain(domain_name)
+            .await
+            .ok()
+            .flatten()
+        else {
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "Link not found", "code": "not_found" })),
@@ -994,7 +1001,8 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     let og_title = ctx.meta_title.unwrap_or(app_name_display);
     let og_description = ctx.meta_description.unwrap_or("Open in app");
 
-    let og_image_tag = ctx.meta_image
+    let og_image_tag = ctx
+        .meta_image
         .map(|img| {
             format!(
                 r#"    <meta property="og:image" content="{}" />"#,
@@ -1014,7 +1022,8 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         })
         .unwrap_or_default();
 
-    let title_html = ctx.meta_title
+    let title_html = ctx
+        .meta_title
         .map(|t| {
             format!(
                 r#"<h1 style="font-size:20px;font-weight:600;margin-bottom:8px;">{}</h1>"#,
