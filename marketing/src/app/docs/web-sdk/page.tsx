@@ -14,7 +14,7 @@ const FRAMEWORKS = [
   href="https://apps.apple.com/app/id123456789"
   target="_blank"
   rel="noopener noreferrer"
-  onclick="if(window.Rift){event.preventDefault();Rift.open('summer-sale',{domain:'go.yourcompany.com'})}"
+  onclick="if(window.Rift){event.preventDefault();try{Rift.open('summer-sale',{domain:'go.yourcompany.com'})}catch(e){window.open(this.href,'_blank')}}"
 >
   Get the App
 </a>`,
@@ -52,7 +52,11 @@ export function DownloadButton({ linkId, domain }) {
       onClick={(e) => {
         if (window.Rift) {
           e.preventDefault();
-          window.Rift.open(linkId, { domain });
+          try {
+            window.Rift.open(linkId, { domain });
+          } catch {
+            window.open(STORE_URL, "_blank", "noopener,noreferrer");
+          }
         }
       }}
     >
@@ -74,11 +78,14 @@ export function DownloadButton({ linkId, domain }) {
   href="https://apps.apple.com/app/id123456789"
   target="_blank"
   rel="noopener noreferrer"
-  on:click|preventDefault={(e) => {
+  on:click={(e) => {
     if (window.Rift) {
-      window.Rift.open('summer-sale', { domain: 'go.yourcompany.com' });
-    } else {
-      window.open(e.currentTarget.href, '_blank');
+      e.preventDefault();
+      try {
+        window.Rift.open('summer-sale', { domain: 'go.yourcompany.com' });
+      } catch {
+        window.open(e.currentTarget.href, '_blank');
+      }
     }
   }}
 >
@@ -104,7 +111,11 @@ onMounted(() => {
 function handleClick(e) {
   if (window.Rift) {
     e.preventDefault();
-    window.Rift.open('summer-sale', { domain: 'go.yourcompany.com' });
+    try {
+      window.Rift.open('summer-sale', { domain: 'go.yourcompany.com' });
+    } catch {
+      window.open(storeUrl, '_blank');
+    }
   }
 }
 </script>
