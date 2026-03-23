@@ -1,7 +1,8 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect, Response};
 use mongodb::bson::oid::ObjectId;
+use mongodb::bson::DateTime;
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -404,7 +405,7 @@ pub async fn resolve_link_custom(
     do_resolve(&state, repo.as_ref(), link, &link_id, &headers).await
 }
 
-/// Shared resolve logic: detect platform, record click with token, content negotiation.
+/// Shared resolve logic: detect platform, record click, content negotiation.
 async fn do_resolve(
     state: &Arc<AppState>,
     repo: &dyn LinksRepository,
@@ -426,13 +427,6 @@ async fn do_resolve(
         .map(detect_platform)
         .unwrap_or(Platform::Other);
 
-    // Generate a deferred deep link token for mobile platforms.
-    let token = if platform == Platform::Ios || platform == Platform::Android {
-        Some(generate_token())
-    } else {
-        None
-    };
-
     if let Err(e) = repo
         .record_click(
             link.tenant_id,
@@ -440,7 +434,6 @@ async fn do_resolve(
             user_agent,
             referer,
             Some(platform.as_str().to_string()),
-            token.clone(),
         )
         .await
     {
@@ -526,7 +519,7 @@ async fn do_resolve(
         let html = render_smart_landing_page(&LandingPageContext {
             platform,
             link: &link,
-            token: token.as_deref(),
+            link_id,
             app_name: app_name.as_deref(),
             icon_url: icon_url.as_deref(),
             theme_color: theme_color.as_deref(),
@@ -674,12 +667,6 @@ pub async fn sdk_click(
         .map(detect_platform)
         .unwrap_or(Platform::Other);
 
-    let token = if platform == Platform::Ios || platform == Platform::Android {
-        Some(generate_token())
-    } else {
-        None
-    };
-
     if let Err(e) = repo
         .record_click(
             link.tenant_id,
@@ -687,7 +674,6 @@ pub async fn sdk_click(
             user_agent,
             referer,
             Some(platform.as_str().to_string()),
-            token.clone(),
         )
         .await
     {
@@ -696,7 +682,7 @@ pub async fn sdk_click(
 
     let metadata = link.metadata.and_then(|d| serde_json::to_value(&d).ok());
     Json(json!({
-        "token": token,
+        "link_id": req.link_id,
         "platform": platform.as_str(),
         "ios_deep_link": link.ios_deep_link,
         "android_deep_link": link.android_deep_link,
@@ -708,7 +694,7 @@ pub async fn sdk_click(
     .into_response()
 }
 
-// ── POST /v1/deferred — Recover link data from deferred deep link token (public) ──
+// ── POST /v1/deferred — Recover link data after install (public) ──
 
 #[utoipa::path(
     post,
@@ -724,10 +710,10 @@ pub async fn resolve_deferred(
     State(state): State<Arc<AppState>>,
     Json(req): Json<DeferredLinkRequest>,
 ) -> Response {
-    if req.token.is_empty() || req.install_id.is_empty() {
+    if req.link_id.is_empty() || req.install_id.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "token and install_id are required", "code": "bad_request" })),
+            Json(json!({ "error": "link_id and install_id are required", "code": "bad_request" })),
         )
             .into_response();
     }
@@ -748,23 +734,29 @@ pub async fn resolve_deferred(
         "metadata": null,
     }));
 
-    let Some(click) = repo.find_click_by_token(&req.token).await.ok().flatten() else {
-        return not_matched.into_response();
+    // Look up link directly — scoped by domain if provided.
+    let link = if let Some(ref domain_name) = req.domain {
+        let Some(domains_repo) = &state.domains_repo else {
+            return not_matched.into_response();
+        };
+        let domain = domains_repo
+            .find_by_domain(domain_name)
+            .await
+            .ok()
+            .flatten();
+        match domain {
+            Some(d) if d.verified => repo
+                .find_link_by_tenant_and_id(&d.tenant_id, &req.link_id)
+                .await
+                .ok()
+                .flatten(),
+            _ => None,
+        }
+    } else {
+        repo.find_link_by_id(&req.link_id).await.ok().flatten()
     };
 
-    // Reject tokens older than 48 hours.
-    let token_age_ms =
-        mongodb::bson::DateTime::now().timestamp_millis() - click.clicked_at.timestamp_millis();
-    if token_age_ms > 48 * 60 * 60 * 1000 {
-        return not_matched.into_response();
-    }
-
-    let Some(link) = repo
-        .find_link_by_tenant_and_id(&click.tenant_id, &click.link_id)
-        .await
-        .ok()
-        .flatten()
-    else {
+    let Some(link) = link else {
         return not_matched.into_response();
     };
 
@@ -785,6 +777,127 @@ pub async fn resolve_deferred(
         "metadata": metadata,
     }))
     .into_response()
+}
+
+// ── GET /v1/links/{link_id}/timeseries — Click timeseries (authenticated) ──
+
+#[utoipa::path(
+    get,
+    path = "/v1/links/{link_id}/timeseries",
+    tag = "Links",
+    params(
+        ("link_id" = String, Path, description = "Link ID"),
+        TimeseriesQuery,
+    ),
+    responses(
+        (status = 200, description = "Timeseries data", body = TimeseriesResponse),
+        (status = 400, description = "Invalid parameters", body = crate::error::ErrorResponse),
+        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
+    ),
+    security(("api_key" = []), ("x402" = [])),
+)]
+#[tracing::instrument(skip(state))]
+pub async fn get_link_timeseries(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+    Path(link_id): Path<String>,
+    Query(query): Query<TimeseriesQuery>,
+) -> Response {
+    let Some(repo) = &state.links_repo else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    // Validate granularity.
+    let granularity = query.granularity.as_deref().unwrap_or("daily");
+    if granularity != "daily" {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Only 'daily' granularity is supported", "code": "invalid_granularity" })),
+        )
+            .into_response();
+    }
+
+    // Parse date range.
+    let now = DateTime::now();
+    let thirty_days_ms = 30 * 24 * 60 * 60 * 1000_i64;
+    let ninety_days_ms = 90 * 24 * 60 * 60 * 1000_i64;
+
+    let from = match &query.from {
+        Some(s) => DateTime::parse_rfc3339_str(s).map_err(|_| ()).or_else(|_| {
+            // Try date-only format: "2026-03-01" -> "2026-03-01T00:00:00Z"
+            DateTime::parse_rfc3339_str(format!("{s}T00:00:00Z")).map_err(|_| ())
+        }),
+        None => Ok(DateTime::from_millis(
+            now.timestamp_millis() - thirty_days_ms,
+        )),
+    };
+    let to = match &query.to {
+        Some(s) => DateTime::parse_rfc3339_str(s)
+            .map_err(|_| ())
+            .or_else(|_| DateTime::parse_rfc3339_str(format!("{s}T23:59:59Z")).map_err(|_| ())),
+        None => Ok(now),
+    };
+
+    let (from, to) = match (from, to) {
+        (Ok(f), Ok(t)) => (f, t),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid date format. Use RFC 3339 (e.g. 2026-03-01T00:00:00Z) or YYYY-MM-DD", "code": "invalid_date" })),
+            )
+                .into_response();
+        }
+    };
+
+    // Validate range.
+    if to.timestamp_millis() - from.timestamp_millis() > ninety_days_ms {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Date range cannot exceed 90 days", "code": "range_too_large" })),
+        )
+            .into_response();
+    }
+
+    // Verify link exists for this tenant.
+    if repo
+        .find_link_by_tenant_and_id(&tenant.0, &link_id)
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Link not found", "code": "not_found" })),
+        )
+            .into_response();
+    }
+
+    match repo
+        .get_click_timeseries(&tenant.0, &link_id, from, to)
+        .await
+    {
+        Ok(data) => Json(json!({
+            "link_id": link_id,
+            "granularity": granularity,
+            "from": from.try_to_rfc3339_string().unwrap_or_default(),
+            "to": to.try_to_rfc3339_string().unwrap_or_default(),
+            "data": data,
+        }))
+        .into_response(),
+        Err(e) => {
+            tracing::error!("Failed to get timeseries: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
+        }
+    }
 }
 
 // ── POST /v1/attribution — Report an install attribution (public) ──
@@ -949,7 +1062,7 @@ pub async fn link_attribution(
 struct LandingPageContext<'a> {
     platform: Platform,
     link: &'a Link,
-    token: Option<&'a str>,
+    link_id: &'a str,
     app_name: Option<&'a str>,
     icon_url: Option<&'a str>,
     theme_color: Option<&'a str>,
@@ -961,10 +1074,9 @@ struct LandingPageContext<'a> {
 fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     let app_name_display = ctx.app_name.unwrap_or("App");
     let theme = ctx.theme_color.unwrap_or("#0d9488");
-    let token_js = ctx.token.map(js_escape).unwrap_or_default();
+    let link_id_js = js_escape(ctx.link_id);
     let platform = ctx.platform;
     let link = ctx.link;
-    let token = ctx.token;
     let platform_js = js_escape(platform.as_str());
 
     let deep_link = match platform {
@@ -980,19 +1092,18 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         Platform::Other => "",
     };
 
-    // For Android, append referrer with token to store URL.
-    let store_url_with_referrer =
-        if platform == Platform::Android && !store_url.is_empty() && token.is_some() {
-            let sep = if store_url.contains('?') { "&" } else { "?" };
-            format!(
-                "{}{}referrer={}",
-                store_url,
-                sep,
-                urlencoding(&format!("rift_token={}", token.unwrap_or("")))
-            )
-        } else {
-            store_url.to_string()
-        };
+    // For Android, append referrer with link_id to store URL.
+    let store_url_with_referrer = if platform == Platform::Android && !store_url.is_empty() {
+        let sep = if store_url.contains('?') { "&" } else { "?" };
+        format!(
+            "{}{}referrer={}",
+            store_url,
+            sep,
+            urlencoding(&format!("rift_link={}", ctx.link_id))
+        )
+    } else {
+        store_url.to_string()
+    };
     let store_url_js = js_escape(&store_url_with_referrer);
 
     let web_url = link.web_url.as_deref().unwrap_or("");
@@ -1095,11 +1206,11 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         var deepLink = "{deep_link_js}";
         var storeUrl = "{store_url_js}";
         var webUrl = "{web_url_js}";
-        var token = "{token_js}";
+        var linkId = "{link_id_js}";
 
-        // Copy deferred deep link token to clipboard (iOS only).
-        if (platform === "ios" && token && navigator.clipboard) {{
-            navigator.clipboard.writeText("rift:" + token).catch(function(){{}});
+        // Copy link ID to clipboard for deferred deep linking (iOS only).
+        if (platform === "ios" && linkId && navigator.clipboard) {{
+            navigator.clipboard.writeText("rift:" + linkId).catch(function(){{}});
         }}
 
         var btn = document.getElementById("open-btn");
@@ -1151,7 +1262,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         deep_link_js = deep_link_js,
         store_url_js = store_url_js,
         web_url_js = web_url_js,
-        token_js = token_js,
+        link_id_js = link_id_js,
     )
 }
 
@@ -1179,13 +1290,6 @@ fn generate_link_id() -> String {
         .take(8)
         .collect::<String>()
         .to_uppercase()
-}
-
-fn generate_token() -> String {
-    use rand::Rng;
-    let mut rng = rand::rng();
-    let bytes: [u8; 16] = rng.random();
-    hex::encode(bytes)
 }
 
 fn is_valid_link_id(id: &str) -> bool {

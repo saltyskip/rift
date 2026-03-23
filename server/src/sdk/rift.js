@@ -28,8 +28,9 @@
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        if (platform === "ios" && data.token && navigator.clipboard) {
-          navigator.clipboard.writeText("rift:" + data.token).catch(function(){});
+        // Copy link ID to clipboard for deferred deep linking (iOS).
+        if (platform === "ios" && data.link_id && navigator.clipboard) {
+          navigator.clipboard.writeText("rift:" + data.link_id).catch(function(){});
         }
 
         var deepLink = platform === "ios" ? data.ios_deep_link
@@ -39,9 +40,10 @@
                      : platform === "android" ? data.android_store_url
                      : null;
 
-        if (platform === "android" && storeUrl && data.token) {
+        // Append link ID as install referrer for Android.
+        if (platform === "android" && storeUrl && data.link_id) {
           var sep = storeUrl.indexOf("?") >= 0 ? "&" : "?";
-          storeUrl += sep + "referrer=" + encodeURIComponent("rift_token=" + data.token);
+          storeUrl += sep + "referrer=" + encodeURIComponent("rift_link=" + data.link_id);
         }
 
         if (deepLink) {

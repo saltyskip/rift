@@ -271,3 +271,126 @@ async fn create_link_invalid_custom_id() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["code"], "invalid_custom_id");
 }
+
+#[tokio::test]
+async fn timeseries_returns_daily_clicks() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "ts-test",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Generate 3 clicks.
+    for _ in 0..3 {
+        app.client
+            .get(app.url("/r/ts-test"))
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .unwrap();
+    }
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links/ts-test/timeseries"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["link_id"], "ts-test");
+    assert_eq!(body["granularity"], "daily");
+
+    let data = body["data"].as_array().unwrap();
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0]["clicks"], 3);
+}
+
+#[tokio::test]
+async fn timeseries_link_not_found_returns_404() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links/nonexistent/timeseries"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn timeseries_invalid_granularity_returns_400() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "ts-gran",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links/ts-gran/timeseries?granularity=hourly"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_granularity");
+}
+
+#[tokio::test]
+async fn timeseries_empty_returns_empty_data() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    // Create link with auto-generated ID (no custom domain needed).
+    let resp = app
+        .client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "web_url": "https://example.com" }))
+        .send()
+        .await
+        .unwrap();
+    let link_id = resp.json::<serde_json::Value>().await.unwrap()["link_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let resp = app
+        .client
+        .get(app.url(&format!("/v1/links/{link_id}/timeseries")))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["data"].as_array().unwrap().is_empty());
+}

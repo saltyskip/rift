@@ -17,6 +17,10 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/v1/links", post(routes::create_link))
         .route("/v1/links", get(routes::list_links))
         .route("/v1/links/{link_id}/stats", get(routes::get_link_stats))
+        .route(
+            "/v1/links/{link_id}/timeseries",
+            get(routes::get_link_timeseries),
+        )
         .route("/v1/attribution/link", put(routes::link_attribution))
         .layer(middleware::from_fn_with_state(state, auth_gate));
 
