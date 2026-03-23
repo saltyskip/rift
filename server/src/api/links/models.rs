@@ -66,6 +66,65 @@ pub struct Attribution {
     pub attributed_at: DateTime,
 }
 
+// ── Internal Types ──
+
+/// Parameters for creating a new link (passed to repository).
+pub struct CreateLinkInput {
+    pub tenant_id: ObjectId,
+    pub link_id: String,
+    pub ios_deep_link: Option<String>,
+    pub android_deep_link: Option<String>,
+    pub web_url: Option<String>,
+    pub ios_store_url: Option<String>,
+    pub android_store_url: Option<String>,
+    pub metadata: Option<Document>,
+}
+
+impl CreateLinkInput {
+    pub fn new(tenant_id: ObjectId, link_id: String) -> Self {
+        Self {
+            tenant_id,
+            link_id,
+            ios_deep_link: None,
+            android_deep_link: None,
+            web_url: None,
+            ios_store_url: None,
+            android_store_url: None,
+            metadata: None,
+        }
+    }
+
+    pub fn ios_deep_link(mut self, v: impl Into<String>) -> Self {
+        self.ios_deep_link = Some(v.into());
+        self
+    }
+
+    pub fn android_deep_link(mut self, v: impl Into<String>) -> Self {
+        self.android_deep_link = Some(v.into());
+        self
+    }
+
+    pub fn web_url(mut self, v: impl Into<String>) -> Self {
+        self.web_url = Some(v.into());
+        self
+    }
+
+    pub fn ios_store_url(mut self, v: impl Into<String>) -> Self {
+        self.ios_store_url = Some(v.into());
+        self
+    }
+
+    pub fn android_store_url(mut self, v: impl Into<String>) -> Self {
+        self.android_store_url = Some(v.into());
+        self
+    }
+
+    pub fn metadata(mut self, v: Document) -> Self {
+        self.metadata = Some(v);
+        self
+    }
+}
+
 // ── API Request / Response Models ──
 
 #[derive(Debug, Deserialize, ToSchema)]

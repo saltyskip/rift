@@ -107,18 +107,27 @@ pub async fn create_link(
         .metadata
         .and_then(|v| mongodb::bson::to_document(&v).ok());
 
-    match repo
-        .create_link(
-            tenant.0,
-            link_id.clone(),
-            req.ios_deep_link,
-            req.android_deep_link,
-            req.web_url,
-            req.ios_store_url,
-            req.android_store_url,
-            metadata,
-        )
-        .await
+    let mut input = CreateLinkInput::new(tenant.0, link_id.clone());
+    if let Some(v) = req.ios_deep_link {
+        input = input.ios_deep_link(v);
+    }
+    if let Some(v) = req.android_deep_link {
+        input = input.android_deep_link(v);
+    }
+    if let Some(v) = req.web_url {
+        input = input.web_url(v);
+    }
+    if let Some(v) = req.ios_store_url {
+        input = input.ios_store_url(v);
+    }
+    if let Some(v) = req.android_store_url {
+        input = input.android_store_url(v);
+    }
+    if let Some(v) = metadata {
+        input = input.metadata(v);
+    }
+
+    match repo.create_link(input).await
     {
         Ok(_) => {}
         Err(e) if e.contains("E11000") => {
@@ -517,17 +526,17 @@ async fn do_resolve(
             .and_then(|d| d.get_str("image").ok())
             .map(|s| s.to_string());
 
-        let html = render_smart_landing_page(
+        let html = render_smart_landing_page(&LandingPageContext {
             platform,
-            &link,
-            token.as_deref(),
-            app_name.as_deref(),
-            icon_url.as_deref(),
-            theme_color.as_deref(),
-            meta_title.as_deref(),
-            meta_description.as_deref(),
-            meta_image.as_deref(),
-        );
+            link: &link,
+            token: token.as_deref(),
+            app_name: app_name.as_deref(),
+            icon_url: icon_url.as_deref(),
+            theme_color: theme_color.as_deref(),
+            meta_title: meta_title.as_deref(),
+            meta_description: meta_description.as_deref(),
+            meta_image: meta_image.as_deref(),
+        });
         return (StatusCode::OK, axum::response::Html(html)).into_response();
     }
 
@@ -930,20 +939,25 @@ pub async fn link_attribution(
 
 // ── Smart Landing Page ──
 
-fn render_smart_landing_page(
+struct LandingPageContext<'a> {
     platform: Platform,
-    link: &Link,
-    token: Option<&str>,
-    app_name: Option<&str>,
-    icon_url: Option<&str>,
-    theme_color: Option<&str>,
-    meta_title: Option<&str>,
-    meta_description: Option<&str>,
-    meta_image: Option<&str>,
-) -> String {
-    let app_name_display = app_name.unwrap_or("App");
-    let theme = theme_color.unwrap_or("#0d9488");
-    let token_js = token.map(|t| js_escape(t)).unwrap_or_default();
+    link: &'a Link,
+    token: Option<&'a str>,
+    app_name: Option<&'a str>,
+    icon_url: Option<&'a str>,
+    theme_color: Option<&'a str>,
+    meta_title: Option<&'a str>,
+    meta_description: Option<&'a str>,
+    meta_image: Option<&'a str>,
+}
+
+fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
+    let app_name_display = ctx.app_name.unwrap_or("App");
+    let theme = ctx.theme_color.unwrap_or("#0d9488");
+    let token_js = ctx.token.map(js_escape).unwrap_or_default();
+    let platform = ctx.platform;
+    let link = ctx.link;
+    let token = ctx.token;
     let platform_js = js_escape(platform.as_str());
 
     let deep_link = match platform {
@@ -977,10 +991,10 @@ fn render_smart_landing_page(
     let web_url = link.web_url.as_deref().unwrap_or("");
     let web_url_js = js_escape(web_url);
 
-    let og_title = meta_title.unwrap_or(app_name_display);
-    let og_description = meta_description.unwrap_or("Open in app");
+    let og_title = ctx.meta_title.unwrap_or(app_name_display);
+    let og_description = ctx.meta_description.unwrap_or("Open in app");
 
-    let og_image_tag = meta_image
+    let og_image_tag = ctx.meta_image
         .map(|img| {
             format!(
                 r#"    <meta property="og:image" content="{}" />"#,
@@ -989,7 +1003,8 @@ fn render_smart_landing_page(
         })
         .unwrap_or_default();
 
-    let icon_html = icon_url
+    let icon_html = ctx
+        .icon_url
         .map(|url| {
             format!(
                 r#"<img src="{}" alt="{}" style="width:64px;height:64px;border-radius:14px;margin-bottom:16px;" />"#,
@@ -999,7 +1014,7 @@ fn render_smart_landing_page(
         })
         .unwrap_or_default();
 
-    let title_html = meta_title
+    let title_html = ctx.meta_title
         .map(|t| {
             format!(
                 r#"<h1 style="font-size:20px;font-weight:600;margin-bottom:8px;">{}</h1>"#,
@@ -1008,7 +1023,8 @@ fn render_smart_landing_page(
         })
         .unwrap_or_default();
 
-    let desc_html = meta_description
+    let desc_html = ctx
+        .meta_description
         .map(|d| {
             format!(
                 r#"<p style="color:#a3a3a3;font-size:14px;margin-bottom:24px;">{}</p>"#,

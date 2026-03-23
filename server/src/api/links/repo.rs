@@ -1,25 +1,15 @@
 use async_trait::async_trait;
-use mongodb::bson::{doc, oid::ObjectId, DateTime, Document};
+use mongodb::bson::{doc, oid::ObjectId, DateTime};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database, IndexModel};
 
-use super::models::{Attribution, Click, Link};
+use super::models::{Attribution, Click, CreateLinkInput, Link};
 
 // ── Trait ──
 
 #[async_trait]
 pub trait LinksRepository: Send + Sync {
-    async fn create_link(
-        &self,
-        tenant_id: ObjectId,
-        link_id: String,
-        ios_deep_link: Option<String>,
-        android_deep_link: Option<String>,
-        web_url: Option<String>,
-        ios_store_url: Option<String>,
-        android_store_url: Option<String>,
-        metadata: Option<Document>,
-    ) -> Result<Link, String>;
+    async fn create_link(&self, input: CreateLinkInput) -> Result<Link, String>;
 
     async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String>;
 
@@ -145,27 +135,17 @@ impl LinksRepo {
 
 #[async_trait]
 impl LinksRepository for LinksRepo {
-    async fn create_link(
-        &self,
-        tenant_id: ObjectId,
-        link_id: String,
-        ios_deep_link: Option<String>,
-        android_deep_link: Option<String>,
-        web_url: Option<String>,
-        ios_store_url: Option<String>,
-        android_store_url: Option<String>,
-        metadata: Option<Document>,
-    ) -> Result<Link, String> {
+    async fn create_link(&self, input: CreateLinkInput) -> Result<Link, String> {
         let link = Link {
             id: ObjectId::new(),
-            tenant_id,
-            link_id,
-            ios_deep_link,
-            android_deep_link,
-            web_url,
-            ios_store_url,
-            android_store_url,
-            metadata,
+            tenant_id: input.tenant_id,
+            link_id: input.link_id,
+            ios_deep_link: input.ios_deep_link,
+            android_deep_link: input.android_deep_link,
+            web_url: input.web_url,
+            ios_store_url: input.ios_store_url,
+            android_store_url: input.android_store_url,
+            metadata: input.metadata,
             created_at: DateTime::now(),
         };
         self.links
