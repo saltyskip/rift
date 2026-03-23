@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use cached::proc_macro::cached;
 use mongodb::bson::{doc, oid::ObjectId, DateTime};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database, IndexModel};
@@ -97,6 +98,9 @@ impl LinksRepo {
             "tenant_link_id_unique"
         );
 
+        // Non-unique index on link_id for public resolution via /r/{link_id}.
+        ensure_index!(links, doc! { "link_id": 1 }, "link_id_lookup");
+
         ensure_index!(
             clicks,
             doc! { "tenant_id": 1, "link_id": 1 },
@@ -130,6 +134,41 @@ impl LinksRepo {
     }
 }
 
+// ── Cached lookups (5-minute TTL, max 10 000 entries) ──
+
+#[cached(
+    ty = "cached::TimedSizedCache<String, Option<Link>>",
+    create = "{ cached::TimedSizedCache::with_size_and_lifespan(10_000, 300) }",
+    convert = r#"{ link_id.to_string() }"#,
+    result = true
+)]
+async fn cached_find_link_by_id(
+    links: &Collection<Link>,
+    link_id: &str,
+) -> Result<Option<Link>, String> {
+    links
+        .find_one(doc! { "link_id": link_id })
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cached(
+    ty = "cached::TimedSizedCache<String, Option<Link>>",
+    create = "{ cached::TimedSizedCache::with_size_and_lifespan(10_000, 300) }",
+    convert = r#"{ format!("{}:{}", tenant_id, link_id) }"#,
+    result = true
+)]
+async fn cached_find_link_by_tenant_and_id(
+    links: &Collection<Link>,
+    tenant_id: &ObjectId,
+    link_id: &str,
+) -> Result<Option<Link>, String> {
+    links
+        .find_one(doc! { "tenant_id": tenant_id, "link_id": link_id })
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[async_trait]
 impl LinksRepository for LinksRepo {
     async fn create_link(&self, input: CreateLinkInput) -> Result<Link, String> {
@@ -153,10 +192,7 @@ impl LinksRepository for LinksRepo {
     }
 
     async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String> {
-        self.links
-            .find_one(doc! { "link_id": link_id })
-            .await
-            .map_err(|e| e.to_string())
+        cached_find_link_by_id(&self.links, link_id).await
     }
 
     async fn find_link_by_tenant_and_id(
@@ -164,10 +200,7 @@ impl LinksRepository for LinksRepo {
         tenant_id: &ObjectId,
         link_id: &str,
     ) -> Result<Option<Link>, String> {
-        self.links
-            .find_one(doc! { "tenant_id": tenant_id, "link_id": link_id })
-            .await
-            .map_err(|e| e.to_string())
+        cached_find_link_by_tenant_and_id(&self.links, tenant_id, link_id).await
     }
 
     async fn list_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Link>, String> {
