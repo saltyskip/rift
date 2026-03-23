@@ -10,32 +10,57 @@ const FRAMEWORKS = [
     lang: "html",
     code: `<script src="https://cdn.riftl.ink/rift.js"></script>
 
-<button onclick="Rift.open('summer-sale')">
+<a
+  href="https://apps.apple.com/app/id123456789"
+  target="_blank"
+  rel="noopener noreferrer"
+  onclick="if(window.Rift){event.preventDefault();Rift.open('summer-sale',{domain:'go.yourcompany.com'})}"
+>
   Get the App
-</button>`,
-    notes: "Drop the script tag anywhere in your page. The global `Rift` object is available immediately after load.",
+</a>`,
+    notes: "The link works as a normal App Store link without JS. When the Rift SDK loads, it intercepts the click for tracking and deferred deep linking. Users can still right-click to copy the link.",
   },
   {
     id: "nextjs",
     label: "Next.js",
     lang: "jsx",
-    code: `"use client";
+    code: `// app/layout.tsx — load the SDK once in your root layout
 import Script from "next/script";
 
-export function DownloadButton({ linkId }) {
+export default function RootLayout({ children }) {
   return (
-    <>
-      <Script
-        src="https://cdn.riftl.ink/rift.js"
-        strategy="lazyOnload"
-      />
-      <button onClick={() => window.Rift?.open(linkId)}>
-        Get the App
-      </button>
-    </>
+    <html lang="en">
+      <body>
+        <Script src="https://cdn.riftl.ink/rift.js" strategy="lazyOnload" />
+        {children}
+      </body>
+    </html>
+  );
+}
+
+// components/download-button.tsx — progressive enhancement
+"use client";
+
+const STORE_URL = "https://apps.apple.com/app/id123456789";
+
+export function DownloadButton({ linkId, domain }) {
+  return (
+    <a
+      href={STORE_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => {
+        if (window.Rift) {
+          e.preventDefault();
+          window.Rift.open(linkId, { domain });
+        }
+      }}
+    >
+      Get the App
+    </a>
   );
 }`,
-    notes: 'Must be a Client Component ("use client") in the App Router. Use `window.Rift?.open()` with optional chaining since the script loads async. `strategy="lazyOnload"` avoids blocking page render.',
+    notes: 'Load the script once in your root layout, not per component. The download button is a real <a> tag that works without JS (right-clickable, accessible). When the Rift SDK is loaded, it intercepts the click for tracking and deferred deep linking. Must be a Client Component ("use client") for the onClick handler.',
   },
   {
     id: "svelte",
@@ -45,32 +70,51 @@ export function DownloadButton({ linkId }) {
   <script src="https://cdn.riftl.ink/rift.js"></script>
 </svelte:head>
 
-<button on:click={() => window.Rift?.open('summer-sale')}>
+<a
+  href="https://apps.apple.com/app/id123456789"
+  target="_blank"
+  rel="noopener noreferrer"
+  on:click|preventDefault={(e) => {
+    if (window.Rift) {
+      window.Rift.open('summer-sale', { domain: 'go.yourcompany.com' });
+    } else {
+      window.open(e.currentTarget.href, '_blank');
+    }
+  }}
+>
   Get the App
-</button>`,
-    notes: "Use `<svelte:head>` to load the script. Optional chaining handles cases where the script hasn't loaded yet.",
+</a>`,
+    notes: "Uses `<svelte:head>` to load the script. The link falls back to opening the href directly if the SDK hasn't loaded.",
   },
   {
     id: "vue",
     label: "Vue / Nuxt",
     lang: "vue",
     code: `<script setup>
-import { onMounted, ref } from "vue";
-const ready = ref(false);
+import { onMounted } from "vue";
+
+const storeUrl = "https://apps.apple.com/app/id123456789";
+
 onMounted(() => {
   const s = document.createElement("script");
   s.src = "https://cdn.riftl.ink/rift.js";
-  s.onload = () => { ready.value = true; };
   document.head.appendChild(s);
 });
+
+function handleClick(e) {
+  if (window.Rift) {
+    e.preventDefault();
+    window.Rift.open('summer-sale', { domain: 'go.yourcompany.com' });
+  }
+}
 </script>
 
 <template>
-  <button @click="window.Rift?.open('summer-sale')">
+  <a :href="storeUrl" target="_blank" rel="noopener noreferrer" @click="handleClick">
     Get the App
-  </button>
+  </a>
 </template>`,
-    notes: "Load the script dynamically in `onMounted` to avoid SSR issues. The `ready` ref can be used to show a loading state.",
+    notes: "Loads the script dynamically in `onMounted` to avoid SSR issues. The link works as a normal App Store link before the SDK loads.",
   },
 ];
 
