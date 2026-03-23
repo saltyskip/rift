@@ -26,7 +26,7 @@ export default function DeferredPage() {
         <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Deferred Deep Linking</h1>
         <p className="text-lg text-[#71717a] leading-relaxed">
           Route users to specific content even if they didn&apos;t have the app installed when they clicked.
-          Rift generates a token on click and delivers it to the app after install.
+          Rift passes the link ID through the install flow and delivers it to the app after install.
         </p>
       </div>
 
@@ -35,34 +35,42 @@ export default function DeferredPage() {
           <Step n={1} title="How it works">
             <ol className="list-decimal pl-5 space-y-1">
               <li>User clicks a Rift link on mobile</li>
-              <li>Rift generates a token and stores it with the click</li>
-              <li><strong className="text-[#fafafa]">iOS:</strong> token is copied to clipboard as <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">rift:&lt;token&gt;</code></li>
-              <li><strong className="text-[#fafafa]">Android:</strong> token is appended to the Play Store URL as an install referrer</li>
+              <li>Rift copies the link ID to the clipboard or install referrer</li>
+              <li><strong className="text-[#fafafa]">iOS:</strong> link ID is copied to clipboard as <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">rift:&lt;link_id&gt;</code></li>
+              <li><strong className="text-[#fafafa]">Android:</strong> link ID is appended to the Play Store URL as <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">rift_link=&lt;link_id&gt;</code></li>
               <li>User installs the app and opens it</li>
-              <li>App reads the token and sends it to <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">POST /v1/deferred</code></li>
+              <li>App reads the link ID and sends it to <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">POST /v1/deferred</code></li>
             </ol>
           </Step>
 
-          <Step n={2} title="iOS — Read from clipboard">
+          <Step n={2} title="Using the native SDKs (recommended)">
+            <p>
+              The <a href="/docs/ios-sdk" className="text-[#2dd4bf] hover:underline">iOS SDK</a> and{" "}
+              <a href="/docs/android-sdk" className="text-[#2dd4bf] hover:underline">Android SDK</a> handle
+              clipboard/referrer reading and API calls for you. See those pages for full integration guides.
+            </p>
+          </Step>
+
+          <Step n={3} title="iOS — Manual integration">
             <CodeBlock lang="swift">{`func checkDeferredDeepLink() {
     guard let clipboard = UIPasteboard.general.string,
           clipboard.hasPrefix("rift:") else { return }
 
-    let token = String(clipboard.dropFirst("rift:".count))
+    let linkId = String(clipboard.dropFirst("rift:".count))
     UIPasteboard.general.string = ""  // Clear after reading
-    resolveDeferred(token: token)
+    resolveDeferred(linkId: linkId)
 }`}</CodeBlock>
           </Step>
 
-          <Step n={3} title="Android — Read from install referrer">
+          <Step n={4} title="Android — Manual integration">
             <CodeBlock lang="kotlin">{`val client = InstallReferrerClient.newBuilder(this).build()
 client.startConnection(object : InstallReferrerStateListener {
     override fun onInstallReferrerSetupFinished(code: Int) {
         if (code == InstallReferrerResponse.OK) {
             val referrer = client.installReferrer.installReferrer
-            val token = Uri.parse("?\$referrer")
-                .getQueryParameter("rift_token")
-            if (token != null) resolveDeferred(token)
+            val linkId = Uri.parse("?\$referrer")
+                .getQueryParameter("rift_link")
+            if (linkId != null) resolveDeferred(linkId)
         }
         client.endConnection()
     }
@@ -70,12 +78,13 @@ client.startConnection(object : InstallReferrerStateListener {
 })`}</CodeBlock>
           </Step>
 
-          <Step n={4} title="Resolve the token">
+          <Step n={5} title="Resolve the link (API)">
             <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/deferred \\
   -H "Content-Type: application/json" \\
   -d '{
-    "token": "a1b2c3d4e5f6a7b8",
-    "install_id": "device-uuid-here"
+    "link_id": "summer-sale",
+    "install_id": "device-uuid-here",
+    "domain": "go.yourcompany.com"
   }'`}</CodeBlock>
             <p>Response (matched):</p>
             <CodeBlock lang="json">{`{

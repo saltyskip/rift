@@ -21,9 +21,11 @@ const NAV = [
     ],
   },
   {
-    group: "Web SDK",
+    group: "SDKs",
     items: [
-      { label: "Installation", href: "/docs/web-sdk" },
+      { label: "Web (rift.js)", href: "/docs/web-sdk" },
+      { label: "iOS (Swift)", href: "/docs/ios-sdk" },
+      { label: "Android (Kotlin)", href: "/docs/android-sdk" },
     ],
   },
   {
