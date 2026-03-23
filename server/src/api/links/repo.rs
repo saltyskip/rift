@@ -23,6 +23,12 @@ pub trait LinksRepository: Send + Sync {
 
     async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String>;
 
+    async fn find_link_by_tenant_and_id(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+    ) -> Result<Option<Link>, String>;
+
     async fn list_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Link>, String>;
 
     async fn record_click(
@@ -91,13 +97,15 @@ impl LinksRepo {
         let clicks = database.collection::<Click>("clicks");
         let attributions = database.collection::<Attribution>("attributions");
 
+        // Drop the old global unique index if it exists (replaced by compound index).
+        let _ = links.drop_index("link_id_unique").await;
+
         ensure_index!(
             links,
-            doc! { "link_id": 1 },
+            doc! { "tenant_id": 1, "link_id": 1 },
             IndexOptions::builder().unique(true).build(),
-            "link_id_unique"
+            "tenant_link_id_unique"
         );
-        ensure_index!(links, doc! { "tenant_id": 1 }, "links_tenant");
 
         ensure_index!(
             clicks,
@@ -170,6 +178,17 @@ impl LinksRepository for LinksRepo {
     async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String> {
         self.links
             .find_one(doc! { "link_id": link_id })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn find_link_by_tenant_and_id(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+    ) -> Result<Option<Link>, String> {
+        self.links
+            .find_one(doc! { "tenant_id": tenant_id, "link_id": link_id })
             .await
             .map_err(|e| e.to_string())
     }

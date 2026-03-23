@@ -1,6 +1,7 @@
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect, Response};
+use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -8,6 +9,7 @@ use uuid::Uuid;
 use super::models::*;
 use super::repo::LinksRepository;
 use crate::api::auth::middleware::TenantId;
+use crate::api::domains::repo::DomainsRepository;
 use crate::api::AppState;
 
 // ── Platform Detection ──
@@ -77,7 +79,23 @@ pub async fn create_link(
                 )
                     .into_response();
             }
-            if repo.find_link_by_id(custom).await.ok().flatten().is_some() {
+
+            // Custom IDs require a verified custom domain.
+            if !tenant_has_verified_domain(state.domains_repo.as_deref(), &tenant.0).await {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "Custom IDs require a verified custom domain", "code": "no_verified_domain" })),
+                )
+                    .into_response();
+            }
+
+            if repo
+                .find_link_by_tenant_and_id(&tenant.0, custom)
+                .await
+                .ok()
+                .flatten()
+                .is_some()
+            {
                 return (StatusCode::CONFLICT, Json(json!({ "error": format!("'{}' is already taken", custom), "code": "link_id_taken" }))).into_response();
             }
             custom.clone()
@@ -365,21 +383,18 @@ pub async fn resolve_link_custom(
             .into_response();
     };
 
-    let Some(link) = repo.find_link_by_id(&link_id).await.ok().flatten() else {
+    let Some(link) = repo
+        .find_link_by_tenant_and_id(&domain.tenant_id, &link_id)
+        .await
+        .ok()
+        .flatten()
+    else {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Link not found", "code": "not_found" })),
         )
             .into_response();
     };
-
-    if link.tenant_id != domain.tenant_id {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Link not found", "code": "not_found" })),
-        )
-            .into_response();
-    }
 
     do_resolve(&state, repo.as_ref(), link, &link_id, &headers).await
 }
@@ -598,7 +613,38 @@ pub async fn sdk_click(
             .into_response();
     };
 
-    let Some(link) = repo.find_link_by_id(&req.link_id).await.ok().flatten() else {
+    // If a domain is provided, scope the lookup to that domain's tenant.
+    let link = if let Some(ref domain_name) = req.domain {
+        let Some(domains_repo) = &state.domains_repo else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        };
+        let Some(domain) = domains_repo.find_by_domain(domain_name).await.ok().flatten() else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        };
+        if !domain.verified {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        }
+        repo.find_link_by_tenant_and_id(&domain.tenant_id, &req.link_id)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        repo.find_link_by_id(&req.link_id).await.ok().flatten()
+    };
+
+    let Some(link) = link else {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Link not found", "code": "not_found" })),
@@ -1052,6 +1098,20 @@ fn render_smart_landing_page(
 }
 
 // ── Helpers ──
+
+async fn tenant_has_verified_domain(
+    domains_repo: Option<&dyn DomainsRepository>,
+    tenant_id: &ObjectId,
+) -> bool {
+    let Some(repo) = domains_repo else {
+        return false;
+    };
+    repo.list_by_tenant(tenant_id)
+        .await
+        .ok()
+        .map(|domains| domains.iter().any(|d| d.verified))
+        .unwrap_or(false)
+}
 
 fn generate_link_id() -> String {
     Uuid::new_v4()

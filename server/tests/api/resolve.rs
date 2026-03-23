@@ -3,7 +3,8 @@ use crate::common;
 #[tokio::test]
 async fn resolve_redirects_to_web_url() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     // Create link with web_url only (no platform destinations → redirect).
     app.client
@@ -35,7 +36,8 @@ async fn resolve_redirects_to_web_url() {
 #[tokio::test]
 async fn resolve_returns_json_for_agents() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     app.client
         .post(app.url("/v1/links"))
@@ -80,7 +82,8 @@ async fn resolve_missing_link_returns_404() {
 #[tokio::test]
 async fn resolve_increments_click_count() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     app.client
         .post(app.url("/v1/links"))
@@ -119,7 +122,8 @@ async fn resolve_increments_click_count() {
 #[tokio::test]
 async fn resolve_no_destination_shows_landing() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     app.client
         .post(app.url("/v1/links"))
@@ -140,7 +144,8 @@ async fn resolve_no_destination_shows_landing() {
 #[tokio::test]
 async fn resolve_ios_deep_link_shows_smart_landing() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     app.client
         .post(app.url("/v1/links"))
@@ -173,7 +178,8 @@ async fn resolve_ios_deep_link_shows_smart_landing() {
 #[tokio::test]
 async fn deferred_deep_link_round_trip() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     // Create a link with platform destinations.
     app.client
@@ -243,7 +249,8 @@ async fn deferred_deep_link_round_trip() {
 #[tokio::test]
 async fn sdk_click_returns_link_data_and_token() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     // Create a link with full platform destinations.
     app.client
@@ -317,7 +324,8 @@ async fn sdk_click_empty_link_id_returns_400() {
 #[tokio::test]
 async fn sdk_click_records_click() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     app.client
         .post(app.url("/v1/links"))
@@ -356,7 +364,8 @@ async fn sdk_click_records_click() {
 #[tokio::test]
 async fn sdk_click_desktop_returns_no_token() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     app.client
         .post(app.url("/v1/links"))
@@ -382,6 +391,54 @@ async fn sdk_click_desktop_returns_no_token() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["platform"], "other");
     assert!(body["token"].is_null());
+}
+
+#[tokio::test]
+async fn sdk_click_with_domain_scopes_to_tenant() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "scoped-link",
+            "web_url": "https://example.com/scoped"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // SDK click with domain scoping — should resolve.
+    let resp = app
+        .client
+        .post(app.url("/v1/sdk/click"))
+        .json(&serde_json::json!({
+            "link_id": "scoped-link",
+            "domain": "go.example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["web_url"], "https://example.com/scoped");
+
+    // SDK click with wrong domain — should 404.
+    let resp = app
+        .client
+        .post(app.url("/v1/sdk/click"))
+        .json(&serde_json::json!({
+            "link_id": "scoped-link",
+            "domain": "go.other.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
 }
 
 #[tokio::test]

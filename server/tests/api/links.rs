@@ -25,7 +25,8 @@ async fn create_link_returns_201() {
 #[tokio::test]
 async fn create_link_with_custom_id() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     let resp = app
         .client
@@ -47,7 +48,8 @@ async fn create_link_with_custom_id() {
 #[tokio::test]
 async fn create_link_with_platform_destinations() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     let resp = app
         .client
@@ -86,7 +88,8 @@ async fn create_link_with_platform_destinations() {
 #[tokio::test]
 async fn duplicate_custom_id_returns_409() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     let payload = serde_json::json!({
         "custom_id": "taken",
@@ -148,7 +151,8 @@ async fn list_links_returns_created_links() {
 #[tokio::test]
 async fn get_link_stats() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key(&app).await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     let resp = app
         .client
@@ -186,9 +190,70 @@ async fn get_link_stats() {
 }
 
 #[tokio::test]
-async fn create_link_invalid_custom_id() {
+async fn create_link_custom_id_without_domain_returns_400() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "vanity",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "no_verified_domain");
+}
+
+#[tokio::test]
+async fn two_tenants_same_custom_id_succeeds() {
+    let app = common::spawn_app().await;
+
+    // Tenant A
+    let (key_a, tenant_a) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_a, "go.tenant-a.com").await;
+
+    // Tenant B
+    let (key_b, tenant_b) = common::seed_api_key_with(
+        &app,
+        "rl_live_test_b_234567890abcdef1234567890abcdef12345678",
+    )
+    .await;
+    common::seed_verified_domain(&app, &tenant_b, "go.tenant-b.com").await;
+
+    // Both create a link with the same custom_id.
+    let resp_a = app
+        .client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key_a}"))
+        .json(&serde_json::json!({ "custom_id": "download", "web_url": "https://a.com" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp_a.status(), 201);
+
+    let resp_b = app
+        .client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key_b}"))
+        .json(&serde_json::json!({ "custom_id": "download", "web_url": "https://b.com" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp_b.status(), 201);
+}
+
+#[tokio::test]
+async fn create_link_invalid_custom_id() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
     let resp = app
         .client
