@@ -59,6 +59,13 @@ export default function DomainsPage() {
             do <strong className="text-[#fafafa]">not</strong> need to transfer your domain —
             just point your registrar&apos;s nameservers to Cloudflare.
           </p>
+          <Callout type="info">
+            A verified custom domain is <strong>required</strong> to use custom IDs (vanity slugs)
+            when <a href="/docs/links" className="underline">creating links</a>. Custom IDs are
+            unique per tenant — different tenants can use the same slug on their own domains.
+            Without a custom domain, links use auto-generated IDs on the
+            primary <code>riftl.ink</code> domain.
+          </Callout>
         </section>
 
         <div className="gradient-line" />
