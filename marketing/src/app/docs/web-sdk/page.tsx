@@ -31,7 +31,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        <Script src="https://cdn.riftl.ink/rift.js" strategy="lazyOnload" />
+        <Script src="https://cdn.riftl.ink/rift.js" strategy="afterInteractive" />
         {children}
       </body>
     </html>
@@ -64,7 +64,7 @@ export function DownloadButton({ linkId, domain }) {
     </a>
   );
 }`,
-    notes: 'Load the script once in your root layout, not per component. The download button is a real <a> tag that works without JS (right-clickable, accessible). When the Rift SDK is loaded, it intercepts the click for tracking and deferred deep linking. Must be a Client Component ("use client") for the onClick handler.',
+    notes: 'Load the script once in your root layout, not per component. Use `strategy="afterInteractive"` so the SDK is ready before users click. The download button is a real <a> tag that works without JS (right-clickable, accessible). When the Rift SDK is loaded, it intercepts the click for tracking and deferred deep linking. Must be a Client Component ("use client") for the onClick handler.',
   },
   {
     id: "svelte",
