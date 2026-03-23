@@ -58,6 +58,32 @@ cargo test   # All tests pass
 - If an import is unused, remove it — don't `#[allow(unused_imports)]`
 - Run `cargo fmt` before committing to avoid formatting failures in CI
 
+## Mobile SDK (`sdk/mobile/`)
+
+Rust library compiled to Swift/Kotlin via UniFFI. Three-crate workspace:
+
+- `core/` — Pure Rust. HTTP client, models, parsers. **No UniFFI dependency.**
+- `ffi/` — UniFFI boundary. Wraps core types with `#[uniffi::Object]`, `#[uniffi::Record]`, etc.
+- `mobile/` — Thin re-export crate. Build target for `staticlib`/`cdylib`.
+
+### Conventions
+- **Core must not import UniFFI** — enforced by architecture test + pre-commit hook
+- `metadata` fields are `Option<String>` (JSON string) at the FFI boundary
+- SDK owns its own models — no shared types with the server
+- All errors go through `RiftError` enum
+
+### Building
+```sh
+cd sdk/mobile
+cargo test                    # Run all tests including architecture tests
+./build_xcframework.sh        # Build iOS XCFramework
+./build_android.sh            # Build Android libraries
+```
+
+### CI/CD
+- `sdk-ci.yml` — runs on every push/PR touching `sdk/mobile/`
+- `sdk-release.yml` — triggered by `sdk-v*` tags or manual dispatch
+
 ## Environment Variables
 
 | Variable | Required | Purpose |
