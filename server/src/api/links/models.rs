@@ -168,6 +168,9 @@ pub struct ResolvedLink {
 pub struct SdkClickRequest {
     /// Link ID to resolve.
     pub link_id: String,
+    /// Optional custom domain for tenant-scoped lookup.
+    #[serde(default)]
+    pub domain: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

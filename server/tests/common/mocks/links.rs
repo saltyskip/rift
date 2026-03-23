@@ -33,7 +33,10 @@ impl LinksRepository for MockLinksRepo {
         metadata: Option<Document>,
     ) -> Result<Link, String> {
         let mut links = self.links.lock().unwrap();
-        if links.iter().any(|l| l.link_id == link_id) {
+        if links
+            .iter()
+            .any(|l| l.tenant_id == tenant_id && l.link_id == link_id)
+        {
             return Err("E11000 duplicate key".to_string());
         }
         let link = Link {
@@ -59,6 +62,20 @@ impl LinksRepository for MockLinksRepo {
             .unwrap()
             .iter()
             .find(|l| l.link_id == link_id)
+            .cloned())
+    }
+
+    async fn find_link_by_tenant_and_id(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+    ) -> Result<Option<Link>, String> {
+        Ok(self
+            .links
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|l| &l.tenant_id == tenant_id && l.link_id == link_id)
             .cloned())
     }
 

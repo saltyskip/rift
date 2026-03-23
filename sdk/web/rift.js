@@ -16,10 +16,15 @@
       var base = opts.baseUrl || DEFAULT_BASE;
       var platform = detectPlatform();
 
+      var domain = opts.domain || (typeof location !== "undefined" ? location.hostname : undefined);
+
+      var payload = { link_id: linkId };
+      if (domain) payload.domain = domain;
+
       fetch(base + "/v1/sdk/click", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ link_id: linkId })
+        body: JSON.stringify(payload)
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
