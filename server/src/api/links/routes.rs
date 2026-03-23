@@ -221,21 +221,18 @@ pub async fn get_link_stats(
             .into_response();
     };
 
-    let Some(link) = repo.find_link_by_id(&link_id).await.ok().flatten() else {
+    let Some(_link) = repo
+        .find_link_by_tenant_and_id(&tenant.0, &link_id)
+        .await
+        .ok()
+        .flatten()
+    else {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Link not found", "code": "not_found" })),
         )
             .into_response();
     };
-
-    if link.tenant_id != tenant.0 {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Link not found", "code": "not_found" })),
-        )
-            .into_response();
-    }
 
     let click_count = repo.count_clicks(&tenant.0, &link_id).await.unwrap_or(0);
     let install_count = repo
@@ -751,7 +748,12 @@ pub async fn resolve_deferred(
         return not_matched.into_response();
     }
 
-    let Some(link) = repo.find_link_by_id(&click.link_id).await.ok().flatten() else {
+    let Some(link) = repo
+        .find_link_by_tenant_and_id(&click.tenant_id, &click.link_id)
+        .await
+        .ok()
+        .flatten()
+    else {
         return not_matched.into_response();
     };
 
@@ -808,7 +810,38 @@ pub async fn report_attribution(
             .into_response();
     };
 
-    let Some(link) = repo.find_link_by_id(&req.link_id).await.ok().flatten() else {
+    // If a domain is provided, scope the lookup to that domain's tenant.
+    let link = if let Some(ref domain_name) = req.domain {
+        let Some(domains_repo) = &state.domains_repo else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        };
+        let Some(domain) = domains_repo.find_by_domain(domain_name).await.ok().flatten() else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        };
+        if !domain.verified {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        }
+        repo.find_link_by_tenant_and_id(&domain.tenant_id, &req.link_id)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        repo.find_link_by_id(&req.link_id).await.ok().flatten()
+    };
+
+    let Some(link) = link else {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Link not found", "code": "not_found" })),
