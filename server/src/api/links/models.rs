@@ -126,6 +126,9 @@ pub struct ReportAttributionRequest {
     pub link_id: String,
     pub install_id: String,
     pub app_version: String,
+    /// Optional custom domain for tenant-scoped link lookup.
+    #[serde(default)]
+    pub domain: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

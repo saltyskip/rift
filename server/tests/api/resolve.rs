@@ -1,3 +1,5 @@
+use rift::api::domains::repo::DomainsRepository;
+
 use crate::common;
 
 #[tokio::test]
@@ -433,6 +435,214 @@ async fn sdk_click_with_domain_scopes_to_tenant() {
         .json(&serde_json::json!({
             "link_id": "scoped-link",
             "domain": "go.other.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn resolve_custom_domain_succeeds() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "download",
+            "web_url": "https://example.com/download"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Resolve via custom domain route (/{link_id} with x-rift-host header).
+    let resp = app
+        .client
+        .get(app.url("/download"))
+        .header("x-rift-host", "go.example.com")
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["link_id"], "download");
+    assert_eq!(body["web_url"], "https://example.com/download");
+}
+
+#[tokio::test]
+async fn resolve_custom_domain_wrong_tenant_returns_404() {
+    let app = common::spawn_app().await;
+
+    // Tenant A owns "download"
+    let (key_a, tenant_a) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_a, "go.tenant-a.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key_a}"))
+        .json(&serde_json::json!({
+            "custom_id": "download",
+            "web_url": "https://a.com/download"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Tenant B has a different domain but no "download" link
+    let (_, tenant_b) = common::seed_api_key_with(
+        &app,
+        "rl_live_test_b_234567890abcdef1234567890abcdef12345678",
+    )
+    .await;
+    common::seed_verified_domain(&app, &tenant_b, "go.tenant-b.com").await;
+
+    // Resolve "download" via tenant B's domain — should 404.
+    let resp = app
+        .client
+        .get(app.url("/download"))
+        .header("x-rift-host", "go.tenant-b.com")
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn resolve_custom_domain_unverified_returns_404() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+
+    // Create an unverified domain (seed without marking verified).
+    app.domains_repo
+        .create_domain(tenant_id, "unverified.example.com".to_string(), "tok".to_string())
+        .await
+        .unwrap();
+
+    // Also need a verified domain to create the custom_id link.
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "download",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Resolve via unverified domain — should 404.
+    let resp = app
+        .client
+        .get(app.url("/download"))
+        .header("x-rift-host", "unverified.example.com")
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn resolve_two_tenants_same_slug_via_custom_domains() {
+    let app = common::spawn_app().await;
+
+    let (key_a, tenant_a) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_a, "go.tenant-a.com").await;
+
+    let (key_b, tenant_b) = common::seed_api_key_with(
+        &app,
+        "rl_live_test_b_234567890abcdef1234567890abcdef12345678",
+    )
+    .await;
+    common::seed_verified_domain(&app, &tenant_b, "go.tenant-b.com").await;
+
+    // Both create "download" pointing to different destinations.
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key_a}"))
+        .json(&serde_json::json!({ "custom_id": "download", "web_url": "https://a.com" }))
+        .send()
+        .await
+        .unwrap();
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key_b}"))
+        .json(&serde_json::json!({ "custom_id": "download", "web_url": "https://b.com" }))
+        .send()
+        .await
+        .unwrap();
+
+    // Tenant A's domain resolves to A's link.
+    let resp = app
+        .client
+        .get(app.url("/download"))
+        .header("x-rift-host", "go.tenant-a.com")
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["web_url"], "https://a.com");
+
+    // Tenant B's domain resolves to B's link.
+    let resp = app
+        .client
+        .get(app.url("/download"))
+        .header("x-rift-host", "go.tenant-b.com")
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["web_url"], "https://b.com");
+}
+
+#[tokio::test]
+async fn sdk_click_with_unverified_domain_returns_404() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    // Create an unverified domain.
+    app.domains_repo
+        .create_domain(tenant_id, "unverified.example.com".to_string(), "tok".to_string())
+        .await
+        .unwrap();
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "my-link",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url("/v1/sdk/click"))
+        .json(&serde_json::json!({
+            "link_id": "my-link",
+            "domain": "unverified.example.com"
         }))
         .send()
         .await
