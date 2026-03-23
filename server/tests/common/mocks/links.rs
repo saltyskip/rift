@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime};
+use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use rift::api::links::models::{Click, CreateLinkInput, Link};
+use rift::api::links::models::{ClickEvent, ClickMeta, CreateLinkInput, Link, TimeseriesDataPoint};
 use rift::api::links::repo::LinksRepository;
 
 struct Attribution {
@@ -15,7 +16,7 @@ struct Attribution {
 #[derive(Default)]
 pub struct MockLinksRepo {
     pub links: Mutex<Vec<Link>>,
-    clicks: Mutex<Vec<Click>>,
+    clicks: Mutex<Vec<ClickEvent>>,
     attributions: Mutex<Vec<Attribution>>,
 }
 
@@ -87,29 +88,18 @@ impl LinksRepository for MockLinksRepo {
         user_agent: Option<String>,
         referer: Option<String>,
         platform: Option<String>,
-        token: Option<String>,
     ) -> Result<(), String> {
-        self.clicks.lock().unwrap().push(Click {
-            id: ObjectId::new(),
-            tenant_id,
-            link_id: link_id.to_string(),
+        self.clicks.lock().unwrap().push(ClickEvent {
+            meta: ClickMeta {
+                tenant_id,
+                link_id: link_id.to_string(),
+            },
             clicked_at: DateTime::now(),
             user_agent,
             referer,
             platform,
-            token,
         });
         Ok(())
-    }
-
-    async fn find_click_by_token(&self, token: &str) -> Result<Option<Click>, String> {
-        Ok(self
-            .clicks
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|c| c.token.as_deref() == Some(token))
-            .cloned())
     }
 
     async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
@@ -118,8 +108,41 @@ impl LinksRepository for MockLinksRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|c| &c.tenant_id == tenant_id && c.link_id == link_id)
+            .filter(|c| &c.meta.tenant_id == tenant_id && c.meta.link_id == link_id)
             .count() as u64)
+    }
+
+    async fn get_click_timeseries(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+        from: DateTime,
+        to: DateTime,
+    ) -> Result<Vec<TimeseriesDataPoint>, String> {
+        let clicks = self.clicks.lock().unwrap();
+        let mut buckets: BTreeMap<String, u64> = BTreeMap::new();
+
+        for click in clicks.iter() {
+            if &click.meta.tenant_id == tenant_id
+                && click.meta.link_id == link_id
+                && click.clicked_at >= from
+                && click.clicked_at <= to
+            {
+                let date = click
+                    .clicked_at
+                    .try_to_rfc3339_string()
+                    .unwrap_or_default()
+                    .chars()
+                    .take(10)
+                    .collect::<String>();
+                *buckets.entry(date).or_insert(0) += 1;
+            }
+        }
+
+        Ok(buckets
+            .into_iter()
+            .map(|(date, clicks)| TimeseriesDataPoint { date, clicks })
+            .collect())
     }
 
     async fn upsert_attribution(

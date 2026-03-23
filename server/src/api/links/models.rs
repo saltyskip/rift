@@ -1,6 +1,6 @@
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 // ── Database Documents ──
 
@@ -33,12 +33,17 @@ pub struct Link {
     pub created_at: DateTime,
 }
 
+/// Click event stored in the `click_events` time series collection.
+/// The `meta` subdocument is the metaField for time series bucketing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Click {
-    #[serde(rename = "_id")]
-    pub id: ObjectId,
+pub struct ClickMeta {
     pub tenant_id: ObjectId,
     pub link_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClickEvent {
+    pub meta: ClickMeta,
     pub clicked_at: DateTime,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_agent: Option<String>,
@@ -46,9 +51,6 @@ pub struct Click {
     pub referer: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
-    /// Short hex token for deferred deep linking.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -237,8 +239,7 @@ pub struct SdkClickRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SdkClickResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
+    pub link_id: String,
     pub platform: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ios_deep_link: Option<String>,
@@ -257,10 +258,13 @@ pub struct SdkClickResponse {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct DeferredLinkRequest {
-    /// Token from clipboard or install referrer.
-    pub token: String,
+    /// Link ID from clipboard or install referrer.
+    pub link_id: String,
     /// Client-generated install ID for attribution.
     pub install_id: String,
+    /// Optional custom domain for tenant-scoped link lookup.
+    #[serde(default)]
+    pub domain: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -273,4 +277,31 @@ pub struct DeferredLinkResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub android_deep_link: Option<String>,
     pub metadata: Option<serde_json::Value>,
+}
+
+// ── Timeseries Analytics Models ──
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct TimeseriesQuery {
+    /// Start of date range (RFC 3339). Defaults to 30 days ago.
+    pub from: Option<String>,
+    /// End of date range (RFC 3339). Defaults to now.
+    pub to: Option<String>,
+    /// Bucket granularity. Only "daily" supported.
+    pub granularity: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TimeseriesDataPoint {
+    pub date: String,
+    pub clicks: u64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TimeseriesResponse {
+    pub link_id: String,
+    pub granularity: String,
+    pub from: String,
+    pub to: String,
+    pub data: Vec<TimeseriesDataPoint>,
 }

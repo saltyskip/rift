@@ -1,10 +1,12 @@
 use async_trait::async_trait;
 use cached::proc_macro::cached;
 use mongodb::bson::{doc, oid::ObjectId, DateTime};
-use mongodb::options::IndexOptions;
+use mongodb::options::{IndexOptions, TimeseriesGranularity, TimeseriesOptions};
 use mongodb::{Collection, Database, IndexModel};
 
-use super::models::{Attribution, Click, CreateLinkInput, Link};
+use super::models::{
+    Attribution, ClickEvent, ClickMeta, CreateLinkInput, Link, TimeseriesDataPoint,
+};
 
 // ── Trait ──
 
@@ -29,12 +31,17 @@ pub trait LinksRepository: Send + Sync {
         user_agent: Option<String>,
         referer: Option<String>,
         platform: Option<String>,
-        token: Option<String>,
     ) -> Result<(), String>;
 
-    async fn find_click_by_token(&self, token: &str) -> Result<Option<Click>, String>;
-
     async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
+
+    async fn get_click_timeseries(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+        from: DateTime,
+        to: DateTime,
+    ) -> Result<Vec<TimeseriesDataPoint>, String>;
 
     async fn upsert_attribution(
         &self,
@@ -59,7 +66,7 @@ pub trait LinksRepository: Send + Sync {
 #[derive(Clone)]
 pub struct LinksRepo {
     links: Collection<Link>,
-    clicks: Collection<Click>,
+    click_events: Collection<ClickEvent>,
     attributions: Collection<Attribution>,
 }
 
@@ -85,8 +92,26 @@ macro_rules! ensure_index {
 impl LinksRepo {
     pub async fn new(database: &Database) -> Self {
         let links = database.collection::<Link>("links");
-        let clicks = database.collection::<Click>("clicks");
         let attributions = database.collection::<Attribution>("attributions");
+
+        // Create time series collection for click events (idempotent — errors if exists).
+        let ts_opts = TimeseriesOptions::builder()
+            .time_field("clicked_at".to_string())
+            .meta_field(Some("meta".to_string()))
+            .granularity(Some(TimeseriesGranularity::Minutes))
+            .build();
+        if let Err(e) = database
+            .create_collection("click_events")
+            .timeseries(ts_opts)
+            .await
+        {
+            // NamespaceExists (code 48) is expected on subsequent startups.
+            let err_str = e.to_string();
+            if !err_str.contains("already exists") && !err_str.contains("48") {
+                tracing::error!("Failed to create click_events time series collection: {e}");
+            }
+        }
+        let click_events = database.collection::<ClickEvent>("click_events");
 
         // Drop the old global unique index if it exists (replaced by compound index).
         let _ = links.drop_index("link_id_unique").await;
@@ -102,19 +127,6 @@ impl LinksRepo {
         ensure_index!(links, doc! { "link_id": 1 }, "link_id_lookup");
 
         ensure_index!(
-            clicks,
-            doc! { "tenant_id": 1, "link_id": 1 },
-            "clicks_tenant_link"
-        );
-
-        ensure_index!(
-            clicks,
-            doc! { "token": 1 },
-            IndexOptions::builder().unique(true).sparse(true).build(),
-            "clicks_token_sparse_unique"
-        );
-
-        ensure_index!(
             attributions,
             doc! { "tenant_id": 1, "install_id": 1 },
             IndexOptions::builder().unique(true).build(),
@@ -128,7 +140,7 @@ impl LinksRepo {
 
         LinksRepo {
             links,
-            clicks,
+            click_events,
             attributions,
         }
     }
@@ -226,37 +238,81 @@ impl LinksRepository for LinksRepo {
         user_agent: Option<String>,
         referer: Option<String>,
         platform: Option<String>,
-        token: Option<String>,
     ) -> Result<(), String> {
-        let click = Click {
-            id: ObjectId::new(),
-            tenant_id,
-            link_id: link_id.to_string(),
+        let event = ClickEvent {
+            meta: ClickMeta {
+                tenant_id,
+                link_id: link_id.to_string(),
+            },
             clicked_at: DateTime::now(),
             user_agent,
             referer,
             platform,
-            token,
         };
-        self.clicks
-            .insert_one(&click)
+        self.click_events
+            .insert_one(&event)
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
     }
 
-    async fn find_click_by_token(&self, token: &str) -> Result<Option<Click>, String> {
-        self.clicks
-            .find_one(doc! { "token": token })
+    async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
+        self.click_events
+            .count_documents(doc! { "meta.tenant_id": tenant_id, "meta.link_id": link_id })
             .await
             .map_err(|e| e.to_string())
     }
 
-    async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
-        self.clicks
-            .count_documents(doc! { "tenant_id": tenant_id, "link_id": link_id })
+    async fn get_click_timeseries(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+        from: DateTime,
+        to: DateTime,
+    ) -> Result<Vec<TimeseriesDataPoint>, String> {
+        let pipeline = vec![
+            doc! {
+                "$match": {
+                    "meta.tenant_id": tenant_id,
+                    "meta.link_id": link_id,
+                    "clicked_at": { "$gte": from, "$lte": to }
+                }
+            },
+            doc! {
+                "$group": {
+                    "_id": {
+                        "$dateToString": { "format": "%Y-%m-%d", "date": "$clicked_at" }
+                    },
+                    "clicks": { "$sum": 1 }
+                }
+            },
+            doc! { "$sort": { "_id": 1 } },
+            doc! {
+                "$project": {
+                    "_id": 0,
+                    "date": "$_id",
+                    "clicks": 1
+                }
+            },
+        ];
+
+        let mut cursor = self
+            .click_events
+            .aggregate(pipeline)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+
+        let mut results = Vec::new();
+        while cursor.advance().await.map_err(|e| e.to_string())? {
+            let doc = cursor.deserialize_current().map_err(|e| e.to_string())?;
+            let date = doc.get_str("date").map_err(|e| e.to_string())?.to_string();
+            let clicks = doc
+                .get_i64("clicks")
+                .or_else(|_| doc.get_i32("clicks").map(|v| v as i64))
+                .map_err(|e| e.to_string())? as u64;
+            results.push(TimeseriesDataPoint { date, clicks });
+        }
+        Ok(results)
     }
 
     async fn upsert_attribution(

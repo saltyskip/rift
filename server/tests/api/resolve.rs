@@ -181,12 +181,11 @@ async fn resolve_ios_deep_link_shows_smart_landing() {
 }
 
 #[tokio::test]
-async fn deferred_deep_link_round_trip() {
+async fn deferred_with_link_id_returns_link_data() {
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;
     common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
 
-    // Create a link with platform destinations.
     app.client
         .post(app.url("/v1/links"))
         .header("Authorization", format!("Bearer {key}"))
@@ -199,35 +198,34 @@ async fn deferred_deep_link_round_trip() {
         .await
         .unwrap();
 
-    // Resolve with iPhone UA to generate a token.
-    app.client
-        .get(app.url("/r/deferred-test"))
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
-        )
-        .send()
-        .await
-        .unwrap();
-
-    // Extract the token from the mock clicks.
-    let token = {
-        let clicks = app.links_repo.links.lock().unwrap();
-        drop(clicks);
-        // Access clicks via the mock directly isn't possible through the trait,
-        // but we can find the click by looking at all clicks.
-        // Instead, let's get it from the response page — but that's complex.
-        // Let's just query the mock directly.
-        String::new()
-    };
-
-    // Since we can't easily extract the token from the mock through the trait,
-    // test the endpoint with an invalid token returns not matched.
+    // Deferred resolve with link_id directly.
     let resp = app
         .client
         .post(app.url("/v1/deferred"))
         .json(&serde_json::json!({
-            "token": "nonexistent",
+            "link_id": "deferred-test",
+            "install_id": "test-install-123"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["matched"], true);
+    assert_eq!(body["link_id"], "deferred-test");
+    assert_eq!(body["ios_deep_link"], "myapp://deferred");
+}
+
+#[tokio::test]
+async fn deferred_nonexistent_link_returns_not_matched() {
+    let app = common::spawn_app().await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/deferred"))
+        .json(&serde_json::json!({
+            "link_id": "nonexistent",
             "install_id": "test-install"
         }))
         .send()
@@ -237,13 +235,17 @@ async fn deferred_deep_link_round_trip() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["matched"], false);
+}
 
-    // Test validation.
+#[tokio::test]
+async fn deferred_validation_returns_400() {
+    let app = common::spawn_app().await;
+
     let resp = app
         .client
         .post(app.url("/v1/deferred"))
         .json(&serde_json::json!({
-            "token": "",
+            "link_id": "",
             "install_id": ""
         }))
         .send()
@@ -251,11 +253,10 @@ async fn deferred_deep_link_round_trip() {
         .unwrap();
 
     assert_eq!(resp.status(), 400);
-    let _ = token; // suppress unused warning
 }
 
 #[tokio::test]
-async fn sdk_click_returns_link_data_and_token() {
+async fn sdk_click_returns_link_data() {
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;
     common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
@@ -293,7 +294,7 @@ async fn sdk_click_returns_link_data_and_token() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["platform"], "ios");
-    assert!(body["token"].is_string());
+    assert_eq!(body["link_id"], "sdk-test");
     assert_eq!(body["ios_deep_link"], "myapp://sdk/test");
     assert_eq!(body["android_deep_link"], "myapp://sdk/test");
     assert_eq!(body["web_url"], "https://example.com/sdk");
@@ -373,7 +374,7 @@ async fn sdk_click_records_click() {
 }
 
 #[tokio::test]
-async fn sdk_click_desktop_returns_no_token() {
+async fn sdk_click_desktop_returns_link_id() {
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;
     common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
@@ -404,7 +405,7 @@ async fn sdk_click_desktop_returns_no_token() {
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["platform"], "other");
-    assert!(body["token"].is_null());
+    assert_eq!(body["link_id"], "sdk-desktop");
 }
 
 #[tokio::test]
