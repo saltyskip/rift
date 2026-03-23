@@ -62,6 +62,8 @@ export default function QuickStartPage() {
               { title: "Custom Domains", desc: "Required for vanity slugs. Use your own brand: go.yourcompany.com/summer-sale.", href: "/docs/domains" },
               { title: "Create Links", desc: "Create deep links with per-platform destinations and metadata.", href: "/docs/links" },
               { title: "Web SDK", desc: "Add download buttons to your website with rift.js.", href: "/docs/web-sdk" },
+              { title: "iOS SDK", desc: "Native Swift SDK for deferred deep linking and attribution.", href: "/docs/ios-sdk" },
+              { title: "Android SDK", desc: "Native Kotlin SDK for deferred deep linking and attribution.", href: "/docs/android-sdk" },
             ].map((item) => (
               <a
                 key={item.title}
