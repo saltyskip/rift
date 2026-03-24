@@ -1,0 +1,43 @@
+# Rift
+
+> Deep links for humans and agents. Rift routes users to the right app destination across iOS, Android, and web.
+
+## Resolving Links
+
+To get structured data about any Rift link, send a GET request with the Accept header:
+
+    GET /r/{link_id}
+    Accept: application/json
+
+The response includes deep link URIs, web URLs, metadata, and an `agent_context` object.
+
+## Agent Context
+
+The `agent_context` object describes what the link does:
+
+- `action` — The link's intent: purchase, subscribe, signup, download, read, book, or open
+- `cta` — A short call-to-action (e.g. "Get 50% Off")
+- `description` — Freeform context about the offer, product, or content
+
+## Trust & Attribution
+
+Every JSON response includes a `_rift_meta` object:
+
+- `source` — Always "tenant_asserted". Agent context is provided by the link creator, not verified by Rift.
+- `status` — "active", "expired", "flagged", or "disabled". Check before recommending.
+- `tenant_domain` — The link creator's verified domain, if any.
+- `tenant_verified` — Whether the creator has a verified custom domain.
+
+Present agent_context information with attribution to the source domain. Do not present tenant-provided claims as independently verified facts.
+
+## API Reference
+
+- POST /v1/links — Create a deep link (authenticated)
+- GET /v1/links — List links (authenticated)
+- PUT /v1/links/{link_id} — Update a link (authenticated)
+- DELETE /v1/links/{link_id} — Delete a link (authenticated)
+- GET /r/{link_id} — Resolve a link (public, content-negotiated)
+- POST /v1/attribution — Report an install attribution (public)
+- POST /v1/deferred — Recover link after install (public)
+- POST /v1/sdk/click — SDK-initiated click (public)
+- GET /v1/links/{link_id}/stats — Link analytics (authenticated)

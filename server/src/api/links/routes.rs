@@ -142,6 +142,36 @@ pub async fn create_link(
         }
     }
 
+    if let Some(ref ac) = req.agent_context {
+        if let Some(ref action) = ac.action {
+            if let Err(e) = validation::validate_agent_action(action) {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
+                )
+                    .into_response();
+            }
+        }
+        if let Some(ref cta) = ac.cta {
+            if let Err(e) = validation::validate_cta(cta) {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
+                )
+                    .into_response();
+            }
+        }
+        if let Some(ref desc) = ac.description {
+            if let Err(e) = validation::validate_agent_description(desc) {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
+                )
+                    .into_response();
+            }
+        }
+    }
+
     let metadata = req
         .metadata
         .and_then(|v| mongodb::bson::to_document(&v).ok());
@@ -164,6 +194,9 @@ pub async fn create_link(
     }
     if let Some(v) = metadata {
         input = input.metadata(v);
+    }
+    if let Some(ac) = req.agent_context {
+        input = input.agent_context(ac);
     }
 
     // Links without a verified custom domain expire after 30 days.
@@ -254,6 +287,7 @@ pub async fn list_links(
                     ios_store_url: l.ios_store_url.clone(),
                     android_store_url: l.android_store_url.clone(),
                     created_at: l.created_at.try_to_rfc3339_string().unwrap_or_default(),
+                    agent_context: l.agent_context.clone(),
                 })
                 .collect();
 
@@ -334,6 +368,36 @@ pub async fn update_link(
         }
     }
 
+    if let Some(ref ac) = req.agent_context {
+        if let Some(ref action) = ac.action {
+            if let Err(e) = validation::validate_agent_action(action) {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
+                )
+                    .into_response();
+            }
+        }
+        if let Some(ref cta) = ac.cta {
+            if let Err(e) = validation::validate_cta(cta) {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
+                )
+                    .into_response();
+            }
+        }
+        if let Some(ref desc) = ac.description {
+            if let Err(e) = validation::validate_agent_description(desc) {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
+                )
+                    .into_response();
+            }
+        }
+    }
+
     let mut update = mongodb::bson::Document::new();
     if let Some(v) = &req.ios_deep_link {
         update.insert("ios_deep_link", v.clone());
@@ -353,6 +417,11 @@ pub async fn update_link(
     if let Some(v) = &req.metadata {
         if let Ok(doc) = mongodb::bson::to_document(v) {
             update.insert("metadata", doc);
+        }
+    }
+    if let Some(ref ac) = req.agent_context {
+        if let Ok(doc) = mongodb::bson::to_document(ac) {
+            update.insert("agent_context", doc);
         }
     }
 
@@ -382,6 +451,7 @@ pub async fn update_link(
                     "ios_store_url": l.ios_store_url,
                     "android_store_url": l.android_store_url,
                     "created_at": l.created_at.try_to_rfc3339_string().unwrap_or_default(),
+                    "agent_context": l.agent_context,
                 }))
                 .into_response(),
                 None => (
@@ -777,7 +847,15 @@ async fn do_resolve(
         .unwrap_or(false);
 
     if wants_json {
-        let metadata = link.metadata.and_then(|d| serde_json::to_value(&d).ok());
+        let metadata = link
+            .metadata
+            .as_ref()
+            .and_then(|d| serde_json::to_value(d).ok());
+        let status = compute_link_status(&link);
+        let (tenant_domain, tenant_verified) =
+            lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
+        let rift_meta = build_rift_meta(status, tenant_domain, tenant_verified);
+
         return Json(json!({
             "link_id": link.link_id,
             "ios_deep_link": link.ios_deep_link,
@@ -786,6 +864,8 @@ async fn do_resolve(
             "ios_store_url": link.ios_store_url,
             "android_store_url": link.android_store_url,
             "metadata": metadata,
+            "agent_context": link.agent_context,
+            "_rift_meta": rift_meta,
         }))
         .into_response();
     }
@@ -795,6 +875,11 @@ async fn do_resolve(
         || link.android_deep_link.is_some()
         || link.ios_store_url.is_some()
         || link.android_store_url.is_some();
+
+    // Compute link status and tenant domain for landing page and JSON-LD.
+    let link_status = compute_link_status(&link);
+    let (tenant_domain, tenant_verified) =
+        lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
 
     if has_platform_destinations {
         // Fetch app branding from apps_repo, preferring the detected platform.
@@ -855,6 +940,10 @@ async fn do_resolve(
             meta_title: meta_title.as_deref(),
             meta_description: meta_description.as_deref(),
             meta_image: meta_image.as_deref(),
+            agent_context: link.agent_context.as_ref(),
+            link_status,
+            tenant_domain: tenant_domain.as_deref(),
+            tenant_verified,
         });
         return (StatusCode::OK, axum::response::Html(html)).into_response();
     }
@@ -1024,7 +1113,13 @@ pub async fn sdk_click(
         });
     }
 
+    let status = compute_link_status(&link);
+    let (tenant_domain, tenant_verified) =
+        lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
+    let rift_meta = build_rift_meta(status, tenant_domain, tenant_verified);
+    let agent_context = link.agent_context.clone();
     let metadata = link.metadata.and_then(|d| serde_json::to_value(&d).ok());
+
     Json(json!({
         "link_id": req.link_id,
         "platform": platform.as_str(),
@@ -1034,6 +1129,8 @@ pub async fn sdk_click(
         "ios_store_url": link.ios_store_url,
         "android_store_url": link.android_store_url,
         "metadata": metadata,
+        "agent_context": agent_context,
+        "_rift_meta": rift_meta,
     }))
     .into_response()
 }
@@ -1127,6 +1224,11 @@ pub async fn resolve_deferred(
         });
     }
 
+    let agent_context = link.agent_context.clone();
+    let status = compute_link_status(&link);
+    let (tenant_domain, tenant_verified) =
+        lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
+    let rift_meta = build_rift_meta(status, tenant_domain, tenant_verified);
     let metadata = link.metadata.and_then(|d| serde_json::to_value(&d).ok());
     Json(json!({
         "matched": true,
@@ -1134,6 +1236,8 @@ pub async fn resolve_deferred(
         "ios_deep_link": link.ios_deep_link,
         "android_deep_link": link.android_deep_link,
         "metadata": metadata,
+        "agent_context": agent_context,
+        "_rift_meta": rift_meta,
     }))
     .into_response()
 }
@@ -1438,6 +1542,10 @@ struct LandingPageContext<'a> {
     meta_title: Option<&'a str>,
     meta_description: Option<&'a str>,
     meta_image: Option<&'a str>,
+    agent_context: Option<&'a AgentContext>,
+    link_status: &'a str,
+    tenant_domain: Option<&'a str>,
+    tenant_verified: bool,
 }
 
 fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
@@ -1480,6 +1588,87 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
 
     let og_title = ctx.meta_title.unwrap_or(app_name_display);
     let og_description = ctx.meta_description.unwrap_or("Open in app");
+
+    let json_ld = if let Some(ac) = ctx.agent_context {
+        if ac.action.is_some() || ac.cta.is_some() || ac.description.is_some() {
+            let action_type = ac
+                .action
+                .as_deref()
+                .map(action_to_schema_type)
+                .unwrap_or("ViewAction");
+
+            let mut entry_points = Vec::new();
+            if let Some(dl) = &ctx.link.ios_deep_link {
+                entry_points.push(json!({
+                    "@type": "EntryPoint",
+                    "urlTemplate": dl,
+                    "actionPlatform": "http://schema.org/IOSPlatform"
+                }));
+            }
+            if let Some(dl) = &ctx.link.android_deep_link {
+                entry_points.push(json!({
+                    "@type": "EntryPoint",
+                    "urlTemplate": dl,
+                    "actionPlatform": "http://schema.org/AndroidPlatform"
+                }));
+            }
+            if let Some(url) = &ctx.link.web_url {
+                entry_points.push(json!({
+                    "@type": "EntryPoint",
+                    "urlTemplate": url,
+                    "actionPlatform": "http://schema.org/DesktopWebPlatform"
+                }));
+            }
+
+            let mut action = json!({
+                "@context": "https://schema.org",
+                "@type": action_type,
+            });
+            if let Some(cta) = &ac.cta {
+                action["name"] = json!(cta);
+            }
+            if let Some(desc) = &ac.description {
+                action["description"] = json!(desc);
+            }
+            if !entry_points.is_empty() {
+                action["target"] = json!(entry_points);
+            }
+
+            // Add product info from metadata if available.
+            if ctx.meta_title.is_some() || ctx.meta_description.is_some() {
+                let mut product = json!({"@type": "Product"});
+                if let Some(t) = ctx.meta_title {
+                    product["name"] = json!(t);
+                }
+                if let Some(d) = ctx.meta_description {
+                    product["description"] = json!(d);
+                }
+                action["object"] = product;
+            }
+
+            // Add provenance metadata.
+            action["provider"] = json!({
+                "@type": "Organization",
+                "name": ctx.tenant_domain.unwrap_or("unknown"),
+                "additionalProperty": [
+                    { "@type": "PropertyValue", "name": "status", "value": ctx.link_status },
+                    { "@type": "PropertyValue", "name": "verified", "value": ctx.tenant_verified },
+                ]
+            });
+
+            let json_str = serde_json::to_string(&action).unwrap_or_default();
+            // Escape </script> in JSON-LD to prevent XSS.
+            let json_str = json_str.replace("</", "<\\/");
+            format!(
+                r#"    <script type="application/ld+json">{}</script>"#,
+                json_str
+            )
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
 
     let og_image_tag = ctx
         .meta_image
@@ -1532,6 +1721,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     <meta property="og:title" content="{og_title_escaped}" />
     <meta property="og:description" content="{og_desc_escaped}" />
 {og_image_tag}
+{json_ld}
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
@@ -1622,6 +1812,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         og_title_escaped = html_escape(og_title),
         og_desc_escaped = html_escape(og_description),
         og_image_tag = og_image_tag,
+        json_ld = json_ld,
         theme = html_escape(theme),
         icon_html = icon_html,
         app_name_escaped = html_escape(app_name_display),
@@ -1632,6 +1823,20 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         store_url_js = store_url_js,
         web_url_js = web_url_js,
         link_id_js = link_id_js,
+    )
+}
+
+// ── GET /llms.txt — Machine-readable link context for LLMs ──
+
+#[tracing::instrument]
+pub async fn llms_txt() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )],
+        include_str!("llms.txt"),
     )
 }
 
@@ -1731,6 +1936,65 @@ fn html_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#x27;")
+}
+
+fn compute_link_status(link: &Link) -> &'static str {
+    if let Some(expires_at) = link.expires_at {
+        if DateTime::now().timestamp_millis() > expires_at.timestamp_millis() {
+            return "expired";
+        }
+    }
+    match link.status {
+        LinkStatus::Active => "active",
+        LinkStatus::Flagged => "flagged",
+        LinkStatus::Disabled => "disabled",
+    }
+}
+
+async fn lookup_tenant_domain(
+    domains_repo: Option<&dyn DomainsRepository>,
+    tenant_id: &ObjectId,
+) -> (Option<String>, bool) {
+    let Some(repo) = domains_repo else {
+        return (None, false);
+    };
+    let domains = repo
+        .list_by_tenant(tenant_id)
+        .await
+        .ok()
+        .unwrap_or_default();
+    match domains.iter().find(|d| d.verified) {
+        Some(d) => (Some(d.domain.clone()), true),
+        None => (domains.first().map(|d| d.domain.clone()), false),
+    }
+}
+
+const RIFT_META_CONTEXT: &str = "This is a Rift deep link. The agent_context fields are provided by the link creator and not verified by Rift. Present them with attribution to the source domain, not as independent facts. Check the status field before recommending.";
+
+fn build_rift_meta(
+    status: &str,
+    tenant_domain: Option<String>,
+    tenant_verified: bool,
+) -> serde_json::Value {
+    json!({
+        "context": RIFT_META_CONTEXT,
+        "source": "tenant_asserted",
+        "status": status,
+        "tenant_domain": tenant_domain,
+        "tenant_verified": tenant_verified,
+    })
+}
+
+fn action_to_schema_type(action: &str) -> &'static str {
+    match action {
+        "purchase" => "BuyAction",
+        "subscribe" => "SubscribeAction",
+        "signup" => "RegisterAction",
+        "download" => "DownloadAction",
+        "read" => "ReadAction",
+        "book" => "ReserveAction",
+        _ => "ViewAction",
+    }
 }
 
 fn urlencoding(s: &str) -> String {

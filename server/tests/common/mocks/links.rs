@@ -46,6 +46,7 @@ impl LinksRepository for MockLinksRepo {
             status: LinkStatus::Active,
             flag_reason: None,
             expires_at: input.expires_at,
+            agent_context: input.agent_context,
         };
         links.push(link.clone());
         Ok(link)
@@ -105,6 +106,9 @@ impl LinksRepository for MockLinksRepo {
         }
         if let Ok(v) = update.get_document("metadata") {
             link.metadata = Some(v.clone());
+        }
+        if let Ok(v) = update.get_document("agent_context") {
+            link.agent_context = mongodb::bson::from_document(v.clone()).ok();
         }
         Ok(true)
     }

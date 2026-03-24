@@ -39,6 +39,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/v1/attribution", post(routes::report_attribution))
         .route("/v1/deferred", post(routes::resolve_deferred))
         .route("/v1/sdk/click", post(routes::sdk_click))
+        .route("/llms.txt", get(routes::llms_txt))
         .layer(middleware::from_fn(rate_limit_middleware))
         .layer(axum::Extension(limiter));
 
