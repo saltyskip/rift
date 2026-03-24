@@ -311,6 +311,17 @@ pub async fn update_link(
             .into_response();
     }
 
+    // Check web_url against threat feeds on update too.
+    if let Some(ref web_url) = req.web_url {
+        if let Some(reason) = state.threat_feed.check_url(web_url).await {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": reason, "code": "threat_detected" })),
+            )
+                .into_response();
+        }
+    }
+
     if let Some(ref meta) = req.metadata {
         if let Err(e) = validation::validate_metadata(meta) {
             return (

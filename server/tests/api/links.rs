@@ -623,3 +623,162 @@ async fn list_links_default_returns_all() {
     assert_eq!(body["links"].as_array().unwrap().len(), 3);
     assert!(body["next_cursor"].is_null());
 }
+
+// ── Threat Feed ──
+
+#[tokio::test]
+async fn create_link_with_malicious_url_rejected() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    // Pre-populate threat feed with a known-bad URL.
+    app.threat_feed
+        .urls
+        .write()
+        .await
+        .insert("https://evil-malware.com/payload.exe".to_string());
+
+    let resp = app
+        .client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "web_url": "https://evil-malware.com/payload.exe"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "threat_detected");
+}
+
+#[tokio::test]
+async fn create_link_with_phishing_domain_rejected() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    // Pre-populate with a phishing domain.
+    app.threat_feed
+        .domains
+        .write()
+        .await
+        .insert("fake-login-page.com".to_string());
+
+    let resp = app
+        .client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "web_url": "https://fake-login-page.com/signin"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "threat_detected");
+}
+
+#[tokio::test]
+async fn update_link_with_malicious_url_rejected() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    // Create a safe link first.
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "web_url": "https://safe.com" }))
+        .send()
+        .await
+        .unwrap();
+
+    let link_id = {
+        let links = app.links_repo.links.lock().unwrap();
+        links[0].link_id.clone()
+    };
+
+    // Add a malicious domain to the feed.
+    app.threat_feed
+        .domains
+        .write()
+        .await
+        .insert("evil.com".to_string());
+
+    // Try to update to a malicious URL.
+    let resp = app
+        .client
+        .put(app.url(&format!("/v1/links/{link_id}")))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "web_url": "https://evil.com/phish" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "threat_detected");
+}
+
+// ── Link Expiry ──
+
+#[tokio::test]
+async fn expired_link_returns_gone() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    // Create a link (no custom domain = gets 30-day expiry).
+    let resp = app
+        .client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "web_url": "https://example.com" }))
+        .send()
+        .await
+        .unwrap();
+    let link_id = resp.json::<serde_json::Value>().await.unwrap()["link_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Manually set expires_at to the past.
+    {
+        let mut links = app.links_repo.links.lock().unwrap();
+        let link = links.iter_mut().find(|l| l.link_id == link_id).unwrap();
+        link.expires_at = Some(mongodb::bson::DateTime::from_millis(0)); // epoch = expired
+    }
+
+    let resp = app
+        .client
+        .get(app.url(&format!("/r/{link_id}")))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 410);
+}
+
+#[tokio::test]
+async fn link_with_verified_domain_has_no_expiry() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "permanent",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let links = app.links_repo.links.lock().unwrap();
+    let link = links.iter().find(|l| l.link_id == "permanent").unwrap();
+    assert!(link.expires_at.is_none());
+}

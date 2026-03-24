@@ -11,9 +11,9 @@ const FEED_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Clone, Default)]
 pub struct ThreatFeed {
     /// Exact malicious URLs (from URLhaus — malware distribution).
-    urls: Arc<RwLock<HashSet<String>>>,
+    pub urls: Arc<RwLock<HashSet<String>>>,
     /// Known phishing domains (from Phishing.Database).
-    domains: Arc<RwLock<HashSet<String>>>,
+    pub domains: Arc<RwLock<HashSet<String>>>,
 }
 
 impl ThreatFeed {
