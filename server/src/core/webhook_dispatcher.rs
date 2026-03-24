@@ -7,6 +7,9 @@ pub struct ClickEventPayload {
     pub user_agent: Option<String>,
     pub referer: Option<String>,
     pub platform: String,
+    pub country: Option<String>,
+    pub city: Option<String>,
+    pub region: Option<String>,
     pub timestamp: String,
 }
 
