@@ -740,9 +740,7 @@ async fn do_resolve(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let country = extract_header(headers, "x-rift-country");
-    let city = extract_header(headers, "x-rift-city");
-    let region = extract_header(headers, "x-rift-region");
+    let (country, city, region) = extract_geo(headers);
 
     let platform = user_agent
         .as_deref()
@@ -1005,9 +1003,7 @@ pub async fn sdk_click(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let country = extract_header(&headers, "x-rift-country");
-    let city = extract_header(&headers, "x-rift-city");
-    let region = extract_header(&headers, "x-rift-region");
+    let (country, city, region) = extract_geo(&headers);
 
     let platform = user_agent
         .as_deref()
@@ -1758,6 +1754,18 @@ fn extract_header(headers: &HeaderMap, name: &str) -> Option<String> {
         .get(name)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
+}
+
+fn extract_geo(headers: &HeaderMap) -> (Option<String>, Option<String>, Option<String>) {
+    // Prefer X-Rift-* headers (set by edge worker from request.cf),
+    // fall back to CF-* headers (set by Cloudflare automatically).
+    let country = extract_header(headers, "x-rift-country")
+        .or_else(|| extract_header(headers, "cf-ipcountry"));
+    let city =
+        extract_header(headers, "x-rift-city").or_else(|| extract_header(headers, "cf-ipcity"));
+    let region =
+        extract_header(headers, "x-rift-region").or_else(|| extract_header(headers, "cf-ipregion"));
+    (country, city, region)
 }
 
 fn urlencoding(s: &str) -> String {
