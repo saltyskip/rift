@@ -2,68 +2,93 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use url::Url;
 
 const FEED_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// In-memory set of known malicious URLs, populated from free threat feeds.
+/// In-memory threat intelligence, populated from free feeds.
+/// Checks both exact URLs (malware) and domains (phishing).
 #[derive(Clone, Default)]
 pub struct ThreatFeed {
+    /// Exact malicious URLs (from URLhaus — malware distribution).
     urls: Arc<RwLock<HashSet<String>>>,
+    /// Known phishing domains (from Phishing.Database).
+    domains: Arc<RwLock<HashSet<String>>>,
 }
 
 impl ThreatFeed {
     pub fn new() -> Self {
         Self {
             urls: Arc::new(RwLock::new(HashSet::new())),
+            domains: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
-    /// Check if any of the given URLs are in the threat feed.
-    pub async fn check_urls(&self, urls: &[&str]) -> Option<String> {
-        let feed = self.urls.read().await;
-        for url in urls {
-            let normalized = normalize_url(url);
-            if feed.contains(&normalized) {
-                return Some(url.to_string());
+    /// Check a URL against both the exact URL set and the domain set.
+    /// Returns Some(reason) if matched, None if clean.
+    pub async fn check_url(&self, raw_url: &str) -> Option<String> {
+        let normalized = normalize_url(raw_url);
+
+        // Check exact URL match (URLhaus — malware).
+        if self.urls.read().await.contains(&normalized) {
+            return Some(format!("URL matches known malware feed: {raw_url}"));
+        }
+
+        // Extract domain and check against phishing domain set.
+        if let Ok(parsed) = Url::parse(raw_url) {
+            if let Some(host) = parsed.host_str() {
+                let host_lower = host.to_lowercase();
+                let domains = self.domains.read().await;
+                if domains.contains(&host_lower) {
+                    return Some(format!("Domain '{host_lower}' is a known phishing domain"));
+                }
+                // Also check parent domains (e.g., evil.example.com -> example.com).
+                let parts: Vec<&str> = host_lower.split('.').collect();
+                for i in 1..parts.len().saturating_sub(1) {
+                    let parent = parts[i..].join(".");
+                    if domains.contains(&parent) {
+                        return Some(format!(
+                            "Domain '{host_lower}' is a subdomain of known phishing domain '{parent}'"
+                        ));
+                    }
+                }
             }
         }
+
         None
     }
 
-    /// Refresh the feed from all sources.
-    /// Only replaces the feed if at least one source returned data.
+    /// Refresh all feeds. Only replaces data if at least one source succeeds.
     pub async fn refresh(&self) {
         let client = reqwest::Client::builder()
             .timeout(FEED_TIMEOUT)
             .build()
             .unwrap_or_default();
 
+        // URLhaus — exact malware URLs.
         let mut new_urls = HashSet::new();
-
         match fetch_urlhaus(&client).await {
             Ok(urls) => {
                 tracing::info!(count = urls.len(), "Loaded URLhaus feed");
-                new_urls.extend(urls);
+                new_urls = urls;
             }
             Err(e) => tracing::warn!(error = %e, "Failed to fetch URLhaus feed"),
         }
 
-        match fetch_openphish(&client).await {
-            Ok(urls) => {
-                tracing::info!(count = urls.len(), "Loaded OpenPhish feed");
-                new_urls.extend(urls);
+        if !new_urls.is_empty() {
+            *self.urls.write().await = new_urls;
+        }
+
+        // Phishing.Database — phishing domains.
+        match fetch_phishing_domains(&client).await {
+            Ok(domains) => {
+                tracing::info!(count = domains.len(), "Loaded Phishing.Database domains");
+                if !domains.is_empty() {
+                    *self.domains.write().await = domains;
+                }
             }
-            Err(e) => tracing::warn!(error = %e, "Failed to fetch OpenPhish feed"),
+            Err(e) => tracing::warn!(error = %e, "Failed to fetch Phishing.Database"),
         }
-
-        if new_urls.is_empty() {
-            tracing::warn!("No threat feed data received — keeping existing feed");
-            return;
-        }
-
-        let count = new_urls.len();
-        *self.urls.write().await = new_urls;
-        tracing::info!(total = count, "Threat feed updated");
     }
 
     /// Start a background task that refreshes the feed periodically.
@@ -78,7 +103,6 @@ impl ThreatFeed {
     }
 }
 
-/// Normalize a URL for matching: lowercase, strip trailing slash, strip fragment.
 fn normalize_url(url: &str) -> String {
     let mut s = url.trim().to_lowercase();
     if let Some(idx) = s.find('#') {
@@ -90,7 +114,8 @@ fn normalize_url(url: &str) -> String {
     s
 }
 
-async fn fetch_urlhaus(client: &reqwest::Client) -> Result<Vec<String>, String> {
+/// Fetch URLhaus text feed (one URL per line, # comments).
+async fn fetch_urlhaus(client: &reqwest::Client) -> Result<HashSet<String>, String> {
     let url = "https://urlhaus.abuse.ch/downloads/text_online/";
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     let text = resp.text().await.map_err(|e| e.to_string())?;
@@ -103,15 +128,16 @@ async fn fetch_urlhaus(client: &reqwest::Client) -> Result<Vec<String>, String> 
         .collect())
 }
 
-async fn fetch_openphish(client: &reqwest::Client) -> Result<Vec<String>, String> {
-    let url = "https://openphish.com/feed.txt";
+/// Fetch Phishing.Database active domains (one domain per line).
+async fn fetch_phishing_domains(client: &reqwest::Client) -> Result<HashSet<String>, String> {
+    let url = "https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-domains-ACTIVE.txt";
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     let text = resp.text().await.map_err(|e| e.to_string())?;
 
     Ok(text
         .lines()
         .filter(|l| !l.is_empty())
-        .map(|l| normalize_url(l.trim()))
+        .map(|l| l.trim().to_lowercase())
         .filter(|l| !l.is_empty())
         .collect())
 }
@@ -131,18 +157,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_urls_returns_match() {
+    async fn check_exact_url_match() {
         let feed = ThreatFeed::new();
-        {
-            let mut urls = feed.urls.write().await;
-            urls.insert("https://evil.com/phish".to_string());
-        }
+        feed.urls
+            .write()
+            .await
+            .insert("https://evil.com/malware.exe".to_string());
 
-        assert_eq!(
-            feed.check_urls(&["https://example.com", "https://evil.com/phish"])
-                .await,
-            Some("https://evil.com/phish".to_string())
-        );
-        assert_eq!(feed.check_urls(&["https://safe.com"]).await, None);
+        assert!(feed
+            .check_url("https://evil.com/malware.exe")
+            .await
+            .is_some());
+        assert!(feed.check_url("https://safe.com").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn check_domain_match() {
+        let feed = ThreatFeed::new();
+        feed.domains
+            .write()
+            .await
+            .insert("phishing-site.com".to_string());
+
+        assert!(feed
+            .check_url("https://phishing-site.com/login")
+            .await
+            .is_some());
+        assert!(feed
+            .check_url("https://sub.phishing-site.com/fake")
+            .await
+            .is_some());
+        assert!(feed
+            .check_url("https://legit-site.com/page")
+            .await
+            .is_none());
     }
 }
