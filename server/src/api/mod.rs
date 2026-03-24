@@ -3,6 +3,7 @@ pub mod auth;
 pub mod domains;
 pub mod health;
 pub mod links;
+pub mod webhooks;
 
 use axum::routing::get;
 use axum::Router;
@@ -15,8 +16,10 @@ use crate::api::apps::repo::AppsRepository;
 use crate::api::auth::repo::AuthRepository;
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::links::repo::LinksRepository;
+use crate::api::webhooks::repo::WebhooksRepository;
 use crate::core::config::Config;
 use crate::core::threat_feed::ThreatFeed;
+use crate::core::webhook_dispatcher::WebhookDispatcher;
 
 use x402_types::proto::v1;
 
@@ -32,6 +35,8 @@ pub struct AppState {
     pub facilitator: Option<CdpFacilitator>,
     pub x402_price_tags: Vec<v1::PriceTag>,
     pub threat_feed: ThreatFeed,
+    pub webhooks_repo: Option<StdArc<dyn WebhooksRepository>>,
+    pub webhook_dispatcher: Option<StdArc<dyn WebhookDispatcher>>,
 }
 
 #[derive(OpenApi)]
@@ -58,6 +63,9 @@ pub struct AppState {
         links::routes::get_link_timeseries,
         links::routes::update_link,
         links::routes::delete_link,
+        webhooks::routes::create_webhook,
+        webhooks::routes::list_webhooks,
+        webhooks::routes::delete_webhook,
         domains::routes::create_domain,
         domains::routes::list_domains,
         domains::routes::delete_domain,
@@ -95,6 +103,11 @@ pub struct AppState {
         domains::models::VerifyDomainResponse,
         apps::models::CreateAppRequest,
         apps::models::AppDetail,
+        webhooks::models::CreateWebhookRequest,
+        webhooks::models::CreateWebhookResponse,
+        webhooks::models::WebhookDetail,
+        webhooks::models::ListWebhooksResponse,
+        webhooks::models::WebhookEventType,
     )),
     security(
         ("api_key" = []),
@@ -107,6 +120,7 @@ pub struct AppState {
         (name = "System", description = "Health checks and operational endpoints"),
         (name = "Domains", description = "Custom domain management"),
         (name = "Apps", description = "App configuration and association files"),
+        (name = "Webhooks", description = "Webhook management for real-time event notifications"),
     )
 )]
 struct ApiDoc;
@@ -139,6 +153,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(links::router(state.clone()))
         .merge(domains::router(state.clone()))
         .merge(apps::router(state.clone()))
+        .merge(webhooks::router(state.clone()))
         .merge(openapi_json)
         .merge(sdk)
 }

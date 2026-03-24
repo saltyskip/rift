@@ -64,6 +64,7 @@ export default function QuickStartPage() {
               { title: "Web SDK", desc: "Add download buttons to your website with rift.js.", href: "/docs/web-sdk" },
               { title: "iOS SDK", desc: "Native Swift SDK for deferred deep linking and attribution.", href: "/docs/ios-sdk" },
               { title: "Android SDK", desc: "Native Kotlin SDK for deferred deep linking and attribution.", href: "/docs/android-sdk" },
+              { title: "Webhooks", desc: "Real-time notifications for click and attribution events.", href: "/docs/webhooks" },
             ].map((item) => (
               <a
                 key={item.title}

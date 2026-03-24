@@ -1,6 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect, Response};
+use chrono::Utc;
 use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
 use serde_json::json;
@@ -13,6 +14,7 @@ use crate::api::auth::middleware::TenantId;
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::AppState;
 use crate::core::validation;
+use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload};
 
 // ── Platform Detection ──
 
@@ -747,13 +749,24 @@ async fn do_resolve(
         .record_click(
             link.tenant_id,
             link_id,
-            user_agent,
-            referer,
+            user_agent.clone(),
+            referer.clone(),
             Some(platform.as_str().to_string()),
         )
         .await
     {
         tracing::warn!(error = %e, "Failed to record click");
+    }
+
+    if let Some(dispatcher) = &state.webhook_dispatcher {
+        dispatcher.dispatch_click(ClickEventPayload {
+            tenant_id: link.tenant_id.to_hex(),
+            link_id: link_id.to_string(),
+            user_agent,
+            referer,
+            platform: platform.as_str().to_string(),
+            timestamp: Utc::now().to_rfc3339(),
+        });
     }
 
     // Agents get JSON, humans get a smart landing page or redirect.
@@ -991,13 +1004,24 @@ pub async fn sdk_click(
         .record_click(
             link.tenant_id,
             &req.link_id,
-            user_agent,
-            referer,
+            user_agent.clone(),
+            referer.clone(),
             Some(platform.as_str().to_string()),
         )
         .await
     {
         tracing::warn!(error = %e, "Failed to record click");
+    }
+
+    if let Some(dispatcher) = &state.webhook_dispatcher {
+        dispatcher.dispatch_click(ClickEventPayload {
+            tenant_id: link.tenant_id.to_hex(),
+            link_id: req.link_id.clone(),
+            user_agent,
+            referer,
+            platform: platform.as_str().to_string(),
+            timestamp: Utc::now().to_rfc3339(),
+        });
     }
 
     let metadata = link.metadata.and_then(|d| serde_json::to_value(&d).ok());
@@ -1091,6 +1115,16 @@ pub async fn resolve_deferred(
         .await
     {
         tracing::warn!(error = %e, "Failed to create deferred attribution");
+    }
+
+    if let Some(dispatcher) = &state.webhook_dispatcher {
+        dispatcher.dispatch_attribution(AttributionEventPayload {
+            tenant_id: link.tenant_id.to_hex(),
+            link_id: link.link_id.clone(),
+            install_id: req.install_id.clone(),
+            app_version: "deferred".to_string(),
+            timestamp: Utc::now().to_rfc3339(),
+        });
     }
 
     let metadata = link.metadata.and_then(|d| serde_json::to_value(&d).ok());
@@ -1318,6 +1352,16 @@ pub async fn report_attribution(
             Json(json!({ "error": "Internal error", "code": "db_error" })),
         )
             .into_response();
+    }
+
+    if let Some(dispatcher) = &state.webhook_dispatcher {
+        dispatcher.dispatch_attribution(AttributionEventPayload {
+            tenant_id: link.tenant_id.to_hex(),
+            link_id: req.link_id.clone(),
+            install_id: req.install_id.clone(),
+            app_version: req.app_version.clone(),
+            timestamp: Utc::now().to_rfc3339(),
+        });
     }
 
     Json(json!({ "success": true })).into_response()

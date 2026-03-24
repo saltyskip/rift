@@ -11,3 +11,29 @@ pub async fn connect(uri: &str, db_name: &str) -> Option<Database> {
         }
     }
 }
+
+/// Create a MongoDB index, logging on failure.
+#[macro_export]
+macro_rules! ensure_index {
+    ($col:expr, $keys:expr, $opts:expr, $name:expr) => {
+        if let Err(e) = $col
+            .create_index(
+                mongodb::IndexModel::builder()
+                    .keys($keys)
+                    .options($opts)
+                    .build(),
+            )
+            .await
+        {
+            tracing::error!(index = $name, "Failed to create index: {e}");
+        }
+    };
+    ($col:expr, $keys:expr, $name:expr) => {
+        if let Err(e) = $col
+            .create_index(mongodb::IndexModel::builder().keys($keys).build())
+            .await
+        {
+            tracing::error!(index = $name, "Failed to create index: {e}");
+        }
+    };
+}

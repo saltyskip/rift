@@ -2,8 +2,10 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use mongodb::bson::{self, doc, oid::ObjectId};
 use mongodb::options::{IndexOptions, UpdateOptions};
-use mongodb::{Collection, Database, IndexModel};
+use mongodb::{Collection, Database};
 use serde::{Deserialize, Serialize};
+
+use crate::ensure_index;
 
 // ── Documents ──
 
@@ -65,25 +67,6 @@ impl AuthRepo {
     pub async fn new(database: &Database) -> Self {
         let api_keys = database.collection::<ApiKeyDoc>("api_keys");
         let usage = database.collection::<UsageDoc>("usage");
-
-        macro_rules! ensure_index {
-            ($col:expr, $keys:expr, $opts:expr, $name:expr) => {
-                if let Err(e) = $col
-                    .create_index(IndexModel::builder().keys($keys).options($opts).build())
-                    .await
-                {
-                    tracing::error!(index = $name, "Failed to create index: {e}");
-                }
-            };
-            ($col:expr, $keys:expr, $name:expr) => {
-                if let Err(e) = $col
-                    .create_index(IndexModel::builder().keys($keys).build())
-                    .await
-                {
-                    tracing::error!(index = $name, "Failed to create index: {e}");
-                }
-            };
-        }
 
         ensure_index!(
             api_keys,

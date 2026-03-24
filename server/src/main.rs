@@ -16,6 +16,8 @@ use crate::api::apps::repo::AppsRepo;
 use crate::api::auth::repo::AuthRepo;
 use crate::api::domains::repo::DomainsRepo;
 use crate::api::links::repo::LinksRepo;
+use crate::api::webhooks::dispatcher::RiftWebhookDispatcher;
+use crate::api::webhooks::repo::WebhooksRepo;
 use crate::api::AppState;
 use crate::core::config::Config;
 
@@ -39,9 +41,12 @@ async fn main() {
         .init();
 
     // Connect to MongoDB (optional — server boots without it).
-    let (auth_repo, links_repo, domains_repo, apps_repo) = if cfg.mongo_uri.is_empty() {
-        tracing::warn!("MONGO_URI not set — auth, links, domains, and apps disabled");
-        (None, None, None, None)
+    let (auth_repo, links_repo, domains_repo, apps_repo, webhooks_repo) = if cfg
+        .mongo_uri
+        .is_empty()
+    {
+        tracing::warn!("MONGO_URI not set — auth, links, domains, apps, and webhooks disabled");
+        (None, None, None, None, None)
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
             Some(database) => {
@@ -54,13 +59,21 @@ async fn main() {
                     Arc::new(DomainsRepo::new(&database).await);
                 let apps: Arc<dyn crate::api::apps::repo::AppsRepository> =
                     Arc::new(AppsRepo::new(&database).await);
-                (Some(auth), Some(links), Some(domains), Some(apps))
+                let webhooks: Arc<dyn crate::api::webhooks::repo::WebhooksRepository> =
+                    Arc::new(WebhooksRepo::new(&database).await);
+                (
+                    Some(auth),
+                    Some(links),
+                    Some(domains),
+                    Some(apps),
+                    Some(webhooks),
+                )
             }
             None => {
                 tracing::warn!(
-                    "Failed to connect to MongoDB — auth, links, domains, and apps disabled"
-                );
-                (None, None, None, None)
+                        "Failed to connect to MongoDB — auth, links, domains, apps, and webhooks disabled"
+                    );
+                (None, None, None, None, None)
             }
         }
     };
@@ -97,6 +110,12 @@ async fn main() {
     let threat_feed = core::threat_feed::ThreatFeed::new();
     threat_feed.clone().start_background_refresh(30 * 60);
 
+    let webhook_dispatcher: Option<Arc<dyn crate::core::webhook_dispatcher::WebhookDispatcher>> =
+        webhooks_repo.as_ref().map(|repo| {
+            Arc::new(RiftWebhookDispatcher::new(repo.clone()))
+                as Arc<dyn crate::core::webhook_dispatcher::WebhookDispatcher>
+        });
+
     let state = Arc::new(AppState {
         auth_repo,
         links_repo,
@@ -106,6 +125,8 @@ async fn main() {
         facilitator,
         x402_price_tags,
         threat_feed,
+        webhooks_repo,
+        webhook_dispatcher,
     });
 
     let app = api::router(state.clone())
