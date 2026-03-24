@@ -95,6 +95,7 @@ pub struct AppState {
         links::models::DeferredLinkResponse,
         links::models::SdkClickRequest,
         links::models::SdkClickResponse,
+        links::models::AgentContext,
         links::models::TimeseriesDataPoint,
         links::models::TimeseriesResponse,
         domains::models::CreateDomainRequest,

@@ -219,6 +219,7 @@ impl LinksRepository for LinksRepo {
             status: LinkStatus::Active,
             flag_reason: None,
             expires_at: input.expires_at,
+            agent_context: input.agent_context,
         };
         self.links
             .insert_one(&link)

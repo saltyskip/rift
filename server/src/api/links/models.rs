@@ -13,6 +13,16 @@ pub enum LinkStatus {
     Disabled,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct AgentContext {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cta: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Link {
     #[serde(rename = "_id")]
@@ -49,6 +59,8 @@ pub struct Link {
     /// When this link expires (None = never).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<DateTime>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub agent_context: Option<AgentContext>,
 }
 
 /// Click event stored in the `click_events` time series collection.
@@ -99,6 +111,7 @@ pub struct CreateLinkInput {
     pub android_store_url: Option<String>,
     pub metadata: Option<Document>,
     pub expires_at: Option<DateTime>,
+    pub agent_context: Option<AgentContext>,
 }
 
 impl CreateLinkInput {
@@ -113,6 +126,7 @@ impl CreateLinkInput {
             android_store_url: None,
             metadata: None,
             expires_at: None,
+            agent_context: None,
         }
     }
 
@@ -150,6 +164,11 @@ impl CreateLinkInput {
         self.metadata = Some(v);
         self
     }
+
+    pub fn agent_context(mut self, v: AgentContext) -> Self {
+        self.agent_context = Some(v);
+        self
+    }
 }
 
 // ── API Request / Response Models ──
@@ -177,6 +196,8 @@ pub struct CreateLinkRequest {
     /// Arbitrary key-value metadata.
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    pub agent_context: Option<AgentContext>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -205,6 +226,8 @@ pub struct UpdateLinkRequest {
     /// Arbitrary key-value metadata.
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    pub agent_context: Option<AgentContext>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -222,6 +245,8 @@ pub struct LinkDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub android_store_url: Option<String>,
     pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_context: Option<AgentContext>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -281,6 +306,8 @@ pub struct ResolvedLink {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub android_store_url: Option<String>,
     pub metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_context: Option<AgentContext>,
 }
 
 // ── SDK Click Models ──
@@ -309,6 +336,8 @@ pub struct SdkClickResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub android_store_url: Option<String>,
     pub metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_context: Option<AgentContext>,
 }
 
 // ── Deferred Deep Linking Models ──
@@ -334,6 +363,8 @@ pub struct DeferredLinkResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub android_deep_link: Option<String>,
     pub metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_context: Option<AgentContext>,
 }
 
 // ── Timeseries Analytics Models ──
