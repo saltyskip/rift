@@ -166,7 +166,7 @@ impl LinksRepo {
     }
 }
 
-// ── Cached lookups (5-minute TTL, max 10 000 entries) ──
+// ── Cached lookups (1-hour TTL, max 50 000 entries) ──
 //
 // These return Err("not_found") on cache miss so that only Ok(Link) values
 // are cached. The `#[cached(result = true)]` macro only caches Ok results,
@@ -177,7 +177,7 @@ const NOT_FOUND: &str = "not_found";
 
 #[cached(
     ty = "cached::TimedSizedCache<String, Link>",
-    create = "{ cached::TimedSizedCache::with_size_and_lifespan(10_000, 300) }",
+    create = "{ cached::TimedSizedCache::with_size_and_lifespan(50_000, 3600) }",
     convert = r#"{ link_id.to_string() }"#,
     result = true
 )]
@@ -191,7 +191,7 @@ async fn cached_find_link_by_id(links: &Collection<Link>, link_id: &str) -> Resu
 
 #[cached(
     ty = "cached::TimedSizedCache<String, Link>",
-    create = "{ cached::TimedSizedCache::with_size_and_lifespan(10_000, 300) }",
+    create = "{ cached::TimedSizedCache::with_size_and_lifespan(50_000, 3600) }",
     convert = r#"{ format!("{}:{}", tenant_id, link_id) }"#,
     result = true
 )]
