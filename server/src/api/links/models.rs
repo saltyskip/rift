@@ -160,6 +160,28 @@ pub struct CreateLinkResponse {
     pub url: String,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateLinkRequest {
+    /// iOS deep link URI.
+    #[serde(default)]
+    pub ios_deep_link: Option<String>,
+    /// Android deep link URI.
+    #[serde(default)]
+    pub android_deep_link: Option<String>,
+    /// Web fallback URL.
+    #[serde(default)]
+    pub web_url: Option<String>,
+    /// App Store link for iOS.
+    #[serde(default)]
+    pub ios_store_url: Option<String>,
+    /// Play Store link for Android.
+    #[serde(default)]
+    pub android_store_url: Option<String>,
+    /// Arbitrary key-value metadata.
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LinkDetail {
     pub link_id: String,
@@ -177,9 +199,19 @@ pub struct LinkDetail {
     pub created_at: String,
 }
 
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct ListLinksQuery {
+    /// Maximum number of links to return (1-100, default 50).
+    pub limit: Option<i64>,
+    /// Cursor for pagination — pass `next_cursor` from the previous response.
+    pub cursor: Option<String>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ListLinksResponse {
     pub links: Vec<LinkDetail>,
+    /// Cursor for the next page. Null if no more results.
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

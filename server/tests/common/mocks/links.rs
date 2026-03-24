@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use mongodb::bson::{oid::ObjectId, DateTime};
+use mongodb::bson::{oid::ObjectId, DateTime, Document};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
@@ -70,15 +70,63 @@ impl LinksRepository for MockLinksRepo {
             .cloned())
     }
 
-    async fn list_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Link>, String> {
-        Ok(self
-            .links
-            .lock()
-            .unwrap()
+    async fn update_link(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+        update: Document,
+    ) -> Result<bool, String> {
+        let mut links = self.links.lock().unwrap();
+        let Some(link) = links
+            .iter_mut()
+            .find(|l| &l.tenant_id == tenant_id && l.link_id == link_id)
+        else {
+            return Ok(false);
+        };
+        if let Ok(v) = update.get_str("ios_deep_link") {
+            link.ios_deep_link = Some(v.to_string());
+        }
+        if let Ok(v) = update.get_str("android_deep_link") {
+            link.android_deep_link = Some(v.to_string());
+        }
+        if let Ok(v) = update.get_str("web_url") {
+            link.web_url = Some(v.to_string());
+        }
+        if let Ok(v) = update.get_str("ios_store_url") {
+            link.ios_store_url = Some(v.to_string());
+        }
+        if let Ok(v) = update.get_str("android_store_url") {
+            link.android_store_url = Some(v.to_string());
+        }
+        if let Ok(v) = update.get_document("metadata") {
+            link.metadata = Some(v.clone());
+        }
+        Ok(true)
+    }
+
+    async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String> {
+        let mut links = self.links.lock().unwrap();
+        let len_before = links.len();
+        links.retain(|l| !(&l.tenant_id == tenant_id && l.link_id == link_id));
+        Ok(links.len() < len_before)
+    }
+
+    async fn list_links_by_tenant(
+        &self,
+        tenant_id: &ObjectId,
+        limit: i64,
+        cursor: Option<ObjectId>,
+    ) -> Result<Vec<Link>, String> {
+        let links = self.links.lock().unwrap();
+        let mut filtered: Vec<Link> = links
             .iter()
-            .filter(|l| &l.tenant_id == tenant_id)
+            .filter(|l| &l.tenant_id == tenant_id && cursor.is_none_or(|c| l.id < c))
             .cloned()
-            .collect())
+            .collect();
+        // Sort by _id descending (ObjectIds are monotonically increasing).
+        filtered.sort_by(|a, b| b.id.cmp(&a.id));
+        filtered.truncate(limit as usize);
+        Ok(filtered)
     }
 
     async fn record_click(
