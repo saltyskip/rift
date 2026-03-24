@@ -40,13 +40,6 @@ pub trait LinksRepository: Send + Sync {
         cursor: Option<ObjectId>,
     ) -> Result<Vec<Link>, String>;
 
-    async fn flag_link(
-        &self,
-        link_id: &str,
-        status: LinkStatus,
-        reason: &str,
-    ) -> Result<bool, String>;
-
     async fn record_click(
         &self,
         tenant_id: ObjectId,
@@ -268,28 +261,6 @@ impl LinksRepository for LinksRepo {
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)
-    }
-
-    async fn flag_link(
-        &self,
-        link_id: &str,
-        status: LinkStatus,
-        reason: &str,
-    ) -> Result<bool, String> {
-        let status_str = match status {
-            LinkStatus::Active => "active",
-            LinkStatus::Flagged => "flagged",
-            LinkStatus::Disabled => "disabled",
-        };
-        let result = self
-            .links
-            .update_many(
-                doc! { "link_id": link_id },
-                doc! { "$set": { "status": status_str, "flag_reason": reason } },
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok(result.modified_count > 0)
     }
 
     async fn list_links_by_tenant(

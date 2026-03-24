@@ -116,24 +116,6 @@ impl LinksRepository for MockLinksRepo {
         Ok(links.len() < len_before)
     }
 
-    async fn flag_link(
-        &self,
-        link_id: &str,
-        status: LinkStatus,
-        reason: &str,
-    ) -> Result<bool, String> {
-        let mut links = self.links.lock().unwrap();
-        let mut found = false;
-        for link in links.iter_mut() {
-            if link.link_id == link_id {
-                link.status = status;
-                link.flag_reason = Some(reason.to_string());
-                found = true;
-            }
-        }
-        Ok(found)
-    }
-
     async fn list_links_by_tenant(
         &self,
         tenant_id: &ObjectId,

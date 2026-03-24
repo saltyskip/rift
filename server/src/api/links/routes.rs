@@ -958,6 +958,10 @@ pub async fn sdk_click(
             .into_response();
     };
 
+    if let Some(resp) = check_link_resolvable(&link) {
+        return resp;
+    }
+
     let user_agent = headers
         .get("user-agent")
         .and_then(|v| v.to_str().ok())
@@ -1064,6 +1068,11 @@ pub async fn resolve_deferred(
     let Some(link) = link else {
         return not_matched.into_response();
     };
+
+    // Don't resolve flagged/expired/disabled links.
+    if check_link_resolvable(&link).is_some() {
+        return not_matched.into_response();
+    }
 
     // Create attribution record.
     if let Err(e) = repo
@@ -1203,46 +1212,6 @@ pub async fn get_link_timeseries(
                 .into_response()
         }
     }
-}
-
-// ── POST /v1/report — Report a malicious link (public) ──
-
-#[utoipa::path(
-    post,
-    path = "/v1/report",
-    tag = "Links",
-    request_body = ReportLinkRequest,
-    responses(
-        (status = 200, description = "Report received"),
-        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
-    ),
-)]
-#[tracing::instrument(skip(state))]
-pub async fn report_link(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<ReportLinkRequest>,
-) -> Response {
-    if req.link_id.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "link_id is required", "code": "bad_request" })),
-        )
-            .into_response();
-    }
-
-    let Some(repo) = &state.links_repo else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "Database not configured", "code": "no_database" })),
-        )
-            .into_response();
-    };
-
-    let _ = repo
-        .flag_link(&req.link_id, LinkStatus::Flagged, "user report")
-        .await;
-
-    Json(json!({ "received": true })).into_response()
 }
 
 // ── POST /v1/attribution — Report an install attribution (public) ──

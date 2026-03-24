@@ -259,12 +259,6 @@ pub struct LinkAttributionRequest {
     pub install_id: String,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct ReportLinkRequest {
-    /// Link ID to report.
-    pub link_id: String,
-}
-
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LinkStatsResponse {
     pub link_id: String,

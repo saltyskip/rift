@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
+
+const FEED_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// In-memory set of known malicious URLs, populated from free threat feeds.
 #[derive(Clone, Default)]
@@ -28,11 +31,16 @@ impl ThreatFeed {
     }
 
     /// Refresh the feed from all sources.
+    /// Only replaces the feed if at least one source returned data.
     pub async fn refresh(&self) {
+        let client = reqwest::Client::builder()
+            .timeout(FEED_TIMEOUT)
+            .build()
+            .unwrap_or_default();
+
         let mut new_urls = HashSet::new();
 
-        // URLhaus (abuse.ch) — malware distribution URLs.
-        match fetch_urlhaus().await {
+        match fetch_urlhaus(&client).await {
             Ok(urls) => {
                 tracing::info!(count = urls.len(), "Loaded URLhaus feed");
                 new_urls.extend(urls);
@@ -40,13 +48,17 @@ impl ThreatFeed {
             Err(e) => tracing::warn!(error = %e, "Failed to fetch URLhaus feed"),
         }
 
-        // OpenPhish — phishing URLs (free community feed).
-        match fetch_openphish().await {
+        match fetch_openphish(&client).await {
             Ok(urls) => {
                 tracing::info!(count = urls.len(), "Loaded OpenPhish feed");
                 new_urls.extend(urls);
             }
             Err(e) => tracing::warn!(error = %e, "Failed to fetch OpenPhish feed"),
+        }
+
+        if new_urls.is_empty() {
+            tracing::warn!("No threat feed data received — keeping existing feed");
+            return;
         }
 
         let count = new_urls.len();
@@ -57,9 +69,6 @@ impl ThreatFeed {
     /// Start a background task that refreshes the feed periodically.
     pub fn start_background_refresh(self, interval_secs: u64) {
         tokio::spawn(async move {
-            // Initial load.
-            self.refresh().await;
-
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
             loop {
                 interval.tick().await;
@@ -72,22 +81,18 @@ impl ThreatFeed {
 /// Normalize a URL for matching: lowercase, strip trailing slash, strip fragment.
 fn normalize_url(url: &str) -> String {
     let mut s = url.trim().to_lowercase();
-    // Strip fragment.
     if let Some(idx) = s.find('#') {
         s.truncate(idx);
     }
-    // Strip trailing slash.
     while s.ends_with('/') {
         s.pop();
     }
     s
 }
 
-/// Fetch URLhaus CSV feed (abuse.ch).
-/// Format: each line is a URL (lines starting with # are comments).
-async fn fetch_urlhaus() -> Result<Vec<String>, String> {
+async fn fetch_urlhaus(client: &reqwest::Client) -> Result<Vec<String>, String> {
     let url = "https://urlhaus.abuse.ch/downloads/text_online/";
-    let resp = reqwest::get(url).await.map_err(|e| e.to_string())?;
+    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     let text = resp.text().await.map_err(|e| e.to_string())?;
 
     Ok(text
@@ -98,10 +103,9 @@ async fn fetch_urlhaus() -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// Fetch OpenPhish community feed (plain text, one URL per line).
-async fn fetch_openphish() -> Result<Vec<String>, String> {
+async fn fetch_openphish(client: &reqwest::Client) -> Result<Vec<String>, String> {
     let url = "https://openphish.com/feed.txt";
-    let resp = reqwest::get(url).await.map_err(|e| e.to_string())?;
+    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     let text = resp.text().await.map_err(|e| e.to_string())?;
 
     Ok(text
