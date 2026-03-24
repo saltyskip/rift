@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use cached::proc_macro::cached;
+use cached::Cached;
 use mongodb::bson::{doc, oid::ObjectId, DateTime};
 use mongodb::options::{IndexOptions, TimeseriesGranularity, TimeseriesOptions};
 use mongodb::{Collection, Database, IndexModel};
@@ -206,6 +207,18 @@ async fn cached_find_link_by_tenant_and_id(
         .ok_or_else(|| NOT_FOUND.to_string())
 }
 
+/// Evict a link from both caches after a write (create/update/delete).
+async fn invalidate_link_cache(tenant_id: &ObjectId, link_id: &str) {
+    CACHED_FIND_LINK_BY_ID
+        .lock()
+        .await
+        .cache_remove(&link_id.to_string());
+    CACHED_FIND_LINK_BY_TENANT_AND_ID
+        .lock()
+        .await
+        .cache_remove(&format!("{tenant_id}:{link_id}"));
+}
+
 #[async_trait]
 impl LinksRepository for LinksRepo {
     async fn create_link(&self, input: CreateLinkInput) -> Result<Link, String> {
@@ -228,6 +241,7 @@ impl LinksRepository for LinksRepo {
             .insert_one(&link)
             .await
             .map_err(|e| e.to_string())?;
+        invalidate_link_cache(&link.tenant_id, &link.link_id).await;
         Ok(link)
     }
 
@@ -265,6 +279,9 @@ impl LinksRepository for LinksRepo {
             )
             .await
             .map_err(|e| e.to_string())?;
+        if result.matched_count > 0 {
+            invalidate_link_cache(tenant_id, link_id).await;
+        }
         Ok(result.matched_count > 0)
     }
 
@@ -274,6 +291,9 @@ impl LinksRepository for LinksRepo {
             .delete_one(doc! { "tenant_id": tenant_id, "link_id": link_id })
             .await
             .map_err(|e| e.to_string())?;
+        if result.deleted_count > 0 {
+            invalidate_link_cache(tenant_id, link_id).await;
+        }
         Ok(result.deleted_count > 0)
     }
 
