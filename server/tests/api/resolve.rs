@@ -176,7 +176,8 @@ async fn resolve_ios_deep_link_shows_smart_landing() {
 
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
-    assert!(body.contains("myapp://product/42"));
+    // Deep link is JS-escaped in the landing page (slashes escaped as \/).
+    assert!(body.contains("myapp:\\/\\/product\\/42"));
     assert!(body.contains("apps.apple.com"));
 }
 
