@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use cached::proc_macro::cached;
+use cached::Cached;
 use mongodb::bson::{doc, oid::ObjectId, DateTime};
 use mongodb::options::{IndexOptions, TimeseriesGranularity, TimeseriesOptions};
 use mongodb::{Collection, Database, IndexModel};
@@ -165,27 +166,32 @@ impl LinksRepo {
     }
 }
 
-// ── Cached lookups (5-minute TTL, max 10 000 entries) ──
+// ── Cached lookups (1-hour TTL, max 50 000 entries) ──
+//
+// These return Err("not_found") on cache miss so that only Ok(Link) values
+// are cached. The `#[cached(result = true)]` macro only caches Ok results,
+// so Err (including not_found) is always re-executed. This prevents stale
+// None entries from being served after a link is created.
+
+const NOT_FOUND: &str = "not_found";
 
 #[cached(
-    ty = "cached::TimedSizedCache<String, Option<Link>>",
-    create = "{ cached::TimedSizedCache::with_size_and_lifespan(10_000, 300) }",
+    ty = "cached::TimedSizedCache<String, Link>",
+    create = "{ cached::TimedSizedCache::with_size_and_lifespan(50_000, 3600) }",
     convert = r#"{ link_id.to_string() }"#,
     result = true
 )]
-async fn cached_find_link_by_id(
-    links: &Collection<Link>,
-    link_id: &str,
-) -> Result<Option<Link>, String> {
+async fn cached_find_link_by_id(links: &Collection<Link>, link_id: &str) -> Result<Link, String> {
     links
         .find_one(doc! { "link_id": link_id })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| NOT_FOUND.to_string())
 }
 
 #[cached(
-    ty = "cached::TimedSizedCache<String, Option<Link>>",
-    create = "{ cached::TimedSizedCache::with_size_and_lifespan(10_000, 300) }",
+    ty = "cached::TimedSizedCache<String, Link>",
+    create = "{ cached::TimedSizedCache::with_size_and_lifespan(50_000, 3600) }",
     convert = r#"{ format!("{}:{}", tenant_id, link_id) }"#,
     result = true
 )]
@@ -193,11 +199,24 @@ async fn cached_find_link_by_tenant_and_id(
     links: &Collection<Link>,
     tenant_id: &ObjectId,
     link_id: &str,
-) -> Result<Option<Link>, String> {
+) -> Result<Link, String> {
     links
         .find_one(doc! { "tenant_id": tenant_id, "link_id": link_id })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| NOT_FOUND.to_string())
+}
+
+/// Evict a link from both caches after a write (create/update/delete).
+async fn invalidate_link_cache(tenant_id: &ObjectId, link_id: &str) {
+    CACHED_FIND_LINK_BY_ID
+        .lock()
+        .await
+        .cache_remove(&link_id.to_string());
+    CACHED_FIND_LINK_BY_TENANT_AND_ID
+        .lock()
+        .await
+        .cache_remove(&format!("{tenant_id}:{link_id}"));
 }
 
 #[async_trait]
@@ -222,11 +241,16 @@ impl LinksRepository for LinksRepo {
             .insert_one(&link)
             .await
             .map_err(|e| e.to_string())?;
+        invalidate_link_cache(&link.tenant_id, &link.link_id).await;
         Ok(link)
     }
 
     async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String> {
-        cached_find_link_by_id(&self.links, link_id).await
+        match cached_find_link_by_id(&self.links, link_id).await {
+            Ok(link) => Ok(Some(link)),
+            Err(e) if e == NOT_FOUND => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     async fn find_link_by_tenant_and_id(
@@ -234,7 +258,11 @@ impl LinksRepository for LinksRepo {
         tenant_id: &ObjectId,
         link_id: &str,
     ) -> Result<Option<Link>, String> {
-        cached_find_link_by_tenant_and_id(&self.links, tenant_id, link_id).await
+        match cached_find_link_by_tenant_and_id(&self.links, tenant_id, link_id).await {
+            Ok(link) => Ok(Some(link)),
+            Err(e) if e == NOT_FOUND => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     async fn update_link(
@@ -251,6 +279,9 @@ impl LinksRepository for LinksRepo {
             )
             .await
             .map_err(|e| e.to_string())?;
+        if result.matched_count > 0 {
+            invalidate_link_cache(tenant_id, link_id).await;
+        }
         Ok(result.matched_count > 0)
     }
 
@@ -260,6 +291,9 @@ impl LinksRepository for LinksRepo {
             .delete_one(doc! { "tenant_id": tenant_id, "link_id": link_id })
             .await
             .map_err(|e| e.to_string())?;
+        if result.deleted_count > 0 {
+            invalidate_link_cache(tenant_id, link_id).await;
+        }
         Ok(result.deleted_count > 0)
     }
 
