@@ -64,6 +64,7 @@ pub async fn spawn_app() -> TestApp {
         config,
         facilitator: None,
         x402_price_tags: vec![],
+        threat_feed: rift::core::threat_feed::ThreatFeed::new(),
     });
 
     let app = rift::api::router(state.clone())

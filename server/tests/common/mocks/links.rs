@@ -3,7 +3,9 @@ use mongodb::bson::{oid::ObjectId, DateTime, Document};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use rift::api::links::models::{ClickEvent, ClickMeta, CreateLinkInput, Link, TimeseriesDataPoint};
+use rift::api::links::models::{
+    ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus, TimeseriesDataPoint,
+};
 use rift::api::links::repo::LinksRepository;
 
 struct Attribution {
@@ -41,6 +43,9 @@ impl LinksRepository for MockLinksRepo {
             android_store_url: input.android_store_url,
             metadata: input.metadata,
             created_at: DateTime::now(),
+            status: LinkStatus::Active,
+            flag_reason: None,
+            expires_at: input.expires_at,
         };
         links.push(link.clone());
         Ok(link)
@@ -109,6 +114,24 @@ impl LinksRepository for MockLinksRepo {
         let len_before = links.len();
         links.retain(|l| !(&l.tenant_id == tenant_id && l.link_id == link_id));
         Ok(links.len() < len_before)
+    }
+
+    async fn flag_link(
+        &self,
+        link_id: &str,
+        status: LinkStatus,
+        reason: &str,
+    ) -> Result<bool, String> {
+        let mut links = self.links.lock().unwrap();
+        let mut found = false;
+        for link in links.iter_mut() {
+            if link.link_id == link_id {
+                link.status = status;
+                link.flag_reason = Some(reason.to_string());
+                found = true;
+            }
+        }
+        Ok(found)
     }
 
     async fn list_links_by_tenant(

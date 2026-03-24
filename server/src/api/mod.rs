@@ -16,6 +16,7 @@ use crate::api::auth::repo::AuthRepository;
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::links::repo::LinksRepository;
 use crate::core::config::Config;
+use crate::core::threat_feed::ThreatFeed;
 
 use x402_types::proto::v1;
 
@@ -30,6 +31,7 @@ pub struct AppState {
     pub config: Config,
     pub facilitator: Option<CdpFacilitator>,
     pub x402_price_tags: Vec<v1::PriceTag>,
+    pub threat_feed: ThreatFeed,
 }
 
 #[derive(OpenApi)]
@@ -56,6 +58,7 @@ pub struct AppState {
         links::routes::get_link_timeseries,
         links::routes::update_link,
         links::routes::delete_link,
+        links::routes::report_link,
         domains::routes::create_domain,
         domains::routes::list_domains,
         domains::routes::delete_domain,
@@ -85,6 +88,7 @@ pub struct AppState {
         links::models::DeferredLinkResponse,
         links::models::SdkClickRequest,
         links::models::SdkClickResponse,
+        links::models::ReportLinkRequest,
         links::models::TimeseriesDataPoint,
         links::models::TimeseriesResponse,
         domains::models::CreateDomainRequest,

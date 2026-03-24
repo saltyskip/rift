@@ -4,6 +4,15 @@ use utoipa::{IntoParams, ToSchema};
 
 // ── Database Documents ──
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LinkStatus {
+    #[default]
+    Active,
+    Flagged,
+    Disabled,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Link {
     #[serde(rename = "_id")]
@@ -31,6 +40,15 @@ pub struct Link {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Document>,
     pub created_at: DateTime,
+    /// Link safety status.
+    #[serde(default)]
+    pub status: LinkStatus,
+    /// Reason the link was flagged/disabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flag_reason: Option<String>,
+    /// When this link expires (None = never).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<DateTime>,
 }
 
 /// Click event stored in the `click_events` time series collection.
@@ -80,6 +98,7 @@ pub struct CreateLinkInput {
     pub ios_store_url: Option<String>,
     pub android_store_url: Option<String>,
     pub metadata: Option<Document>,
+    pub expires_at: Option<DateTime>,
 }
 
 impl CreateLinkInput {
@@ -93,7 +112,13 @@ impl CreateLinkInput {
             ios_store_url: None,
             android_store_url: None,
             metadata: None,
+            expires_at: None,
         }
+    }
+
+    pub fn expires_at(mut self, v: DateTime) -> Self {
+        self.expires_at = Some(v);
+        self
     }
 
     pub fn ios_deep_link(mut self, v: impl Into<String>) -> Self {
@@ -232,6 +257,12 @@ pub struct AttributionResponse {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct LinkAttributionRequest {
     pub install_id: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ReportLinkRequest {
+    /// Link ID to report.
+    pub link_id: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

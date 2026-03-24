@@ -119,6 +119,17 @@ pub async fn create_link(
             .into_response();
     }
 
+    // Check web_url against known threat feeds (only vector for phishing redirects).
+    if let Some(ref web_url) = req.web_url {
+        if let Some(reason) = state.threat_feed.check_url(web_url).await {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": reason, "code": "threat_detected" })),
+            )
+                .into_response();
+        }
+    }
+
     if let Some(ref meta) = req.metadata {
         if let Err(e) = validation::validate_metadata(meta) {
             return (
@@ -151,6 +162,15 @@ pub async fn create_link(
     }
     if let Some(v) = metadata {
         input = input.metadata(v);
+    }
+
+    // Links without a verified custom domain expire after 30 days.
+    let has_domain = tenant_has_verified_domain(state.domains_repo.as_deref(), &tenant.0).await;
+    if !has_domain {
+        let thirty_days_ms = 30 * 24 * 60 * 60 * 1000_i64;
+        input = input.expires_at(DateTime::from_millis(
+            DateTime::now().timestamp_millis() + thirty_days_ms,
+        ));
     }
 
     match repo.create_link(input).await {
@@ -522,6 +542,10 @@ pub async fn resolve_link(
             .into_response();
     };
 
+    if let Some(resp) = check_link_resolvable(&link) {
+        return resp;
+    }
+
     do_resolve(&state, repo.as_ref(), link, &link_id, &headers).await
 }
 
@@ -618,7 +642,72 @@ pub async fn resolve_link_custom(
             .into_response();
     };
 
+    if let Some(resp) = check_link_resolvable(&link) {
+        return resp;
+    }
+
     do_resolve(&state, repo.as_ref(), link, &link_id, &headers).await
+}
+
+/// Check if a link is resolvable (active, not expired, not flagged/disabled).
+/// Returns None if ok, Some(response) if the link should not be resolved.
+fn check_link_resolvable(link: &Link) -> Option<Response> {
+    // Check expiry.
+    if let Some(expires_at) = link.expires_at {
+        if DateTime::now().timestamp_millis() > expires_at.timestamp_millis() {
+            return Some(
+                (
+                    StatusCode::GONE,
+                    Json(json!({ "error": "Link has expired", "code": "link_expired" })),
+                )
+                    .into_response(),
+            );
+        }
+    }
+
+    // Check status.
+    match link.status {
+        LinkStatus::Active => None,
+        LinkStatus::Flagged => {
+            let reason = link.flag_reason.as_deref().unwrap_or("potentially harmful");
+            let html = format!(
+                r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warning — Rift</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ background: #0a0a0a; color: #fafafa; font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }}
+        .container {{ text-align: center; max-width: 480px; }}
+        .icon {{ font-size: 48px; margin-bottom: 16px; }}
+        h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 12px; color: #f59e0b; }}
+        p {{ color: #a3a3a3; font-size: 15px; line-height: 1.6; margin-bottom: 8px; }}
+        .reason {{ color: #71717a; font-size: 13px; margin-top: 16px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">&#9888;</div>
+        <h1>This link has been flagged</h1>
+        <p>This link has been flagged as {reason_escaped}. It has been disabled for your safety.</p>
+        <p class="reason">If you believe this is a mistake, contact the link owner.</p>
+    </div>
+</body>
+</html>"#,
+                reason_escaped = html_escape(reason),
+            );
+            Some((StatusCode::OK, axum::response::Html(html)).into_response())
+        }
+        LinkStatus::Disabled => Some(
+            (
+                StatusCode::GONE,
+                Json(json!({ "error": "Link has been removed", "code": "link_disabled" })),
+            )
+                .into_response(),
+        ),
+    }
 }
 
 /// Shared resolve logic: detect platform, record click, content negotiation.
@@ -1114,6 +1203,46 @@ pub async fn get_link_timeseries(
                 .into_response()
         }
     }
+}
+
+// ── POST /v1/report — Report a malicious link (public) ──
+
+#[utoipa::path(
+    post,
+    path = "/v1/report",
+    tag = "Links",
+    request_body = ReportLinkRequest,
+    responses(
+        (status = 200, description = "Report received"),
+        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+    ),
+)]
+#[tracing::instrument(skip(state))]
+pub async fn report_link(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ReportLinkRequest>,
+) -> Response {
+    if req.link_id.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "link_id is required", "code": "bad_request" })),
+        )
+            .into_response();
+    }
+
+    let Some(repo) = &state.links_repo else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    let _ = repo
+        .flag_link(&req.link_id, LinkStatus::Flagged, "user report")
+        .await;
+
+    Json(json!({ "received": true })).into_response()
 }
 
 // ── POST /v1/attribution — Report an install attribution (public) ──
