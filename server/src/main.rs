@@ -105,7 +105,7 @@ async fn main() {
 
     let app = api::router(state.clone())
         .with_state(state)
-        .layer(RequestBodyLimitLayer::new(10 * 1024 * 1024))
+        .layer(RequestBodyLimitLayer::new(64 * 1024))
         .layer(CorsLayer::permissive());
 
     let addr = cfg.bind_addr();
@@ -115,5 +115,10 @@ async fn main() {
         .await
         .expect("Failed to bind to address");
 
-    axum::serve(listener, app).await.expect("Server error");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .expect("Server error");
 }

@@ -12,6 +12,7 @@ use super::repo::LinksRepository;
 use crate::api::auth::middleware::TenantId;
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::AppState;
+use crate::core::validation;
 
 // ── Platform Detection ──
 
@@ -103,6 +104,30 @@ pub async fn create_link(
         }
         None => generate_link_id(),
     };
+
+    if let Err(e) = validate_link_urls(
+        req.web_url.as_deref(),
+        req.ios_deep_link.as_deref(),
+        req.android_deep_link.as_deref(),
+        req.ios_store_url.as_deref(),
+        req.android_store_url.as_deref(),
+    ) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e, "code": "invalid_url" })),
+        )
+            .into_response();
+    }
+
+    if let Some(ref meta) = req.metadata {
+        if let Err(e) = validation::validate_metadata(meta) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": e, "code": "invalid_metadata" })),
+            )
+                .into_response();
+        }
+    }
 
     let metadata = req
         .metadata
@@ -251,6 +276,30 @@ pub async fn update_link(
         )
             .into_response();
     };
+
+    if let Err(e) = validate_link_urls(
+        req.web_url.as_deref(),
+        req.ios_deep_link.as_deref(),
+        req.android_deep_link.as_deref(),
+        req.ios_store_url.as_deref(),
+        req.android_store_url.as_deref(),
+    ) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e, "code": "invalid_url" })),
+        )
+            .into_response();
+    }
+
+    if let Some(ref meta) = req.metadata {
+        if let Err(e) = validation::validate_metadata(meta) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": e, "code": "invalid_metadata" })),
+            )
+                .into_response();
+        }
+    }
 
     let mut update = mongodb::bson::Document::new();
     if let Some(v) = &req.ios_deep_link {
@@ -1476,6 +1525,31 @@ fn validate_custom_id(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_link_urls(
+    web_url: Option<&str>,
+    ios_deep_link: Option<&str>,
+    android_deep_link: Option<&str>,
+    ios_store_url: Option<&str>,
+    android_store_url: Option<&str>,
+) -> Result<(), String> {
+    if let Some(v) = web_url {
+        validation::validate_web_url(v).map_err(|e| format!("web_url: {e}"))?;
+    }
+    if let Some(v) = ios_deep_link {
+        validation::validate_deep_link(v).map_err(|e| format!("ios_deep_link: {e}"))?;
+    }
+    if let Some(v) = android_deep_link {
+        validation::validate_deep_link(v).map_err(|e| format!("android_deep_link: {e}"))?;
+    }
+    if let Some(v) = ios_store_url {
+        validation::validate_store_url(v).map_err(|e| format!("ios_store_url: {e}"))?;
+    }
+    if let Some(v) = android_store_url {
+        validation::validate_store_url(v).map_err(|e| format!("android_store_url: {e}"))?;
+    }
+    Ok(())
+}
+
 fn js_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -1485,9 +1559,13 @@ fn js_escape(s: &str) -> String {
             '\'' => out.push_str("\\'"),
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
+            '\0' => out.push_str("\\0"),
             '<' => out.push_str("\\x3c"),
             '>' => out.push_str("\\x3e"),
             '&' => out.push_str("\\x26"),
+            '/' => out.push_str("\\/"),
+            '\u{2028}' => out.push_str("\\u2028"),
+            '\u{2029}' => out.push_str("\\u2029"),
             _ => out.push(c),
         }
     }
@@ -1499,6 +1577,7 @@ fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
 }
 
 fn urlencoding(s: &str) -> String {

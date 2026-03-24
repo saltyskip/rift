@@ -53,6 +53,28 @@ pub async fn create_app(
             .into_response();
     }
 
+    if let Some(ref color) = req.theme_color {
+        if let Err(e) = crate::core::validation::validate_hex_color(color) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    json!({ "error": format!("theme_color: {e}"), "code": "invalid_theme_color" }),
+                ),
+            )
+                .into_response();
+        }
+    }
+
+    if let Some(ref url) = req.icon_url {
+        if let Err(e) = crate::core::validation::validate_web_url(url) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": format!("icon_url: {e}"), "code": "invalid_icon_url" })),
+            )
+                .into_response();
+        }
+    }
+
     let app = super::models::App {
         id: ObjectId::new(),
         tenant_id: tenant.0,
