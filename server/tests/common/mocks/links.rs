@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use rift::api::links::models::{
-    ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus, RecordClickInput, TimeseriesDataPoint,
+    ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus, TimeseriesDataPoint,
 };
 use rift::api::links::repo::LinksRepository;
 
@@ -134,19 +134,23 @@ impl LinksRepository for MockLinksRepo {
         Ok(filtered)
     }
 
-    async fn record_click(&self, input: RecordClickInput) -> Result<(), String> {
+    async fn record_click(
+        &self,
+        tenant_id: ObjectId,
+        link_id: &str,
+        user_agent: Option<String>,
+        referer: Option<String>,
+        platform: Option<String>,
+    ) -> Result<(), String> {
         self.clicks.lock().unwrap().push(ClickEvent {
             meta: ClickMeta {
-                tenant_id: input.tenant_id,
-                link_id: input.link_id,
+                tenant_id,
+                link_id: link_id.to_string(),
             },
             clicked_at: DateTime::now(),
-            user_agent: input.user_agent,
-            referer: input.referer,
-            platform: input.platform,
-            country: input.country,
-            city: input.city,
-            region: input.region,
+            user_agent,
+            referer,
+            platform,
         });
         Ok(())
     }
