@@ -151,12 +151,13 @@ pub async fn create_link(
         .into_response()
 }
 
-// ── GET /v1/links — List links for tenant (authenticated) ──
+// ── GET /v1/links — List links for tenant with cursor pagination (authenticated) ──
 
 #[utoipa::path(
     get,
     path = "/v1/links",
     tag = "Links",
+    params(ListLinksQuery),
     responses(
         (status = 200, description = "List of links", body = ListLinksResponse),
     ),
@@ -166,6 +167,7 @@ pub async fn create_link(
 pub async fn list_links(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
+    Query(query): Query<ListLinksQuery>,
 ) -> Response {
     let Some(repo) = &state.links_repo else {
         return (
@@ -175,9 +177,26 @@ pub async fn list_links(
             .into_response();
     };
 
-    match repo.list_links_by_tenant(&tenant.0).await {
+    let limit = query.limit.unwrap_or(50).clamp(1, 100);
+
+    let cursor_id = query.cursor.and_then(|c| ObjectId::parse_str(&c).ok());
+
+    // Fetch one extra to determine if there's a next page.
+    match repo
+        .list_links_by_tenant(&tenant.0, limit + 1, cursor_id)
+        .await
+    {
         Ok(links) => {
-            let details: Vec<LinkDetail> = links
+            let has_more = links.len() as i64 > limit;
+            let page: Vec<&Link> = links.iter().take(limit as usize).collect();
+
+            let next_cursor = if has_more {
+                page.last().map(|l| l.id.to_hex())
+            } else {
+                None
+            };
+
+            let details: Vec<LinkDetail> = page
                 .iter()
                 .map(|l| LinkDetail {
                     link_id: l.link_id.clone(),
@@ -190,10 +209,158 @@ pub async fn list_links(
                     created_at: l.created_at.try_to_rfc3339_string().unwrap_or_default(),
                 })
                 .collect();
-            Json(json!({ "links": details })).into_response()
+
+            Json(json!({ "links": details, "next_cursor": next_cursor })).into_response()
         }
         Err(e) => {
             tracing::error!("Failed to list links: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
+        }
+    }
+}
+
+// ── PUT /v1/links/{link_id} — Update a link (authenticated) ──
+
+#[utoipa::path(
+    put,
+    path = "/v1/links/{link_id}",
+    tag = "Links",
+    params(("link_id" = String, Path, description = "Link ID")),
+    request_body = UpdateLinkRequest,
+    responses(
+        (status = 200, description = "Link updated", body = LinkDetail),
+        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
+    ),
+    security(("api_key" = []), ("x402" = [])),
+)]
+#[tracing::instrument(skip(state, req))]
+pub async fn update_link(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+    Path(link_id): Path<String>,
+    Json(req): Json<UpdateLinkRequest>,
+) -> Response {
+    let Some(repo) = &state.links_repo else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    let mut update = mongodb::bson::Document::new();
+    if let Some(v) = &req.ios_deep_link {
+        update.insert("ios_deep_link", v.clone());
+    }
+    if let Some(v) = &req.android_deep_link {
+        update.insert("android_deep_link", v.clone());
+    }
+    if let Some(v) = &req.web_url {
+        update.insert("web_url", v.clone());
+    }
+    if let Some(v) = &req.ios_store_url {
+        update.insert("ios_store_url", v.clone());
+    }
+    if let Some(v) = &req.android_store_url {
+        update.insert("android_store_url", v.clone());
+    }
+    if let Some(v) = &req.metadata {
+        if let Ok(doc) = mongodb::bson::to_document(v) {
+            update.insert("metadata", doc);
+        }
+    }
+
+    if update.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "No fields to update", "code": "empty_update" })),
+        )
+            .into_response();
+    }
+
+    match repo.update_link(&tenant.0, &link_id, update).await {
+        Ok(true) => {
+            // Fetch updated link to return.
+            let link = repo
+                .find_link_by_tenant_and_id(&tenant.0, &link_id)
+                .await
+                .ok()
+                .flatten();
+            match link {
+                Some(l) => Json(json!({
+                    "link_id": l.link_id,
+                    "url": format!("{}/r/{}", state.config.public_url, l.link_id),
+                    "ios_deep_link": l.ios_deep_link,
+                    "android_deep_link": l.android_deep_link,
+                    "web_url": l.web_url,
+                    "ios_store_url": l.ios_store_url,
+                    "android_store_url": l.android_store_url,
+                    "created_at": l.created_at.try_to_rfc3339_string().unwrap_or_default(),
+                }))
+                .into_response(),
+                None => (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({ "error": "Link not found", "code": "not_found" })),
+                )
+                    .into_response(),
+            }
+        }
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Link not found", "code": "not_found" })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("Failed to update link: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
+        }
+    }
+}
+
+// ── DELETE /v1/links/{link_id} — Delete a link (authenticated) ──
+
+#[utoipa::path(
+    delete,
+    path = "/v1/links/{link_id}",
+    tag = "Links",
+    params(("link_id" = String, Path, description = "Link ID")),
+    responses(
+        (status = 204, description = "Link deleted"),
+        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
+    ),
+    security(("api_key" = []), ("x402" = [])),
+)]
+#[tracing::instrument(skip(state))]
+pub async fn delete_link(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+    Path(link_id): Path<String>,
+) -> Response {
+    let Some(repo) = &state.links_repo else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    match repo.delete_link(&tenant.0, &link_id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Link not found", "code": "not_found" })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("Failed to delete link: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": "Internal error", "code": "db_error" })),

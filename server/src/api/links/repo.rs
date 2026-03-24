@@ -4,6 +4,8 @@ use mongodb::bson::{doc, oid::ObjectId, DateTime};
 use mongodb::options::{IndexOptions, TimeseriesGranularity, TimeseriesOptions};
 use mongodb::{Collection, Database, IndexModel};
 
+use mongodb::bson::Document;
+
 use super::models::{
     Attribution, ClickEvent, ClickMeta, CreateLinkInput, Link, TimeseriesDataPoint,
 };
@@ -22,7 +24,21 @@ pub trait LinksRepository: Send + Sync {
         link_id: &str,
     ) -> Result<Option<Link>, String>;
 
-    async fn list_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Link>, String>;
+    async fn update_link(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+        update: Document,
+    ) -> Result<bool, String>;
+
+    async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String>;
+
+    async fn list_links_by_tenant(
+        &self,
+        tenant_id: &ObjectId,
+        limit: i64,
+        cursor: Option<ObjectId>,
+    ) -> Result<Vec<Link>, String>;
 
     async fn record_click(
         &self,
@@ -126,6 +142,9 @@ impl LinksRepo {
         // Non-unique index on link_id for public resolution via /r/{link_id}.
         ensure_index!(links, doc! { "link_id": 1 }, "link_id_lookup");
 
+        // The default _id index covers cursor-based pagination (sorted by _id desc).
+        // ObjectIds are monotonically increasing, so _id order matches creation order.
+
         ensure_index!(
             attributions,
             doc! { "tenant_id": 1, "install_id": 1 },
@@ -215,12 +234,48 @@ impl LinksRepository for LinksRepo {
         cached_find_link_by_tenant_and_id(&self.links, tenant_id, link_id).await
     }
 
-    async fn list_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Link>, String> {
+    async fn update_link(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+        update: Document,
+    ) -> Result<bool, String> {
+        let result = self
+            .links
+            .update_one(
+                doc! { "tenant_id": tenant_id, "link_id": link_id },
+                doc! { "$set": update },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result.matched_count > 0)
+    }
+
+    async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String> {
+        let result = self
+            .links
+            .delete_one(doc! { "tenant_id": tenant_id, "link_id": link_id })
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result.deleted_count > 0)
+    }
+
+    async fn list_links_by_tenant(
+        &self,
+        tenant_id: &ObjectId,
+        limit: i64,
+        cursor: Option<ObjectId>,
+    ) -> Result<Vec<Link>, String> {
+        let mut filter = doc! { "tenant_id": tenant_id };
+        if let Some(cursor_id) = cursor {
+            filter.insert("_id", doc! { "$lt": cursor_id });
+        }
+
         let mut cursor = self
             .links
-            .find(doc! { "tenant_id": tenant_id })
-            .sort(doc! { "created_at": -1 })
-            .limit(100)
+            .find(filter)
+            .sort(doc! { "_id": -1 })
+            .limit(limit)
             .await
             .map_err(|e| e.to_string())?;
 

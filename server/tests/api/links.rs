@@ -394,3 +394,232 @@ async fn timeseries_empty_returns_empty_data() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert!(body["data"].as_array().unwrap().is_empty());
 }
+
+// ── PUT /v1/links/{link_id} ──
+
+#[tokio::test]
+async fn update_link_changes_fields() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "update-me",
+            "web_url": "https://old.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .put(app.url("/v1/links/update-me"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "web_url": "https://new.com",
+            "ios_deep_link": "myapp://updated"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["web_url"], "https://new.com");
+    assert_eq!(body["ios_deep_link"], "myapp://updated");
+}
+
+#[tokio::test]
+async fn update_nonexistent_link_returns_404() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    let resp = app
+        .client
+        .put(app.url("/v1/links/nope"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "web_url": "https://new.com" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn update_empty_body_returns_400() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "web_url": "https://example.com" }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .put(app.url("/v1/links/doesnt-matter"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "empty_update");
+}
+
+// ── DELETE /v1/links/{link_id} ──
+
+#[tokio::test]
+async fn delete_link_returns_204() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "delete-me",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .delete(app.url("/v1/links/delete-me"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 204);
+
+    // Verify it's gone.
+    let resp = app
+        .client
+        .get(app.url("/r/delete-me"))
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn delete_nonexistent_link_returns_404() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    let resp = app
+        .client
+        .delete(app.url("/v1/links/nope"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+}
+
+// ── Cursor Pagination ──
+
+#[tokio::test]
+async fn list_links_pagination() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    // Create 5 links.
+    for i in 0..5 {
+        app.client
+            .post(app.url("/v1/links"))
+            .header("Authorization", format!("Bearer {key}"))
+            .json(&serde_json::json!({ "web_url": format!("https://{i}.com") }))
+            .send()
+            .await
+            .unwrap();
+    }
+
+    // Fetch page 1 (limit 2).
+    let resp = app
+        .client
+        .get(app.url("/v1/links?limit=2"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let links = body["links"].as_array().unwrap();
+    assert_eq!(links.len(), 2);
+    assert!(body["next_cursor"].is_string());
+
+    // Fetch page 2 using cursor.
+    let cursor = body["next_cursor"].as_str().unwrap();
+    let resp = app
+        .client
+        .get(app.url(&format!("/v1/links?limit=2&cursor={cursor}")))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let links = body["links"].as_array().unwrap();
+    assert_eq!(links.len(), 2);
+    assert!(body["next_cursor"].is_string());
+
+    // Fetch page 3 — should have 1 remaining, no next cursor.
+    let cursor = body["next_cursor"].as_str().unwrap();
+    let resp = app
+        .client
+        .get(app.url(&format!("/v1/links?limit=2&cursor={cursor}")))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let links = body["links"].as_array().unwrap();
+    assert_eq!(links.len(), 1);
+    assert!(body["next_cursor"].is_null());
+}
+
+#[tokio::test]
+async fn list_links_default_returns_all() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    for i in 0..3 {
+        app.client
+            .post(app.url("/v1/links"))
+            .header("Authorization", format!("Bearer {key}"))
+            .json(&serde_json::json!({ "web_url": format!("https://{i}.com") }))
+            .send()
+            .await
+            .unwrap();
+    }
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["links"].as_array().unwrap().len(), 3);
+    assert!(body["next_cursor"].is_null());
+}
