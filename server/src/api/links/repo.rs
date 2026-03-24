@@ -166,25 +166,30 @@ impl LinksRepo {
 }
 
 // ── Cached lookups (5-minute TTL, max 10 000 entries) ──
+//
+// These return Err("not_found") on cache miss so that only Ok(Link) values
+// are cached. The `#[cached(result = true)]` macro only caches Ok results,
+// so Err (including not_found) is always re-executed. This prevents stale
+// None entries from being served after a link is created.
+
+const NOT_FOUND: &str = "not_found";
 
 #[cached(
-    ty = "cached::TimedSizedCache<String, Option<Link>>",
+    ty = "cached::TimedSizedCache<String, Link>",
     create = "{ cached::TimedSizedCache::with_size_and_lifespan(10_000, 300) }",
     convert = r#"{ link_id.to_string() }"#,
     result = true
 )]
-async fn cached_find_link_by_id(
-    links: &Collection<Link>,
-    link_id: &str,
-) -> Result<Option<Link>, String> {
+async fn cached_find_link_by_id(links: &Collection<Link>, link_id: &str) -> Result<Link, String> {
     links
         .find_one(doc! { "link_id": link_id })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| NOT_FOUND.to_string())
 }
 
 #[cached(
-    ty = "cached::TimedSizedCache<String, Option<Link>>",
+    ty = "cached::TimedSizedCache<String, Link>",
     create = "{ cached::TimedSizedCache::with_size_and_lifespan(10_000, 300) }",
     convert = r#"{ format!("{}:{}", tenant_id, link_id) }"#,
     result = true
@@ -193,11 +198,12 @@ async fn cached_find_link_by_tenant_and_id(
     links: &Collection<Link>,
     tenant_id: &ObjectId,
     link_id: &str,
-) -> Result<Option<Link>, String> {
+) -> Result<Link, String> {
     links
         .find_one(doc! { "tenant_id": tenant_id, "link_id": link_id })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| NOT_FOUND.to_string())
 }
 
 #[async_trait]
@@ -226,7 +232,11 @@ impl LinksRepository for LinksRepo {
     }
 
     async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String> {
-        cached_find_link_by_id(&self.links, link_id).await
+        match cached_find_link_by_id(&self.links, link_id).await {
+            Ok(link) => Ok(Some(link)),
+            Err(e) if e == NOT_FOUND => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     async fn find_link_by_tenant_and_id(
@@ -234,7 +244,11 @@ impl LinksRepository for LinksRepo {
         tenant_id: &ObjectId,
         link_id: &str,
     ) -> Result<Option<Link>, String> {
-        cached_find_link_by_tenant_and_id(&self.links, tenant_id, link_id).await
+        match cached_find_link_by_tenant_and_id(&self.links, tenant_id, link_id).await {
+            Ok(link) => Ok(Some(link)),
+            Err(e) if e == NOT_FOUND => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     async fn update_link(

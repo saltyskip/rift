@@ -42,6 +42,28 @@ Public endpoints (landing page, attribution reporting) resolve the tenant from t
 - All route handlers must have `#[tracing::instrument]` for Sentry visibility
 - `ErrorResponse` lives in `error.rs` and is shared across all slices
 
+## Caching Pattern
+
+When using `#[cached(result = true)]` for database lookups that return `Option<T>`:
+- **Never cache `None` results** — they cause stale misses after creation
+- Return `Err("not_found")` instead of `Ok(None)` inside the cached function
+- The `#[cached(result = true)]` macro only caches `Ok` values, so `Err` is always re-executed
+- The caller converts `Err("not_found")` back to `Ok(None)`
+
+```rust
+#[cached(result = true)]
+async fn cached_find(id: &str) -> Result<Item, String> {
+    db.find(id).await?.ok_or_else(|| "not_found".to_string())
+}
+
+// Caller:
+match cached_find(id).await {
+    Ok(item) => Ok(Some(item)),
+    Err(e) if e == "not_found" => Ok(None),
+    Err(e) => Err(e),
+}
+```
+
 ## CI Checks
 
 Before pushing, always run all three checks that CI enforces:
