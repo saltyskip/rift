@@ -120,7 +120,7 @@ impl LinksRepository for MockLinksRepo {
         let links = self.links.lock().unwrap();
         let mut filtered: Vec<Link> = links
             .iter()
-            .filter(|l| &l.tenant_id == tenant_id && cursor.map_or(true, |c| l.id < c))
+            .filter(|l| &l.tenant_id == tenant_id && cursor.is_none_or(|c| l.id < c))
             .cloned()
             .collect();
         // Sort by _id descending (ObjectIds are monotonically increasing).
