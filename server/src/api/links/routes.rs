@@ -740,24 +740,19 @@ async fn do_resolve(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let (country, city, region) = extract_geo(headers);
-
     let platform = user_agent
         .as_deref()
         .map(detect_platform)
         .unwrap_or(Platform::Other);
 
     if let Err(e) = repo
-        .record_click(RecordClickInput {
-            tenant_id: link.tenant_id,
-            link_id: link_id.to_string(),
-            user_agent: user_agent.clone(),
-            referer: referer.clone(),
-            platform: Some(platform.as_str().to_string()),
-            country: country.clone(),
-            city: city.clone(),
-            region: region.clone(),
-        })
+        .record_click(
+            link.tenant_id,
+            link_id,
+            user_agent.clone(),
+            referer.clone(),
+            Some(platform.as_str().to_string()),
+        )
         .await
     {
         tracing::warn!(error = %e, "Failed to record click");
@@ -770,9 +765,6 @@ async fn do_resolve(
             user_agent,
             referer,
             platform: platform.as_str().to_string(),
-            country,
-            city,
-            region,
             timestamp: Utc::now().to_rfc3339(),
         });
     }
@@ -1003,24 +995,19 @@ pub async fn sdk_click(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let (country, city, region) = extract_geo(&headers);
-
     let platform = user_agent
         .as_deref()
         .map(detect_platform)
         .unwrap_or(Platform::Other);
 
     if let Err(e) = repo
-        .record_click(RecordClickInput {
-            tenant_id: link.tenant_id,
-            link_id: req.link_id.clone(),
-            user_agent: user_agent.clone(),
-            referer: referer.clone(),
-            platform: Some(platform.as_str().to_string()),
-            country: country.clone(),
-            city: city.clone(),
-            region: region.clone(),
-        })
+        .record_click(
+            link.tenant_id,
+            &req.link_id,
+            user_agent.clone(),
+            referer.clone(),
+            Some(platform.as_str().to_string()),
+        )
         .await
     {
         tracing::warn!(error = %e, "Failed to record click");
@@ -1033,9 +1020,6 @@ pub async fn sdk_click(
             user_agent,
             referer,
             platform: platform.as_str().to_string(),
-            country,
-            city,
-            region,
             timestamp: Utc::now().to_rfc3339(),
         });
     }
@@ -1747,25 +1731,6 @@ fn html_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#x27;")
-}
-
-fn extract_header(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers
-        .get(name)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string())
-}
-
-fn extract_geo(headers: &HeaderMap) -> (Option<String>, Option<String>, Option<String>) {
-    // Prefer X-Rift-* headers (set by edge worker from request.cf),
-    // fall back to CF-* headers (set by Cloudflare automatically).
-    let country = extract_header(headers, "x-rift-country")
-        .or_else(|| extract_header(headers, "cf-ipcountry"));
-    let city =
-        extract_header(headers, "x-rift-city").or_else(|| extract_header(headers, "cf-ipcity"));
-    let region =
-        extract_header(headers, "x-rift-region").or_else(|| extract_header(headers, "cf-ipregion"));
-    (country, city, region)
 }
 
 fn urlencoding(s: &str) -> String {

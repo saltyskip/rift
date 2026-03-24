@@ -9,3 +9,4 @@ sdk/mobile/dist/ios/headers/*.h
 sdk/mobile/dist/ios/headers/module.modulemap
 sdk/mobile/dist/android/jniLibs/
 sdk/mobile/dist/android/kotlin/
+worker-slack/.wrangler/

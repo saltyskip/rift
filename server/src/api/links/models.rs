@@ -69,12 +69,6 @@ pub struct ClickEvent {
     pub referer: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub country: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub city: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub region: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,18 +150,6 @@ impl CreateLinkInput {
         self.metadata = Some(v);
         self
     }
-}
-
-/// Parameters for recording a click event (passed to repository).
-pub struct RecordClickInput {
-    pub tenant_id: ObjectId,
-    pub link_id: String,
-    pub user_agent: Option<String>,
-    pub referer: Option<String>,
-    pub platform: Option<String>,
-    pub country: Option<String>,
-    pub city: Option<String>,
-    pub region: Option<String>,
 }
 
 // ── API Request / Response Models ──

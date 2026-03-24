@@ -10,8 +10,7 @@ use crate::ensure_index;
 use mongodb::bson::Document;
 
 use super::models::{
-    Attribution, ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus, RecordClickInput,
-    TimeseriesDataPoint,
+    Attribution, ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus, TimeseriesDataPoint,
 };
 
 // ── Trait ──
@@ -44,7 +43,14 @@ pub trait LinksRepository: Send + Sync {
         cursor: Option<ObjectId>,
     ) -> Result<Vec<Link>, String>;
 
-    async fn record_click(&self, input: RecordClickInput) -> Result<(), String>;
+    async fn record_click(
+        &self,
+        tenant_id: ObjectId,
+        link_id: &str,
+        user_agent: Option<String>,
+        referer: Option<String>,
+        platform: Option<String>,
+    ) -> Result<(), String>;
 
     async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
 
@@ -300,19 +306,23 @@ impl LinksRepository for LinksRepo {
         Ok(links)
     }
 
-    async fn record_click(&self, input: RecordClickInput) -> Result<(), String> {
+    async fn record_click(
+        &self,
+        tenant_id: ObjectId,
+        link_id: &str,
+        user_agent: Option<String>,
+        referer: Option<String>,
+        platform: Option<String>,
+    ) -> Result<(), String> {
         let event = ClickEvent {
             meta: ClickMeta {
-                tenant_id: input.tenant_id,
-                link_id: input.link_id,
+                tenant_id,
+                link_id: link_id.to_string(),
             },
             clicked_at: DateTime::now(),
-            user_agent: input.user_agent,
-            referer: input.referer,
-            platform: input.platform,
-            country: input.country,
-            city: input.city,
-            region: input.region,
+            user_agent,
+            referer,
+            platform,
         };
         self.click_events
             .insert_one(&event)
