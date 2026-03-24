@@ -2020,7 +2020,7 @@ fn build_details_block(ctx: &LandingPageContext) -> String {
     }
 
     format!(
-        r#"<details style="margin-top:16px;text-align:left;max-width:320px;margin-left:auto;margin-right:auto;"><summary style="color:#3f3f46;font-size:11px;cursor:pointer;">Link details</summary><ul style="color:#52525b;font-size:11px;list-style:none;padding:8px 0 0 0;line-height:1.8;">{}</ul></details>"#,
+        r#"<details open style="margin-top:16px;text-align:left;max-width:320px;margin-left:auto;margin-right:auto;"><summary style="color:#3f3f46;font-size:11px;cursor:pointer;">Link details</summary><ul style="color:#52525b;font-size:11px;list-style:none;padding:8px 0 0 0;line-height:1.8;">{}</ul></details>"#,
         rows.join("")
     )
 }
