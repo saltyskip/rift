@@ -3,7 +3,9 @@ use cached::proc_macro::cached;
 use cached::Cached;
 use mongodb::bson::{doc, oid::ObjectId, DateTime};
 use mongodb::options::{IndexOptions, TimeseriesGranularity, TimeseriesOptions};
-use mongodb::{Collection, Database, IndexModel};
+use mongodb::{Collection, Database};
+
+use crate::ensure_index;
 
 use mongodb::bson::Document;
 
@@ -85,25 +87,6 @@ pub struct LinksRepo {
     links: Collection<Link>,
     click_events: Collection<ClickEvent>,
     attributions: Collection<Attribution>,
-}
-
-macro_rules! ensure_index {
-    ($col:expr, $keys:expr, $opts:expr, $name:expr) => {
-        if let Err(e) = $col
-            .create_index(IndexModel::builder().keys($keys).options($opts).build())
-            .await
-        {
-            tracing::error!(index = $name, "Failed to create index: {e}");
-        }
-    };
-    ($col:expr, $keys:expr, $name:expr) => {
-        if let Err(e) = $col
-            .create_index(IndexModel::builder().keys($keys).build())
-            .await
-        {
-            tracing::error!(index = $name, "Failed to create index: {e}");
-        }
-    };
 }
 
 impl LinksRepo {

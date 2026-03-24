@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use mongodb::bson::{doc, oid::ObjectId, DateTime};
 use mongodb::options::IndexOptions;
-use mongodb::{Collection, Database, IndexModel};
+use mongodb::{Collection, Database};
+
+use crate::ensure_index;
 
 use super::models::App;
 
@@ -20,25 +22,6 @@ pub trait AppsRepository: Send + Sync {
 }
 
 // ── Repository ──
-
-macro_rules! ensure_index {
-    ($col:expr, $keys:expr, $opts:expr, $name:expr) => {
-        if let Err(e) = $col
-            .create_index(IndexModel::builder().keys($keys).options($opts).build())
-            .await
-        {
-            tracing::error!(index = $name, "Failed to create index: {e}");
-        }
-    };
-    ($col:expr, $keys:expr, $name:expr) => {
-        if let Err(e) = $col
-            .create_index(IndexModel::builder().keys($keys).build())
-            .await
-        {
-            tracing::error!(index = $name, "Failed to create index: {e}");
-        }
-    };
-}
 
 #[derive(Clone)]
 pub struct AppsRepo {
