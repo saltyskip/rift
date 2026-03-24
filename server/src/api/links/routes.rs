@@ -1705,11 +1705,34 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         .meta_description
         .map(|d| {
             format!(
-                r#"<p style="color:#a3a3a3;font-size:14px;margin-bottom:24px;">{}</p>"#,
+                r#"<p style="color:#a3a3a3;font-size:14px;margin-bottom:8px;">{}</p>"#,
                 html_escape(d)
             )
         })
         .unwrap_or_default();
+
+    let agent_description = ctx.agent_context.and_then(|ac| ac.description.as_deref());
+
+    let meta_desc_tag = agent_description
+        .or(ctx.meta_description)
+        .map(|d| {
+            format!(
+                r#"    <meta name="description" content="{}" />"#,
+                html_escape(d)
+            )
+        })
+        .unwrap_or_default();
+
+    let agent_footer_html = agent_description
+        .map(|d| {
+            format!(
+                r#"<p style="color:#52525b;font-size:12px;line-height:1.6;margin-top:20px;max-width:320px;margin-left:auto;margin-right:auto;">{}</p>"#,
+                html_escape(d)
+            )
+        })
+        .unwrap_or_default();
+
+    let details_html = build_details_block(ctx);
 
     format!(
         r##"<!DOCTYPE html>
@@ -1720,6 +1743,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     <title>{og_title} — Rift</title>
     <meta property="og:title" content="{og_title_escaped}" />
     <meta property="og:description" content="{og_desc_escaped}" />
+{meta_desc_tag}
 {og_image_tag}
 {json_ld}
     <style>
@@ -1758,6 +1782,8 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         {desc_html}
         <a id="open-btn" class="btn" href="#">Open in {app_name_escaped}</a>
         <p class="sub" id="fallback-msg"></p>
+        {agent_footer_html}
+        {details_html}
     </div>
     <script>
     (function() {{
@@ -1811,6 +1837,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         og_title = html_escape(og_title),
         og_title_escaped = html_escape(og_title),
         og_desc_escaped = html_escape(og_description),
+        meta_desc_tag = meta_desc_tag,
         og_image_tag = og_image_tag,
         json_ld = json_ld,
         theme = html_escape(theme),
@@ -1818,6 +1845,8 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         app_name_escaped = html_escape(app_name_display),
         title_html = title_html,
         desc_html = desc_html,
+        agent_footer_html = agent_footer_html,
+        details_html = details_html,
         platform_js = platform_js,
         deep_link_js = deep_link_js,
         store_url_js = store_url_js,
@@ -1936,6 +1965,64 @@ fn html_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#x27;")
+}
+
+fn build_details_block(ctx: &LandingPageContext) -> String {
+    let ac = ctx.agent_context;
+    let link = ctx.link;
+
+    // Only show details if there's agent_context or meaningful link data.
+    let has_context = ac.is_some_and(|a| a.action.is_some() || a.cta.is_some());
+    let has_destinations =
+        link.ios_deep_link.is_some() || link.android_deep_link.is_some() || link.web_url.is_some();
+
+    if !has_context && !has_destinations {
+        return String::new();
+    }
+
+    let mut rows = Vec::new();
+
+    if let Some(action) = ac.and_then(|a| a.action.as_deref()) {
+        rows.push(format!("<li>Action: {}</li>", html_escape(action)));
+    }
+    if let Some(cta) = ac.and_then(|a| a.cta.as_deref()) {
+        rows.push(format!("<li>CTA: {}</li>", html_escape(cta)));
+    }
+    if let Some(v) = &link.ios_deep_link {
+        rows.push(format!("<li>iOS: {}</li>", html_escape(v)));
+    }
+    if let Some(v) = &link.android_deep_link {
+        rows.push(format!("<li>Android: {}</li>", html_escape(v)));
+    }
+    if let Some(v) = &link.web_url {
+        rows.push(format!("<li>Web: {}</li>", html_escape(v)));
+    }
+    if let Some(v) = &link.ios_store_url {
+        rows.push(format!("<li>App Store: {}</li>", html_escape(v)));
+    }
+    if let Some(v) = &link.android_store_url {
+        rows.push(format!("<li>Play Store: {}</li>", html_escape(v)));
+    }
+
+    rows.push(format!("<li>Status: {}</li>", ctx.link_status));
+
+    if let Some(domain) = ctx.tenant_domain {
+        let verified = if ctx.tenant_verified {
+            " (verified)"
+        } else {
+            ""
+        };
+        rows.push(format!(
+            "<li>Source: {}{}</li>",
+            html_escape(domain),
+            verified
+        ));
+    }
+
+    format!(
+        r#"<details style="margin-top:16px;text-align:left;max-width:320px;margin-left:auto;margin-right:auto;"><summary style="color:#3f3f46;font-size:11px;cursor:pointer;">Link details</summary><ul style="color:#52525b;font-size:11px;list-style:none;padding:8px 0 0 0;line-height:1.8;">{}</ul></details>"#,
+        rows.join("")
+    )
 }
 
 fn compute_link_status(link: &Link) -> &'static str {
