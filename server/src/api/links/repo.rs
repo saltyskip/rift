@@ -7,7 +7,7 @@ use mongodb::{Collection, Database, IndexModel};
 use mongodb::bson::Document;
 
 use super::models::{
-    Attribution, ClickEvent, ClickMeta, CreateLinkInput, Link, TimeseriesDataPoint,
+    Attribution, ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus, TimeseriesDataPoint,
 };
 
 // ── Trait ──
@@ -214,6 +214,9 @@ impl LinksRepository for LinksRepo {
             android_store_url: input.android_store_url,
             metadata: input.metadata,
             created_at: DateTime::now(),
+            status: LinkStatus::Active,
+            flag_reason: None,
+            expires_at: input.expires_at,
         };
         self.links
             .insert_one(&link)

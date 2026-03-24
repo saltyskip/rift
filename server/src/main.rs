@@ -93,6 +93,10 @@ async fn main() {
         (None, vec![])
     };
 
+    // Initialize threat feed and start background refresh (every 30 minutes).
+    let threat_feed = core::threat_feed::ThreatFeed::new();
+    threat_feed.clone().start_background_refresh(30 * 60);
+
     let state = Arc::new(AppState {
         auth_repo,
         links_repo,
@@ -101,6 +105,7 @@ async fn main() {
         config: cfg.clone(),
         facilitator,
         x402_price_tags,
+        threat_feed,
     });
 
     let app = api::router(state.clone())

@@ -20,6 +20,7 @@ pub struct TestApp {
     pub links_repo: Arc<MockLinksRepo>,
     pub domains_repo: Arc<MockDomainsRepo>,
     pub apps_repo: Arc<MockAppsRepo>,
+    pub threat_feed: rift::core::threat_feed::ThreatFeed,
 }
 
 impl TestApp {
@@ -54,6 +55,8 @@ pub async fn spawn_app() -> TestApp {
         primary_domain: "riftl.ink".to_string(),
     };
 
+    let threat_feed = rift::core::threat_feed::ThreatFeed::new();
+
     let state = Arc::new(AppState {
         auth_repo: Some(auth_repo.clone() as Arc<dyn AuthRepository>),
         links_repo: Some(links_repo.clone() as Arc<dyn rift::api::links::repo::LinksRepository>),
@@ -64,6 +67,7 @@ pub async fn spawn_app() -> TestApp {
         config,
         facilitator: None,
         x402_price_tags: vec![],
+        threat_feed: threat_feed.clone(),
     });
 
     let app = rift::api::router(state.clone())
@@ -81,6 +85,7 @@ pub async fn spawn_app() -> TestApp {
         addr,
         client: reqwest::Client::new(),
         auth_repo,
+        threat_feed,
         links_repo,
         domains_repo,
         apps_repo,

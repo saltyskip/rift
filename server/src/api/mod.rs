@@ -16,6 +16,7 @@ use crate::api::auth::repo::AuthRepository;
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::links::repo::LinksRepository;
 use crate::core::config::Config;
+use crate::core::threat_feed::ThreatFeed;
 
 use x402_types::proto::v1;
 
@@ -30,6 +31,7 @@ pub struct AppState {
     pub config: Config,
     pub facilitator: Option<CdpFacilitator>,
     pub x402_price_tags: Vec<v1::PriceTag>,
+    pub threat_feed: ThreatFeed,
 }
 
 #[derive(OpenApi)]

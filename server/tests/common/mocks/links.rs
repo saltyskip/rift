@@ -3,7 +3,9 @@ use mongodb::bson::{oid::ObjectId, DateTime, Document};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use rift::api::links::models::{ClickEvent, ClickMeta, CreateLinkInput, Link, TimeseriesDataPoint};
+use rift::api::links::models::{
+    ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus, TimeseriesDataPoint,
+};
 use rift::api::links::repo::LinksRepository;
 
 struct Attribution {
@@ -41,6 +43,9 @@ impl LinksRepository for MockLinksRepo {
             android_store_url: input.android_store_url,
             metadata: input.metadata,
             created_at: DateTime::now(),
+            status: LinkStatus::Active,
+            flag_reason: None,
+            expires_at: input.expires_at,
         };
         links.push(link.clone());
         Ok(link)
