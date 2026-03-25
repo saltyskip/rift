@@ -17,8 +17,7 @@ worker-slack/.wrangler/
 
 # SDK build artifacts (binaries, headers, Android)
 sdk/mobile/dist/ios/RiftSDK.xcframework
-sdk/mobile/dist/ios/headers/*.h
-sdk/mobile/dist/ios/headers/module.modulemap
+sdk/mobile/dist/ios/headers/
 sdk/mobile/dist/android/jniLibs/
 sdk/mobile/dist/android/kotlin/
 # Note: sdk/mobile/dist/ios/Sources/RiftSDK/*.swift is NOT ignored —
