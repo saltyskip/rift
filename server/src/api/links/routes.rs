@@ -1812,8 +1812,8 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         var webUrl = "{web_url_js}";
         var linkId = "{link_id_js}";
 
-        if (platform === "ios" && linkId && navigator.clipboard) {{
-            navigator.clipboard.writeText("rift:" + linkId).catch(function(){{}});
+        if (platform === "ios" && navigator.clipboard) {{
+            navigator.clipboard.writeText(window.location.href).catch(function(){{}});
         }}
 
         var btn = document.getElementById("open-btn");
