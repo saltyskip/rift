@@ -12,8 +12,11 @@ use crate::api::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     Router::new()
-        .route("/v1/sdk-keys", post(routes::create_sdk_key))
-        .route("/v1/sdk-keys", get(routes::list_sdk_keys))
-        .route("/v1/sdk-keys/{key_id}", delete(routes::revoke_sdk_key))
+        .route("/v1/auth/publishable-keys", post(routes::create_sdk_key))
+        .route("/v1/auth/publishable-keys", get(routes::list_sdk_keys))
+        .route(
+            "/v1/auth/publishable-keys/{key_id}",
+            delete(routes::revoke_sdk_key),
+        )
         .layer(middleware::from_fn_with_state(state, auth_gate))
 }

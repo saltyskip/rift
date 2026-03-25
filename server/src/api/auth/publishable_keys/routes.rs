@@ -11,11 +11,11 @@ use crate::api::auth::keys;
 use crate::api::auth::middleware::TenantId;
 use crate::api::AppState;
 
-// ── POST /v1/sdk-keys — Create a new SDK key (authenticated via rl_live_) ──
+// ── POST /v1/auth/publishable-keys — Create a new SDK key (authenticated via rl_live_) ──
 
 #[utoipa::path(
     post,
-    path = "/v1/sdk-keys",
+    path = "/v1/auth/publishable-keys",
     tag = "SDK Keys",
     request_body = CreateSdkKeyRequest,
     responses(
@@ -115,11 +115,11 @@ pub async fn create_sdk_key(
         .into_response()
 }
 
-// ── GET /v1/sdk-keys — List SDK keys (authenticated via rl_live_) ──
+// ── GET /v1/auth/publishable-keys — List SDK keys (authenticated via rl_live_) ──
 
 #[utoipa::path(
     get,
-    path = "/v1/sdk-keys",
+    path = "/v1/auth/publishable-keys",
     tag = "SDK Keys",
     responses(
         (status = 200, description = "List of SDK keys", body = ListSdkKeysResponse),
@@ -163,11 +163,11 @@ pub async fn list_sdk_keys(
     }
 }
 
-// ── DELETE /v1/sdk-keys/{key_id} — Revoke an SDK key (authenticated via rl_live_) ──
+// ── DELETE /v1/auth/publishable-keys/{key_id} — Revoke an SDK key (authenticated via rl_live_) ──
 
 #[utoipa::path(
     delete,
-    path = "/v1/sdk-keys/{key_id}",
+    path = "/v1/auth/publishable-keys/{key_id}",
     tag = "SDK Keys",
     params(("key_id" = String, Path, description = "SDK Key ID")),
     responses(

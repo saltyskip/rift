@@ -12,7 +12,7 @@ async fn create_sdk_key_returns_key() {
 
     let resp = app
         .client
-        .post(app.url("/v1/sdk-keys"))
+        .post(app.url("/v1/auth/publishable-keys"))
         .header("Authorization", format!("Bearer {key}"))
         .json(&serde_json::json!({ "domain": "go.example.com" }))
         .send()
@@ -44,7 +44,7 @@ async fn create_sdk_key_rejects_unverified_domain() {
 
     let resp = app
         .client
-        .post(app.url("/v1/sdk-keys"))
+        .post(app.url("/v1/auth/publishable-keys"))
         .header("Authorization", format!("Bearer {key}"))
         .json(&serde_json::json!({ "domain": "unverified.example.com" }))
         .send()
@@ -64,7 +64,7 @@ async fn list_sdk_keys_omits_full_key() {
 
     // Create an SDK key.
     app.client
-        .post(app.url("/v1/sdk-keys"))
+        .post(app.url("/v1/auth/publishable-keys"))
         .header("Authorization", format!("Bearer {key}"))
         .json(&serde_json::json!({ "domain": "go.example.com" }))
         .send()
@@ -74,7 +74,7 @@ async fn list_sdk_keys_omits_full_key() {
     // List keys.
     let resp = app
         .client
-        .get(app.url("/v1/sdk-keys"))
+        .get(app.url("/v1/auth/publishable-keys"))
         .header("Authorization", format!("Bearer {key}"))
         .send()
         .await
@@ -98,7 +98,7 @@ async fn revoke_sdk_key_returns_204() {
     // Create an SDK key.
     let resp = app
         .client
-        .post(app.url("/v1/sdk-keys"))
+        .post(app.url("/v1/auth/publishable-keys"))
         .header("Authorization", format!("Bearer {key}"))
         .json(&serde_json::json!({ "domain": "go.example.com" }))
         .send()
@@ -110,7 +110,7 @@ async fn revoke_sdk_key_returns_204() {
 
     let resp = app
         .client
-        .delete(app.url(&format!("/v1/sdk-keys/{key_id}")))
+        .delete(app.url(&format!("/v1/auth/publishable-keys/{key_id}")))
         .header("Authorization", format!("Bearer {key}"))
         .send()
         .await
@@ -121,7 +121,7 @@ async fn revoke_sdk_key_returns_204() {
     // Verify it no longer appears in list.
     let resp = app
         .client
-        .get(app.url("/v1/sdk-keys"))
+        .get(app.url("/v1/auth/publishable-keys"))
         .header("Authorization", format!("Bearer {key}"))
         .send()
         .await
