@@ -164,7 +164,6 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           mv artifacts/ios-sdk.tar.gz "artifacts/rift-ios-sdk-${TAG}.tar.gz"
           mv artifacts/android-sdk.tar.gz "artifacts/rift-android-sdk-${TAG}.tar.gz"
-          mv artifacts/RiftSDK.xcframework.zip "artifacts/RiftSDK.xcframework.zip"
 
       - name: Create GitHub Release
         if: steps.version.outputs.skip != 'true'
