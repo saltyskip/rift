@@ -4,7 +4,7 @@ use axum::response::Response;
 use mongodb::bson::oid::ObjectId;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{InitializeRequestParams, InitializeResult, ServerInfo};
+use rmcp::model::{InitializeRequestParams, InitializeResult, ServerCapabilities, ServerInfo};
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::tower::StreamableHttpServerConfig;
@@ -168,7 +168,7 @@ impl RiftMcp {
 #[tool_handler]
 impl ServerHandler for RiftMcp {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::default()
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(rmcp::model::Implementation::new(
                 "rift-mcp",
                 env!("CARGO_PKG_VERSION"),
