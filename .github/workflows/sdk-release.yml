@@ -44,18 +44,40 @@ jobs:
       - name: Verify artifacts
         run: |
           test -d dist/ios/RiftSDK.xcframework
-          test -f dist/ios/Package.swift
           test -d dist/ios/Sources/RiftSDK
           echo "iOS artifacts verified"
 
-      - name: Package iOS SDK
+      - name: Package iOS SDK (tar.gz for manual download)
         run: tar -czf ios-sdk.tar.gz -C dist ios
+
+      - name: Package XCFramework (zip for Swift Package Manager)
+        run: |
+          cd dist/ios
+          zip -r ../../RiftSDK.xcframework.zip RiftSDK.xcframework
+
+      - name: Compute XCFramework checksum
+        id: checksum
+        run: |
+          CHECKSUM=$(swift package compute-checksum RiftSDK.xcframework.zip)
+          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
+          echo "XCFramework checksum: $CHECKSUM"
 
       - uses: actions/upload-artifact@v4
         with:
           name: ios-sdk
-          path: sdk/mobile/ios-sdk.tar.gz
+          path: |
+            sdk/mobile/ios-sdk.tar.gz
+            sdk/mobile/RiftSDK.xcframework.zip
           retention-days: 5
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-checksum
+          path: sdk/mobile/RiftSDK.xcframework.zip
+          retention-days: 1
+
+    outputs:
+      checksum: ${{ steps.checksum.outputs.checksum }}
 
   build-android:
     name: Build Android Libraries
@@ -125,6 +147,7 @@ jobs:
           SDK_VERSION=$(grep '^version' sdk/mobile/core/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
           TAG="sdk-v${SDK_VERSION}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$SDK_VERSION" >> "$GITHUB_OUTPUT"
 
           # Check if this version was already released.
           if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
@@ -141,6 +164,7 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           mv artifacts/ios-sdk.tar.gz "artifacts/rift-ios-sdk-${TAG}.tar.gz"
           mv artifacts/android-sdk.tar.gz "artifacts/rift-android-sdk-${TAG}.tar.gz"
+          mv artifacts/RiftSDK.xcframework.zip "artifacts/RiftSDK.xcframework.zip"
 
       - name: Create GitHub Release
         if: steps.version.outputs.skip != 'true'
@@ -152,8 +176,10 @@ jobs:
             ## Rift Mobile SDK Release
 
             ### iOS (Swift Package Manager)
-            Download `rift-ios-sdk-${{ steps.version.outputs.tag }}.tar.gz`, extract, and add the directory as a local Swift package.
-            Contains: `RiftSDK.xcframework`, Swift sources, `Package.swift`
+            Add `https://github.com/saltyskip/rift` as a Swift package in Xcode. It will resolve automatically.
+
+            ### iOS (Manual)
+            Download `rift-ios-sdk-${{ steps.version.outputs.tag }}.tar.gz`, extract, and add as a local Swift package.
 
             ### Android (Gradle)
             Download `rift-android-sdk-${{ steps.version.outputs.tag }}.tar.gz`, extract into your project.
@@ -161,6 +187,25 @@ jobs:
           files: |
             artifacts/rift-ios-sdk-${{ steps.version.outputs.tag }}.tar.gz
             artifacts/rift-android-sdk-${{ steps.version.outputs.tag }}.tar.gz
+            artifacts/RiftSDK.xcframework.zip
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Package.swift with new checksum
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          CHECKSUM="${{ needs.build-ios.outputs.checksum }}"
+          URL="https://github.com/saltyskip/rift/releases/download/${TAG}/RiftSDK.xcframework.zip"
+
+          sed -i "s|url: \".*RiftSDK.xcframework.zip\"|url: \"${URL}\"|" Package.swift
+          sed -i "s|checksum: \".*\"|checksum: \"${CHECKSUM}\"|" Package.swift
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git commit -m "Update Package.swift for ${TAG}" || echo "No changes"
+          git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

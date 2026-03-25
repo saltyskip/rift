@@ -12,12 +12,13 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "RiftSDKBinary",
-            path: "RiftSDK.xcframework"
+            url: "https://github.com/saltyskip/rift/releases/download/sdk-v0.1.0/RiftSDK.xcframework.zip",
+            checksum: "PLACEHOLDER"
         ),
         .target(
             name: "RiftSDK",
             dependencies: ["RiftSDKBinary"],
-            path: "Sources/RiftSDK"
+            path: "sdk/mobile/dist/ios/Sources/RiftSDK"
         ),
     ]
 )
