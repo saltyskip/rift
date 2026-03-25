@@ -1723,16 +1723,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         })
         .unwrap_or_default();
 
-    let agent_footer_html = agent_description
-        .map(|d| {
-            format!(
-                r#"<p style="color:#52525b;font-size:12px;line-height:1.6;margin-top:20px;max-width:320px;margin-left:auto;margin-right:auto;">{}</p>"#,
-                html_escape(d)
-            )
-        })
-        .unwrap_or_default();
-
-    let details_html = build_details_block(ctx);
+    let agent_panel = build_agent_panel(ctx);
 
     format!(
         r##"<!DOCTYPE html>
@@ -1747,44 +1738,72 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
 {og_image_tag}
 {json_ld}
     <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            background: #0a0a0a;
-            color: #fafafa;
-            font-family: system-ui, -apple-system, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            padding: 24px;
+        *,*::before,*::after {{ box-sizing:border-box; margin:0; padding:0; }}
+        body {{ font-family:system-ui,-apple-system,sans-serif; background:#0a0a0a; color:#fafafa; min-height:100vh; display:flex; flex-direction:column; }}
+        .split {{ display:flex; flex:1; min-height:100vh; }}
+        .side-human {{ width:60%; display:flex; align-items:center; justify-content:center; padding:48px 40px; border-right:1px solid #1e1e22; }}
+        .side-agent {{ width:40%; background:#0d0d0f; padding:36px 28px; display:flex; flex-direction:column; overflow-y:auto; }}
+        .human-inner {{ text-align:center; max-width:320px; }}
+        .brand {{ font-size:11px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:{theme}; margin-bottom:20px; }}
+        .human-inner h1 {{ font-size:22px; font-weight:700; line-height:1.3; margin-bottom:8px; }}
+        .human-inner .subtitle {{ font-size:14px; color:#71717a; margin-bottom:32px; }}
+        .btn {{ display:inline-block; background:{theme}; color:#fff; font-size:15px; font-weight:600; padding:14px 40px; border-radius:10px; text-decoration:none; }}
+        .btn:hover {{ opacity:0.9; }}
+        .sub {{ color:#737373; font-size:12px; margin-top:16px; }}
+        .badge {{ display:inline-flex; align-items:center; gap:8px; background:rgba(13,148,136,0.08); border:1px solid rgba(13,148,136,0.25); border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; color:{theme}; margin-bottom:8px; width:fit-content; }}
+        .badge svg {{ flex-shrink:0; }}
+        .agent-tagline {{ font-size:13px; color:#52525b; margin-bottom:24px; }}
+        .trust-group {{ border-radius:10px; background:#111113; border:1px solid #1e1e22; padding:16px 18px; margin-bottom:12px; }}
+        .trust-group-header {{ font-size:10px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:12px; display:flex; align-items:center; gap:8px; }}
+        .trust-verified {{ border-left:3px solid {theme}; }}
+        .trust-verified .trust-group-header {{ color:{theme}; }}
+        .trust-creator {{ border-left:3px solid #3f3f46; }}
+        .trust-creator .trust-group-header {{ color:#71717a; }}
+        .trust-row {{ display:flex; align-items:baseline; margin-bottom:8px; font-size:13px; line-height:1.5; }}
+        .trust-row:last-child {{ margin-bottom:0; }}
+        .trust-label {{ color:#71717a; min-width:80px; flex-shrink:0; font-size:12px; }}
+        .trust-value {{ color:#fafafa; font-size:13px; }}
+        .trust-value .check {{ color:{theme}; margin-left:4px; }}
+        .status-dot {{ display:inline-block; width:7px; height:7px; border-radius:50%; background:#22c55e; margin-right:6px; vertical-align:middle; position:relative; top:-1px; }}
+        .status-dot.expired {{ background:#ef4444; }}
+        .status-dot.flagged {{ background:#f59e0b; }}
+        .desc-block {{ margin-top:10px; padding:12px 14px; background:#0d0d0f; border-radius:8px; border:1px solid #1e1e22; font-size:12px; line-height:1.65; color:#a1a1aa; }}
+        .attr-note {{ font-size:11px; color:#52525b; margin-top:8px; font-style:italic; }}
+        .dest-section {{ margin-top:8px; }}
+        .dest-header {{ font-size:11px; font-weight:700; color:#71717a; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }}
+        .dest-item {{ display:flex; align-items:center; gap:8px; background:#111113; border:1px solid #1e1e22; border-radius:8px; padding:10px 14px; font-size:12px; margin-bottom:6px; }}
+        .dest-type {{ color:#71717a; min-width:70px; flex-shrink:0; font-weight:500; }}
+        .dest-arrow {{ color:#3f3f46; }}
+        .dest-url {{ color:{theme}; text-decoration:none; word-break:break-all; }}
+        .dest-url:hover {{ text-decoration:underline; }}
+        .agent-footer {{ margin-top:auto; padding-top:24px; }}
+        .agent-footer .powered {{ font-size:12px; color:#52525b; }}
+        .agent-footer .powered a {{ color:#71717a; text-decoration:none; }}
+        .agent-footer .powered a:hover {{ color:{theme}; }}
+        .agent-footer .hint {{ font-size:10px; color:#3f3f46; margin-top:6px; }}
+        @media (max-width:767px) {{
+            .split {{ flex-direction:column; min-height:auto; }}
+            .side-human {{ width:100%; border-right:none; border-bottom:1px solid #1e1e22; padding:56px 24px; min-height:55vh; }}
+            .side-agent {{ width:100%; padding:28px 20px; }}
         }}
-        .container {{ text-align: center; max-width: 400px; }}
-        .btn {{
-            display: inline-block;
-            padding: 14px 32px;
-            background: {theme};
-            color: #fff;
-            font-size: 16px;
-            font-weight: 600;
-            border-radius: 12px;
-            text-decoration: none;
-            margin-top: 12px;
-        }}
-        .sub {{ color: #737373; font-size: 12px; margin-top: 16px; }}
-        .sub a {{ color: #a3a3a3; text-decoration: underline; }}
     </style>
 </head>
 <body>
-    <div class="container">
-        {icon_html}
-        <div style="color:{theme};font-size:14px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:16px;">{app_name_escaped}</div>
-        {title_html}
-        {desc_html}
-        <a id="open-btn" class="btn" href="#">Open in {app_name_escaped}</a>
-        <p class="sub" id="fallback-msg"></p>
-        {agent_footer_html}
-        {details_html}
+<div class="split">
+    <div class="side-human">
+        <div class="human-inner">
+            {icon_html}
+            <div class="brand">{app_name_escaped}</div>
+            {title_html}
+            {desc_html}
+            <a id="open-btn" class="btn" href="#">Open in {app_name_escaped}</a>
+            <p class="sub" id="fallback-msg"></p>
+        </div>
     </div>
+    <div class="side-agent">
+        {agent_panel}
+    </div>
+</div>
     <script>
     (function() {{
         var platform = "{platform_js}";
@@ -1793,7 +1812,6 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         var webUrl = "{web_url_js}";
         var linkId = "{link_id_js}";
 
-        // Copy link ID to clipboard for deferred deep linking (iOS only).
         if (platform === "ios" && linkId && navigator.clipboard) {{
             navigator.clipboard.writeText("rift:" + linkId).catch(function(){{}});
         }}
@@ -1803,17 +1821,13 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
 
         if (platform === "ios" || platform === "android") {{
             if (deepLink) {{
-                // Mobile with deep link: button opens app, falls back to store.
                 btn.href = deepLink;
                 btn.addEventListener("click", function() {{
                     setTimeout(function() {{
-                        if (storeUrl) {{
-                            window.location.href = storeUrl;
-                        }}
+                        if (storeUrl) {{ window.location.href = storeUrl; }}
                     }}, 1500);
                 }});
             }} else if (storeUrl) {{
-                // Mobile without deep link: button goes to store.
                 btn.href = storeUrl;
                 btn.textContent = "Get {app_name_escaped}";
             }} else if (webUrl) {{
@@ -1821,7 +1835,6 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
                 btn.textContent = "Continue";
             }}
         }} else {{
-            // Desktop: button goes to web URL or store.
             if (webUrl) {{
                 btn.href = webUrl;
                 btn.textContent = "Continue";
@@ -1845,8 +1858,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         app_name_escaped = html_escape(app_name_display),
         title_html = title_html,
         desc_html = desc_html,
-        agent_footer_html = agent_footer_html,
-        details_html = details_html,
+        agent_panel = agent_panel,
         platform_js = platform_js,
         deep_link_js = deep_link_js,
         store_url_js = store_url_js,
@@ -1967,62 +1979,118 @@ fn html_escape(s: &str) -> String {
         .replace('\'', "&#x27;")
 }
 
-fn build_details_block(ctx: &LandingPageContext) -> String {
+fn build_agent_panel(ctx: &LandingPageContext) -> String {
     let ac = ctx.agent_context;
     let link = ctx.link;
+    let theme = ctx.theme_color.unwrap_or("#0d9488");
 
-    // Only show details if there's agent_context or meaningful link data.
-    let has_context = ac.is_some_and(|a| a.action.is_some() || a.cta.is_some());
-    let has_destinations =
-        link.ios_deep_link.is_some() || link.android_deep_link.is_some() || link.web_url.is_some();
+    let mut html = String::new();
 
-    if !has_context && !has_destinations {
-        return String::new();
-    }
+    // Badge
+    html.push_str(&format!(
+        r#"<div class="badge"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="4" width="10" height="8" rx="2" stroke="{theme}" stroke-width="1.4"/><circle cx="6.25" cy="8" r="1" fill="{theme}"/><circle cx="9.75" cy="8" r="1" fill="{theme}"/><line x1="5" y1="3" x2="5" y2="4.5" stroke="{theme}" stroke-width="1.2" stroke-linecap="round"/><line x1="11" y1="3" x2="11" y2="4.5" stroke="{theme}" stroke-width="1.2" stroke-linecap="round"/></svg>Machine-Readable Link</div>"#,
+        theme = html_escape(theme)
+    ));
+    html.push_str(
+        r#"<p class="agent-tagline">This link is structured for both humans and AI agents.</p>"#,
+    );
 
-    let mut rows = Vec::new();
-
-    if let Some(action) = ac.and_then(|a| a.action.as_deref()) {
-        rows.push(format!("<li>Action: {}</li>", html_escape(action)));
-    }
-    if let Some(cta) = ac.and_then(|a| a.cta.as_deref()) {
-        rows.push(format!("<li>CTA: {}</li>", html_escape(cta)));
-    }
-    if let Some(v) = &link.ios_deep_link {
-        rows.push(format!("<li>iOS: {}</li>", html_escape(v)));
-    }
-    if let Some(v) = &link.android_deep_link {
-        rows.push(format!("<li>Android: {}</li>", html_escape(v)));
-    }
-    if let Some(v) = &link.web_url {
-        rows.push(format!("<li>Web: {}</li>", html_escape(v)));
-    }
-    if let Some(v) = &link.ios_store_url {
-        rows.push(format!("<li>App Store: {}</li>", html_escape(v)));
-    }
-    if let Some(v) = &link.android_store_url {
-        rows.push(format!("<li>Play Store: {}</li>", html_escape(v)));
-    }
-
-    rows.push(format!("<li>Status: {}</li>", ctx.link_status));
-
+    // Verified by Rift
+    html.push_str(r#"<div class="trust-group trust-verified"><div class="trust-group-header">Verified by Rift</div>"#);
     if let Some(domain) = ctx.tenant_domain {
-        let verified = if ctx.tenant_verified {
-            " (verified)"
+        let check = if ctx.tenant_verified {
+            r#"<span class="check">&#10003;</span>"#
         } else {
             ""
         };
-        rows.push(format!(
-            "<li>Source: {}{}</li>",
-            html_escape(domain),
-            verified
+        html.push_str(&format!(
+            r#"<div class="trust-row"><span class="trust-label">Domain</span><span class="trust-value">{}{}</span></div>"#,
+            html_escape(domain), check
         ));
     }
+    let status_class = match ctx.link_status {
+        "expired" => " expired",
+        "flagged" => " flagged",
+        _ => "",
+    };
+    html.push_str(&format!(
+        r#"<div class="trust-row"><span class="trust-label">Status</span><span class="trust-value"><span class="status-dot{}"></span>{}</span></div>"#,
+        status_class,
+        html_escape(&ctx.link_status[..1].to_uppercase()) + &ctx.link_status[1..]
+    ));
+    html.push_str("</div>");
 
-    format!(
-        r#"<details open style="margin-top:16px;text-align:left;max-width:320px;margin-left:auto;margin-right:auto;"><summary style="color:#3f3f46;font-size:11px;cursor:pointer;">Link details</summary><ul style="color:#52525b;font-size:11px;list-style:none;padding:8px 0 0 0;line-height:1.8;">{}</ul></details>"#,
-        rows.join("")
-    )
+    // Provided by creator
+    if ac.is_some_and(|a| a.action.is_some() || a.cta.is_some() || a.description.is_some()) {
+        let ac = ac.unwrap();
+        html.push_str(r#"<div class="trust-group trust-creator"><div class="trust-group-header">Provided by link creator</div>"#);
+        if let Some(action) = &ac.action {
+            html.push_str(&format!(
+                r#"<div class="trust-row"><span class="trust-label">Action</span><span class="trust-value">{}</span></div>"#,
+                html_escape(action)
+            ));
+        }
+        if let Some(cta) = &ac.cta {
+            html.push_str(&format!(
+                r#"<div class="trust-row"><span class="trust-label">CTA</span><span class="trust-value">{}</span></div>"#,
+                html_escape(cta)
+            ));
+        }
+        if let Some(desc) = &ac.description {
+            html.push_str(&format!(
+                r#"<div class="desc-block">{}</div>"#,
+                html_escape(desc)
+            ));
+            if let Some(domain) = ctx.tenant_domain {
+                html.push_str(&format!(
+                    r#"<p class="attr-note">Provided by the owner of {}. Not independently verified.</p>"#,
+                    html_escape(domain)
+                ));
+            }
+        }
+        html.push_str("</div>");
+    }
+
+    // Destinations
+    let mut dests = Vec::new();
+    if let Some(v) = &link.ios_deep_link {
+        dests.push(("iOS", v.as_str()));
+    }
+    if let Some(v) = &link.android_deep_link {
+        dests.push(("Android", v.as_str()));
+    }
+    if let Some(v) = &link.web_url {
+        dests.push(("Web", v.as_str()));
+    }
+    if let Some(v) = &link.ios_store_url {
+        dests.push(("App Store", v.as_str()));
+    }
+    if let Some(v) = &link.android_store_url {
+        dests.push(("Play Store", v.as_str()));
+    }
+    if !dests.is_empty() {
+        html.push_str(r#"<div class="dest-section"><div class="dest-header">Destinations</div>"#);
+        for (label, url) in &dests {
+            let display_url = url
+                .trim_start_matches("https://")
+                .trim_start_matches("http://");
+            html.push_str(&format!(
+                r#"<div class="dest-item"><span class="dest-type">{}</span><span class="dest-arrow">&rarr;</span><a href="{}" class="dest-url">{}</a></div>"#,
+                label,
+                html_escape(url),
+                html_escape(display_url)
+            ));
+        }
+        html.push_str("</div>");
+    }
+
+    // Footer
+    html.push_str(r#"<div class="agent-footer">"#);
+    html.push_str(r#"<p class="powered">Powered by <a href="https://riftl.ink">Rift</a> &mdash; Deep links for humans and agents</p>"#);
+    html.push_str(r#"<p class="hint">AI agents: request with Accept: application/json for structured data</p>"#);
+    html.push_str("</div>");
+
+    html
 }
 
 fn compute_link_status(link: &Link) -> &'static str {
