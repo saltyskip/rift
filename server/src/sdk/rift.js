@@ -28,9 +28,10 @@
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        // Copy link ID to clipboard for deferred deep linking (iOS).
+        // Copy link URL to clipboard for deferred deep linking (iOS).
         if (platform === "ios" && data.link_id && navigator.clipboard) {
-          navigator.clipboard.writeText("rift:" + data.link_id).catch(function(){});
+          var clipUrl = domain ? ("https://" + domain + "/" + data.link_id) : (base + "/r/" + data.link_id);
+          navigator.clipboard.writeText(clipUrl).catch(function(){});
         }
 
         var deepLink = platform === "ios" ? data.ios_deep_link
