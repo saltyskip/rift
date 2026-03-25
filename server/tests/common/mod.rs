@@ -63,17 +63,18 @@ pub async fn spawn_app() -> TestApp {
         cdp_api_key_id: String::new(),
         cdp_api_key_secret: String::new(),
         x402_description: String::new(),
+        mcp_port: 0,
         primary_domain: "riftl.ink".to_string(),
     };
 
     let threat_feed = rift::core::threat_feed::ThreatFeed::new();
 
-    let links_service = Some(rift::api::links::service::LinksService::new(
+    let links_service = Some(Arc::new(rift::api::links::service::LinksService::new(
         links_repo.clone() as Arc<dyn rift::api::links::repo::LinksRepository>,
         Some(domains_repo.clone() as Arc<dyn rift::api::domains::repo::DomainsRepository>),
         threat_feed.clone(),
         config.public_url.clone(),
-    ));
+    )));
 
     let state = Arc::new(AppState {
         auth_repo: Some(auth_repo.clone() as Arc<dyn AuthRepository>),

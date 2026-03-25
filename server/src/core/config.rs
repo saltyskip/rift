@@ -30,6 +30,9 @@ pub struct Config {
     // ── x402 resource description (shown to payers) ──
     pub x402_description: String,
 
+    // ── MCP ──
+    pub mcp_port: u16,
+
     // ── Custom domains ──
     pub primary_domain: String,
 }
@@ -71,6 +74,11 @@ impl Config {
 
             x402_description: std::env::var("X402_DESCRIPTION")
                 .unwrap_or_else(|_| "Rift API request".to_string()),
+
+            mcp_port: std::env::var("MCP_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(3001),
 
             primary_domain: std::env::var("PRIMARY_DOMAIN")
                 .unwrap_or_else(|_| "riftl.ink".to_string()),

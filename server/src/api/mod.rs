@@ -38,7 +38,7 @@ pub struct AppState {
     pub webhooks_repo: Option<StdArc<dyn WebhooksRepository>>,
     pub webhook_dispatcher: Option<StdArc<dyn WebhookDispatcher>>,
     pub sdk_keys_repo: Option<StdArc<dyn SdkKeysRepository>>,
-    pub links_service: Option<LinksService>,
+    pub links_service: Option<Arc<LinksService>>,
 }
 
 #[derive(OpenApi)]

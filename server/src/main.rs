@@ -1,6 +1,7 @@
 mod api;
 mod core;
 mod error;
+mod mcp;
 
 use std::sync::Arc;
 
@@ -123,12 +124,12 @@ async fn main() {
         });
 
     let links_service = links_repo.as_ref().map(|repo| {
-        crate::api::links::service::LinksService::new(
+        Arc::new(crate::api::links::service::LinksService::new(
             repo.clone(),
             domains_repo.clone(),
             threat_feed.clone(),
             cfg.public_url.clone(),
-        )
+        ))
     });
 
     let state = Arc::new(AppState {
@@ -145,6 +146,22 @@ async fn main() {
         links_service,
     });
 
+    // ── MCP server on separate port ──
+    if let (Some(links_svc), Some(auth)) = (&state.links_service, &state.auth_repo) {
+        let mcp_app = mcp::mcp_router(links_svc.clone(), auth.clone());
+        let mcp_addr = format!("{}:{}", cfg.host, cfg.mcp_port);
+        let mcp_listener = tokio::net::TcpListener::bind(&mcp_addr)
+            .await
+            .expect("Failed to bind MCP server");
+        tracing::info!("MCP server on {mcp_addr}");
+        tokio::spawn(async move {
+            axum::serve(mcp_listener, mcp_app)
+                .await
+                .expect("MCP server error");
+        });
+    }
+
+    // ── API server ──
     let app = api::router(state.clone())
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(64 * 1024))
