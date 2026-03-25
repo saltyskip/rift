@@ -122,6 +122,15 @@ async fn main() {
                 as Arc<dyn crate::core::webhook_dispatcher::WebhookDispatcher>
         });
 
+    let links_service = links_repo.as_ref().map(|repo| {
+        crate::api::links::service::LinksService::new(
+            repo.clone(),
+            domains_repo.clone(),
+            threat_feed.clone(),
+            cfg.public_url.clone(),
+        )
+    });
+
     let state = Arc::new(AppState {
         auth_repo,
         links_repo,
@@ -130,10 +139,10 @@ async fn main() {
         config: cfg.clone(),
         facilitator,
         x402_price_tags,
-        threat_feed,
         webhooks_repo,
         webhook_dispatcher,
         sdk_keys_repo,
+        links_service,
     });
 
     let app = api::router(state.clone())

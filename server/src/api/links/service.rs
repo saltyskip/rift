@@ -1,0 +1,954 @@
+use mongodb::bson::oid::ObjectId;
+use mongodb::bson::DateTime;
+use std::fmt;
+use std::sync::Arc;
+use uuid::Uuid;
+
+use super::models::*;
+use super::repo::LinksRepository;
+use crate::api::domains::repo::DomainsRepository;
+use crate::core::threat_feed::ThreatFeed;
+use crate::core::validation;
+
+// ── Error ──
+
+#[derive(Debug)]
+pub enum LinkError {
+    InvalidCustomId(String),
+    InvalidUrl(String),
+    InvalidMetadata(String),
+    InvalidAgentContext(String),
+    ThreatDetected(String),
+    LinkIdTaken(String),
+    NotFound,
+    NoVerifiedDomain,
+    EmptyUpdate,
+    Internal(String),
+}
+
+impl fmt::Display for LinkError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidCustomId(e) => write!(f, "{e}"),
+            Self::InvalidUrl(e) => write!(f, "{e}"),
+            Self::InvalidMetadata(e) => write!(f, "{e}"),
+            Self::InvalidAgentContext(e) => write!(f, "{e}"),
+            Self::ThreatDetected(e) => write!(f, "{e}"),
+            Self::LinkIdTaken(id) => write!(f, "'{id}' is already taken"),
+            Self::NotFound => write!(f, "Link not found"),
+            Self::NoVerifiedDomain => {
+                write!(f, "Custom IDs require a verified custom domain")
+            }
+            Self::EmptyUpdate => write!(f, "No fields to update"),
+            Self::Internal(e) => write!(f, "Internal error: {e}"),
+        }
+    }
+}
+
+impl LinkError {
+    /// Machine-readable error code for API responses.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::InvalidCustomId(_) => "invalid_custom_id",
+            Self::InvalidUrl(_) => "invalid_url",
+            Self::InvalidMetadata(_) => "invalid_metadata",
+            Self::InvalidAgentContext(_) => "invalid_agent_context",
+            Self::ThreatDetected(_) => "threat_detected",
+            Self::LinkIdTaken(_) => "link_id_taken",
+            Self::NotFound => "not_found",
+            Self::NoVerifiedDomain => "no_verified_domain",
+            Self::EmptyUpdate => "empty_update",
+            Self::Internal(_) => "db_error",
+        }
+    }
+}
+
+// ── Service ──
+
+pub struct LinksService {
+    links_repo: Arc<dyn LinksRepository>,
+    domains_repo: Option<Arc<dyn DomainsRepository>>,
+    threat_feed: ThreatFeed,
+    public_url: String,
+}
+
+impl LinksService {
+    pub fn new(
+        links_repo: Arc<dyn LinksRepository>,
+        domains_repo: Option<Arc<dyn DomainsRepository>>,
+        threat_feed: ThreatFeed,
+        public_url: String,
+    ) -> Self {
+        Self {
+            links_repo,
+            domains_repo,
+            threat_feed,
+            public_url,
+        }
+    }
+
+    pub async fn create_link(
+        &self,
+        tenant_id: ObjectId,
+        req: CreateLinkRequest,
+    ) -> Result<CreateLinkResponse, LinkError> {
+        let link_id = match &req.custom_id {
+            Some(custom) => {
+                validate_custom_id(custom)?;
+
+                if !self.tenant_has_verified_domain(&tenant_id).await {
+                    return Err(LinkError::NoVerifiedDomain);
+                }
+
+                if self
+                    .links_repo
+                    .find_link_by_tenant_and_id(&tenant_id, custom)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
+                    return Err(LinkError::LinkIdTaken(custom.clone()));
+                }
+                custom.clone()
+            }
+            None => generate_link_id(),
+        };
+
+        validate_link_urls(
+            req.web_url.as_deref(),
+            req.ios_deep_link.as_deref(),
+            req.android_deep_link.as_deref(),
+            req.ios_store_url.as_deref(),
+            req.android_store_url.as_deref(),
+        )?;
+
+        if let Some(ref web_url) = req.web_url {
+            if let Some(reason) = self.threat_feed.check_url(web_url).await {
+                return Err(LinkError::ThreatDetected(reason));
+            }
+        }
+
+        validate_agent_context(&req.agent_context)?;
+
+        if let Some(ref meta) = req.metadata {
+            validation::validate_metadata(meta).map_err(LinkError::InvalidMetadata)?;
+        }
+
+        let metadata = req
+            .metadata
+            .and_then(|v| mongodb::bson::to_document(&v).ok());
+
+        let mut input = CreateLinkInput::new(tenant_id, link_id.clone());
+        if let Some(v) = req.ios_deep_link {
+            input = input.ios_deep_link(v);
+        }
+        if let Some(v) = req.android_deep_link {
+            input = input.android_deep_link(v);
+        }
+        if let Some(v) = req.web_url {
+            input = input.web_url(v);
+        }
+        if let Some(v) = req.ios_store_url {
+            input = input.ios_store_url(v);
+        }
+        if let Some(v) = req.android_store_url {
+            input = input.android_store_url(v);
+        }
+        if let Some(v) = metadata {
+            input = input.metadata(v);
+        }
+        if let Some(ac) = req.agent_context {
+            input = input.agent_context(ac);
+        }
+
+        // Links without a verified custom domain expire after 30 days.
+        if !self.tenant_has_verified_domain(&tenant_id).await {
+            let thirty_days_ms = 30 * 24 * 60 * 60 * 1000_i64;
+            input = input.expires_at(DateTime::from_millis(
+                DateTime::now().timestamp_millis() + thirty_days_ms,
+            ));
+        }
+
+        self.links_repo.create_link(input).await.map_err(|e| {
+            if e.contains("E11000") {
+                LinkError::LinkIdTaken(link_id.clone())
+            } else {
+                tracing::error!("Failed to create link: {e}");
+                LinkError::Internal(e)
+            }
+        })?;
+
+        let url = format!("{}/r/{}", self.public_url, link_id);
+        Ok(CreateLinkResponse { link_id, url })
+    }
+
+    pub async fn get_link(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+    ) -> Result<LinkDetail, LinkError> {
+        let link = self
+            .links_repo
+            .find_link_by_tenant_and_id(tenant_id, link_id)
+            .await
+            .map_err(LinkError::Internal)?
+            .ok_or(LinkError::NotFound)?;
+
+        Ok(self.link_to_detail(&link))
+    }
+
+    pub async fn list_links(
+        &self,
+        tenant_id: &ObjectId,
+        limit: Option<i64>,
+        cursor: Option<String>,
+    ) -> Result<ListLinksResponse, LinkError> {
+        let limit = limit.unwrap_or(50).clamp(1, 100);
+        let cursor_id = cursor.and_then(|c| ObjectId::parse_str(&c).ok());
+
+        // Fetch one extra to determine if there's a next page.
+        let links = self
+            .links_repo
+            .list_links_by_tenant(tenant_id, limit + 1, cursor_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to list links: {e}");
+                LinkError::Internal(e)
+            })?;
+
+        let has_more = links.len() as i64 > limit;
+        let page: Vec<&Link> = links.iter().take(limit as usize).collect();
+
+        let next_cursor = if has_more {
+            page.last().map(|l| l.id.to_hex())
+        } else {
+            None
+        };
+
+        let details: Vec<LinkDetail> = page.iter().map(|l| self.link_to_detail(l)).collect();
+
+        Ok(ListLinksResponse {
+            links: details,
+            next_cursor,
+        })
+    }
+
+    pub async fn update_link(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+        req: UpdateLinkRequest,
+    ) -> Result<LinkDetail, LinkError> {
+        // Flatten Option<Option<String>> to Option<&str> for validation.
+        let ios_dl = req.ios_deep_link.as_ref().and_then(|v| v.as_deref());
+        let android_dl = req.android_deep_link.as_ref().and_then(|v| v.as_deref());
+
+        validate_link_urls(
+            req.web_url.as_deref(),
+            ios_dl,
+            android_dl,
+            req.ios_store_url.as_deref(),
+            req.android_store_url.as_deref(),
+        )?;
+
+        if let Some(ref web_url) = req.web_url {
+            if let Some(reason) = self.threat_feed.check_url(web_url).await {
+                return Err(LinkError::ThreatDetected(reason));
+            }
+        }
+
+        if let Some(ref meta) = req.metadata {
+            validation::validate_metadata(meta).map_err(LinkError::InvalidMetadata)?;
+        }
+
+        validate_agent_context(&req.agent_context)?;
+
+        let mut update = mongodb::bson::Document::new();
+        let mut unset = mongodb::bson::Document::new();
+
+        // ios_deep_link and android_deep_link support null to clear.
+        match &req.ios_deep_link {
+            None => {}
+            Some(None) => {
+                unset.insert("ios_deep_link", "");
+            }
+            Some(Some(v)) => {
+                update.insert("ios_deep_link", v.clone());
+            }
+        }
+        match &req.android_deep_link {
+            None => {}
+            Some(None) => {
+                unset.insert("android_deep_link", "");
+            }
+            Some(Some(v)) => {
+                update.insert("android_deep_link", v.clone());
+            }
+        }
+
+        if let Some(v) = &req.web_url {
+            update.insert("web_url", v.clone());
+        }
+        if let Some(v) = &req.ios_store_url {
+            update.insert("ios_store_url", v.clone());
+        }
+        if let Some(v) = &req.android_store_url {
+            update.insert("android_store_url", v.clone());
+        }
+        if let Some(v) = &req.metadata {
+            if let Ok(doc) = mongodb::bson::to_document(v) {
+                update.insert("metadata", doc);
+            }
+        }
+        if let Some(ref ac) = req.agent_context {
+            if let Ok(doc) = mongodb::bson::to_document(ac) {
+                update.insert("agent_context", doc);
+            }
+        }
+
+        if update.is_empty() && unset.is_empty() {
+            return Err(LinkError::EmptyUpdate);
+        }
+
+        let updated = self
+            .links_repo
+            .update_link(tenant_id, link_id, update, unset)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to update link: {e}");
+                LinkError::Internal(e)
+            })?;
+
+        if !updated {
+            return Err(LinkError::NotFound);
+        }
+
+        // Re-fetch the updated link.
+        self.get_link(tenant_id, link_id).await
+    }
+
+    pub async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<(), LinkError> {
+        let deleted = self
+            .links_repo
+            .delete_link(tenant_id, link_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to delete link: {e}");
+                LinkError::Internal(e)
+            })?;
+
+        if !deleted {
+            return Err(LinkError::NotFound);
+        }
+
+        Ok(())
+    }
+
+    fn link_to_detail(&self, link: &Link) -> LinkDetail {
+        LinkDetail {
+            link_id: link.link_id.clone(),
+            url: format!("{}/r/{}", self.public_url, link.link_id),
+            ios_deep_link: link.ios_deep_link.clone(),
+            android_deep_link: link.android_deep_link.clone(),
+            web_url: link.web_url.clone(),
+            ios_store_url: link.ios_store_url.clone(),
+            android_store_url: link.android_store_url.clone(),
+            created_at: link.created_at.try_to_rfc3339_string().unwrap_or_default(),
+            agent_context: link.agent_context.clone(),
+        }
+    }
+
+    async fn tenant_has_verified_domain(&self, tenant_id: &ObjectId) -> bool {
+        let Some(ref repo) = self.domains_repo else {
+            return false;
+        };
+        repo.list_by_tenant(tenant_id)
+            .await
+            .ok()
+            .map(|domains| domains.iter().any(|d| d.verified))
+            .unwrap_or(false)
+    }
+}
+
+// ── Shared Validators ──
+
+pub fn generate_link_id() -> String {
+    Uuid::new_v4()
+        .simple()
+        .to_string()
+        .chars()
+        .take(8)
+        .collect::<String>()
+        .to_uppercase()
+}
+
+pub fn validate_custom_id(id: &str) -> Result<(), LinkError> {
+    if id.len() < 3 || id.len() > 64 {
+        return Err(LinkError::InvalidCustomId(
+            "custom_id must be 3-64 characters".to_string(),
+        ));
+    }
+    if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(LinkError::InvalidCustomId(
+            "custom_id must be alphanumeric with hyphens only".to_string(),
+        ));
+    }
+    if id.starts_with('-') || id.ends_with('-') {
+        return Err(LinkError::InvalidCustomId(
+            "custom_id must not start or end with a hyphen".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_link_urls(
+    web_url: Option<&str>,
+    ios_deep_link: Option<&str>,
+    android_deep_link: Option<&str>,
+    ios_store_url: Option<&str>,
+    android_store_url: Option<&str>,
+) -> Result<(), LinkError> {
+    if let Some(v) = web_url {
+        validation::validate_web_url(v)
+            .map_err(|e| LinkError::InvalidUrl(format!("web_url: {e}")))?;
+    }
+    if let Some(v) = ios_deep_link {
+        validation::validate_deep_link(v)
+            .map_err(|e| LinkError::InvalidUrl(format!("ios_deep_link: {e}")))?;
+    }
+    if let Some(v) = android_deep_link {
+        validation::validate_deep_link(v)
+            .map_err(|e| LinkError::InvalidUrl(format!("android_deep_link: {e}")))?;
+    }
+    if let Some(v) = ios_store_url {
+        validation::validate_store_url(v)
+            .map_err(|e| LinkError::InvalidUrl(format!("ios_store_url: {e}")))?;
+    }
+    if let Some(v) = android_store_url {
+        validation::validate_store_url(v)
+            .map_err(|e| LinkError::InvalidUrl(format!("android_store_url: {e}")))?;
+    }
+    Ok(())
+}
+
+fn validate_agent_context(agent_context: &Option<AgentContext>) -> Result<(), LinkError> {
+    let Some(ac) = agent_context else {
+        return Ok(());
+    };
+    if let Some(ref action) = ac.action {
+        validation::validate_agent_action(action).map_err(LinkError::InvalidAgentContext)?;
+    }
+    if let Some(ref cta) = ac.cta {
+        validation::validate_cta(cta).map_err(LinkError::InvalidAgentContext)?;
+    }
+    if let Some(ref desc) = ac.description {
+        validation::validate_agent_description(desc).map_err(LinkError::InvalidAgentContext)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::domains::repo::DomainsRepository;
+    use crate::api::links::models::TimeseriesDataPoint;
+    use crate::api::links::repo::LinksRepository;
+    use async_trait::async_trait;
+    use mongodb::bson::{oid::ObjectId, DateTime, Document};
+    use std::sync::Mutex;
+
+    // ── Mock LinksRepository ──
+
+    #[derive(Default)]
+    struct MockLinksRepo {
+        links: Mutex<Vec<Link>>,
+    }
+
+    impl MockLinksRepo {
+        fn with_links(links: Vec<Link>) -> Self {
+            Self {
+                links: Mutex::new(links),
+            }
+        }
+    }
+
+    fn make_link(tenant_id: ObjectId, link_id: &str) -> Link {
+        Link {
+            id: ObjectId::new(),
+            tenant_id,
+            link_id: link_id.to_string(),
+            ios_deep_link: None,
+            android_deep_link: None,
+            web_url: Some("https://example.com".to_string()),
+            ios_store_url: None,
+            android_store_url: None,
+            metadata: None,
+            created_at: DateTime::now(),
+            status: LinkStatus::Active,
+            flag_reason: None,
+            expires_at: None,
+            agent_context: None,
+        }
+    }
+
+    #[async_trait]
+    impl LinksRepository for MockLinksRepo {
+        async fn create_link(&self, input: CreateLinkInput) -> Result<Link, String> {
+            let mut links = self.links.lock().unwrap();
+            if links.iter().any(|l| l.link_id == input.link_id) {
+                return Err("E11000 duplicate key".to_string());
+            }
+            let link = Link {
+                id: ObjectId::new(),
+                tenant_id: input.tenant_id,
+                link_id: input.link_id,
+                ios_deep_link: input.ios_deep_link,
+                android_deep_link: input.android_deep_link,
+                web_url: input.web_url,
+                ios_store_url: input.ios_store_url,
+                android_store_url: input.android_store_url,
+                metadata: input.metadata,
+                created_at: DateTime::now(),
+                status: LinkStatus::Active,
+                flag_reason: None,
+                expires_at: input.expires_at,
+                agent_context: input.agent_context,
+            };
+            links.push(link.clone());
+            Ok(link)
+        }
+
+        async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String> {
+            let links = self.links.lock().unwrap();
+            Ok(links.iter().find(|l| l.link_id == link_id).cloned())
+        }
+
+        async fn find_link_by_tenant_and_id(
+            &self,
+            tenant_id: &ObjectId,
+            link_id: &str,
+        ) -> Result<Option<Link>, String> {
+            let links = self.links.lock().unwrap();
+            Ok(links
+                .iter()
+                .find(|l| l.tenant_id == *tenant_id && l.link_id == link_id)
+                .cloned())
+        }
+
+        async fn update_link(
+            &self,
+            tenant_id: &ObjectId,
+            link_id: &str,
+            update: Document,
+            _unset: Document,
+        ) -> Result<bool, String> {
+            let mut links = self.links.lock().unwrap();
+            let Some(link) = links
+                .iter_mut()
+                .find(|l| l.tenant_id == *tenant_id && l.link_id == link_id)
+            else {
+                return Ok(false);
+            };
+            if let Some(v) = update.get_str("web_url").ok() {
+                link.web_url = Some(v.to_string());
+            }
+            if let Some(v) = update.get_str("ios_deep_link").ok() {
+                link.ios_deep_link = Some(v.to_string());
+            }
+            if let Some(v) = update.get_str("android_deep_link").ok() {
+                link.android_deep_link = Some(v.to_string());
+            }
+            if let Some(v) = update.get_str("ios_store_url").ok() {
+                link.ios_store_url = Some(v.to_string());
+            }
+            if let Some(v) = update.get_str("android_store_url").ok() {
+                link.android_store_url = Some(v.to_string());
+            }
+            Ok(true)
+        }
+
+        async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String> {
+            let mut links = self.links.lock().unwrap();
+            let len_before = links.len();
+            links.retain(|l| !(l.tenant_id == *tenant_id && l.link_id == link_id));
+            Ok(links.len() < len_before)
+        }
+
+        async fn list_links_by_tenant(
+            &self,
+            tenant_id: &ObjectId,
+            limit: i64,
+            _cursor: Option<ObjectId>,
+        ) -> Result<Vec<Link>, String> {
+            let links = self.links.lock().unwrap();
+            Ok(links
+                .iter()
+                .filter(|l| l.tenant_id == *tenant_id)
+                .take(limit as usize)
+                .cloned()
+                .collect())
+        }
+
+        async fn record_click(
+            &self,
+            _tenant_id: ObjectId,
+            _link_id: &str,
+            _user_agent: Option<String>,
+            _referer: Option<String>,
+            _platform: Option<String>,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+
+        async fn count_clicks(&self, _tenant_id: &ObjectId, _link_id: &str) -> Result<u64, String> {
+            Ok(0)
+        }
+
+        async fn get_click_timeseries(
+            &self,
+            _tenant_id: &ObjectId,
+            _link_id: &str,
+            _from: DateTime,
+            _to: DateTime,
+        ) -> Result<Vec<TimeseriesDataPoint>, String> {
+            Ok(vec![])
+        }
+
+        async fn upsert_attribution(
+            &self,
+            _tenant_id: ObjectId,
+            _link_id: &str,
+            _install_id: &str,
+            _app_version: &str,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+
+        async fn link_attribution_to_user(
+            &self,
+            _tenant_id: &ObjectId,
+            _install_id: &str,
+            _user_id: &str,
+        ) -> Result<bool, String> {
+            Ok(true)
+        }
+
+        async fn count_attributions(
+            &self,
+            _tenant_id: &ObjectId,
+            _link_id: &str,
+        ) -> Result<u64, String> {
+            Ok(0)
+        }
+    }
+
+    // ── Mock DomainsRepository ──
+
+    struct MockDomainsRepo {
+        has_verified: bool,
+    }
+
+    #[async_trait]
+    impl DomainsRepository for MockDomainsRepo {
+        async fn create_domain(
+            &self,
+            _tenant_id: ObjectId,
+            _domain: String,
+            _verification_token: String,
+        ) -> Result<crate::api::domains::models::Domain, String> {
+            unimplemented!()
+        }
+
+        async fn find_by_domain(
+            &self,
+            _domain: &str,
+        ) -> Result<Option<crate::api::domains::models::Domain>, String> {
+            unimplemented!()
+        }
+
+        async fn list_by_tenant(
+            &self,
+            _tenant_id: &ObjectId,
+        ) -> Result<Vec<crate::api::domains::models::Domain>, String> {
+            if self.has_verified {
+                Ok(vec![crate::api::domains::models::Domain {
+                    id: ObjectId::new(),
+                    tenant_id: ObjectId::new(),
+                    domain: "example.com".to_string(),
+                    verified: true,
+                    verification_token: "token".to_string(),
+                    created_at: DateTime::now(),
+                }])
+            } else {
+                Ok(vec![])
+            }
+        }
+
+        async fn delete_domain(
+            &self,
+            _tenant_id: &ObjectId,
+            _domain: &str,
+        ) -> Result<bool, String> {
+            Ok(true)
+        }
+
+        async fn mark_verified(&self, _domain: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn make_service(links: Vec<Link>, has_verified_domain: bool) -> LinksService {
+        let repo = Arc::new(MockLinksRepo::with_links(links));
+        let domains = Arc::new(MockDomainsRepo {
+            has_verified: has_verified_domain,
+        });
+        LinksService::new(
+            repo,
+            Some(domains),
+            ThreatFeed::new(),
+            "https://riftl.ink".to_string(),
+        )
+    }
+
+    // ── Tests ──
+
+    #[tokio::test]
+    async fn create_link_generates_id() {
+        let svc = make_service(vec![], false);
+        let tenant_id = ObjectId::new();
+        let req = CreateLinkRequest {
+            custom_id: None,
+            ios_deep_link: None,
+            android_deep_link: None,
+            web_url: Some("https://example.com".to_string()),
+            ios_store_url: None,
+            android_store_url: None,
+            metadata: None,
+            agent_context: None,
+        };
+
+        let resp = svc.create_link(tenant_id, req).await.unwrap();
+        assert_eq!(resp.link_id.len(), 8);
+        assert!(resp.url.contains(&resp.link_id));
+    }
+
+    #[tokio::test]
+    async fn create_link_custom_id_requires_verified_domain() {
+        let svc = make_service(vec![], false);
+        let tenant_id = ObjectId::new();
+        let req = CreateLinkRequest {
+            custom_id: Some("my-link".to_string()),
+            ios_deep_link: None,
+            android_deep_link: None,
+            web_url: Some("https://example.com".to_string()),
+            ios_store_url: None,
+            android_store_url: None,
+            metadata: None,
+            agent_context: None,
+        };
+
+        let err = svc.create_link(tenant_id, req).await.unwrap_err();
+        assert!(matches!(err, LinkError::NoVerifiedDomain));
+    }
+
+    #[tokio::test]
+    async fn create_link_custom_id_with_verified_domain() {
+        let svc = make_service(vec![], true);
+        let tenant_id = ObjectId::new();
+        let req = CreateLinkRequest {
+            custom_id: Some("my-link".to_string()),
+            ios_deep_link: None,
+            android_deep_link: None,
+            web_url: Some("https://example.com".to_string()),
+            ios_store_url: None,
+            android_store_url: None,
+            metadata: None,
+            agent_context: None,
+        };
+
+        let resp = svc.create_link(tenant_id, req).await.unwrap();
+        assert_eq!(resp.link_id, "my-link");
+    }
+
+    #[tokio::test]
+    async fn create_link_invalid_custom_id() {
+        let svc = make_service(vec![], true);
+        let tenant_id = ObjectId::new();
+        let req = CreateLinkRequest {
+            custom_id: Some("ab".to_string()), // too short
+            ios_deep_link: None,
+            android_deep_link: None,
+            web_url: None,
+            ios_store_url: None,
+            android_store_url: None,
+            metadata: None,
+            agent_context: None,
+        };
+
+        let err = svc.create_link(tenant_id, req).await.unwrap_err();
+        assert!(matches!(err, LinkError::InvalidCustomId(_)));
+    }
+
+    #[tokio::test]
+    async fn create_link_duplicate() {
+        let tenant_id = ObjectId::new();
+        let existing = make_link(tenant_id, "EXISTING");
+        let svc = make_service(vec![existing], false);
+
+        let req = CreateLinkRequest {
+            custom_id: None,
+            ios_deep_link: None,
+            android_deep_link: None,
+            web_url: Some("https://example.com".to_string()),
+            ios_store_url: None,
+            android_store_url: None,
+            metadata: None,
+            agent_context: None,
+        };
+
+        // First create should succeed (random ID won't collide with "EXISTING")
+        let resp = svc.create_link(tenant_id, req).await.unwrap();
+        assert_ne!(resp.link_id, "EXISTING");
+    }
+
+    #[tokio::test]
+    async fn get_link_existing() {
+        let tenant_id = ObjectId::new();
+        let link = make_link(tenant_id, "ABC123");
+        let svc = make_service(vec![link], false);
+
+        let detail = svc.get_link(&tenant_id, "ABC123").await.unwrap();
+        assert_eq!(detail.link_id, "ABC123");
+        assert!(detail.url.contains("ABC123"));
+    }
+
+    #[tokio::test]
+    async fn get_link_not_found() {
+        let svc = make_service(vec![], false);
+        let tenant_id = ObjectId::new();
+
+        let err = svc.get_link(&tenant_id, "NOPE").await.unwrap_err();
+        assert!(matches!(err, LinkError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn list_links_returns_page() {
+        let tenant_id = ObjectId::new();
+        let links: Vec<Link> = (0..3)
+            .map(|i| make_link(tenant_id, &format!("L{i}")))
+            .collect();
+        let svc = make_service(links, false);
+
+        let resp = svc.list_links(&tenant_id, Some(10), None).await.unwrap();
+        assert_eq!(resp.links.len(), 3);
+        assert!(resp.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn list_links_empty() {
+        let svc = make_service(vec![], false);
+        let tenant_id = ObjectId::new();
+
+        let resp = svc.list_links(&tenant_id, None, None).await.unwrap();
+        assert!(resp.links.is_empty());
+        assert!(resp.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn list_links_clamps_limit() {
+        let tenant_id = ObjectId::new();
+        let links: Vec<Link> = (0..5)
+            .map(|i| make_link(tenant_id, &format!("L{i}")))
+            .collect();
+        let svc = make_service(links, false);
+
+        // Limit > 100 should be clamped
+        let resp = svc.list_links(&tenant_id, Some(200), None).await.unwrap();
+        assert_eq!(resp.links.len(), 5);
+
+        // Limit < 1 should be clamped to 1
+        let resp = svc.list_links(&tenant_id, Some(0), None).await.unwrap();
+        assert_eq!(resp.links.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn update_link_success() {
+        let tenant_id = ObjectId::new();
+        let link = make_link(tenant_id, "UPD123");
+        let svc = make_service(vec![link], false);
+
+        let req = UpdateLinkRequest {
+            ios_deep_link: None,
+            android_deep_link: None,
+            web_url: Some("https://updated.com".to_string()),
+            ios_store_url: None,
+            android_store_url: None,
+            metadata: None,
+            agent_context: None,
+        };
+
+        let detail = svc.update_link(&tenant_id, "UPD123", req).await.unwrap();
+        assert_eq!(detail.web_url.as_deref(), Some("https://updated.com"));
+    }
+
+    #[tokio::test]
+    async fn update_link_not_found() {
+        let svc = make_service(vec![], false);
+        let tenant_id = ObjectId::new();
+
+        let req = UpdateLinkRequest {
+            ios_deep_link: None,
+            android_deep_link: None,
+            web_url: Some("https://example.com".to_string()),
+            ios_store_url: None,
+            android_store_url: None,
+            metadata: None,
+            agent_context: None,
+        };
+
+        let err = svc.update_link(&tenant_id, "NOPE", req).await.unwrap_err();
+        assert!(matches!(err, LinkError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn update_link_empty() {
+        let tenant_id = ObjectId::new();
+        let link = make_link(tenant_id, "EMPTY1");
+        let svc = make_service(vec![link], false);
+
+        let req = UpdateLinkRequest {
+            ios_deep_link: None,
+            android_deep_link: None,
+            web_url: None,
+            ios_store_url: None,
+            android_store_url: None,
+            metadata: None,
+            agent_context: None,
+        };
+
+        let err = svc
+            .update_link(&tenant_id, "EMPTY1", req)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, LinkError::EmptyUpdate));
+    }
+
+    #[tokio::test]
+    async fn delete_link_success() {
+        let tenant_id = ObjectId::new();
+        let link = make_link(tenant_id, "DEL123");
+        let svc = make_service(vec![link], false);
+
+        svc.delete_link(&tenant_id, "DEL123").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_link_not_found() {
+        let svc = make_service(vec![], false);
+        let tenant_id = ObjectId::new();
+
+        let err = svc.delete_link(&tenant_id, "NOPE").await.unwrap_err();
+        assert!(matches!(err, LinkError::NotFound));
+    }
+}

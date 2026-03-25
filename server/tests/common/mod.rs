@@ -68,6 +68,13 @@ pub async fn spawn_app() -> TestApp {
 
     let threat_feed = rift::core::threat_feed::ThreatFeed::new();
 
+    let links_service = Some(rift::api::links::service::LinksService::new(
+        links_repo.clone() as Arc<dyn rift::api::links::repo::LinksRepository>,
+        Some(domains_repo.clone() as Arc<dyn rift::api::domains::repo::DomainsRepository>),
+        threat_feed.clone(),
+        config.public_url.clone(),
+    ));
+
     let state = Arc::new(AppState {
         auth_repo: Some(auth_repo.clone() as Arc<dyn AuthRepository>),
         links_repo: Some(links_repo.clone() as Arc<dyn rift::api::links::repo::LinksRepository>),
@@ -78,13 +85,13 @@ pub async fn spawn_app() -> TestApp {
         config,
         facilitator: None,
         x402_price_tags: vec![],
-        threat_feed: threat_feed.clone(),
         webhooks_repo: Some(
             webhooks_repo.clone() as Arc<dyn rift::api::webhooks::repo::WebhooksRepository>
         ),
         webhook_dispatcher: Some(webhook_dispatcher.clone() as Arc<dyn WebhookDispatcher>),
         sdk_keys_repo: Some(sdk_keys_repo.clone()
             as Arc<dyn rift::api::auth::publishable_keys::repo::SdkKeysRepository>),
+        links_service,
     });
 
     let app = rift::api::router(state.clone())

@@ -17,9 +17,9 @@ use crate::api::auth::publishable_keys::repo::SdkKeysRepository;
 use crate::api::auth::secret_keys::repo::AuthRepository;
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::links::repo::LinksRepository;
+use crate::api::links::service::LinksService;
 use crate::api::webhooks::repo::WebhooksRepository;
 use crate::core::config::Config;
-use crate::core::threat_feed::ThreatFeed;
 use crate::core::webhook_dispatcher::WebhookDispatcher;
 
 use x402_types::proto::v1;
@@ -35,10 +35,10 @@ pub struct AppState {
     pub config: Config,
     pub facilitator: Option<CdpFacilitator>,
     pub x402_price_tags: Vec<v1::PriceTag>,
-    pub threat_feed: ThreatFeed,
     pub webhooks_repo: Option<StdArc<dyn WebhooksRepository>>,
     pub webhook_dispatcher: Option<StdArc<dyn WebhookDispatcher>>,
     pub sdk_keys_repo: Option<StdArc<dyn SdkKeysRepository>>,
+    pub links_service: Option<LinksService>,
 }
 
 #[derive(OpenApi)]

@@ -1,6 +1,7 @@
 pub mod models;
 pub mod repo;
 pub mod routes;
+pub mod service;
 
 use axum::middleware;
 use axum::routing::{get, post, put};
