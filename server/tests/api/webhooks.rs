@@ -292,3 +292,53 @@ async fn attribution_dispatches_webhook() {
     assert_eq!(attrs[0].install_id, "install-123");
     assert_eq!(attrs[0].tenant_id, tenant_id.to_hex());
 }
+
+#[tokio::test]
+async fn patch_webhook_toggles_active() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    // Create a webhook.
+    let resp = app
+        .client
+        .post(app.url("/v1/webhooks"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "url": "https://example.com/webhook",
+            "events": ["click"]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let webhook_id = body["id"].as_str().unwrap().to_string();
+
+    // Disable it.
+    let resp = app
+        .client
+        .patch(app.url(&format!("/v1/webhooks/{webhook_id}")))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "active": false }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["active"], false);
+
+    // Re-enable it.
+    let resp = app
+        .client
+        .patch(app.url(&format!("/v1/webhooks/{webhook_id}")))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "active": true }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["active"], true);
+}

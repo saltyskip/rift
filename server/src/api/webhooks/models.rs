@@ -49,3 +49,8 @@ pub struct WebhookDetail {
 pub struct ListWebhooksResponse {
     pub webhooks: Vec<WebhookDetail>,
 }
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateWebhookRequest {
+    pub active: bool,
+}
