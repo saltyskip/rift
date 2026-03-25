@@ -43,7 +43,7 @@ jobs:
 
       - name: Verify artifacts
         run: |
-          test -d dist/ios/RiftSDK.xcframework
+          test -d dist/ios/rift_ffiFFI.xcframework
           test -d dist/ios/Sources/RiftSDK
           echo "iOS artifacts verified"
 
@@ -53,12 +53,12 @@ jobs:
       - name: Package XCFramework (zip for Swift Package Manager)
         run: |
           cd dist/ios
-          zip -r ../../RiftSDK.xcframework.zip RiftSDK.xcframework
+          zip -r ../../rift_ffiFFI.xcframework.zip rift_ffiFFI.xcframework
 
       - name: Compute XCFramework checksum
         id: checksum
         run: |
-          CHECKSUM=$(swift package compute-checksum RiftSDK.xcframework.zip)
+          CHECKSUM=$(swift package compute-checksum rift_ffiFFI.xcframework.zip)
           echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
           echo "XCFramework checksum: $CHECKSUM"
 
@@ -67,14 +67,8 @@ jobs:
           name: ios-sdk
           path: |
             sdk/mobile/ios-sdk.tar.gz
-            sdk/mobile/RiftSDK.xcframework.zip
+            sdk/mobile/rift_ffiFFI.xcframework.zip
           retention-days: 5
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ios-checksum
-          path: sdk/mobile/RiftSDK.xcframework.zip
-          retention-days: 1
 
     outputs:
       checksum: ${{ steps.checksum.outputs.checksum }}
@@ -186,7 +180,7 @@ jobs:
           files: |
             artifacts/rift-ios-sdk-${{ steps.version.outputs.tag }}.tar.gz
             artifacts/rift-android-sdk-${{ steps.version.outputs.tag }}.tar.gz
-            artifacts/RiftSDK.xcframework.zip
+            artifacts/rift_ffiFFI.xcframework.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -196,10 +190,10 @@ jobs:
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           CHECKSUM="${{ needs.build-ios.outputs.checksum }}"
-          URL="https://github.com/saltyskip/rift/releases/download/${TAG}/RiftSDK.xcframework.zip"
+          URL="https://github.com/saltyskip/rift/releases/download/${TAG}/rift_ffiFFI.xcframework.zip"
 
           # Update Package.swift with release URL and checksum.
-          sed -i "s|url: \".*RiftSDK.xcframework.zip\"|url: \"${URL}\"|" Package.swift
+          sed -i "s|url: \".*xcframework.zip\"|url: \"${URL}\"|" Package.swift
           sed -i "s|checksum: \".*\"|checksum: \"${CHECKSUM}\"|" Package.swift
 
           # Extract Swift sources from the iOS SDK artifact for SPM resolution.
