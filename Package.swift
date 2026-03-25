@@ -13,7 +13,7 @@ let package = Package(
         .binaryTarget(
             name: "RiftSDKBinary",
             url: "https://github.com/saltyskip/rift/releases/download/sdk-v0.1.0/RiftSDK.xcframework.zip",
-            checksum: "b96c5fcf8018f7409bd786acaf62fc41b52208f5bf2d6778e3ee3c5ecefa2f5b"
+            checksum: "8eee0bdf417b66bd112edd995b7ec94119579c905e1d9dd7d0d5d0fbf8014cb7"
         ),
         .target(
             name: "RiftSDK",
