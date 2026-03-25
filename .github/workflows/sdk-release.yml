@@ -205,7 +205,8 @@ jobs:
           # Extract Swift sources from the iOS SDK artifact for SPM resolution.
           mkdir -p /tmp/ios-extract
           tar -xzf "artifacts/rift-ios-sdk-${TAG}.tar.gz" -C /tmp/ios-extract
-          rm -rf sdk/mobile/dist/ios/Sources/RiftSDK/*.swift
+          mkdir -p sdk/mobile/dist/ios/Sources/RiftSDK
+          rm -f sdk/mobile/dist/ios/Sources/RiftSDK/*.swift
           cp /tmp/ios-extract/ios/Sources/RiftSDK/*.swift sdk/mobile/dist/ios/Sources/RiftSDK/
 
           git config user.name "github-actions[bot]"
