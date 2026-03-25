@@ -7,7 +7,7 @@ use axum::routing::{delete, get, post};
 use axum::Router;
 use std::sync::Arc;
 
-use super::auth::middleware::auth_gate;
+use super::middleware::auth_gate;
 use crate::api::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {

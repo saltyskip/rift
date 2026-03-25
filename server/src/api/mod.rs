@@ -3,7 +3,6 @@ pub mod auth;
 pub mod domains;
 pub mod health;
 pub mod links;
-pub mod sdk_keys;
 pub mod webhooks;
 
 use axum::routing::get;
@@ -14,10 +13,10 @@ use utoipa::OpenApi;
 use std::sync::Arc as StdArc;
 
 use crate::api::apps::repo::AppsRepository;
-use crate::api::auth::repo::AuthRepository;
+use crate::api::auth::publishable_keys::repo::SdkKeysRepository;
+use crate::api::auth::secret_keys::repo::AuthRepository;
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::links::repo::LinksRepository;
-use crate::api::sdk_keys::repo::SdkKeysRepository;
 use crate::api::webhooks::repo::WebhooksRepository;
 use crate::core::config::Config;
 use crate::core::threat_feed::ThreatFeed;
@@ -52,8 +51,8 @@ pub struct AppState {
     ),
     paths(
         health::routes::health,
-        auth::routes::signup,
-        auth::routes::verify_email,
+        auth::secret_keys::routes::signup,
+        auth::secret_keys::routes::verify_email,
         links::routes::create_link,
         links::routes::list_links,
         links::routes::get_link_stats,
@@ -65,9 +64,9 @@ pub struct AppState {
         links::routes::get_link_timeseries,
         links::routes::update_link,
         links::routes::delete_link,
-        sdk_keys::routes::create_sdk_key,
-        sdk_keys::routes::list_sdk_keys,
-        sdk_keys::routes::revoke_sdk_key,
+        auth::publishable_keys::routes::create_sdk_key,
+        auth::publishable_keys::routes::list_sdk_keys,
+        auth::publishable_keys::routes::revoke_sdk_key,
         webhooks::routes::create_webhook,
         webhooks::routes::list_webhooks,
         webhooks::routes::delete_webhook,
@@ -85,8 +84,8 @@ pub struct AppState {
     components(schemas(
         health::models::HealthResponse,
         crate::error::ErrorResponse,
-        auth::routes::SignupRequest,
-        auth::routes::SignupResponse,
+        auth::secret_keys::routes::SignupRequest,
+        auth::secret_keys::routes::SignupResponse,
         links::models::CreateLinkRequest,
         links::models::CreateLinkResponse,
         links::models::UpdateLinkRequest,
@@ -101,10 +100,10 @@ pub struct AppState {
         links::models::AgentContext,
         links::models::TimeseriesDataPoint,
         links::models::TimeseriesResponse,
-        sdk_keys::models::CreateSdkKeyRequest,
-        sdk_keys::models::CreateSdkKeyResponse,
-        sdk_keys::models::SdkKeyDetail,
-        sdk_keys::models::ListSdkKeysResponse,
+        auth::publishable_keys::models::CreateSdkKeyRequest,
+        auth::publishable_keys::models::CreateSdkKeyResponse,
+        auth::publishable_keys::models::SdkKeyDetail,
+        auth::publishable_keys::models::ListSdkKeysResponse,
         domains::models::CreateDomainRequest,
         domains::models::CreateDomainResponse,
         domains::models::DomainDetail,
@@ -159,9 +158,8 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     let sdk = Router::new().route("/sdk/rift.js", get(serve_rift_js));
 
     health::router()
-        .merge(auth::router())
+        .merge(auth::router(state.clone()))
         .merge(links::router(state.clone()))
-        .merge(sdk_keys::router(state.clone()))
         .merge(domains::router(state.clone()))
         .merge(apps::router(state.clone()))
         .merge(webhooks::router(state.clone()))

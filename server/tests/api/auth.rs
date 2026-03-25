@@ -64,7 +64,7 @@ async fn anonymous_requests_are_rate_limited() {
     // Usage is only recorded on success, so the rate limit won't trigger.
     //
     // Better approach: verify the rate limit response directly by pre-filling usage records.
-    use rift::api::auth::repo::{AuthRepository, UsageDoc};
+    use rift::api::auth::secret_keys::repo::{AuthRepository, UsageDoc};
 
     // Pre-fill 5 anonymous usage records for the IP "unknown" (default when no ConnectInfo).
     for _ in 0..5 {

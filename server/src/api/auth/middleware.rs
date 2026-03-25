@@ -11,7 +11,7 @@ use x402_axum::paygate::PaygateProtocol;
 use x402_types::proto::v1;
 
 use super::keys;
-use super::repo::{self, AuthRepository, UsageDoc};
+use super::secret_keys::repo::{self, AuthRepository, UsageDoc};
 use crate::api::AppState;
 
 /// Tenant identity injected by the auth middleware.

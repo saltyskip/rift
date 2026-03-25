@@ -13,10 +13,10 @@ use x402_chain_eip155::{KnownNetworkEip155, V1Eip155Exact};
 use x402_types::networks::USDC;
 
 use crate::api::apps::repo::AppsRepo;
-use crate::api::auth::repo::AuthRepo;
+use crate::api::auth::publishable_keys::repo::SdkKeysRepo;
+use crate::api::auth::secret_keys::repo::AuthRepo;
 use crate::api::domains::repo::DomainsRepo;
 use crate::api::links::repo::LinksRepo;
-use crate::api::sdk_keys::repo::SdkKeysRepo;
 use crate::api::webhooks::dispatcher::RiftWebhookDispatcher;
 use crate::api::webhooks::repo::WebhooksRepo;
 use crate::api::AppState;
@@ -54,7 +54,7 @@ async fn main() {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
             Some(database) => {
                 tracing::info!(uri = %cfg.mongo_uri, db = %cfg.mongo_db, "Connected to MongoDB");
-                let auth: Arc<dyn crate::api::auth::repo::AuthRepository> =
+                let auth: Arc<dyn crate::api::auth::secret_keys::repo::AuthRepository> =
                     Arc::new(AuthRepo::new(&database).await);
                 let links: Arc<dyn crate::api::links::repo::LinksRepository> =
                     Arc::new(LinksRepo::new(&database).await);
@@ -64,7 +64,7 @@ async fn main() {
                     Arc::new(AppsRepo::new(&database).await);
                 let webhooks: Arc<dyn crate::api::webhooks::repo::WebhooksRepository> =
                     Arc::new(WebhooksRepo::new(&database).await);
-                let sdk_keys: Arc<dyn crate::api::sdk_keys::repo::SdkKeysRepository> =
+                let sdk_keys: Arc<dyn crate::api::auth::publishable_keys::repo::SdkKeysRepository> =
                     Arc::new(SdkKeysRepo::new(&database).await);
                 (
                     Some(auth),

@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
-use rift::api::sdk_keys::models::SdkKeyDoc;
-use rift::api::sdk_keys::repo::SdkKeysRepository;
+use rift::api::auth::publishable_keys::models::SdkKeyDoc;
+use rift::api::auth::publishable_keys::repo::SdkKeysRepository;
 
 #[derive(Default)]
 pub struct MockSdkKeysRepo {

@@ -5,9 +5,9 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-use rift::api::auth::repo::{ApiKeyDoc, AuthRepository};
+use rift::api::auth::publishable_keys::repo::SdkKeysRepository;
+use rift::api::auth::secret_keys::repo::{ApiKeyDoc, AuthRepository};
 use rift::api::domains::repo::DomainsRepository;
-use rift::api::sdk_keys::repo::SdkKeysRepository;
 use rift::api::AppState;
 use rift::core::config::Config;
 use rift::core::webhook_dispatcher::WebhookDispatcher;
@@ -83,9 +83,8 @@ pub async fn spawn_app() -> TestApp {
             webhooks_repo.clone() as Arc<dyn rift::api::webhooks::repo::WebhooksRepository>
         ),
         webhook_dispatcher: Some(webhook_dispatcher.clone() as Arc<dyn WebhookDispatcher>),
-        sdk_keys_repo: Some(
-            sdk_keys_repo.clone() as Arc<dyn rift::api::sdk_keys::repo::SdkKeysRepository>
-        ),
+        sdk_keys_repo: Some(sdk_keys_repo.clone()
+            as Arc<dyn rift::api::auth::publishable_keys::repo::SdkKeysRepository>),
     });
 
     let app = rift::api::router(state.clone())
@@ -126,7 +125,7 @@ pub async fn seed_verified_domain(app: &TestApp, tenant_id: &ObjectId, domain: &
 pub async fn seed_sdk_key(app: &TestApp, tenant_id: &ObjectId, domain: &str) -> String {
     let raw_key = format!("pk_live_test_{}", hex::encode(ObjectId::new().bytes()));
     let hash = hex::encode(sha2::Sha256::digest(raw_key.as_bytes()));
-    let doc = rift::api::sdk_keys::models::SdkKeyDoc {
+    let doc = rift::api::auth::publishable_keys::models::SdkKeyDoc {
         id: ObjectId::new(),
         tenant_id: *tenant_id,
         key_hash: hash,
