@@ -15,6 +15,12 @@ pub trait WebhooksRepository: Send + Sync {
         tenant_id: &ObjectId,
         webhook_id: &ObjectId,
     ) -> Result<bool, String>;
+    async fn set_active(
+        &self,
+        tenant_id: &ObjectId,
+        webhook_id: &ObjectId,
+        active: bool,
+    ) -> Result<bool, String>;
     async fn find_active_for_event(
         &self,
         tenant_id: &ObjectId,
@@ -78,6 +84,23 @@ impl WebhooksRepository for WebhooksRepo {
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)
+    }
+
+    async fn set_active(
+        &self,
+        tenant_id: &ObjectId,
+        webhook_id: &ObjectId,
+        active: bool,
+    ) -> Result<bool, String> {
+        let result = self
+            .webhooks
+            .update_one(
+                doc! { "_id": webhook_id, "tenant_id": tenant_id },
+                doc! { "$set": { "active": active } },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result.matched_count > 0)
     }
 
     async fn find_active_for_event(

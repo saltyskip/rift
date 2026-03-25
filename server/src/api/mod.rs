@@ -66,6 +66,7 @@ pub struct AppState {
         webhooks::routes::create_webhook,
         webhooks::routes::list_webhooks,
         webhooks::routes::delete_webhook,
+        webhooks::routes::patch_webhook,
         domains::routes::create_domain,
         domains::routes::list_domains,
         domains::routes::delete_domain,
@@ -108,6 +109,7 @@ pub struct AppState {
         webhooks::models::CreateWebhookResponse,
         webhooks::models::WebhookDetail,
         webhooks::models::ListWebhooksResponse,
+        webhooks::models::UpdateWebhookRequest,
         webhooks::models::WebhookEventType,
     )),
     security(

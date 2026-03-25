@@ -15,6 +15,9 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     Router::new()
         .route("/v1/webhooks", post(routes::create_webhook))
         .route("/v1/webhooks", get(routes::list_webhooks))
-        .route("/v1/webhooks/{webhook_id}", delete(routes::delete_webhook))
+        .route(
+            "/v1/webhooks/{webhook_id}",
+            delete(routes::delete_webhook).patch(routes::patch_webhook),
+        )
         .layer(middleware::from_fn_with_state(state, auth_gate))
 }
