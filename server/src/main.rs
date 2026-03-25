@@ -146,24 +146,22 @@ async fn main() {
         links_service,
     });
 
-    // ── MCP server on separate port ──
-    if let (Some(links_svc), Some(auth)) = (&state.links_service, &state.auth_repo) {
-        let mcp_app = mcp::mcp_router(links_svc.clone(), auth.clone());
-        let mcp_addr = format!("{}:{}", cfg.host, cfg.mcp_port);
-        let mcp_listener = tokio::net::TcpListener::bind(&mcp_addr)
-            .await
-            .expect("Failed to bind MCP server");
-        tracing::info!("MCP server on {mcp_addr}");
-        tokio::spawn(async move {
-            axum::serve(mcp_listener, mcp_app)
-                .await
-                .expect("MCP server error");
-        });
+    // ── Build app: API + optional MCP on same port ──
+    let mcp_router = if let (Some(links_svc), Some(auth)) = (&state.links_service, &state.auth_repo)
+    {
+        tracing::info!("MCP enabled at /mcp");
+        Some(mcp::mcp_router(links_svc.clone(), auth.clone()))
+    } else {
+        None
+    };
+
+    let mut app = api::router(state.clone()).with_state(state);
+
+    if let Some(mcp) = mcp_router {
+        app = app.merge(mcp);
     }
 
-    // ── API server ──
-    let app = api::router(state.clone())
-        .with_state(state)
+    let app = app
         .layer(RequestBodyLimitLayer::new(64 * 1024))
         .layer(CorsLayer::permissive());
 

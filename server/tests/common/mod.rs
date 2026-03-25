@@ -63,7 +63,6 @@ pub async fn spawn_app() -> TestApp {
         cdp_api_key_id: String::new(),
         cdp_api_key_secret: String::new(),
         x402_description: String::new(),
-        mcp_port: 0,
         primary_domain: "riftl.ink".to_string(),
     };
 
