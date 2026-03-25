@@ -42,16 +42,6 @@ pub struct ClickResult {
     pub metadata: Option<String>,
 }
 
-#[derive(uniffi::Record)]
-pub struct DeferredResult {
-    pub matched: bool,
-    pub link_id: Option<String>,
-    pub ios_deep_link: Option<String>,
-    pub android_deep_link: Option<String>,
-    /// JSON string of arbitrary metadata, or None.
-    pub metadata: Option<String>,
-}
-
 // ── SDK Object ──
 
 #[derive(uniffi::Object)]
@@ -62,18 +52,14 @@ pub struct RiftSdk {
 #[uniffi::export]
 impl RiftSdk {
     #[uniffi::constructor]
-    pub fn new(base_url: Option<String>) -> Self {
+    pub fn new(publishable_key: String, base_url: Option<String>) -> Self {
         Self {
-            client: RiftClient::new(base_url),
+            client: RiftClient::new(publishable_key, base_url),
         }
     }
 
-    pub async fn click(
-        &self,
-        link_id: String,
-        domain: Option<String>,
-    ) -> Result<ClickResult, RiftError> {
-        let resp = self.client.click(link_id, domain).await?;
+    pub async fn click(&self, link_id: String) -> Result<ClickResult, RiftError> {
+        let resp = self.client.click(link_id).await?;
         Ok(ClickResult {
             link_id: resp.link_id,
             platform: resp.platform,
@@ -86,35 +72,15 @@ impl RiftSdk {
         })
     }
 
-    pub async fn resolve_deferred(
-        &self,
-        link_id: String,
-        install_id: String,
-        domain: Option<String>,
-    ) -> Result<DeferredResult, RiftError> {
-        let resp = self
-            .client
-            .resolve_deferred(link_id, install_id, domain)
-            .await?;
-        Ok(DeferredResult {
-            matched: resp.matched,
-            link_id: resp.link_id,
-            ios_deep_link: resp.ios_deep_link,
-            android_deep_link: resp.android_deep_link,
-            metadata: resp.metadata.map(|v| v.to_string()),
-        })
-    }
-
     pub async fn report_attribution(
         &self,
         link_id: String,
         install_id: String,
         app_version: String,
-        domain: Option<String>,
     ) -> Result<bool, RiftError> {
         Ok(self
             .client
-            .report_attribution(link_id, install_id, app_version, domain)
+            .report_attribution(link_id, install_id, app_version)
             .await?)
     }
 }

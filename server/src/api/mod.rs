@@ -3,6 +3,7 @@ pub mod auth;
 pub mod domains;
 pub mod health;
 pub mod links;
+pub mod sdk_keys;
 pub mod webhooks;
 
 use axum::routing::get;
@@ -16,6 +17,7 @@ use crate::api::apps::repo::AppsRepository;
 use crate::api::auth::repo::AuthRepository;
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::links::repo::LinksRepository;
+use crate::api::sdk_keys::repo::SdkKeysRepository;
 use crate::api::webhooks::repo::WebhooksRepository;
 use crate::core::config::Config;
 use crate::core::threat_feed::ThreatFeed;
@@ -37,6 +39,7 @@ pub struct AppState {
     pub threat_feed: ThreatFeed,
     pub webhooks_repo: Option<StdArc<dyn WebhooksRepository>>,
     pub webhook_dispatcher: Option<StdArc<dyn WebhookDispatcher>>,
+    pub sdk_keys_repo: Option<StdArc<dyn SdkKeysRepository>>,
 }
 
 #[derive(OpenApi)]
@@ -56,13 +59,15 @@ pub struct AppState {
         links::routes::get_link_stats,
         links::routes::resolve_link,
         links::routes::resolve_link_custom,
-        links::routes::report_attribution,
+        links::routes::attribution_click,
+        links::routes::attribution_report,
         links::routes::link_attribution,
-        links::routes::resolve_deferred,
-        links::routes::sdk_click,
         links::routes::get_link_timeseries,
         links::routes::update_link,
         links::routes::delete_link,
+        sdk_keys::routes::create_sdk_key,
+        sdk_keys::routes::list_sdk_keys,
+        sdk_keys::routes::revoke_sdk_key,
         webhooks::routes::create_webhook,
         webhooks::routes::list_webhooks,
         webhooks::routes::delete_webhook,
@@ -89,16 +94,17 @@ pub struct AppState {
         links::models::ListLinksResponse,
         links::models::LinkStatsResponse,
         links::models::ResolvedLink,
-        links::models::ReportAttributionRequest,
-        links::models::AttributionResponse,
+        links::models::ClickRequest,
+        links::models::AttributionReportRequest,
         links::models::LinkAttributionRequest,
-        links::models::DeferredLinkRequest,
-        links::models::DeferredLinkResponse,
-        links::models::SdkClickRequest,
-        links::models::SdkClickResponse,
+        links::models::AttributionResponse,
         links::models::AgentContext,
         links::models::TimeseriesDataPoint,
         links::models::TimeseriesResponse,
+        sdk_keys::models::CreateSdkKeyRequest,
+        sdk_keys::models::CreateSdkKeyResponse,
+        sdk_keys::models::SdkKeyDetail,
+        sdk_keys::models::ListSdkKeysResponse,
         domains::models::CreateDomainRequest,
         domains::models::CreateDomainResponse,
         domains::models::DomainDetail,
@@ -124,6 +130,7 @@ pub struct AppState {
         (name = "Domains", description = "Custom domain management"),
         (name = "Apps", description = "App configuration and association files"),
         (name = "Webhooks", description = "Webhook management for real-time event notifications"),
+        (name = "SDK Keys", description = "Publishable SDK key management"),
     )
 )]
 struct ApiDoc;
@@ -154,6 +161,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     health::router()
         .merge(auth::router())
         .merge(links::router(state.clone()))
+        .merge(sdk_keys::router(state.clone()))
         .merge(domains::router(state.clone()))
         .merge(apps::router(state.clone()))
         .merge(webhooks::router(state.clone()))

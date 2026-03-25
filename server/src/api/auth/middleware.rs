@@ -19,6 +19,10 @@ use crate::api::AppState;
 #[derive(Debug, Clone)]
 pub struct TenantId(pub ObjectId);
 
+/// Domain associated with an SDK key, injected by `sdk_auth_gate`.
+#[derive(Debug, Clone)]
+pub struct SdkDomain(pub String);
+
 /// Auth + rate-limit middleware for protected endpoints.
 ///
 /// Priority:
@@ -128,6 +132,65 @@ pub async fn auth_gate(
     response
 }
 
+/// SDK auth middleware for pk_live_ keys.
+///
+/// Extracts the SDK bearer token, validates it against the SDK keys repository,
+/// and injects TenantId and SdkDomain extensions.
+pub async fn sdk_auth_gate(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    let Some(sdk_keys_repo) = &state.sdk_keys_repo else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "SDK keys not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    let Some(raw_key) = extract_sdk_bearer(&req) else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Missing or invalid SDK key", "code": "unauthorized" })),
+        )
+            .into_response();
+    };
+
+    let hash = keys::hash_key(&raw_key);
+    let doc = match sdk_keys_repo.find_by_hash(&hash).await {
+        Ok(Some(doc)) => doc,
+        Ok(None) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "Invalid SDK key", "code": "invalid_key" })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("SDK key lookup failed: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response();
+        }
+    };
+
+    if doc.revoked {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "SDK key has been revoked", "code": "key_revoked" })),
+        )
+            .into_response();
+    }
+
+    req.extensions_mut().insert(TenantId(doc.tenant_id));
+    req.extensions_mut().insert(SdkDomain(doc.domain));
+
+    next.run(req).await
+}
+
 // ── Helpers ──
 
 fn client_ip(req: &Request) -> String {
@@ -151,6 +214,12 @@ fn extract_bearer(req: &Request) -> Option<String> {
     let header = req.headers().get("authorization")?.to_str().ok()?;
     let token = header.strip_prefix("Bearer ")?;
     token.starts_with("rl_").then(|| token.to_string())
+}
+
+fn extract_sdk_bearer(req: &Request) -> Option<String> {
+    let header = req.headers().get("authorization")?.to_str().ok()?;
+    let token = header.strip_prefix("Bearer ")?;
+    token.starts_with("pk_live_").then(|| token.to_string())
 }
 
 async fn record_usage(

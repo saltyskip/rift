@@ -2,6 +2,7 @@ use rand::Rng;
 use sha2::{Digest, Sha256};
 
 const KEY_PREFIX: &str = "rl_live_";
+const SDK_KEY_PREFIX: &str = "pk_live_";
 const KEY_RANDOM_BYTES: usize = 24;
 
 /// Generate a new API key. Returns (full_key, sha256_hash, display_prefix).
@@ -15,6 +16,21 @@ pub fn generate_api_key() -> (String, String, String) {
 
     let hash = hex::encode(Sha256::digest(full_key.as_bytes()));
     let prefix = format!("{}{}...", KEY_PREFIX, &random_hex[..8]);
+
+    (full_key, hash, prefix)
+}
+
+/// Generate a new SDK key. Returns (full_key, sha256_hash, display_prefix).
+pub fn generate_sdk_key() -> (String, String, String) {
+    let random_bytes: Vec<u8> = rand::rng()
+        .random_iter::<u8>()
+        .take(KEY_RANDOM_BYTES)
+        .collect();
+    let random_hex = hex::encode(&random_bytes);
+    let full_key = format!("{SDK_KEY_PREFIX}{random_hex}");
+
+    let hash = hex::encode(Sha256::digest(full_key.as_bytes()));
+    let prefix = format!("{}{}...", SDK_KEY_PREFIX, &random_hex[..8]);
 
     (full_key, hash, prefix)
 }
