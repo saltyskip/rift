@@ -1,3 +1,6 @@
+use axum::extract::Request;
+use axum::middleware::Next;
+use axum::response::Response;
 use mongodb::bson::oid::ObjectId;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -8,6 +11,22 @@ use rmcp::transport::streamable_http_server::tower::StreamableHttpServerConfig;
 use rmcp::transport::StreamableHttpService;
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler};
 use std::sync::{Arc, OnceLock};
+
+/// API key extracted from HTTP `x-api-key` header, injected by middleware.
+#[derive(Debug, Clone)]
+struct McpApiKey(String);
+
+async fn extract_api_key_header(mut req: Request, next: Next) -> Response {
+    let key = req
+        .headers()
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    if let Some(key) = key {
+        req.extensions_mut().insert(McpApiKey(key));
+    }
+    next.run(req).await
+}
 
 use super::tools::*;
 use crate::api::auth::keys;
@@ -162,18 +181,29 @@ impl ServerHandler for RiftMcp {
         request: InitializeRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, McpError> {
-        // Extract api_key from _meta (rmcp moves _meta into context.meta during dispatch)
+        // Try _meta.api_key first, then fall back to x-api-key HTTP header
         let api_key = context
             .meta
             .0
             .get("api_key")
             .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                context
+                    .extensions
+                    .get::<axum::http::request::Parts>()
+                    .and_then(|parts| parts.extensions.get::<McpApiKey>())
+                    .map(|k| k.0.clone())
+            })
             .ok_or_else(|| {
-                McpError::invalid_params("Missing _meta.api_key in initialize request", None)
+                McpError::invalid_params(
+                    "Missing API key: provide _meta.api_key or x-api-key header",
+                    None,
+                )
             })?;
 
         // Hash and look up the key
-        let key_hash = keys::hash_key(api_key);
+        let key_hash = keys::hash_key(&api_key);
         let key_doc = self
             .auth_repo
             .find_key_by_hash(&key_hash)
@@ -206,5 +236,7 @@ pub fn mcp_router(
         StreamableHttpServerConfig::default(),
     );
 
-    axum::Router::new().nest_service("/mcp", service)
+    axum::Router::new()
+        .nest_service("/mcp", service)
+        .layer(axum::middleware::from_fn(extract_api_key_header))
 }
