@@ -1,6 +1,6 @@
 # Rift
 
-**Deep links for humans and agents.**
+**Deep links for humans and agents.** — [riftl.ink](https://riftl.ink)
 
 Rift is a deep linking platform that creates smart, cross-platform links with structured context for AI agents. One link works across iOS, Android, and web — with built-in click tracking, attribution, webhooks, and machine-readable metadata.
 
