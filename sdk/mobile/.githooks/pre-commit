@@ -1,0 +1,30 @@
+#!/bin/bash
+set -e
+
+echo "Checking SDK core crate for UniFFI usage..."
+
+BASE_DIR="${1:-sdk/mobile/core/src}"
+
+if [ ! -d "$BASE_DIR" ]; then
+    echo "Skipping: $BASE_DIR not found"
+    exit 0
+fi
+
+violations=0
+
+while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    matches=$(grep -Hn -E 'uniffi::|#\[uniffi|uniffi_macros::' "$file" 2>/dev/null | grep -v 'architecture_tests.rs' || true)
+    if [ -n "$matches" ]; then
+        echo "$matches"
+        ((violations++))
+    fi
+done <<< "$(find "$BASE_DIR" -name "*.rs" -type f 2>/dev/null)"
+
+if [ $violations -gt 0 ]; then
+    echo "ERROR: Found UniFFI violation(s) in core crate."
+    echo "UniFFI annotations belong in the ffi crate only."
+    exit 1
+fi
+
+echo "Core crate clean."

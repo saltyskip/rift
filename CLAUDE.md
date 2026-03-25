@@ -1,0 +1,124 @@
+# Relay
+
+Deep links for humans and agents.
+
+**Stack:** Rust, Axum, MongoDB, Sentry, x402
+
+## Backend API Conventions
+
+The API layer uses a **vertical slice architecture**:
+
+- Each domain (auth, links, etc.) has its own directory under `api/`
+- Each slice has: `mod.rs` (router), `routes.rs` (handlers), `models.rs` (domain types)
+- Each `mod.rs` exports `pub fn router() -> Router<Arc<AppState>>` merged in `api/mod.rs`
+- **Slices own their models** — no shared models module. Types live in the slice that owns them
+- **Slices own their repositories** — db queries live in the slice's `repo.rs`, not in a shared db module
+- `core/` is for shared infra only (db connection, config) — no business logic
+- `AppState` and OpenAPI spec live in `api/mod.rs`
+- **Slices should not import from other slices** — cross-slice data goes through AppState
+
+## Multi-Tenancy
+
+All link data is scoped by `tenant_id` (the API key's ObjectId). The auth middleware injects
+a `TenantId` extension into the request on successful API key validation. Route handlers
+extract it via `Extension<TenantId>`.
+
+Public endpoints (landing page, attribution reporting) resolve the tenant from the link_id itself.
+
+## Adding a New Slice
+
+1. Create `api/<name>/mod.rs` with `pub fn router() -> Router<Arc<AppState>>`
+2. Create `routes.rs` for handlers, `models.rs` for types
+3. If the slice needs db: create `repo.rs` with a repo struct initialized from `Database`
+4. Merge the router in `api/mod.rs` and register paths in the OpenAPI derive
+5. Add `#[tracing::instrument]` to all route handlers (skip large args like state, body)
+
+## Style Guidelines
+
+- Prefer iterator chains over imperative loops
+- Use `filter_map` to combine filtering and transformation
+- Flatten with `?` operator, `.ok()`, `.and_then()` chains
+- Use `let-else` for early returns
+- All route handlers must have `#[tracing::instrument]` for Sentry visibility
+- `ErrorResponse` lives in `error.rs` and is shared across all slices
+
+## Caching Pattern
+
+When using `#[cached(result = true)]` for database lookups that return `Option<T>`:
+- **Never cache `None` results** — they cause stale misses after creation
+- Return `Err("not_found")` instead of `Ok(None)` inside the cached function
+- The `#[cached(result = true)]` macro only caches `Ok` values, so `Err` is always re-executed
+- The caller converts `Err("not_found")` back to `Ok(None)`
+
+```rust
+#[cached(result = true)]
+async fn cached_find(id: &str) -> Result<Item, String> {
+    db.find(id).await?.ok_or_else(|| "not_found".to_string())
+}
+
+// Caller:
+match cached_find(id).await {
+    Ok(item) => Ok(Some(item)),
+    Err(e) if e == "not_found" => Ok(None),
+    Err(e) => Err(e),
+}
+```
+
+## CI Checks
+
+Before pushing, always run all three checks that CI enforces:
+
+```sh
+cargo fmt -- --check   # Formatting
+cargo clippy -- -D warnings   # Lints (warnings = errors)
+cargo test   # All tests pass
+```
+
+- **Never suppress warnings** with `#[allow(...)]` — fix the root cause instead
+- If clippy complains about too many arguments, use a struct or builder pattern
+- If clippy complains about redundant closures, pass the function directly
+- If an import is unused, remove it — don't `#[allow(unused_imports)]`
+- Run `cargo fmt` before committing to avoid formatting failures in CI
+
+## Mobile SDK (`sdk/mobile/`)
+
+Rust library compiled to Swift/Kotlin via UniFFI. Three-crate workspace:
+
+- `core/` — Pure Rust. HTTP client, models, parsers. **No UniFFI dependency.**
+- `ffi/` — UniFFI boundary. Wraps core types with `#[uniffi::Object]`, `#[uniffi::Record]`, etc.
+- `mobile/` — Thin re-export crate. Build target for `staticlib`/`cdylib`.
+
+### Conventions
+- **Core must not import UniFFI** — enforced by architecture test + pre-commit hook
+- `metadata` fields are `Option<String>` (JSON string) at the FFI boundary
+- SDK owns its own models — no shared types with the server
+- All errors go through `RiftError` enum
+
+### Building
+```sh
+cd sdk/mobile
+cargo test                    # Run all tests including architecture tests
+./build_xcframework.sh        # Build iOS XCFramework
+./build_android.sh            # Build Android libraries
+```
+
+### CI/CD
+- `sdk-ci.yml` — runs on every push/PR touching `sdk/mobile/`
+- `sdk-release.yml` — triggered by `sdk-v*` tags or manual dispatch
+
+## Environment Variables
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `HOST` / `PORT` | No | Server bind (default `0.0.0.0:3000`) |
+| `MONGO_URI` / `MONGO_DB` | No | MongoDB (server boots without it, auth disabled) |
+| `SENTRY_DSN` | No | Sentry error tracking (empty = disabled) |
+| `RESEND_API_KEY` | No | Email verification via Resend |
+| `PUBLIC_URL` | No | Base URL for email verification links and landing pages |
+| `FREE_DAILY_LIMIT` | No | Anonymous requests per IP per day (default 5) |
+| `X402_ENABLED` | No | Enable x402 payments (`true`/`false`) |
+| `X402_RECIPIENT` | No | USDC recipient wallet address |
+| `X402_PRICE` | No | Price per request in USDC (default `0.01`) |
+| `X402_DESCRIPTION` | No | Resource description shown to payers |
+| `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | No | Coinbase Developer Platform keys for x402 |
+| `PRIMARY_DOMAIN` | No | Primary domain for link resolution (default `riftl.ink`) |

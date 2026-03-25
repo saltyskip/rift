@@ -1,0 +1,3 @@
+[bindings.kotlin]
+package_name = "ink.riftl.sdk"
+cdylib_name = "rift_ffi"

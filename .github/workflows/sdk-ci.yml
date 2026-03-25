@@ -1,0 +1,40 @@
+name: SDK CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sdk/mobile/**'
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/mobile/**'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: SDK Build & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk/mobile
+
+      - name: Format check
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test

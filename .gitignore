@@ -1,0 +1,28 @@
+# Environment
+.env
+.env.local
+.env.*.local
+**/.env
+
+# Rust
+target/
+
+# Node
+**/node_modules/
+**/.next/
+
+# Cloudflare Workers
+worker/.wrangler/
+worker-slack/.wrangler/
+
+# SDK build artifacts
+sdk/mobile/dist/ios/RiftSDK.xcframework
+sdk/mobile/dist/ios/Sources/RiftSDK/*.swift
+sdk/mobile/dist/ios/headers/*.h
+sdk/mobile/dist/ios/headers/module.modulemap
+sdk/mobile/dist/android/jniLibs/
+sdk/mobile/dist/android/kotlin/
+
+# Preview / temp files
+preview-*.html
+.claude/worktrees/
