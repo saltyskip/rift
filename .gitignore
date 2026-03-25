@@ -15,13 +15,14 @@ target/
 worker/.wrangler/
 worker-slack/.wrangler/
 
-# SDK build artifacts
+# SDK build artifacts (binaries, headers, Android)
 sdk/mobile/dist/ios/RiftSDK.xcframework
-sdk/mobile/dist/ios/Sources/RiftSDK/*.swift
 sdk/mobile/dist/ios/headers/*.h
 sdk/mobile/dist/ios/headers/module.modulemap
 sdk/mobile/dist/android/jniLibs/
 sdk/mobile/dist/android/kotlin/
+# Note: sdk/mobile/dist/ios/Sources/RiftSDK/*.swift is NOT ignored —
+# SPM needs these Swift sources in the repo for package resolution.
 
 # Preview / temp files
 preview-*.html
