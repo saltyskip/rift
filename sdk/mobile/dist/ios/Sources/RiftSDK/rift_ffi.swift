@@ -483,11 +483,9 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 public protocol RiftSdkProtocol: AnyObject, Sendable {
     
-    func click(linkId: String, domain: String?) async throws  -> ClickResult
+    func click(linkId: String) async throws  -> ClickResult
     
-    func reportAttribution(linkId: String, installId: String, appVersion: String, domain: String?) async throws  -> Bool
-    
-    func resolveDeferred(linkId: String, installId: String, domain: String?) async throws  -> DeferredResult
+    func reportAttribution(linkId: String, installId: String, appVersion: String) async throws  -> Bool
     
 }
 open class RiftSdk: RiftSdkProtocol, @unchecked Sendable {
@@ -529,10 +527,11 @@ open class RiftSdk: RiftSdkProtocol, @unchecked Sendable {
     public func uniffiClonePointer() -> UnsafeMutableRawPointer {
         return try! rustCall { uniffi_rift_ffi_fn_clone_riftsdk(self.pointer, $0) }
     }
-public convenience init(baseUrl: String?) {
+public convenience init(publishableKey: String, baseUrl: String?) {
     let pointer =
         try! rustCall() {
     uniffi_rift_ffi_fn_constructor_riftsdk_new(
+        FfiConverterString.lower(publishableKey),
         FfiConverterOptionString.lower(baseUrl),$0
     )
 }
@@ -550,13 +549,13 @@ public convenience init(baseUrl: String?) {
     
 
     
-open func click(linkId: String, domain: String?)async throws  -> ClickResult  {
+open func click(linkId: String)async throws  -> ClickResult  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_rift_ffi_fn_method_riftsdk_click(
                     self.uniffiClonePointer(),
-                    FfiConverterString.lower(linkId),FfiConverterOptionString.lower(domain)
+                    FfiConverterString.lower(linkId)
                 )
             },
             pollFunc: ffi_rift_ffi_rust_future_poll_rust_buffer,
@@ -567,36 +566,19 @@ open func click(linkId: String, domain: String?)async throws  -> ClickResult  {
         )
 }
     
-open func reportAttribution(linkId: String, installId: String, appVersion: String, domain: String?)async throws  -> Bool  {
+open func reportAttribution(linkId: String, installId: String, appVersion: String)async throws  -> Bool  {
     return
         try  await uniffiRustCallAsync(
             rustFutureFunc: {
                 uniffi_rift_ffi_fn_method_riftsdk_report_attribution(
                     self.uniffiClonePointer(),
-                    FfiConverterString.lower(linkId),FfiConverterString.lower(installId),FfiConverterString.lower(appVersion),FfiConverterOptionString.lower(domain)
+                    FfiConverterString.lower(linkId),FfiConverterString.lower(installId),FfiConverterString.lower(appVersion)
                 )
             },
             pollFunc: ffi_rift_ffi_rust_future_poll_i8,
             completeFunc: ffi_rift_ffi_rust_future_complete_i8,
             freeFunc: ffi_rift_ffi_rust_future_free_i8,
             liftFunc: FfiConverterBool.lift,
-            errorHandler: FfiConverterTypeRiftError_lift
-        )
-}
-    
-open func resolveDeferred(linkId: String, installId: String, domain: String?)async throws  -> DeferredResult  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_rift_ffi_fn_method_riftsdk_resolve_deferred(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(linkId),FfiConverterString.lower(installId),FfiConverterOptionString.lower(domain)
-                )
-            },
-            pollFunc: ffi_rift_ffi_rust_future_poll_rust_buffer,
-            completeFunc: ffi_rift_ffi_rust_future_complete_rust_buffer,
-            freeFunc: ffi_rift_ffi_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeDeferredResult_lift,
             errorHandler: FfiConverterTypeRiftError_lift
         )
 }
@@ -778,106 +760,6 @@ public func FfiConverterTypeClickResult_lift(_ buf: RustBuffer) throws -> ClickR
 #endif
 public func FfiConverterTypeClickResult_lower(_ value: ClickResult) -> RustBuffer {
     return FfiConverterTypeClickResult.lower(value)
-}
-
-
-public struct DeferredResult {
-    public var matched: Bool
-    public var linkId: String?
-    public var iosDeepLink: String?
-    public var androidDeepLink: String?
-    /**
-     * JSON string of arbitrary metadata, or None.
-     */
-    public var metadata: String?
-
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(matched: Bool, linkId: String?, iosDeepLink: String?, androidDeepLink: String?, 
-        /**
-         * JSON string of arbitrary metadata, or None.
-         */metadata: String?) {
-        self.matched = matched
-        self.linkId = linkId
-        self.iosDeepLink = iosDeepLink
-        self.androidDeepLink = androidDeepLink
-        self.metadata = metadata
-    }
-}
-
-#if compiler(>=6)
-extension DeferredResult: Sendable {}
-#endif
-
-
-extension DeferredResult: Equatable, Hashable {
-    public static func ==(lhs: DeferredResult, rhs: DeferredResult) -> Bool {
-        if lhs.matched != rhs.matched {
-            return false
-        }
-        if lhs.linkId != rhs.linkId {
-            return false
-        }
-        if lhs.iosDeepLink != rhs.iosDeepLink {
-            return false
-        }
-        if lhs.androidDeepLink != rhs.androidDeepLink {
-            return false
-        }
-        if lhs.metadata != rhs.metadata {
-            return false
-        }
-        return true
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(matched)
-        hasher.combine(linkId)
-        hasher.combine(iosDeepLink)
-        hasher.combine(androidDeepLink)
-        hasher.combine(metadata)
-    }
-}
-
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeDeferredResult: FfiConverterRustBuffer {
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DeferredResult {
-        return
-            try DeferredResult(
-                matched: FfiConverterBool.read(from: &buf), 
-                linkId: FfiConverterOptionString.read(from: &buf), 
-                iosDeepLink: FfiConverterOptionString.read(from: &buf), 
-                androidDeepLink: FfiConverterOptionString.read(from: &buf), 
-                metadata: FfiConverterOptionString.read(from: &buf)
-        )
-    }
-
-    public static func write(_ value: DeferredResult, into buf: inout [UInt8]) {
-        FfiConverterBool.write(value.matched, into: &buf)
-        FfiConverterOptionString.write(value.linkId, into: &buf)
-        FfiConverterOptionString.write(value.iosDeepLink, into: &buf)
-        FfiConverterOptionString.write(value.androidDeepLink, into: &buf)
-        FfiConverterOptionString.write(value.metadata, into: &buf)
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeDeferredResult_lift(_ buf: RustBuffer) throws -> DeferredResult {
-    return try FfiConverterTypeDeferredResult.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeDeferredResult_lower(_ value: DeferredResult) -> RustBuffer {
-    return FfiConverterTypeDeferredResult.lower(value)
 }
 
 
@@ -1083,16 +965,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_rift_ffi_checksum_func_parse_referrer_link() != 54616) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rift_ffi_checksum_method_riftsdk_click() != 35042) {
+    if (uniffi_rift_ffi_checksum_method_riftsdk_click() != 11951) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rift_ffi_checksum_method_riftsdk_report_attribution() != 28590) {
+    if (uniffi_rift_ffi_checksum_method_riftsdk_report_attribution() != 16163) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rift_ffi_checksum_method_riftsdk_resolve_deferred() != 63824) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_rift_ffi_checksum_constructor_riftsdk_new() != 42014) {
+    if (uniffi_rift_ffi_checksum_constructor_riftsdk_new() != 61162) {
         return InitializationResult.apiChecksumMismatch
     }
 
