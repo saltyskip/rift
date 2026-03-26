@@ -124,12 +124,11 @@ pub struct AppState {
     tags(
         (name = "Links", description = "Create, list, and resolve deep links"),
         (name = "Attribution", description = "Track installs and attribute them to links"),
-        (name = "Authentication", description = "Email-based API key signup and verification"),
+        (name = "Authentication", description = "API key signup, verification, and publishable key management"),
         (name = "System", description = "Health checks and operational endpoints"),
         (name = "Domains", description = "Custom domain management"),
         (name = "Apps", description = "App configuration and association files"),
         (name = "Webhooks", description = "Webhook management for real-time event notifications"),
-        (name = "SDK Keys", description = "Publishable SDK key management"),
     )
 )]
 struct ApiDoc;
