@@ -60,6 +60,11 @@ export default function LinksPage() {
       "title": "Summer Sale — 50% Off",
       "description": "Limited time offer on all products",
       "image": "https://example.com/promo-banner.jpg"
+    },
+    "agent_context": {
+      "action": "purchase",
+      "cta": "Get 50% Off",
+      "description": "Summer clearance sale on all products with free shipping"
     }
   }'`}</CodeBlock>
             <p>Response:</p>
@@ -115,7 +120,19 @@ curl https://api.riftl.ink/r/A1B2C3D4 \\
   "web_url": "https://example.com/promo/summer-sale",
   "ios_store_url": "https://apps.apple.com/app/id123456789",
   "android_store_url": "https://play.google.com/store/apps/details?id=com.example.myapp",
-  "metadata": { "title": "Summer Sale — 50% Off", ... }
+  "metadata": { "title": "Summer Sale — 50% Off", "description": "..." },
+  "agent_context": {
+    "action": "purchase",
+    "cta": "Get 50% Off",
+    "description": "Summer clearance sale on all products with free shipping"
+  },
+  "_rift_meta": {
+    "context": "This is a Rift deep link...",
+    "source": "tenant_asserted",
+    "status": "active",
+    "tenant_domain": "go.yourcompany.com",
+    "tenant_verified": true
+  }
 }`}</CodeBlock>
           </Step>
         </section>

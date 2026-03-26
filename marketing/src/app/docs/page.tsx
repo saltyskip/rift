@@ -50,6 +50,22 @@ export default function QuickStartPage() {
           <Step n={2} title="Verify your email">
             <p>Click the verification link in your inbox. Your key is now active.</p>
           </Step>
+
+          <Step n={3} title="Create a publishable key">
+            <p>
+              Publishable keys (<code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">pk_live_</code>) are client-safe keys
+              used by the web and mobile SDKs for click tracking and attribution. Create one after setting up a{" "}
+              <a href="/docs/domains" className="text-[#2dd4bf] hover:underline">custom domain</a>:
+            </p>
+            <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/auth/publishable-keys \\
+  -H "Authorization: Bearer rl_live_YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"domain": "go.yourcompany.com"}'`}</CodeBlock>
+            <p>
+              Save the returned key — it won&apos;t be shown again.
+              See <a href="/docs/publishable-keys" className="text-[#2dd4bf] hover:underline">Publishable Keys</a> for details.
+            </p>
+          </Step>
         </section>
 
         <div className="gradient-line" />
@@ -60,10 +76,11 @@ export default function QuickStartPage() {
             {[
               { title: "Register Your App", desc: "Configure iOS & Android app details for branding and association files.", href: "/docs/apps" },
               { title: "Custom Domains", desc: "Required for vanity slugs. Use your own brand: go.yourcompany.com/summer-sale.", href: "/docs/domains" },
+              { title: "Publishable Keys", desc: "Client-safe keys for SDK click tracking and attribution.", href: "/docs/publishable-keys" },
               { title: "Create Links", desc: "Create deep links with per-platform destinations and metadata.", href: "/docs/links" },
               { title: "Web SDK", desc: "Add download buttons to your website with rift.js.", href: "/docs/web-sdk" },
-              { title: "iOS SDK", desc: "Native Swift SDK for deferred deep linking and attribution.", href: "/docs/ios-sdk" },
-              { title: "Android SDK", desc: "Native Kotlin SDK for deferred deep linking and attribution.", href: "/docs/android-sdk" },
+              { title: "iOS SDK", desc: "Native Swift SDK for click tracking and attribution.", href: "/docs/ios-sdk" },
+              { title: "Android SDK", desc: "Native Kotlin SDK for click tracking and attribution.", href: "/docs/android-sdk" },
               { title: "Webhooks", desc: "Real-time notifications for click and attribution events.", href: "/docs/webhooks" },
             ].map((item) => (
               <a

@@ -1,4 +1,4 @@
-# Relay
+# Rift
 
 Deep links for humans and agents.
 
@@ -16,6 +16,7 @@ The API layer uses a **vertical slice architecture**:
 - `core/` is for shared infra only (db connection, config) — no business logic
 - `AppState` and OpenAPI spec live in `api/mod.rs`
 - **Slices should not import from other slices** — cross-slice data goes through AppState
+- **Auth sub-slices** — `auth/` contains `secret_keys/` (signup/verify, `rl_live_` keys) and `publishable_keys/` (SDK keys, `pk_live_` prefix). Each sub-slice has its own `mod.rs`, `routes.rs`, `models.rs`, and `repo.rs`. The parent `auth/mod.rs` merges their routers. Shared auth logic (middleware, key hashing) lives at the `auth/` level.
 
 ## Multi-Tenancy
 
@@ -114,6 +115,7 @@ cargo test                    # Run all tests including architecture tests
 | `MONGO_URI` / `MONGO_DB` | No | MongoDB (server boots without it, auth disabled) |
 | `SENTRY_DSN` | No | Sentry error tracking (empty = disabled) |
 | `RESEND_API_KEY` | No | Email verification via Resend |
+| `RESEND_FROM_EMAIL` | No | Sender address for verification emails (default `Rift <noreply@updates.riftl.ink>`) |
 | `PUBLIC_URL` | No | Base URL for email verification links and landing pages |
 | `FREE_DAILY_LIMIT` | No | Anonymous requests per IP per day (default 5) |
 | `X402_ENABLED` | No | Enable x402 payments (`true`/`false`) |
