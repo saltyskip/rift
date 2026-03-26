@@ -2,14 +2,6 @@
   var DEFAULT_BASE = "https://api.riftl.ink";
   var _publishableKey = null;
 
-  function detectPlatform() {
-    if (typeof navigator === "undefined") return "other";
-    var ua = navigator.userAgent.toLowerCase();
-    if (/iphone|ipad|ipod/.test(ua)) return "ios";
-    if (/android/.test(ua)) return "android";
-    return "other";
-  }
-
   var Rift = {
     init: function(publishableKey, opts) {
       opts = opts || {};
@@ -17,65 +9,30 @@
       if (opts.baseUrl) DEFAULT_BASE = opts.baseUrl;
     },
 
-    open: function(linkId, opts) {
-      if (typeof window === "undefined") return;
-      opts = opts || {};
-      var base = opts.baseUrl || DEFAULT_BASE;
-      var platform = detectPlatform();
-
+    // Fire-and-forget click tracking. Use on <a> tag onClick handlers.
+    // The <a> tag handles navigation — Universal Links work normally.
+    click: function(linkId) {
       if (!_publishableKey) {
-        console.warn("Rift: call Rift.init('pk_live_...') before Rift.open()");
+        console.warn("Rift: call Rift.init('pk_live_...') before Rift.click()");
         return;
       }
 
-      var payload = { link_id: linkId };
+      var url = DEFAULT_BASE + "/v1/attribution/click?key=" + encodeURIComponent(_publishableKey);
+      var blob = new Blob(
+        [JSON.stringify({ link_id: linkId })],
+        { type: "application/json" }
+      );
 
-      fetch(base + "/v1/attribution/click", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + _publishableKey
-        },
-        body: JSON.stringify(payload)
-      })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        // Copy link URL to clipboard for deferred deep linking (iOS).
-        if (platform === "ios" && data.link_id && navigator.clipboard) {
-          var domain = opts.domain || (typeof location !== "undefined" ? location.hostname : undefined);
-          var clipUrl = domain ? ("https://" + domain + "/" + data.link_id) : (base + "/r/" + data.link_id);
-          navigator.clipboard.writeText(clipUrl).catch(function(){});
-        }
-
-        var deepLink = platform === "ios" ? data.ios_deep_link
-                     : platform === "android" ? data.android_deep_link
-                     : null;
-        var storeUrl = platform === "ios" ? data.ios_store_url
-                     : platform === "android" ? data.android_store_url
-                     : null;
-
-        // Append link ID as install referrer for Android.
-        if (platform === "android" && storeUrl && data.link_id) {
-          var sep = storeUrl.indexOf("?") >= 0 ? "&" : "?";
-          storeUrl += sep + "referrer=" + encodeURIComponent("rift_link=" + data.link_id);
-        }
-
-        if (deepLink) {
-          window.location.href = deepLink;
-          if (storeUrl) {
-            setTimeout(function() { window.location.href = storeUrl; }, 1500);
-          }
-        } else if (storeUrl) {
-          window.location.href = storeUrl;
-        } else if (data.web_url) {
-          window.location.href = data.web_url;
-        }
-
-        if (opts.onComplete) opts.onComplete(data);
-      })
-      .catch(function(err) {
-        if (opts.onError) opts.onError(err);
-      });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, blob);
+      } else {
+        fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ link_id: linkId }),
+          keepalive: true
+        }).catch(function(){});
+      }
     },
 
     getLink: function(linkId, opts) {

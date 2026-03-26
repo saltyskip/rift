@@ -149,7 +149,10 @@ pub async fn sdk_auth_gate(
             .into_response();
     };
 
-    let Some(raw_key) = extract_sdk_bearer(&req) else {
+    // Accept pk_live_ key from Authorization header or ?key= query param.
+    // Query param fallback enables sendBeacon (which can't set headers).
+    let raw_key = extract_sdk_bearer(&req).or_else(|| extract_sdk_query_key(&req));
+    let Some(raw_key) = raw_key else {
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({ "error": "Missing or invalid SDK key", "code": "unauthorized" })),
@@ -220,6 +223,15 @@ fn extract_sdk_bearer(req: &Request) -> Option<String> {
     let header = req.headers().get("authorization")?.to_str().ok()?;
     let token = header.strip_prefix("Bearer ")?;
     token.starts_with("pk_live_").then(|| token.to_string())
+}
+
+fn extract_sdk_query_key(req: &Request) -> Option<String> {
+    req.uri().query().and_then(|q| {
+        q.split('&')
+            .find_map(|pair| pair.strip_prefix("key="))
+            .filter(|v| v.starts_with("pk_live_"))
+            .map(|v| v.to_string())
+    })
 }
 
 async fn record_usage(
