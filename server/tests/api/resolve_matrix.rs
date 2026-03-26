@@ -191,6 +191,22 @@ async fn landing_page_ios() {
         body.contains("navigator.clipboard"),
         "should contain clipboard JS"
     );
+    assert!(
+        body.contains("Machine-Readable Link"),
+        "should contain agent panel"
+    );
+    assert!(
+        body.contains("Verified by Rift"),
+        "should contain trust section"
+    );
+    assert!(
+        body.contains("Test app description"),
+        "should contain agent_context description"
+    );
+    assert!(
+        body.contains("application/ld+json"),
+        "should contain JSON-LD"
+    );
 
     let clicks = app.links_repo.clicks.lock().unwrap();
     assert_eq!(clicks.len(), 1, "click should be recorded");
@@ -220,6 +236,22 @@ async fn landing_page_android() {
     assert!(
         body.contains("referrer"),
         "should contain referrer in store URL"
+    );
+    assert!(
+        body.contains("Machine-Readable Link"),
+        "should contain agent panel"
+    );
+    assert!(
+        body.contains("Verified by Rift"),
+        "should contain trust section"
+    );
+    assert!(
+        body.contains("Test app description"),
+        "should contain agent_context description"
+    );
+    assert!(
+        body.contains("application/ld+json"),
+        "should contain JSON-LD"
     );
 
     let clicks = app.links_repo.clicks.lock().unwrap();
