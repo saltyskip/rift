@@ -8,6 +8,8 @@ use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
+use serde::Deserialize;
+
 use super::models::*;
 use super::repo::LinksRepository;
 use crate::api::auth::middleware::{SdkDomain, TenantId};
@@ -15,6 +17,14 @@ use crate::api::domains::repo::DomainsRepository;
 use crate::api::AppState;
 use crate::core::validation;
 use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload};
+
+// ── Resolve Query Params ──
+
+#[derive(Debug, Deserialize)]
+pub struct ResolveQuery {
+    #[serde(default)]
+    pub redirect: Option<String>,
+}
 
 // ── Platform Detection ──
 
@@ -619,6 +629,7 @@ pub async fn get_link_stats(
 pub async fn resolve_link(
     State(state): State<Arc<AppState>>,
     Path(link_id): Path<String>,
+    Query(query): Query<ResolveQuery>,
     headers: HeaderMap,
 ) -> Response {
     if !is_valid_link_id(&link_id) {
@@ -649,7 +660,9 @@ pub async fn resolve_link(
         return resp;
     }
 
-    do_resolve(&state, repo.as_ref(), link, &link_id, &headers).await
+    let redirect = query.redirect.as_deref() == Some("1");
+
+    do_resolve(&state, repo.as_ref(), link, &link_id, &headers, redirect).await
 }
 
 // ── GET /{link_id} — Resolve via custom domain (public) ──
@@ -669,6 +682,7 @@ pub async fn resolve_link(
 pub async fn resolve_link_custom(
     State(state): State<Arc<AppState>>,
     Path(link_id): Path<String>,
+    Query(query): Query<ResolveQuery>,
     headers: HeaderMap,
 ) -> Response {
     if !is_valid_link_id(&link_id) {
@@ -749,7 +763,9 @@ pub async fn resolve_link_custom(
         return resp;
     }
 
-    do_resolve(&state, repo.as_ref(), link, &link_id, &headers).await
+    let redirect = query.redirect.as_deref() == Some("1");
+
+    do_resolve(&state, repo.as_ref(), link, &link_id, &headers, redirect).await
 }
 
 /// Check if a link is resolvable (active, not expired, not flagged/disabled).
@@ -820,6 +836,7 @@ async fn do_resolve(
     link: Link,
     link_id: &str,
     headers: &HeaderMap,
+    redirect: bool,
 ) -> Response {
     let user_agent = headers
         .get("user-agent")
@@ -888,6 +905,38 @@ async fn do_resolve(
             "_rift_meta": rift_meta,
         }))
         .into_response();
+    }
+
+    // redirect=1 mode: skip landing page, go directly to the platform destination.
+    // Clipboard write happens client-side in Rift.click() (has user gesture).
+    if redirect {
+        match platform {
+            Platform::Ios => {
+                if let Some(store_url) = &link.ios_store_url {
+                    return Redirect::temporary(store_url).into_response();
+                }
+                // No ios_store_url — fall through to landing page.
+            }
+            Platform::Android => {
+                if let Some(store_url) = &link.android_store_url {
+                    let sep = if store_url.contains('?') { "&" } else { "?" };
+                    let redirect_url = format!(
+                        "{}{}referrer={}",
+                        store_url,
+                        sep,
+                        urlencoding(&format!("rift_link={}", link_id)),
+                    );
+                    return Redirect::temporary(&redirect_url).into_response();
+                }
+                // No android_store_url — fall through to landing page.
+            }
+            Platform::Other => {
+                if let Some(web_url) = &link.web_url {
+                    return Redirect::temporary(web_url).into_response();
+                }
+                // No web_url — fall through to landing page.
+            }
+        }
     }
 
     // If this link has per-platform destinations, serve the smart landing page.
@@ -1672,12 +1721,15 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         var webUrl = "{web_url_js}";
         var linkId = "{link_id_js}";
 
-        if (platform === "ios" && navigator.clipboard) {{
-            navigator.clipboard.writeText(window.location.href).catch(function(){{}});
-        }}
-
         var btn = document.getElementById("open-btn");
         var msg = document.getElementById("fallback-msg");
+
+        // Copy link URL to clipboard on button tap (requires user gesture).
+        btn.addEventListener("click", function() {{
+            if (navigator.clipboard) {{
+                navigator.clipboard.writeText(window.location.href).catch(function(){{}});
+            }}
+        }});
 
         if (platform === "ios" || platform === "android") {{
             if (deepLink) {{

@@ -18,7 +18,7 @@ struct Attribution {
 #[derive(Default)]
 pub struct MockLinksRepo {
     pub links: Mutex<Vec<Link>>,
-    clicks: Mutex<Vec<ClickEvent>>,
+    pub clicks: Mutex<Vec<ClickEvent>>,
     attributions: Mutex<Vec<Attribution>>,
 }
 
