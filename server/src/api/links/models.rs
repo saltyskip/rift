@@ -208,12 +208,14 @@ pub struct CreateLinkResponse {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateLinkRequest {
-    /// iOS deep link URI.
-    #[serde(default)]
-    pub ios_deep_link: Option<String>,
-    /// Android deep link URI.
-    #[serde(default)]
-    pub android_deep_link: Option<String>,
+    /// iOS deep link URI. Send `null` to clear.
+    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[schema(value_type = Option<String>)]
+    pub ios_deep_link: Option<Option<String>>,
+    /// Android deep link URI. Send `null` to clear.
+    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[schema(value_type = Option<String>)]
+    pub android_deep_link: Option<Option<String>>,
     /// Web fallback URL.
     #[serde(default)]
     pub web_url: Option<String>,
@@ -228,6 +230,17 @@ pub struct UpdateLinkRequest {
     pub metadata: Option<serde_json::Value>,
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
+}
+
+/// Deserializes a field that can be absent, null, or present.
+/// Absent → None (don't touch), null → Some(None) (unset), value → Some(Some(v)) (set).
+/// Pattern from serde author: https://github.com/serde-rs/serde/issues/984
+fn deserialize_optional<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Option::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Serialize, ToSchema)]

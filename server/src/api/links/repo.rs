@@ -31,7 +31,8 @@ pub trait LinksRepository: Send + Sync {
         &self,
         tenant_id: &ObjectId,
         link_id: &str,
-        update: Document,
+        set: Document,
+        unset: Document,
     ) -> Result<bool, String>;
 
     async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String>;
@@ -253,13 +254,21 @@ impl LinksRepository for LinksRepo {
         &self,
         tenant_id: &ObjectId,
         link_id: &str,
-        update: Document,
+        set: Document,
+        unset: Document,
     ) -> Result<bool, String> {
+        let mut update_doc = Document::new();
+        if !set.is_empty() {
+            update_doc.insert("$set", set);
+        }
+        if !unset.is_empty() {
+            update_doc.insert("$unset", unset);
+        }
         let result = self
             .links
             .update_one(
                 doc! { "tenant_id": tenant_id, "link_id": link_id },
-                doc! { "$set": update },
+                update_doc,
             )
             .await
             .map_err(|e| e.to_string())?;

@@ -333,10 +333,14 @@ pub async fn update_link(
             .into_response();
     };
 
+    // Flatten Option<Option<String>> to Option<&str> for validation.
+    let ios_dl = req.ios_deep_link.as_ref().and_then(|v| v.as_deref());
+    let android_dl = req.android_deep_link.as_ref().and_then(|v| v.as_deref());
+
     if let Err(e) = validate_link_urls(
         req.web_url.as_deref(),
-        req.ios_deep_link.as_deref(),
-        req.android_deep_link.as_deref(),
+        ios_dl,
+        android_dl,
         req.ios_store_url.as_deref(),
         req.android_store_url.as_deref(),
     ) {
@@ -399,12 +403,28 @@ pub async fn update_link(
     }
 
     let mut update = mongodb::bson::Document::new();
-    if let Some(v) = &req.ios_deep_link {
-        update.insert("ios_deep_link", v.clone());
+    let mut unset = mongodb::bson::Document::new();
+
+    // ios_deep_link and android_deep_link support null to clear.
+    match &req.ios_deep_link {
+        None => {}
+        Some(None) => {
+            unset.insert("ios_deep_link", "");
+        }
+        Some(Some(v)) => {
+            update.insert("ios_deep_link", v.clone());
+        }
     }
-    if let Some(v) = &req.android_deep_link {
-        update.insert("android_deep_link", v.clone());
+    match &req.android_deep_link {
+        None => {}
+        Some(None) => {
+            unset.insert("android_deep_link", "");
+        }
+        Some(Some(v)) => {
+            update.insert("android_deep_link", v.clone());
+        }
     }
+
     if let Some(v) = &req.web_url {
         update.insert("web_url", v.clone());
     }
@@ -425,7 +445,7 @@ pub async fn update_link(
         }
     }
 
-    if update.is_empty() {
+    if update.is_empty() && unset.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "No fields to update", "code": "empty_update" })),
@@ -433,7 +453,7 @@ pub async fn update_link(
             .into_response();
     }
 
-    match repo.update_link(&tenant.0, &link_id, update).await {
+    match repo.update_link(&tenant.0, &link_id, update, unset).await {
         Ok(true) => {
             // Fetch updated link to return.
             let link = repo

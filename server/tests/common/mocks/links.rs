@@ -80,7 +80,8 @@ impl LinksRepository for MockLinksRepo {
         &self,
         tenant_id: &ObjectId,
         link_id: &str,
-        update: Document,
+        set: Document,
+        unset: Document,
     ) -> Result<bool, String> {
         let mut links = self.links.lock().unwrap();
         let Some(link) = links
@@ -89,26 +90,35 @@ impl LinksRepository for MockLinksRepo {
         else {
             return Ok(false);
         };
-        if let Ok(v) = update.get_str("ios_deep_link") {
+        // Apply $set fields.
+        if let Ok(v) = set.get_str("ios_deep_link") {
             link.ios_deep_link = Some(v.to_string());
         }
-        if let Ok(v) = update.get_str("android_deep_link") {
+        if let Ok(v) = set.get_str("android_deep_link") {
             link.android_deep_link = Some(v.to_string());
         }
-        if let Ok(v) = update.get_str("web_url") {
+        if let Ok(v) = set.get_str("web_url") {
             link.web_url = Some(v.to_string());
         }
-        if let Ok(v) = update.get_str("ios_store_url") {
+        if let Ok(v) = set.get_str("ios_store_url") {
             link.ios_store_url = Some(v.to_string());
         }
-        if let Ok(v) = update.get_str("android_store_url") {
+        if let Ok(v) = set.get_str("android_store_url") {
             link.android_store_url = Some(v.to_string());
         }
-        if let Ok(v) = update.get_document("metadata") {
+        if let Ok(v) = set.get_document("metadata") {
             link.metadata = Some(v.clone());
         }
-        if let Ok(v) = update.get_document("agent_context") {
+        if let Ok(v) = set.get_document("agent_context") {
             link.agent_context = mongodb::bson::from_document(v.clone()).ok();
+        }
+        // Apply $unset fields.
+        for key in unset.keys() {
+            match key.as_str() {
+                "ios_deep_link" => link.ios_deep_link = None,
+                "android_deep_link" => link.android_deep_link = None,
+                _ => {}
+            }
         }
         Ok(true)
     }
