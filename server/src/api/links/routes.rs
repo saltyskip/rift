@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::models::*;
 use super::repo::LinksRepository;
-use crate::api::auth::middleware::TenantId;
+use crate::api::auth::middleware::{SdkDomain, TenantId};
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::AppState;
 use crate::core::validation;
@@ -992,25 +992,31 @@ async fn do_resolve(
     }
 }
 
-// ── POST /v1/sdk/click — SDK-initiated click (public) ──
+// ── POST /v1/attribution/click — SDK-authenticated click ──
 
 #[utoipa::path(
     post,
-    path = "/v1/sdk/click",
-    tag = "Links",
-    request_body = SdkClickRequest,
+    path = "/v1/attribution/click",
+    tag = "Attribution",
+    request_body = ClickRequest,
     responses(
-        (status = 200, description = "Click recorded, link data returned", body = SdkClickResponse),
+        (status = 200, description = "Click recorded, link data returned"),
         (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::error::ErrorResponse),
         (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
     ),
+    security(("api_key" = [])),
 )]
 #[tracing::instrument(skip(state, headers))]
-pub async fn sdk_click(
+pub async fn attribution_click(
     State(state): State<Arc<AppState>>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(sdk_domain): axum::Extension<SdkDomain>,
     headers: HeaderMap,
-    Json(req): Json<SdkClickRequest>,
+    Json(req): Json<ClickRequest>,
 ) -> Response {
+    tracing::debug!(domain = %sdk_domain.0, "SDK click via domain");
+
     if req.link_id.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -1027,41 +1033,12 @@ pub async fn sdk_click(
             .into_response();
     };
 
-    // If a domain is provided, scope the lookup to that domain's tenant.
-    let link = if let Some(ref domain_name) = req.domain {
-        let Some(domains_repo) = &state.domains_repo else {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Link not found", "code": "not_found" })),
-            )
-                .into_response();
-        };
-        let Some(domain) = domains_repo
-            .find_by_domain(domain_name)
-            .await
-            .ok()
-            .flatten()
-        else {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Link not found", "code": "not_found" })),
-            )
-                .into_response();
-        };
-        if !domain.verified {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Link not found", "code": "not_found" })),
-            )
-                .into_response();
-        }
-        repo.find_link_by_tenant_and_id(&domain.tenant_id, &req.link_id)
-            .await
-            .ok()
-            .flatten()
-    } else {
-        repo.find_link_by_id(&req.link_id).await.ok().flatten()
-    };
+    // Tenant-scoped lookup via the SDK key's tenant.
+    let link = repo
+        .find_link_by_tenant_and_id(&tenant.0, &req.link_id)
+        .await
+        .ok()
+        .flatten();
 
     let Some(link) = link else {
         return (
@@ -1113,12 +1090,10 @@ pub async fn sdk_click(
         });
     }
 
-    let status = compute_link_status(&link);
-    let (tenant_domain, tenant_verified) =
-        lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
-    let rift_meta = build_rift_meta(status, tenant_domain, tenant_verified);
-    let agent_context = link.agent_context.clone();
-    let metadata = link.metadata.and_then(|d| serde_json::to_value(&d).ok());
+    let metadata = link
+        .metadata
+        .as_ref()
+        .and_then(|d| serde_json::to_value(d).ok());
 
     Json(json!({
         "link_id": req.link_id,
@@ -1129,27 +1104,31 @@ pub async fn sdk_click(
         "ios_store_url": link.ios_store_url,
         "android_store_url": link.android_store_url,
         "metadata": metadata,
-        "agent_context": agent_context,
-        "_rift_meta": rift_meta,
+        "agent_context": link.agent_context,
     }))
     .into_response()
 }
 
-// ── POST /v1/deferred — Recover link data after install (public) ──
+// ── POST /v1/attribution/report — SDK-authenticated attribution report ──
 
 #[utoipa::path(
     post,
-    path = "/v1/deferred",
-    tag = "Links",
-    request_body = DeferredLinkRequest,
+    path = "/v1/attribution/report",
+    tag = "Attribution",
+    request_body = AttributionReportRequest,
     responses(
-        (status = 200, description = "Deferred link result", body = DeferredLinkResponse),
+        (status = 200, description = "Attribution recorded"),
+        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::error::ErrorResponse),
+        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
     ),
+    security(("api_key" = [])),
 )]
 #[tracing::instrument(skip(state))]
-pub async fn resolve_deferred(
+pub async fn attribution_report(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<DeferredLinkRequest>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+    Json(req): Json<AttributionReportRequest>,
 ) -> Response {
     if req.link_id.is_empty() || req.install_id.is_empty() {
         return (
@@ -1167,79 +1146,48 @@ pub async fn resolve_deferred(
             .into_response();
     };
 
-    let not_matched = Json(json!({
-        "matched": false,
-        "link_id": null,
-        "ios_deep_link": null,
-        "android_deep_link": null,
-        "metadata": null,
-    }));
-
-    // Look up link directly — scoped by domain if provided.
-    let link = if let Some(ref domain_name) = req.domain {
-        let Some(domains_repo) = &state.domains_repo else {
-            return not_matched.into_response();
-        };
-        let domain = domains_repo
-            .find_by_domain(domain_name)
-            .await
-            .ok()
-            .flatten();
-        match domain {
-            Some(d) if d.verified => repo
-                .find_link_by_tenant_and_id(&d.tenant_id, &req.link_id)
-                .await
-                .ok()
-                .flatten(),
-            _ => None,
-        }
-    } else {
-        repo.find_link_by_id(&req.link_id).await.ok().flatten()
-    };
+    let link = repo
+        .find_link_by_tenant_and_id(&tenant.0, &req.link_id)
+        .await
+        .ok()
+        .flatten();
 
     let Some(link) = link else {
-        return not_matched.into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Link not found", "code": "not_found" })),
+        )
+            .into_response();
     };
 
-    // Don't resolve flagged/expired/disabled links.
-    if check_link_resolvable(&link).is_some() {
-        return not_matched.into_response();
-    }
-
-    // Create attribution record.
     if let Err(e) = repo
-        .upsert_attribution(link.tenant_id, &link.link_id, &req.install_id, "deferred")
+        .upsert_attribution(
+            link.tenant_id,
+            &req.link_id,
+            &req.install_id,
+            &req.app_version,
+        )
         .await
     {
-        tracing::warn!(error = %e, "Failed to create deferred attribution");
+        tracing::error!("Failed to upsert attribution: {e}");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Internal error", "code": "db_error" })),
+        )
+            .into_response();
     }
 
     if let Some(dispatcher) = &state.webhook_dispatcher {
         dispatcher.dispatch_attribution(AttributionEventPayload {
             tenant_id: link.tenant_id.to_hex(),
-            link_id: link.link_id.clone(),
+            link_id: req.link_id.clone(),
             install_id: req.install_id.clone(),
-            app_version: "deferred".to_string(),
+            app_version: req.app_version.clone(),
             timestamp: Utc::now().to_rfc3339(),
         });
     }
 
-    let agent_context = link.agent_context.clone();
-    let status = compute_link_status(&link);
-    let (tenant_domain, tenant_verified) =
-        lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
-    let rift_meta = build_rift_meta(status, tenant_domain, tenant_verified);
-    let metadata = link.metadata.and_then(|d| serde_json::to_value(&d).ok());
-    Json(json!({
-        "matched": true,
-        "link_id": link.link_id,
-        "ios_deep_link": link.ios_deep_link,
-        "android_deep_link": link.android_deep_link,
-        "metadata": metadata,
-        "agent_context": agent_context,
-        "_rift_meta": rift_meta,
-    }))
-    .into_response()
+    Json(json!({ "success": true })).into_response()
 }
 
 // ── GET /v1/links/{link_id}/timeseries — Click timeseries (authenticated) ──
@@ -1361,114 +1309,6 @@ pub async fn get_link_timeseries(
                 .into_response()
         }
     }
-}
-
-// ── POST /v1/attribution — Report an install attribution (public) ──
-
-#[utoipa::path(
-    post,
-    path = "/v1/attribution",
-    tag = "Attribution",
-    request_body = ReportAttributionRequest,
-    responses(
-        (status = 200, description = "Attribution recorded", body = AttributionResponse),
-        (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
-        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
-    ),
-)]
-#[tracing::instrument(skip(state))]
-pub async fn report_attribution(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<ReportAttributionRequest>,
-) -> Response {
-    if req.link_id.is_empty() || req.install_id.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "link_id and install_id are required", "code": "bad_request" })),
-        )
-            .into_response();
-    }
-
-    let Some(repo) = &state.links_repo else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "Database not configured", "code": "no_database" })),
-        )
-            .into_response();
-    };
-
-    // If a domain is provided, scope the lookup to that domain's tenant.
-    let link = if let Some(ref domain_name) = req.domain {
-        let Some(domains_repo) = &state.domains_repo else {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Link not found", "code": "not_found" })),
-            )
-                .into_response();
-        };
-        let Some(domain) = domains_repo
-            .find_by_domain(domain_name)
-            .await
-            .ok()
-            .flatten()
-        else {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Link not found", "code": "not_found" })),
-            )
-                .into_response();
-        };
-        if !domain.verified {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Link not found", "code": "not_found" })),
-            )
-                .into_response();
-        }
-        repo.find_link_by_tenant_and_id(&domain.tenant_id, &req.link_id)
-            .await
-            .ok()
-            .flatten()
-    } else {
-        repo.find_link_by_id(&req.link_id).await.ok().flatten()
-    };
-
-    let Some(link) = link else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Link not found", "code": "not_found" })),
-        )
-            .into_response();
-    };
-
-    if let Err(e) = repo
-        .upsert_attribution(
-            link.tenant_id,
-            &req.link_id,
-            &req.install_id,
-            &req.app_version,
-        )
-        .await
-    {
-        tracing::error!("Failed to upsert attribution: {e}");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "Internal error", "code": "db_error" })),
-        )
-            .into_response();
-    }
-
-    if let Some(dispatcher) = &state.webhook_dispatcher {
-        dispatcher.dispatch_attribution(AttributionEventPayload {
-            tenant_id: link.tenant_id.to_hex(),
-            link_id: req.link_id.clone(),
-            install_id: req.install_id.clone(),
-            app_version: req.app_version.clone(),
-            timestamp: Utc::now().to_rfc3339(),
-        });
-    }
-
-    Json(json!({ "success": true })).into_response()
 }
 
 // ── PUT /v1/attribution/link — Link attribution to user (authenticated) ──

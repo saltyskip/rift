@@ -6,8 +6,8 @@ use serde_json::json;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
-use super::keys;
 use super::repo::{self, ApiKeyDoc};
+use crate::api::auth::keys;
 use crate::api::AppState;
 
 #[derive(Deserialize, ToSchema)]

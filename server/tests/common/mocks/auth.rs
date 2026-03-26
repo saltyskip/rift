@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
-use rift::api::auth::repo::{ApiKeyDoc, AuthRepository, UsageDoc};
+use rift::api::auth::secret_keys::repo::{ApiKeyDoc, AuthRepository, UsageDoc};
 
 #[derive(Default)]
 pub struct MockAuthRepo {

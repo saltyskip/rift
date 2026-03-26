@@ -265,23 +265,13 @@ pub struct ListLinksResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct ReportAttributionRequest {
-    pub link_id: String,
+pub struct LinkAttributionRequest {
     pub install_id: String,
-    pub app_version: String,
-    /// Optional custom domain for tenant-scoped link lookup.
-    #[serde(default)]
-    pub domain: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AttributionResponse {
     pub success: bool,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct LinkAttributionRequest {
-    pub install_id: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -310,61 +300,18 @@ pub struct ResolvedLink {
     pub agent_context: Option<AgentContext>,
 }
 
-// ── SDK Click Models ──
+// ── Attribution Request Models (for SDK-authenticated endpoints) ──
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct SdkClickRequest {
-    /// Link ID to resolve.
+pub struct ClickRequest {
     pub link_id: String,
-    /// Optional custom domain for tenant-scoped lookup.
-    #[serde(default)]
-    pub domain: Option<String>,
 }
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct SdkClickResponse {
-    pub link_id: String,
-    pub platform: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ios_deep_link: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub android_deep_link: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub web_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ios_store_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub android_store_url: Option<String>,
-    pub metadata: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_context: Option<AgentContext>,
-}
-
-// ── Deferred Deep Linking Models ──
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct DeferredLinkRequest {
-    /// Link ID from clipboard or install referrer.
+pub struct AttributionReportRequest {
     pub link_id: String,
-    /// Client-generated install ID for attribution.
     pub install_id: String,
-    /// Optional custom domain for tenant-scoped link lookup.
-    #[serde(default)]
-    pub domain: Option<String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct DeferredLinkResponse {
-    pub matched: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub link_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ios_deep_link: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub android_deep_link: Option<String>,
-    pub metadata: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub agent_context: Option<AgentContext>,
+    pub app_version: String,
 }
 
 // ── Timeseries Analytics Models ──

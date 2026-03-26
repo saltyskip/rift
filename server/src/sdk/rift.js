@@ -1,5 +1,6 @@
 (function() {
   var DEFAULT_BASE = "https://api.riftl.ink";
+  var _publishableKey = null;
 
   function detectPlatform() {
     if (typeof navigator === "undefined") return "other";
@@ -10,26 +11,38 @@
   }
 
   var Rift = {
+    init: function(publishableKey, opts) {
+      opts = opts || {};
+      _publishableKey = publishableKey;
+      if (opts.baseUrl) DEFAULT_BASE = opts.baseUrl;
+    },
+
     open: function(linkId, opts) {
       if (typeof window === "undefined") return;
       opts = opts || {};
       var base = opts.baseUrl || DEFAULT_BASE;
       var platform = detectPlatform();
 
-      var domain = opts.domain || (typeof location !== "undefined" ? location.hostname : undefined);
+      if (!_publishableKey) {
+        console.warn("Rift: call Rift.init('pk_live_...') before Rift.open()");
+        return;
+      }
 
       var payload = { link_id: linkId };
-      if (domain) payload.domain = domain;
 
-      fetch(base + "/v1/sdk/click", {
+      fetch(base + "/v1/attribution/click", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + _publishableKey
+        },
         body: JSON.stringify(payload)
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
         // Copy link URL to clipboard for deferred deep linking (iOS).
         if (platform === "ios" && data.link_id && navigator.clipboard) {
+          var domain = opts.domain || (typeof location !== "undefined" ? location.hostname : undefined);
           var clipUrl = domain ? ("https://" + domain + "/" + data.link_id) : (base + "/r/" + data.link_id);
           navigator.clipboard.writeText(clipUrl).catch(function(){});
         }

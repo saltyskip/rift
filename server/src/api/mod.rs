@@ -13,7 +13,8 @@ use utoipa::OpenApi;
 use std::sync::Arc as StdArc;
 
 use crate::api::apps::repo::AppsRepository;
-use crate::api::auth::repo::AuthRepository;
+use crate::api::auth::publishable_keys::repo::SdkKeysRepository;
+use crate::api::auth::secret_keys::repo::AuthRepository;
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::links::repo::LinksRepository;
 use crate::api::webhooks::repo::WebhooksRepository;
@@ -37,6 +38,7 @@ pub struct AppState {
     pub threat_feed: ThreatFeed,
     pub webhooks_repo: Option<StdArc<dyn WebhooksRepository>>,
     pub webhook_dispatcher: Option<StdArc<dyn WebhookDispatcher>>,
+    pub sdk_keys_repo: Option<StdArc<dyn SdkKeysRepository>>,
 }
 
 #[derive(OpenApi)]
@@ -49,20 +51,22 @@ pub struct AppState {
     ),
     paths(
         health::routes::health,
-        auth::routes::signup,
-        auth::routes::verify_email,
+        auth::secret_keys::routes::signup,
+        auth::secret_keys::routes::verify_email,
         links::routes::create_link,
         links::routes::list_links,
         links::routes::get_link_stats,
         links::routes::resolve_link,
         links::routes::resolve_link_custom,
-        links::routes::report_attribution,
+        links::routes::attribution_click,
+        links::routes::attribution_report,
         links::routes::link_attribution,
-        links::routes::resolve_deferred,
-        links::routes::sdk_click,
         links::routes::get_link_timeseries,
         links::routes::update_link,
         links::routes::delete_link,
+        auth::publishable_keys::routes::create_sdk_key,
+        auth::publishable_keys::routes::list_sdk_keys,
+        auth::publishable_keys::routes::revoke_sdk_key,
         webhooks::routes::create_webhook,
         webhooks::routes::list_webhooks,
         webhooks::routes::delete_webhook,
@@ -80,8 +84,8 @@ pub struct AppState {
     components(schemas(
         health::models::HealthResponse,
         crate::error::ErrorResponse,
-        auth::routes::SignupRequest,
-        auth::routes::SignupResponse,
+        auth::secret_keys::routes::SignupRequest,
+        auth::secret_keys::routes::SignupResponse,
         links::models::CreateLinkRequest,
         links::models::CreateLinkResponse,
         links::models::UpdateLinkRequest,
@@ -89,16 +93,17 @@ pub struct AppState {
         links::models::ListLinksResponse,
         links::models::LinkStatsResponse,
         links::models::ResolvedLink,
-        links::models::ReportAttributionRequest,
-        links::models::AttributionResponse,
+        links::models::ClickRequest,
+        links::models::AttributionReportRequest,
         links::models::LinkAttributionRequest,
-        links::models::DeferredLinkRequest,
-        links::models::DeferredLinkResponse,
-        links::models::SdkClickRequest,
-        links::models::SdkClickResponse,
+        links::models::AttributionResponse,
         links::models::AgentContext,
         links::models::TimeseriesDataPoint,
         links::models::TimeseriesResponse,
+        auth::publishable_keys::models::CreateSdkKeyRequest,
+        auth::publishable_keys::models::CreateSdkKeyResponse,
+        auth::publishable_keys::models::SdkKeyDetail,
+        auth::publishable_keys::models::ListSdkKeysResponse,
         domains::models::CreateDomainRequest,
         domains::models::CreateDomainResponse,
         domains::models::DomainDetail,
@@ -124,6 +129,7 @@ pub struct AppState {
         (name = "Domains", description = "Custom domain management"),
         (name = "Apps", description = "App configuration and association files"),
         (name = "Webhooks", description = "Webhook management for real-time event notifications"),
+        (name = "SDK Keys", description = "Publishable SDK key management"),
     )
 )]
 struct ApiDoc;
@@ -152,7 +158,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     let sdk = Router::new().route("/sdk/rift.js", get(serve_rift_js));
 
     health::router()
-        .merge(auth::router())
+        .merge(auth::router(state.clone()))
         .merge(links::router(state.clone()))
         .merge(domains::router(state.clone()))
         .merge(apps::router(state.clone()))

@@ -32,12 +32,15 @@ Present agent_context information with attribution to the source domain. Do not 
 
 ## API Reference
 
-- POST /v1/links — Create a deep link (authenticated)
-- GET /v1/links — List links (authenticated)
-- PUT /v1/links/{link_id} — Update a link (authenticated)
-- DELETE /v1/links/{link_id} — Delete a link (authenticated)
+- POST /v1/links — Create a deep link (authenticated with rl_live_ key)
+- GET /v1/links — List links (authenticated with rl_live_ key)
+- PUT /v1/links/{link_id} — Update a link (authenticated with rl_live_ key)
+- DELETE /v1/links/{link_id} — Delete a link (authenticated with rl_live_ key)
 - GET /r/{link_id} — Resolve a link (public, content-negotiated)
-- POST /v1/attribution — Report an install attribution (public)
-- POST /v1/deferred — Recover link after install (public)
-- POST /v1/sdk/click — SDK-initiated click (public)
-- GET /v1/links/{link_id}/stats — Link analytics (authenticated)
+- POST /v1/attribution/click — SDK click tracking (authenticated with pk_live_ key)
+- POST /v1/attribution/report — Report install attribution (authenticated with pk_live_ key)
+- PUT /v1/attribution/link — Link attribution to user (authenticated with rl_live_ key)
+- GET /v1/links/{link_id}/stats — Link analytics (authenticated with rl_live_ key)
+- POST /v1/auth/publishable-keys — Create a publishable key (authenticated with rl_live_ key)
+- GET /v1/auth/publishable-keys — List publishable keys (authenticated with rl_live_ key)
+- DELETE /v1/auth/publishable-keys/{key_id} — Revoke a publishable key (authenticated with rl_live_ key)

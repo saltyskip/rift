@@ -273,9 +273,13 @@ async fn attribution_dispatches_webhook() {
         .await
         .unwrap();
 
-    // Report attribution.
+    // Seed an SDK key for the tenant.
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    // Report attribution via SDK-authenticated endpoint.
     app.client
-        .post(app.url("/v1/attribution"))
+        .post(app.url("/v1/attribution/report"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "link_id": "webhook-attr",
             "install_id": "install-123",

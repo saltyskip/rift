@@ -5,16 +5,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize)]
 pub struct ClickRequest {
     pub link_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub domain: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct DeferredRequest {
-    pub link_id: String,
-    pub install_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub domain: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -22,8 +12,6 @@ pub struct AttributionRequest {
     pub link_id: String,
     pub install_id: String,
     pub app_version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub domain: Option<String>,
 }
 
 // ── Response types (received from the API) ──
@@ -37,15 +25,6 @@ pub struct ClickResponse {
     pub web_url: Option<String>,
     pub ios_store_url: Option<String>,
     pub android_store_url: Option<String>,
-    pub metadata: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct DeferredResponse {
-    pub matched: bool,
-    pub link_id: Option<String>,
-    pub ios_deep_link: Option<String>,
-    pub android_deep_link: Option<String>,
     pub metadata: Option<serde_json::Value>,
 }
 
