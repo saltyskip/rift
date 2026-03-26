@@ -16,10 +16,13 @@ pub enum LinkStatus {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct AgentContext {
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "book_table")]
     pub action: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Reserve a table for tonight")]
     pub cta: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Opens the TableFour app to book a reservation at the selected restaurant")]
     pub description: Option<String>,
 }
 
@@ -177,21 +180,27 @@ impl CreateLinkInput {
 pub struct CreateLinkRequest {
     /// Optional vanity slug (3-64 chars, alphanumeric + hyphens).
     #[serde(default)]
+    #[schema(example = "summer-menu-2025")]
     pub custom_id: Option<String>,
     /// iOS deep link URI (e.g. "myapp://product/123").
     #[serde(default)]
+    #[schema(example = "tablefour://restaurant/782/reserve")]
     pub ios_deep_link: Option<String>,
     /// Android deep link URI.
     #[serde(default)]
+    #[schema(example = "tablefour://restaurant/782/reserve")]
     pub android_deep_link: Option<String>,
     /// Web fallback URL for desktop/unknown platforms.
     #[serde(default)]
+    #[schema(example = "https://tablefour.com/restaurant/782")]
     pub web_url: Option<String>,
     /// App Store link for iOS.
     #[serde(default)]
+    #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
     pub ios_store_url: Option<String>,
     /// Play Store link for Android.
     #[serde(default)]
+    #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
     pub android_store_url: Option<String>,
     /// Arbitrary key-value metadata.
     #[serde(default)]
@@ -202,7 +211,9 @@ pub struct CreateLinkRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CreateLinkResponse {
+    #[schema(example = "summer-menu-2025")]
     pub link_id: String,
+    #[schema(example = "https://riftl.ink/summer-menu-2025")]
     pub url: String,
 }
 
@@ -210,20 +221,23 @@ pub struct CreateLinkResponse {
 pub struct UpdateLinkRequest {
     /// iOS deep link URI. Send `null` to clear.
     #[serde(default, deserialize_with = "deserialize_optional")]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, example = "tablefour://restaurant/782/reserve")]
     pub ios_deep_link: Option<Option<String>>,
     /// Android deep link URI. Send `null` to clear.
     #[serde(default, deserialize_with = "deserialize_optional")]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, example = "tablefour://restaurant/782/reserve")]
     pub android_deep_link: Option<Option<String>>,
     /// Web fallback URL.
     #[serde(default)]
+    #[schema(example = "https://tablefour.com/restaurant/782")]
     pub web_url: Option<String>,
     /// App Store link for iOS.
     #[serde(default)]
+    #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
     pub ios_store_url: Option<String>,
     /// Play Store link for Android.
     #[serde(default)]
+    #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
     pub android_store_url: Option<String>,
     /// Arbitrary key-value metadata.
     #[serde(default)]
@@ -245,18 +259,26 @@ where
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LinkDetail {
+    #[schema(example = "summer-menu-2025")]
     pub link_id: String,
+    #[schema(example = "https://riftl.ink/summer-menu-2025")]
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "tablefour://restaurant/782/reserve")]
     pub ios_deep_link: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "tablefour://restaurant/782/reserve")]
     pub android_deep_link: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://tablefour.com/restaurant/782")]
     pub web_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
     pub ios_store_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
     pub android_store_url: Option<String>,
+    #[schema(example = "2025-06-15T10:30:00Z")]
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,
@@ -274,39 +296,52 @@ pub struct ListLinksQuery {
 pub struct ListLinksResponse {
     pub links: Vec<LinkDetail>,
     /// Cursor for the next page. Null if no more results.
+    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
     pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct LinkAttributionRequest {
+    #[schema(example = "d4f7a1b2-3c8e-4f9a-b5d6-7e8f9a0b1c2d")]
     pub install_id: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AttributionResponse {
+    #[schema(example = true)]
     pub success: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LinkStatsResponse {
+    #[schema(example = "summer-menu-2025")]
     pub link_id: String,
+    #[schema(example = 1420)]
     pub click_count: u64,
+    #[schema(example = 312)]
     pub install_count: u64,
+    #[schema(example = 21.97)]
     pub conversion_rate: f64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ResolvedLink {
+    #[schema(example = "summer-menu-2025")]
     pub link_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "tablefour://restaurant/782/reserve")]
     pub ios_deep_link: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "tablefour://restaurant/782/reserve")]
     pub android_deep_link: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://tablefour.com/restaurant/782")]
     pub web_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
     pub ios_store_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
     pub android_store_url: Option<String>,
     pub metadata: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -317,13 +352,17 @@ pub struct ResolvedLink {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ClickRequest {
+    #[schema(example = "summer-menu-2025")]
     pub link_id: String,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct AttributionReportRequest {
+    #[schema(example = "summer-menu-2025")]
     pub link_id: String,
+    #[schema(example = "d4f7a1b2-3c8e-4f9a-b5d6-7e8f9a0b1c2d")]
     pub install_id: String,
+    #[schema(example = "2.4.1")]
     pub app_version: String,
 }
 
@@ -341,15 +380,21 @@ pub struct TimeseriesQuery {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TimeseriesDataPoint {
+    #[schema(example = "2025-06-15")]
     pub date: String,
+    #[schema(example = 47)]
     pub clicks: u64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TimeseriesResponse {
+    #[schema(example = "summer-menu-2025")]
     pub link_id: String,
+    #[schema(example = "daily")]
     pub granularity: String,
+    #[schema(example = "2025-06-01T00:00:00Z")]
     pub from: String,
+    #[schema(example = "2025-06-30T23:59:59Z")]
     pub to: String,
     pub data: Vec<TimeseriesDataPoint>,
 }

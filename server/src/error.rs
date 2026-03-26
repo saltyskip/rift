@@ -8,8 +8,10 @@ use utoipa::ToSchema;
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorResponse {
     /// Human-readable error message.
+    #[schema(example = "Not found: link with id 'abc123' does not exist")]
     pub error: String,
     /// Machine-readable error code.
+    #[schema(example = "not_found")]
     pub code: String,
 }
 
