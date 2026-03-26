@@ -1460,17 +1460,9 @@ struct LandingPageContext<'a> {
 fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     let app_name_display = ctx.app_name.unwrap_or("App");
     let theme = ctx.theme_color.unwrap_or("#0d9488");
-    let link_id_js = js_escape(ctx.link_id);
     let platform = ctx.platform;
     let link = ctx.link;
     let platform_js = js_escape(platform.as_str());
-
-    let deep_link = match platform {
-        Platform::Ios => link.ios_deep_link.as_deref().unwrap_or(""),
-        Platform::Android => link.android_deep_link.as_deref().unwrap_or(""),
-        Platform::Other => "",
-    };
-    let deep_link_js = js_escape(deep_link);
 
     let store_url = match platform {
         Platform::Ios => link.ios_store_url.as_deref().unwrap_or(""),
@@ -1716,10 +1708,8 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     <script>
     (function() {{
         var platform = "{platform_js}";
-        var deepLink = "{deep_link_js}";
         var storeUrl = "{store_url_js}";
         var webUrl = "{web_url_js}";
-        var linkId = "{link_id_js}";
 
         var btn = document.getElementById("open-btn");
         var msg = document.getElementById("fallback-msg");
@@ -1732,14 +1722,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         }});
 
         if (platform === "ios" || platform === "android") {{
-            if (deepLink) {{
-                btn.href = deepLink;
-                btn.addEventListener("click", function() {{
-                    setTimeout(function() {{
-                        if (storeUrl) {{ window.location.href = storeUrl; }}
-                    }}, 1500);
-                }});
-            }} else if (storeUrl) {{
+            if (storeUrl) {{
                 btn.href = storeUrl;
                 btn.textContent = "Get {app_name_escaped}";
             }} else if (webUrl) {{
@@ -1772,10 +1755,8 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         desc_html = desc_html,
         agent_panel = agent_panel,
         platform_js = platform_js,
-        deep_link_js = deep_link_js,
         store_url_js = store_url_js,
         web_url_js = web_url_js,
-        link_id_js = link_id_js,
     )
 }
 
