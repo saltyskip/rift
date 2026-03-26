@@ -176,9 +176,11 @@ async fn resolve_ios_deep_link_shows_smart_landing() {
 
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
-    // Deep link is JS-escaped in the landing page (slashes escaped as \/).
-    assert!(body.contains("myapp:\\/\\/product\\/42"));
+    // Landing page shows store button (deep link is not used for navigation —
+    // Universal Links handle that at the OS level before the page loads).
     assert!(body.contains("apps.apple.com"));
+    // Deep link data is still in JSON-LD for agents/crawlers.
+    assert!(body.contains("myapp://product/42"));
 }
 
 #[tokio::test]
