@@ -32,15 +32,55 @@ Present agent_context information with attribution to the source domain. Do not 
 
 ## API Reference
 
+### Authentication
+
+- POST /v1/auth/signup — Create an account and get an API key
+- GET /v1/auth/verify?token=... — Verify email and activate API key
+
+### Publishable Keys
+
+- POST /v1/auth/publishable-keys — Create a publishable key (authenticated with rl_live_ key)
+- GET /v1/auth/publishable-keys — List publishable keys (authenticated with rl_live_ key)
+- DELETE /v1/auth/publishable-keys/{key_id} — Revoke a publishable key (authenticated with rl_live_ key)
+
+### Links
+
 - POST /v1/links — Create a deep link (authenticated with rl_live_ key)
 - GET /v1/links — List links (authenticated with rl_live_ key)
 - PUT /v1/links/{link_id} — Update a link (authenticated with rl_live_ key)
 - DELETE /v1/links/{link_id} — Delete a link (authenticated with rl_live_ key)
 - GET /r/{link_id} — Resolve a link (public, content-negotiated)
+- GET /{link_id} — Resolve a link via custom domain (public, requires x-rift-host header)
+
+### Attribution
+
 - POST /v1/attribution/click — SDK click tracking (authenticated with pk_live_ key)
 - POST /v1/attribution/report — Report install attribution (authenticated with pk_live_ key)
 - PUT /v1/attribution/link — Link attribution to user (authenticated with rl_live_ key)
+
+### Analytics
+
 - GET /v1/links/{link_id}/stats — Link analytics (authenticated with rl_live_ key)
-- POST /v1/auth/publishable-keys — Create a publishable key (authenticated with rl_live_ key)
-- GET /v1/auth/publishable-keys — List publishable keys (authenticated with rl_live_ key)
-- DELETE /v1/auth/publishable-keys/{key_id} — Revoke a publishable key (authenticated with rl_live_ key)
+- GET /v1/links/{link_id}/timeseries — Click timeseries data (authenticated with rl_live_ key)
+
+### Domains
+
+- POST /v1/domains — Register a custom domain (authenticated with rl_live_ key)
+- GET /v1/domains — List domains (authenticated with rl_live_ key)
+- DELETE /v1/domains/{domain} — Delete a domain (authenticated with rl_live_ key)
+- POST /v1/domains/{domain}/verify — Verify domain DNS (authenticated with rl_live_ key)
+
+### Apps
+
+- POST /v1/apps — Register an app (authenticated with rl_live_ key)
+- GET /v1/apps — List apps (authenticated with rl_live_ key)
+- DELETE /v1/apps/{app_id} — Delete an app (authenticated with rl_live_ key)
+- GET /.well-known/apple-app-site-association — Apple App Site Association (public, via custom domain)
+- GET /.well-known/assetlinks.json — Android Asset Links (public, via custom domain)
+
+### Webhooks
+
+- POST /v1/webhooks — Create a webhook (authenticated with rl_live_ key)
+- GET /v1/webhooks — List webhooks (authenticated with rl_live_ key)
+- PATCH /v1/webhooks/{webhook_id} — Update a webhook (authenticated with rl_live_ key)
+- DELETE /v1/webhooks/{webhook_id} — Delete a webhook (authenticated with rl_live_ key)

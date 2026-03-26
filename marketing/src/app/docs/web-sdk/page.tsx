@@ -9,6 +9,9 @@ const FRAMEWORKS = [
     label: "HTML",
     lang: "html",
     code: `<script src="https://cdn.riftl.ink/rift.js"></script>
+<script>
+  Rift.init("pk_live_YOUR_KEY");
+</script>
 
 <a
   href="https://apps.apple.com/app/id123456789"
@@ -31,7 +34,11 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        <Script src="https://cdn.riftl.ink/rift.js" strategy="lazyOnload" />
+        <Script
+          src="https://cdn.riftl.ink/rift.js"
+          strategy="lazyOnload"
+          onLoad={() => window.Rift.init("pk_live_YOUR_KEY")}
+        />
         {children}
       </body>
     </html>
@@ -64,14 +71,14 @@ export function DownloadButton({ linkId, domain }) {
     </a>
   );
 }`,
-    notes: 'Load the script once in your root layout, not per component. The download button is a real <a> tag that works without JS (right-clickable, accessible). When the Rift SDK is loaded, it intercepts the click for tracking and deferred deep linking. Must be a Client Component ("use client") for the onClick handler.',
+    notes: 'Load the script once in your root layout, not per component. Call Rift.init() with your publishable key before using Rift.open(). The download button is a real <a> tag that works without JS (right-clickable, accessible). Must be a Client Component ("use client") for the onClick handler.',
   },
   {
     id: "svelte",
     label: "Svelte",
     lang: "svelte",
     code: `<svelte:head>
-  <script src="https://cdn.riftl.ink/rift.js"></script>
+  <script src="https://cdn.riftl.ink/rift.js" on:load={() => Rift.init('pk_live_YOUR_KEY')}></script>
 </svelte:head>
 
 <a
@@ -91,7 +98,7 @@ export function DownloadButton({ linkId, domain }) {
 >
   Get the App
 </a>`,
-    notes: "Uses `<svelte:head>` to load the script. The link falls back to opening the href directly if the SDK hasn't loaded.",
+    notes: "Uses `<svelte:head>` to load the script and initialize with your publishable key. The link falls back to opening the href directly if the SDK hasn't loaded.",
   },
   {
     id: "vue",
@@ -105,6 +112,7 @@ const storeUrl = "https://apps.apple.com/app/id123456789";
 onMounted(() => {
   const s = document.createElement("script");
   s.src = "https://cdn.riftl.ink/rift.js";
+  s.onload = () => window.Rift.init("pk_live_YOUR_KEY");
   document.head.appendChild(s);
 });
 
@@ -125,7 +133,7 @@ function handleClick(e) {
     Get the App
   </a>
 </template>`,
-    notes: "Loads the script dynamically in `onMounted` to avoid SSR issues. The link works as a normal App Store link before the SDK loads.",
+    notes: "Loads the script dynamically in `onMounted` and calls Rift.init() with your publishable key on load. The link works as a normal App Store link before the SDK loads.",
   },
 ];
 
@@ -146,6 +154,19 @@ export default function WebSdkPage() {
       </div>
 
       <div className="space-y-10">
+        {/* Prerequisites */}
+        <section className="space-y-4">
+          <h2 className="text-2xl font-bold text-[#fafafa]">Prerequisites</h2>
+          <p className="text-[15px] text-[#a1a1aa]">
+            You need a <a href="/docs/publishable-keys" className="text-[#2dd4bf] hover:underline">publishable key</a>{" "}
+            (<code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">pk_live_</code>) to use
+            the web SDK. Create one after setting up a{" "}
+            <a href="/docs/domains" className="text-[#2dd4bf] hover:underline">custom domain</a>.
+          </p>
+        </section>
+
+        <div className="gradient-line" />
+
         {/* Framework tabs */}
         <section className="space-y-4">
           <h2 className="text-2xl font-bold text-[#fafafa]">Quick start</h2>
@@ -176,10 +197,43 @@ export default function WebSdkPage() {
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">Rift.init(publishableKey, opts?)</code>
+            </h3>
+            <p className="text-[15px] text-[#a1a1aa]">
+              Initializes the SDK with your publishable key. Must be called before <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">Rift.open()</code>.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px] border border-[#1e1e22] rounded-lg overflow-hidden">
+                <thead>
+                  <tr className="bg-[#0c0c0e]">
+                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Param</th>
+                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Type</th>
+                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[#a1a1aa]">
+                  <tr className="border-b border-[#1e1e22]">
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">publishableKey</td>
+                    <td className="px-4 py-2.5 font-mono">string</td>
+                    <td className="px-4 py-2.5">Your publishable key (starts with <code className="text-[#71717a]">pk_live_</code>). Required.</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">opts.baseUrl</td>
+                    <td className="px-4 py-2.5 font-mono">string</td>
+                    <td className="px-4 py-2.5">API base URL. Default: <code className="text-[#71717a]">https://api.riftl.ink</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-[#fafafa]">
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">Rift.open(linkId, opts?)</code>
             </h3>
             <p className="text-[15px] text-[#a1a1aa]">
-              Records a click, writes the deferred deep link token, and navigates the user
+              Records a click via <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/click</code>,
+              copies the link URL to clipboard (iOS) for deferred deep linking, and navigates the user
               to the deep link, store, or web URL based on their platform.
             </p>
             <div className="overflow-x-auto">
@@ -193,17 +247,11 @@ export default function WebSdkPage() {
                 </thead>
                 <tbody className="text-[#a1a1aa]">
                   <tr className="border-b border-[#1e1e22]">
-                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">baseUrl</td>
-                    <td className="px-4 py-2.5 font-mono">string</td>
-                    <td className="px-4 py-2.5">API base URL. Default: <code className="text-[#71717a]">https://api.riftl.ink</code></td>
-                  </tr>
-                  <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">domain</td>
                     <td className="px-4 py-2.5 font-mono">string</td>
                     <td className="px-4 py-2.5">
-                      Custom domain for tenant-scoped link resolution.
+                      Custom domain for the clipboard URL on iOS (e.g. <code className="text-[#71717a]">go.yourcompany.com</code>).
                       Defaults to <code className="text-[#71717a]">location.hostname</code>.
-                      Set this explicitly if the page is not hosted on your custom domain.
                     </td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
@@ -243,9 +291,10 @@ document.getElementById("title").textContent = link.metadata.title;`}</CodeBlock
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">Explicit domain</h3>
             <p className="text-[15px] text-[#a1a1aa]">
-              The SDK auto-detects <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">location.hostname</code> and
-              sends it to the API to scope the link to your tenant. If the SDK is embedded on a page that isn&apos;t
-              your custom domain (e.g. a third-party site), pass the domain explicitly:
+              On iOS, the SDK copies the full link URL to the clipboard for deferred deep linking.
+              By default it uses <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">location.hostname</code>.
+              If the SDK is embedded on a page that isn&apos;t your custom domain (e.g. a third-party site),
+              pass the domain explicitly so the clipboard URL uses your domain:
             </p>
             <CodeBlock lang="javascript">{`Rift.open("summer-sale", {
   domain: "go.yourcompany.com"
@@ -254,7 +303,7 @@ document.getElementById("title").textContent = link.metadata.title;`}</CodeBlock
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">Self-hosted API</h3>
-            <CodeBlock lang="javascript">{`Rift.open("summer-sale", {
+            <CodeBlock lang="javascript">{`Rift.init("pk_live_YOUR_KEY", {
   baseUrl: "https://api.yourcompany.com"
 });`}</CodeBlock>
           </div>
@@ -264,7 +313,6 @@ document.getElementById("title").textContent = link.metadata.title;`}</CodeBlock
             <CodeBlock lang="javascript">{`Rift.open("summer-sale", {
   onComplete: function(data) {
     console.log("Platform:", data.platform);
-    console.log("Token:", data.token);
     analytics.track("app_download_click", {
       link_id: "summer-sale",
       platform: data.platform
@@ -285,17 +333,17 @@ document.getElementById("title").textContent = link.metadata.title;`}</CodeBlock
           <ol className="list-decimal pl-5 space-y-2 text-[15px] text-[#a1a1aa]">
             <li>
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">Rift.open()</code>{" "}
-              sends a <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/sdk/click</code> to
-              record the click and get a deferred deep link token.
+              sends a <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/click</code> (authenticated
+              with the publishable key) to record the click and get the link data.
             </li>
             <li>
-              <strong className="text-[#fafafa]">iOS:</strong> the token is written to the clipboard
-              as <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">rift:&lt;token&gt;</code> for
-              deferred deep linking.
+              <strong className="text-[#fafafa]">iOS:</strong> the full link URL is copied to the clipboard
+              (e.g. <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">https://go.yourcompany.com/summer-sale</code>)
+              for deferred deep linking after install.
             </li>
             <li>
-              <strong className="text-[#fafafa]">Android:</strong> the token is appended to the Play Store URL
-              as an install referrer parameter.
+              <strong className="text-[#fafafa]">Android:</strong> the link ID is appended to the Play Store URL
+              as an install referrer parameter (<code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">rift_link=summer-sale</code>).
             </li>
             <li>
               The SDK navigates to the deep link URI with a 1.5s timeout fallback to the store URL.

@@ -10,6 +10,7 @@ const NAV = [
       { label: "Quick Start", href: "/docs" },
       { label: "Register Your App", href: "/docs/apps" },
       { label: "Custom Domains", href: "/docs/domains" },
+      { label: "Publishable Keys", href: "/docs/publishable-keys" },
     ],
   },
   {
