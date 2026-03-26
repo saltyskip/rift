@@ -9,9 +9,25 @@
       if (opts.baseUrl) DEFAULT_BASE = opts.baseUrl;
     },
 
-    // Fire-and-forget click tracking. Use on <a> tag onClick handlers.
-    // The <a> tag handles navigation — Universal Links work normally.
-    click: function(linkId) {
+    // Fire-and-forget click tracking + clipboard write.
+    // Use on <a> tag onClick handlers. Does NOT navigate —
+    // the <a> tag handles navigation so Universal Links work.
+    //
+    // opts.domain — custom domain for clipboard URL (e.g. "go.yourcompany.com").
+    //               Defaults to location.hostname.
+    click: function(linkId, opts) {
+      opts = opts || {};
+
+      // Clipboard write — must happen here while we have the user gesture.
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        var domain = opts.domain || (typeof location !== "undefined" ? location.hostname : null);
+        if (domain) {
+          var clipUrl = "https://" + domain + "/" + linkId;
+          navigator.clipboard.writeText(clipUrl).catch(function(){});
+        }
+      }
+
+      // Send click beacon.
       if (!_publishableKey) {
         console.warn("Rift: call Rift.init('pk_live_...') before Rift.click()");
         return;

@@ -661,18 +661,8 @@ pub async fn resolve_link(
     }
 
     let redirect = query.redirect.as_deref() == Some("1");
-    let link_url = format!("{}/r/{}", state.config.public_url, link_id);
 
-    do_resolve(
-        &state,
-        repo.as_ref(),
-        link,
-        &link_id,
-        &headers,
-        redirect,
-        &link_url,
-    )
-    .await
+    do_resolve(&state, repo.as_ref(), link, &link_id, &headers, redirect).await
 }
 
 // ── GET /{link_id} — Resolve via custom domain (public) ──
@@ -774,18 +764,8 @@ pub async fn resolve_link_custom(
     }
 
     let redirect = query.redirect.as_deref() == Some("1");
-    let link_url = format!("https://{}/{}", host, link_id);
 
-    do_resolve(
-        &state,
-        repo.as_ref(),
-        link,
-        &link_id,
-        &headers,
-        redirect,
-        &link_url,
-    )
-    .await
+    do_resolve(&state, repo.as_ref(), link, &link_id, &headers, redirect).await
 }
 
 /// Check if a link is resolvable (active, not expired, not flagged/disabled).
@@ -857,7 +837,6 @@ async fn do_resolve(
     link_id: &str,
     headers: &HeaderMap,
     redirect: bool,
-    link_url: &str,
 ) -> Response {
     let user_agent = headers
         .get("user-agent")
@@ -929,19 +908,12 @@ async fn do_resolve(
     }
 
     // redirect=1 mode: skip landing page, go directly to the platform destination.
+    // Clipboard write happens client-side in Rift.click() (has user gesture).
     if redirect {
         match platform {
             Platform::Ios => {
                 if let Some(store_url) = &link.ios_store_url {
-                    let html = format!(
-                        r#"<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body><script>
-navigator.clipboard.writeText("{}").catch(function(){{}});
-window.location.href = "{}";
-</script></body></html>"#,
-                        js_escape(link_url),
-                        js_escape(store_url),
-                    );
-                    return (StatusCode::OK, axum::response::Html(html)).into_response();
+                    return Redirect::temporary(store_url).into_response();
                 }
                 // No ios_store_url — fall through to landing page.
             }
@@ -1749,12 +1721,15 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         var webUrl = "{web_url_js}";
         var linkId = "{link_id_js}";
 
-        if (platform === "ios" && navigator.clipboard) {{
-            navigator.clipboard.writeText(window.location.href).catch(function(){{}});
-        }}
-
         var btn = document.getElementById("open-btn");
         var msg = document.getElementById("fallback-msg");
+
+        // Copy link URL to clipboard on button tap (requires user gesture).
+        btn.addEventListener("click", function() {{
+            if (navigator.clipboard) {{
+                navigator.clipboard.writeText(window.location.href).catch(function(){{}});
+            }}
+        }});
 
         if (platform === "ios" || platform === "android") {{
             if (deepLink) {{

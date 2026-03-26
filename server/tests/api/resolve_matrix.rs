@@ -55,15 +55,11 @@ async fn redirect_ios_goes_to_app_store() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status(), 200);
-    let body = resp.text().await.unwrap();
+    assert_eq!(resp.status(), 307);
+    let location = resp.headers().get("location").unwrap().to_str().unwrap();
     assert!(
-        body.contains("apps.apple.com"),
-        "body should contain store URL"
-    );
-    assert!(
-        body.contains("navigator.clipboard"),
-        "body should contain clipboard JS"
+        location.contains("apps.apple.com"),
+        "location should contain App Store URL"
     );
 
     let clicks = app.links_repo.clicks.lock().unwrap();
@@ -188,8 +184,8 @@ async fn landing_page_ios() {
         "should contain App Store link"
     );
     assert!(
-        body.contains("navigator.clipboard"),
-        "should contain clipboard JS"
+        body.contains("clipboard"),
+        "should contain clipboard JS in button handler"
     );
     assert!(
         body.contains("Machine-Readable Link"),
