@@ -527,12 +527,11 @@ open class RiftSdk: RiftSdkProtocol, @unchecked Sendable {
     public func uniffiClonePointer() -> UnsafeMutableRawPointer {
         return try! rustCall { uniffi_rift_ffi_fn_clone_riftsdk(self.pointer, $0) }
     }
-public convenience init(publishableKey: String, baseUrl: String?) {
+public convenience init(config: RiftConfig) {
     let pointer =
         try! rustCall() {
     uniffi_rift_ffi_fn_constructor_riftsdk_new(
-        FfiConverterString.lower(publishableKey),
-        FfiConverterOptionString.lower(baseUrl),$0
+        FfiConverterTypeRiftConfig_lower(config),$0
     )
 }
     self.init(unsafeFromRawPointer: pointer)
@@ -763,6 +762,90 @@ public func FfiConverterTypeClickResult_lower(_ value: ClickResult) -> RustBuffe
 }
 
 
+public struct RiftConfig {
+    public var publishableKey: String
+    public var baseUrl: String?
+    /**
+     * Log level: "trace", "debug", "info", "warn", "error". Default: "info".
+     */
+    public var logLevel: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(publishableKey: String, baseUrl: String?, 
+        /**
+         * Log level: "trace", "debug", "info", "warn", "error". Default: "info".
+         */logLevel: String?) {
+        self.publishableKey = publishableKey
+        self.baseUrl = baseUrl
+        self.logLevel = logLevel
+    }
+}
+
+#if compiler(>=6)
+extension RiftConfig: Sendable {}
+#endif
+
+
+extension RiftConfig: Equatable, Hashable {
+    public static func ==(lhs: RiftConfig, rhs: RiftConfig) -> Bool {
+        if lhs.publishableKey != rhs.publishableKey {
+            return false
+        }
+        if lhs.baseUrl != rhs.baseUrl {
+            return false
+        }
+        if lhs.logLevel != rhs.logLevel {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(publishableKey)
+        hasher.combine(baseUrl)
+        hasher.combine(logLevel)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRiftConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RiftConfig {
+        return
+            try RiftConfig(
+                publishableKey: FfiConverterString.read(from: &buf), 
+                baseUrl: FfiConverterOptionString.read(from: &buf), 
+                logLevel: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RiftConfig, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.publishableKey, into: &buf)
+        FfiConverterOptionString.write(value.baseUrl, into: &buf)
+        FfiConverterOptionString.write(value.logLevel, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRiftConfig_lift(_ buf: RustBuffer) throws -> RiftConfig {
+    return try FfiConverterTypeRiftConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRiftConfig_lower(_ value: RiftConfig) -> RustBuffer {
+    return FfiConverterTypeRiftConfig.lower(value)
+}
+
+
 public enum RiftError: Swift.Error {
 
     
@@ -971,7 +1054,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_rift_ffi_checksum_method_riftsdk_report_attribution() != 16163) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rift_ffi_checksum_constructor_riftsdk_new() != 61162) {
+    if (uniffi_rift_ffi_checksum_constructor_riftsdk_new() != 3525) {
         return InitializationResult.apiChecksumMismatch
     }
 
