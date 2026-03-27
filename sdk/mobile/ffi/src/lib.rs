@@ -49,7 +49,7 @@ pub struct RiftSdk {
     client: RiftClient,
 }
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl RiftSdk {
     #[uniffi::constructor]
     pub fn new(publishable_key: String, base_url: Option<String>) -> Self {
