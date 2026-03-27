@@ -459,108 +459,144 @@ export default function AuditPage() {
               </CardContent>
             </Card>
 
-            {/* Social Preview */}
+            {/* Device Mockups */}
             <Card>
               <CardHeader>
-                <CardTitle>Twitter Card Preview</CardTitle>
+                <CardTitle>How your link appears</CardTitle>
                 <CardDescription>
-                  How this link appears when shared on Twitter / X
+                  Preview across mobile, social, and AI surfaces
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="rounded-xl border border-border overflow-hidden max-w-md">
-                  {data.metadata?.image ? (
-                    <div className="h-40 bg-muted overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={data.metadata.image}
-                        alt="Social preview"
-                        className="w-full h-full object-cover"
-                      />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                  {/* iPhone mockup */}
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2 text-center">iPhone</p>
+                    <div className="mx-auto w-[200px] rounded-[28px] border-[3px] border-foreground/20 bg-black p-1.5 shadow-lg">
+                      {/* Notch */}
+                      <div className="mx-auto w-20 h-4 bg-black rounded-b-xl relative z-10" />
+                      {/* Screen */}
+                      <div className="bg-[#0a0a0a] rounded-[22px] -mt-2 pt-6 pb-4 px-3 min-h-[340px] flex flex-col items-center justify-center text-center">
+                        {data.metadata?.image && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={data.metadata.image} alt="" className="w-12 h-12 rounded-xl mb-3 object-cover" />
+                        )}
+                        <p className="text-[8px] font-semibold uppercase tracking-[0.15em] text-primary mb-2">
+                          {data.metadata?.title || data.link_id}
+                        </p>
+                        <p className="text-[9px] text-white/60 mb-3 px-2 line-clamp-2">
+                          {data.metadata?.description || "Open in app"}
+                        </p>
+                        <div className="bg-primary rounded-lg px-4 py-1.5">
+                          <p className="text-[8px] font-semibold text-white">
+                            {data.ios_store_url ? "Get the App" : data.web_url ? "Continue" : "Open"}
+                          </p>
+                        </div>
+                        {data.ios_store_url && (
+                          <p className="text-[7px] text-white/30 mt-2 truncate max-w-full">
+                            {data.ios_store_url.replace("https://", "")}
+                          </p>
+                        )}
+                      </div>
+                      {/* Home indicator */}
+                      <div className="mx-auto w-16 h-1 bg-foreground/20 rounded-full mt-1.5" />
                     </div>
-                  ) : (
-                    <div className="h-24 bg-muted/30 flex items-center justify-center border-b border-border">
-                      <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">
-                        No image
-                      </span>
+                  </div>
+
+                  {/* Slack unfurl mockup */}
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2 text-center">Slack</p>
+                    <div className="bg-[#1a1d21] rounded-lg p-3 min-h-[340px] flex flex-col">
+                      {/* Message */}
+                      <div className="flex gap-2 mb-3">
+                        <div className="w-7 h-7 rounded bg-primary/20 flex-shrink-0 flex items-center justify-center">
+                          <span className="text-[10px] text-primary font-bold">U</span>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-white">User</p>
+                          <p className="text-[10px] text-[#d1d2d3]">Check out this link</p>
+                        </div>
+                      </div>
+                      {/* Unfurl card */}
+                      <div className="border-l-[3px] border-foreground/20 pl-3 ml-1">
+                        <p className="text-[9px] text-[#8b8d90] mb-1">
+                          {data._rift_meta.tenant_domain || "riftl.ink"}
+                        </p>
+                        <p className="text-[10px] font-bold text-[#1d9bd1] mb-0.5">
+                          {data.metadata?.title || (
+                            <span className="text-[#8b8d90] italic font-normal">No title</span>
+                          )}
+                        </p>
+                        <p className="text-[9px] text-[#d1d2d3] line-clamp-2 mb-2">
+                          {data.metadata?.description || (
+                            <span className="text-[#8b8d90] italic">No description</span>
+                          )}
+                        </p>
+                        {data.metadata?.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={data.metadata.image} alt="" className="w-full h-28 object-cover rounded" />
+                        ) : (
+                          <div className="w-full h-16 bg-[#2c2d30] rounded flex items-center justify-center">
+                            <span className="text-[8px] text-[#8b8d90]">No image</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1" />
                     </div>
-                  )}
-                  <div className="p-3 space-y-0.5">
-                    <p className="text-[11px] text-muted-foreground/60">
-                      {data._rift_meta.tenant_domain || "riftl.ink"}
-                    </p>
-                    <p className="text-sm font-normal text-foreground leading-snug">
-                      {data.metadata?.title || (
-                        <span className="text-muted-foreground/40 italic">
-                          No title set
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-muted-foreground line-clamp-2">
-                      {data.metadata?.description || (
-                        <span className="italic text-muted-foreground/40">
-                          No description set
-                        </span>
-                      )}
-                    </p>
+                  </div>
+
+                  {/* AI chat mockup */}
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2 text-center">AI Agent</p>
+                    <div className="bg-[#111113] rounded-lg border border-border p-3 min-h-[340px] flex flex-col">
+                      {/* User message */}
+                      <div className="self-end bg-primary/10 rounded-2xl rounded-br-sm px-3 py-2 max-w-[85%] mb-3">
+                        <p className="text-[10px] text-foreground">What is this link?</p>
+                      </div>
+                      {/* Agent response */}
+                      <div className="self-start bg-muted/50 rounded-2xl rounded-bl-sm px-3 py-2 max-w-[90%]">
+                        {data.agent_context?.description ? (
+                          <div className="space-y-1.5">
+                            {data.agent_context.action && (
+                              <Badge variant="outline" className="text-[8px] px-1.5 py-0">
+                                {data.agent_context.action}
+                              </Badge>
+                            )}
+                            {data.agent_context.cta && (
+                              <p className="text-[10px] font-medium text-foreground">
+                                {data.agent_context.cta}
+                              </p>
+                            )}
+                            <p className="text-[9px] text-muted-foreground leading-relaxed line-clamp-4">
+                              {data.agent_context.description}
+                            </p>
+                            {data._rift_meta.tenant_verified && (
+                              <p className="text-[8px] text-muted-foreground/50 italic">
+                                Source: {data._rift_meta.tenant_domain} (verified)
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <p className="text-[10px] text-muted-foreground">
+                              This appears to be a download link from{" "}
+                              {data._rift_meta.tenant_domain || "an unknown source"}.
+                            </p>
+                            <p className="text-[9px] text-muted-foreground/50 italic">
+                              No agent context configured — I can&apos;t tell you more about it.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1" />
+                      {/* Input bar */}
+                      <div className="mt-3 bg-muted/30 rounded-full px-3 py-1.5 flex items-center">
+                        <span className="text-[9px] text-muted-foreground/40">Ask a follow-up...</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Agent Context */}
-            <Card>
-              <CardHeader>
-                <CardTitle>AI Agent View</CardTitle>
-                <CardDescription>
-                  What AI agents see when they resolve this link
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {data.agent_context &&
-                (data.agent_context.action ||
-                  data.agent_context.cta ||
-                  data.agent_context.description) ? (
-                  <div className="space-y-3">
-                    <div className="flex gap-2 flex-wrap">
-                      {data.agent_context.action && (
-                        <Badge variant="outline">
-                          {data.agent_context.action}
-                        </Badge>
-                      )}
-                      {data._rift_meta.tenant_verified && (
-                        <Badge variant="outline" className="text-primary">
-                          verified
-                        </Badge>
-                      )}
-                      <Badge
-                        variant="outline"
-                        className={
-                          data._rift_meta.status === "active"
-                            ? "text-green-400"
-                            : "text-destructive"
-                        }
-                      >
-                        {data._rift_meta.status}
-                      </Badge>
-                    </div>
-                    {data.agent_context.cta && (
-                      <p className="text-sm font-medium text-foreground">
-                        {data.agent_context.cta}
-                      </p>
-                    )}
-                    {data.agent_context.description && (
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {data.agent_context.description}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground italic">
-                    No agent context configured. AI agents won&apos;t understand
-                    what this link does.
-                  </p>
-                )}
               </CardContent>
             </Card>
 
