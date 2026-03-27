@@ -20,11 +20,26 @@ pub trait DomainsRepository: Send + Sync {
 
     async fn find_by_domain(&self, domain: &str) -> Result<Option<Domain>, String>;
 
+    async fn find_by_tenant_and_domain(
+        &self,
+        tenant_id: &ObjectId,
+        domain: &str,
+    ) -> Result<Option<Domain>, String>;
+
     async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Domain>, String>;
 
     async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String>;
 
     async fn mark_verified(&self, domain: &str) -> Result<(), String>;
+
+    async fn update_theme(
+        &self,
+        tenant_id: &ObjectId,
+        domain: &str,
+        theme_id: Option<ObjectId>,
+    ) -> Result<bool, String>;
+
+    async fn count_by_theme(&self, tenant_id: &ObjectId, theme_id: &ObjectId) -> Result<u64, String>;
 }
 
 // ── Repository ──
@@ -64,6 +79,7 @@ impl DomainsRepository for DomainsRepo {
             domain,
             verified: false,
             verification_token,
+            theme_id: None,
             created_at: DateTime::now(),
         };
         self.domains
@@ -95,6 +111,17 @@ impl DomainsRepository for DomainsRepo {
         Ok(domains)
     }
 
+    async fn find_by_tenant_and_domain(
+        &self,
+        tenant_id: &ObjectId,
+        domain: &str,
+    ) -> Result<Option<Domain>, String> {
+        self.domains
+            .find_one(doc! { "tenant_id": tenant_id, "domain": domain })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
     async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String> {
         let result = self
             .domains
@@ -113,5 +140,29 @@ impl DomainsRepository for DomainsRepo {
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    async fn update_theme(
+        &self,
+        tenant_id: &ObjectId,
+        domain: &str,
+        theme_id: Option<ObjectId>,
+    ) -> Result<bool, String> {
+        let result = self
+            .domains
+            .update_one(
+                doc! { "tenant_id": tenant_id, "domain": domain },
+                doc! { "$set": { "theme_id": theme_id } },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result.matched_count > 0)
+    }
+
+    async fn count_by_theme(&self, tenant_id: &ObjectId, theme_id: &ObjectId) -> Result<u64, String> {
+        self.domains
+            .count_documents(doc! { "tenant_id": tenant_id, "theme_id": theme_id })
+            .await
+            .map_err(|e| e.to_string())
     }
 }

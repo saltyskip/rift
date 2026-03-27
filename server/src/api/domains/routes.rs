@@ -1,6 +1,7 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
+use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -55,6 +56,21 @@ pub async fn create_domain(
             .into_response();
     }
 
+    let theme_id = match parse_theme_id(req.theme_id.as_deref()) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+
+    if let Some(theme_id) = theme_id {
+        if !theme_belongs_to_tenant(&state, &tenant.0, &theme_id).await {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "theme_id must belong to your tenant", "code": "invalid_theme_id" })),
+            )
+                .into_response();
+        }
+    }
+
     let token = generate_verification_token();
     let created = match repo
         .create_domain(tenant.0, domain.clone(), token.clone())
@@ -77,6 +93,17 @@ pub async fn create_domain(
                 .into_response();
         }
     };
+
+    if let Some(theme_id) = theme_id {
+        if let Err(e) = repo.update_theme(&tenant.0, &domain, Some(theme_id)).await {
+            tracing::error!("Failed to apply theme to domain: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response();
+        }
+    }
 
     let txt_record = format!("_rift-verify.{domain}");
     let resp = CreateDomainResponse {
@@ -125,6 +152,7 @@ pub async fn list_domains(
                 .map(|d| DomainDetail {
                     domain: d.domain.clone(),
                     verified: d.verified,
+                    theme_id: d.theme_id.map(|id| id.to_hex()),
                     created_at: d.created_at.try_to_rfc3339_string().unwrap_or_default(),
                 })
                 .collect();
@@ -132,6 +160,87 @@ pub async fn list_domains(
         }
         Err(e) => {
             tracing::error!("Failed to list domains: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
+        }
+    }
+}
+
+#[utoipa::path(
+    put,
+    path = "/v1/domains/{domain}/theme",
+    tag = "Domains",
+    params(("domain" = String, Path, description = "Domain to update")),
+    request_body = UpdateDomainThemeRequest,
+    responses(
+        (status = 200, description = "Domain updated", body = DomainDetail),
+        (status = 404, description = "Domain not found", body = crate::error::ErrorResponse),
+    ),
+    security(("api_key" = []), ("x402" = [])),
+)]
+#[tracing::instrument(skip(state, req))]
+pub async fn update_domain_theme(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+    Path(domain): Path<String>,
+    Json(req): Json<UpdateDomainThemeRequest>,
+) -> Response {
+    let Some(repo) = &state.domains_repo else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    let theme_id = match parse_theme_id(req.theme_id.as_deref()) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+
+    if let Some(theme_id) = theme_id {
+        if !theme_belongs_to_tenant(&state, &tenant.0, &theme_id).await {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "theme_id must belong to your tenant", "code": "invalid_theme_id" })),
+            )
+                .into_response();
+        }
+    }
+
+    match repo.update_theme(&tenant.0, &domain, theme_id).await {
+        Ok(true) => match repo.find_by_tenant_and_domain(&tenant.0, &domain).await {
+            Ok(Some(d)) => Json(json!({
+                "domain": d.domain,
+                "verified": d.verified,
+                "theme_id": d.theme_id.map(|id| id.to_hex()),
+                "created_at": d.created_at.try_to_rfc3339_string().unwrap_or_default(),
+            }))
+            .into_response(),
+            Ok(None) => (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Domain not found", "code": "not_found" })),
+            )
+                .into_response(),
+            Err(e) => {
+                tracing::error!("Failed to fetch updated domain: {e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": "Internal error", "code": "db_error" })),
+                )
+                    .into_response()
+            }
+        },
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Domain not found", "code": "not_found" })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("Failed to update domain theme: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": "Internal error", "code": "db_error" })),
@@ -183,6 +292,35 @@ pub async fn delete_domain(
             )
                 .into_response()
         }
+    }
+}
+
+fn parse_theme_id(theme_id: Option<&str>) -> Result<Option<ObjectId>, Response> {
+    match theme_id {
+        Some(id) => ObjectId::parse_str(id).map(Some).map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid theme_id", "code": "invalid_theme_id" })),
+            )
+                .into_response()
+        }),
+        None => Ok(None),
+    }
+}
+
+async fn theme_belongs_to_tenant(
+    state: &Arc<AppState>,
+    tenant_id: &ObjectId,
+    theme_id: &ObjectId,
+) -> bool {
+    match &state.themes_repo {
+        Some(repo) => repo
+            .find_by_tenant_and_id(tenant_id, theme_id)
+            .await
+            .ok()
+            .flatten()
+            .is_some(),
+        None => false,
     }
 }
 

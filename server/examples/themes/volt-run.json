@@ -1,0 +1,60 @@
+{
+  "name": "Volt Run",
+  "slug": "volt-run",
+  "is_default": false,
+  "tokens": {
+    "palette": {
+      "primary": "#B6FF00",
+      "secondary": "#00E5FF",
+      "accent": "#FFFFFF",
+      "background": "#05070A",
+      "surface": "#0D1117",
+      "surface_muted": "#151B23",
+      "text": "#F5F7FA",
+      "text_muted": "#9AA4B2",
+      "border": "#232C37",
+      "success": "#2DFF87",
+      "warning": "#FFC247",
+      "danger": "#FF5A6B"
+    },
+    "typography": {
+      "heading_font": "geometric_sans",
+      "body_font": "modern_sans",
+      "scale": "spacious"
+    },
+    "shape": {
+      "radius": "sharp",
+      "button_style": "outline",
+      "card_style": "glass",
+      "shadow": "dramatic"
+    },
+    "background": {
+      "style": "gradient",
+      "gradient": {
+        "from": "#05070A",
+        "to": "#0E1621",
+        "angle": 145
+      }
+    }
+  },
+  "copy": {
+    "brand_name": "Volt Run",
+    "tagline": "Train louder.",
+    "default_headline": "Start the challenge in the app",
+    "default_subheadline": "Unlock your plan, live splits, and team leaderboard in one place.",
+    "primary_cta_label": "Launch Volt Run",
+    "footer_text": "Performance training for urban athletes."
+  },
+  "media": {
+    "logo_url": "https://assets.riftl.ink/demo-themes/volt-run/logo.png",
+    "wordmark_url": "https://assets.riftl.ink/demo-themes/volt-run/wordmark.png",
+    "icon_url": "https://assets.riftl.ink/demo-themes/volt-run/icon.png",
+    "hero_image_url": "https://assets.riftl.ink/demo-themes/volt-run/hero.png",
+    "og_image_url": "https://assets.riftl.ink/demo-themes/volt-run/hero.png"
+  },
+  "layout": {
+    "template": "split",
+    "alignment": "left",
+    "content_width": "wide"
+  }
+}

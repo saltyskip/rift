@@ -13,6 +13,8 @@ pub struct Domain {
     pub domain: String,
     pub verified: bool,
     pub verification_token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_id: Option<ObjectId>,
     pub created_at: DateTime,
 }
 
@@ -23,6 +25,10 @@ pub struct CreateDomainRequest {
     /// Custom domain to register (e.g. "go.tablefour.com").
     #[schema(example = "go.tablefour.com")]
     pub domain: String,
+    /// Optional theme applied to landing pages resolved via this domain.
+    #[serde(default)]
+    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    pub theme_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -47,6 +53,9 @@ pub struct DomainDetail {
     pub domain: String,
     #[schema(example = true)]
     pub verified: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    pub theme_id: Option<String>,
     #[schema(example = "2025-06-15T10:30:00Z")]
     pub created_at: String,
 }
@@ -57,4 +66,12 @@ pub struct VerifyDomainResponse {
     pub domain: String,
     #[schema(example = true)]
     pub verified: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateDomainThemeRequest {
+    /// Theme to use for this domain. Send `null` to clear.
+    #[serde(default)]
+    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    pub theme_id: Option<String>,
 }
