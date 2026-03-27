@@ -46,8 +46,8 @@ pub struct AppState {
     info(
         title = "Rift API",
         version = "0.1.0",
-        description = "Deep links for humans and agents",
-        contact(name = "Rift"),
+        description = "Deep links for humans and agents.\n\nRift creates smart, cross-platform deep links with structured context for AI agents. Each link carries per-platform destinations, metadata, and an optional `agent_context` that makes links machine-readable.\n\n## Authentication\n\nSign up at `POST /v1/auth/signup` to get an API key (starts with `rl_live_`). Include it as a Bearer token in the Authorization header. Client SDKs use publishable keys (`pk_live_`) for click tracking and attribution.\n\n## Quick start\n\n1. `POST /v1/auth/signup` — get an API key\n2. `POST /v1/links` — create your first link\n3. `GET /r/{link_id}` — resolve it (redirect for browsers, JSON for agents)\n\n## Content negotiation\n\nThe resolve endpoint (`GET /r/{link_id}`) is content-negotiated. Browsers receive a redirect or landing page. Requests with `Accept: application/json` receive structured link data including `agent_context` and a `_rift_meta` trust envelope.",
+        contact(name = "Rift", url = "https://riftl.ink"),
     ),
     paths(
         health::routes::health,
@@ -93,6 +93,7 @@ pub struct AppState {
         links::models::ListLinksResponse,
         links::models::LinkStatsResponse,
         links::models::ResolvedLink,
+        links::models::RiftMeta,
         links::models::ClickRequest,
         links::models::AttributionReportRequest,
         links::models::LinkAttributionRequest,

@@ -2,6 +2,10 @@
 
 > Deep links for humans and agents. Rift routes users to the right app destination across iOS, Android, and web.
 
+## Why Rift Links
+
+Regular URLs are opaque to agents — they force a GET and return HTML that must be parsed. Rift links are content-negotiated: the same URL returns structured JSON with explicit actions, trust metadata, and platform-specific destinations when requested with `Accept: application/json`. This lets agents understand what a link does, verify who created it, and present it with appropriate context — without scraping or guessing.
+
 ## Resolving Links
 
 To get structured data about any Rift link, send a GET request with the Accept header:

@@ -7,7 +7,7 @@ Rift is a deep linking platform that creates smart, cross-platform links with st
 ## Why Rift
 
 - **Cross-platform deep links** — one URL routes to the right destination on iOS, Android, or web
-- **Agent-readable** — structured `agent_context` and JSON-LD so AI agents understand what a link does and can act on it
+- **Agent-readable** — structured `agent_context` and JSON-LD so AI agents understand what a link does and can act on it ([`/llms.txt`](https://api.riftl.ink/llms.txt) for machine-readable API reference)
 - **Real-time webhooks** — get notified on clicks and attributions with HMAC-signed payloads
 - **Smart landing pages** — split layout showing both a human CTA and machine-readable data panel
 - **Deferred deep linking** — user clicks a link, installs the app, and lands on the right content

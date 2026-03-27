@@ -94,7 +94,7 @@ export default function Home() {
 
           <motion.div {...fade(0.65)} className="mt-8 flex items-center gap-4">
             <a
-              href="#"
+              href="/docs"
               className="inline-flex items-center gap-2 bg-[#2dd4bf] text-[#042f2e] text-sm font-medium px-5 py-2.5 rounded-lg hover:bg-[#5eead4] transition-colors glow-teal-sm"
             >
               Create your first link
@@ -116,7 +116,7 @@ export default function Home() {
               <span className="text-[#fafafa]">-X POST</span>
               <span className="text-[#2dd4bf]">/v1/links</span>
               <span className="text-[#71717a]">-d</span>
-              <span className="text-[#a78bfa]">&apos;{`{"destination":"myapp://promo"}`}&apos;</span>
+              <span className="text-[#a78bfa]">&apos;{`{"web_url":"https://example.com","ios_deep_link":"myapp://promo"}`}&apos;</span>
             </div>
           </motion.div>
         </div>
@@ -189,9 +189,9 @@ export default function Home() {
               </p>
               <div className="mt-auto bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 font-mono text-[12px] space-y-1">
                 <div className="text-[#3f3f46]">{`// agent-readable context`}</div>
-                <div><span className="syn-key">action</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;schedule_appointment&quot;</span></div>
-                <div><span className="syn-key">visit</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;annual_checkup&quot;</span></div>
-                <div><span className="syn-key">provider</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;cityhealth_primary_care&quot;</span></div>
+                <div><span className="syn-key">action</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;book&quot;</span></div>
+                <div><span className="syn-key">cta</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;Schedule your annual checkup&quot;</span></div>
+                <div><span className="syn-key">description</span><span className="text-[#52525b]">: </span><span className="syn-str">&quot;CityHealth primary care visit&quot;</span></div>
               </div>
             </motion.div>
 
@@ -314,7 +314,7 @@ export default function Home() {
                 and attributions are never mixed with anyone else&apos;s.
               </p>
               <div className="mt-auto bg-[#0c0c0e] border border-[#1e1e22] rounded-lg p-4 font-mono text-[12px] space-y-1.5">
-                <div><span className="syn-key">key</span><span className="text-[#52525b]"> → </span><span className="syn-str">rift_live_...</span></div>
+                <div><span className="syn-key">key</span><span className="text-[#52525b]"> → </span><span className="syn-str">rl_live_...</span></div>
                 <div><span className="syn-key">links</span><span className="text-[#52525b]"> → </span><span className="syn-num">isolated</span></div>
                 <div><span className="syn-key">clicks</span><span className="text-[#52525b]"> → </span><span className="syn-num">isolated</span></div>
                 <div><span className="syn-key">attribution</span><span className="text-[#52525b]"> → </span><span className="syn-num">isolated</span></div>
@@ -356,15 +356,15 @@ export default function Home() {
         <div className="mx-auto max-w-6xl">
           <motion.div {...fade(0)}>
             <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">API</p>
-            <h2 className="text-3xl font-semibold tracking-[-0.03em] mb-12">Five endpoints. That&apos;s the whole API.</h2>
+            <h2 className="text-3xl font-semibold tracking-[-0.03em] mb-12">Five steps to a working link.</h2>
           </motion.div>
 
           <div className="space-y-2">
             {[
+              { method: "POST", path: "/v1/auth/signup", desc: "Sign up and get an API key", auth: false },
               { method: "POST", path: "/v1/links", desc: "Create a deep link with metadata", auth: true },
-              { method: "GET", path: "/v1/links", desc: "List your links", auth: true },
               { method: "GET", path: "/r/{id}", desc: "Resolve — redirect or JSON", auth: false },
-              { method: "POST", path: "/v1/attribution", desc: "Report an install from the SDK", auth: false },
+              { method: "POST", path: "/v1/attribution/report", desc: "Report an install from the SDK", auth: true },
               { method: "GET", path: "/v1/links/{id}/stats", desc: "Click, install & conversion stats", auth: true },
             ].map((ep, i) => (
               <motion.div
@@ -456,7 +456,7 @@ export default function Home() {
                   ))}
                 </ul>
                 <a
-                  href="#"
+                  href="/docs"
                   className={`text-center text-[13px] font-medium px-4 py-2 rounded-lg transition-colors ${
                     tier.accent
                       ? "bg-[#2dd4bf] text-[#042f2e] hover:bg-[#5eead4]"
@@ -485,7 +485,7 @@ export default function Home() {
             </p>
             <div className="flex items-center justify-center gap-4">
               <a
-                href="#"
+                href="/docs"
                 className="inline-flex items-center gap-2 bg-[#2dd4bf] text-[#042f2e] text-sm font-medium px-6 py-2.5 rounded-lg hover:bg-[#5eead4] transition-colors glow-teal-sm"
               >
                 Create your first link
