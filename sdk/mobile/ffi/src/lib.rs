@@ -1,7 +1,19 @@
 use rift_sdk_core::client::RiftClient;
 use rift_sdk_core::error::RiftError as CoreError;
+use std::sync::LazyLock;
+use tokio::runtime::Runtime;
 
 uniffi::setup_scaffolding!("rift_ffi");
+
+// ── Global Runtime ──
+
+static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("Failed to create Tokio runtime")
+});
 
 // ── Error ──
 
@@ -27,6 +39,14 @@ impl From<CoreError> for RiftError {
     }
 }
 
+// ── Config ──
+
+#[derive(uniffi::Record)]
+pub struct RiftConfig {
+    pub publishable_key: String,
+    pub base_url: Option<String>,
+}
+
 // ── Response Records ──
 
 #[derive(uniffi::Record)]
@@ -49,15 +69,20 @@ pub struct RiftSdk {
     client: RiftClient,
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[uniffi::export]
 impl RiftSdk {
     #[uniffi::constructor]
-    pub fn new(publishable_key: String, base_url: Option<String>) -> Self {
+    pub fn new(config: RiftConfig) -> Self {
+        // Touch the runtime so it's initialized before any async calls.
+        let _ = &*RUNTIME;
         Self {
-            client: RiftClient::new(publishable_key, base_url),
+            client: RiftClient::new(config.publishable_key, config.base_url),
         }
     }
+}
 
+#[uniffi::export(async_runtime = "tokio")]
+impl RiftSdk {
     pub async fn click(&self, link_id: String) -> Result<ClickResult, RiftError> {
         let resp = self.client.click(link_id).await?;
         Ok(ClickResult {
