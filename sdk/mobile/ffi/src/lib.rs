@@ -1,7 +1,39 @@
 use rift_sdk_core::client::RiftClient;
 use rift_sdk_core::error::RiftError as CoreError;
+use std::sync::Once;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 uniffi::setup_scaffolding!("rift_ffi");
+
+// ── Logging ──
+
+static LOGGING_INIT: Once = Once::new();
+
+fn init_logging(level: &str) {
+    LOGGING_INIT.call_once(|| {
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(level));
+
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_file(false)
+            .with_line_number(true)
+            .with_thread_ids(true)
+            .with_target(true)
+            .compact();
+
+        let result = tracing_subscriber::registry()
+            .with(filter)
+            .with(fmt_layer)
+            .try_init();
+
+        match result {
+            Ok(_) => eprintln!("[Rift SDK] Logging initialized (level: {level})"),
+            Err(e) => eprintln!("[Rift SDK] Logging init skipped: {e}"),
+        }
+    });
+}
 
 // ── Error ──
 
@@ -27,6 +59,16 @@ impl From<CoreError> for RiftError {
     }
 }
 
+// ── Config ──
+
+#[derive(uniffi::Record)]
+pub struct RiftConfig {
+    pub publishable_key: String,
+    pub base_url: Option<String>,
+    /// Log level: "trace", "debug", "info", "warn", "error". Default: "info".
+    pub log_level: Option<String>,
+}
+
 // ── Response Records ──
 
 #[derive(uniffi::Record)]
@@ -49,16 +91,32 @@ pub struct RiftSdk {
     client: RiftClient,
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[uniffi::export]
 impl RiftSdk {
     #[uniffi::constructor]
-    pub fn new(publishable_key: String, base_url: Option<String>) -> Self {
+    pub fn new(config: RiftConfig) -> Self {
+        let level = config.log_level.as_deref().unwrap_or("info");
+        init_logging(level);
+
+        tracing::info!("RiftSdk initializing");
+        tracing::debug!(
+            has_tokio_runtime = tokio::runtime::Handle::try_current().is_ok(),
+            "Tokio runtime check at construction"
+        );
+
         Self {
-            client: RiftClient::new(publishable_key, base_url),
+            client: RiftClient::new(config.publishable_key, config.base_url),
         }
     }
+}
 
+#[uniffi::export(async_runtime = "tokio")]
+impl RiftSdk {
     pub async fn click(&self, link_id: String) -> Result<ClickResult, RiftError> {
+        tracing::debug!(
+            has_tokio_runtime = tokio::runtime::Handle::try_current().is_ok(),
+            "Tokio runtime check in click()"
+        );
         let resp = self.client.click(link_id).await?;
         Ok(ClickResult {
             link_id: resp.link_id,
@@ -78,6 +136,10 @@ impl RiftSdk {
         install_id: String,
         app_version: String,
     ) -> Result<bool, RiftError> {
+        tracing::debug!(
+            has_tokio_runtime = tokio::runtime::Handle::try_current().is_ok(),
+            "Tokio runtime check in report_attribution()"
+        );
         Ok(self
             .client
             .report_attribution(link_id, install_id, app_version)

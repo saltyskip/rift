@@ -11,3 +11,5 @@ rift_sdk_core = { path = "../core" }
 uniffi = { version = "0.29", features = ["tokio"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
