@@ -91,7 +91,8 @@ function computeTiers(data: LinkData): Tier[] {
           value: data.android_store_url,
           hint: "Android users without the app can't download it",
           patchField: "android_store_url",
-          placeholder: "https://play.google.com/store/apps/details?id=com.example",
+          placeholder:
+            "https://play.google.com/store/apps/details?id=com.example",
         },
       ],
     },
@@ -199,16 +200,22 @@ function extractLinkId(input: string): string {
   }
 }
 
-type SurfaceTab = "iphone" | "slack" | "agent";
+type SurfaceTab = "ios" | "android" | "desktop" | "social" | "agent";
 
 function getTabItems(tab: SurfaceTab, tiers: Tier[]): CheckItem[] {
   const allItems = tiers.flatMap((t) => t.items);
   switch (tab) {
-    case "iphone":
+    case "ios":
       return allItems.filter((i) =>
-        ["web_url", "ios_store_url", "ios_deep_link"].includes(i.field)
+        ["ios_store_url", "ios_deep_link"].includes(i.field)
       );
-    case "slack":
+    case "android":
+      return allItems.filter((i) =>
+        ["android_store_url", "android_deep_link"].includes(i.field)
+      );
+    case "desktop":
+      return allItems.filter((i) => i.field === "web_url");
+    case "social":
       return allItems.filter((i) =>
         ["metadata.title", "metadata.description", "metadata.image"].includes(
           i.field
@@ -219,56 +226,142 @@ function getTabItems(tab: SurfaceTab, tiers: Tier[]): CheckItem[] {
   }
 }
 
-// ── Mockup components ──
+function getTabMeta(tab: SurfaceTab) {
+  switch (tab) {
+    case "ios":
+      return {
+        title: "iOS",
+        description: "App Store link and deep link for iOS users",
+      };
+    case "android":
+      return {
+        title: "Android",
+        description: "Play Store link and deep link for Android users",
+      };
+    case "desktop":
+      return {
+        title: "Desktop",
+        description: "Fallback URL for desktop and non-mobile users",
+      };
+    case "social":
+      return {
+        title: "Social Preview",
+        description: "How the link unfurls in Slack, Twitter, iMessage, etc.",
+      };
+    case "agent":
+      return {
+        title: "AI Agent",
+        description: "Structured context for AI agents and LLMs",
+      };
+  }
+}
 
-function IPhoneMockup({ data }: { data: LinkData }) {
+// ── Preview components ──
+
+function LandingPageIframe({ linkId }: { linkId: string }) {
+  const iframeUrl = `${API_BASE}/r/${encodeURIComponent(linkId)}`;
+  // Render iframe at 390px (iPhone viewport) and scale to fit the device frame.
+  const iframeWidth = 390;
+  const iframeHeight = 844;
+  const frameWidth = 270;
+  const scale = frameWidth / iframeWidth;
+  const displayHeight = iframeHeight * scale;
+
   return (
-    <div className="flex justify-center py-6">
-      <div className="w-[250px] rounded-[36px] border-[3px] border-foreground/20 bg-black p-2 shadow-2xl">
-        {/* Notch / Dynamic Island */}
+    <div className="flex flex-col items-center">
+      <div
+        className="rounded-[36px] border-[3px] border-foreground/20 bg-black p-2 shadow-2xl"
+        style={{ width: frameWidth + 16 }}
+      >
         <div className="mx-auto w-24 h-5 bg-black rounded-b-2xl relative z-10" />
-        {/* Screen */}
-        <div className="bg-[#0a0a0a] rounded-[28px] -mt-2.5 pt-8 pb-5 px-4 min-h-[440px] flex flex-col items-center justify-center text-center">
-          {data.metadata?.image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={data.metadata.image}
-              alt=""
-              className="w-16 h-16 rounded-2xl mb-4 object-cover shadow-lg"
-            />
-          ) : (
-            <div className="w-16 h-16 rounded-2xl mb-4 bg-white/5 flex items-center justify-center">
-              <span className="text-white/20 text-2xl">?</span>
-            </div>
-          )}
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary mb-2">
-            {data.metadata?.title || data.link_id}
-          </p>
-          <p className="text-[11px] text-white/60 mb-4 px-3 line-clamp-3 leading-relaxed">
-            {data.metadata?.description || "Open in app"}
-          </p>
-          <div className="bg-primary rounded-xl px-6 py-2 shadow-lg shadow-primary/20">
-            <p className="text-[10px] font-bold text-white tracking-wide">
-              {data.ios_store_url
-                ? "Get the App"
-                : data.web_url
-                  ? "Continue"
-                  : "Open"}
-            </p>
-          </div>
-          {data.ios_store_url && (
-            <p className="text-[8px] text-white/25 mt-3 truncate max-w-full px-2">
-              {data.ios_store_url.replace("https://", "")}
-            </p>
-          )}
-          {data.ios_deep_link && (
-            <p className="text-[7px] text-white/15 mt-1 truncate max-w-full px-2 font-mono">
-              {data.ios_deep_link}
-            </p>
-          )}
+        <div
+          className="rounded-[28px] -mt-2.5 overflow-hidden"
+          style={{ width: frameWidth, height: displayHeight }}
+        >
+          <iframe
+            src={iframeUrl}
+            title="Landing page preview"
+            className="border-0 bg-black"
+            style={{
+              width: iframeWidth,
+              height: iframeHeight,
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+            }}
+          />
         </div>
-        {/* Home indicator */}
         <div className="mx-auto w-20 h-1 bg-foreground/20 rounded-full mt-2" />
+      </div>
+      <a
+        href={iframeUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[10px] text-muted-foreground hover:text-primary font-mono mt-3"
+      >
+        Open in new tab
+      </a>
+    </div>
+  );
+}
+
+function DesktopIframe({
+  linkId,
+  domain,
+}: {
+  linkId: string;
+  domain: string | null;
+}) {
+  const iframeUrl = `${API_BASE}/r/${encodeURIComponent(linkId)}`;
+  // Render iframe at 1280px wide and scale down to fit the container.
+  const iframeWidth = 1280;
+  const displayWidth = 720;
+  const scale = displayWidth / iframeWidth;
+  const iframeHeight = 800;
+  const displayHeight = iframeHeight * scale;
+
+  return (
+    <div className="w-full" style={{ maxWidth: displayWidth }}>
+      <div className="rounded-lg border border-foreground/20 bg-[#1a1a1a] shadow-2xl overflow-hidden">
+        {/* Browser chrome */}
+        <div className="flex items-center gap-2 px-3 py-2 bg-[#2a2a2a] border-b border-foreground/10">
+          <div className="flex gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
+            <div className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
+            <div className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
+          </div>
+          <div className="flex-1 bg-[#1a1a1a] rounded px-3 py-1 text-[10px] text-white/40 font-mono truncate ml-2">
+            {domain || "riftl.ink"}/{linkId}
+          </div>
+        </div>
+        <div
+          style={{
+            width: displayWidth,
+            height: displayHeight,
+            overflow: "hidden",
+          }}
+        >
+          <iframe
+            src={iframeUrl}
+            title="Landing page (desktop)"
+            className="border-0 bg-black"
+            style={{
+              width: iframeWidth,
+              height: iframeHeight,
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+            }}
+          />
+        </div>
+      </div>
+      <div className="text-center mt-2">
+        <a
+          href={iframeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[10px] text-muted-foreground hover:text-primary font-mono"
+        >
+          Open in new tab
+        </a>
       </div>
     </div>
   );
@@ -276,8 +369,8 @@ function IPhoneMockup({ data }: { data: LinkData }) {
 
 function SlackMockup({ data }: { data: LinkData }) {
   return (
-    <div className="flex justify-center py-6">
-      <div className="w-full max-w-[500px] bg-[#1a1d21] rounded-lg overflow-hidden shadow-2xl">
+    <div className="w-full max-w-[480px]">
+      <div className="bg-[#1a1d21] rounded-lg overflow-hidden shadow-2xl">
         {/* Channel header */}
         <div className="border-b border-white/5 px-4 py-2.5 flex items-center gap-2">
           <span className="text-white/40 text-sm font-bold">#</span>
@@ -289,7 +382,6 @@ function SlackMockup({ data }: { data: LinkData }) {
 
         {/* Messages area */}
         <div className="px-4 py-4 space-y-4">
-          {/* First message */}
           <div className="flex gap-2.5">
             <div className="w-9 h-9 rounded-lg bg-emerald-700 flex-shrink-0 flex items-center justify-center">
               <span className="text-[13px] text-white font-bold">A</span>
@@ -316,7 +408,7 @@ function SlackMockup({ data }: { data: LinkData }) {
                     <span className="text-primary text-[9px]">&#10003;</span>
                   )}
                 </p>
-                <p className="text-[13px] font-bold text-[#1d9bd1] mb-0.5 hover:underline cursor-default">
+                <p className="text-[13px] font-bold text-[#1d9bd1] mb-0.5">
                   {data.metadata?.title || (
                     <span className="text-[#8b8d90] italic font-normal">
                       No title configured
@@ -372,8 +464,8 @@ function SlackMockup({ data }: { data: LinkData }) {
 
 function AIAgentMockup({ data }: { data: LinkData }) {
   return (
-    <div className="flex justify-center py-6">
-      <div className="w-full max-w-[500px] bg-[#111113] rounded-lg border border-border overflow-hidden shadow-2xl flex flex-col min-h-[400px]">
+    <div className="w-full max-w-[480px]">
+      <div className="bg-[#111113] rounded-lg border border-border overflow-hidden shadow-2xl flex flex-col min-h-[400px]">
         {/* Header */}
         <div className="border-b border-border px-4 py-3 flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center">
@@ -488,7 +580,7 @@ function DiagnosticItem({
           </span>
         </div>
         {item.configured && item.value && (
-          <span className="text-xs text-muted-foreground truncate max-w-[300px] ml-4">
+          <span className="text-xs text-muted-foreground truncate max-w-[250px] ml-4">
             {item.value}
           </span>
         )}
@@ -515,7 +607,7 @@ export default function AuditPage() {
   const [loading, setLoading] = useState(false);
   const [showJson, setShowJson] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState<SurfaceTab>("iphone");
+  const [activeTab, setActiveTab] = useState<SurfaceTab>("ios");
   const [showAllFields, setShowAllFields] = useState(false);
 
   const audit = useCallback(async (linkIdOverride?: string) => {
@@ -569,16 +661,19 @@ export default function AuditPage() {
   const qual = qualitativeLabel(configured, total);
   const worst = data ? worstProblem(tiers) : null;
   const tabItems = data ? getTabItems(activeTab, tiers) : [];
+  const tabMeta = getTabMeta(activeTab);
 
   const tabs: { key: SurfaceTab; label: string }[] = [
-    { key: "iphone", label: "iPhone" },
-    { key: "slack", label: "Slack" },
+    { key: "ios", label: "iOS" },
+    { key: "android", label: "Android" },
+    { key: "desktop", label: "Desktop" },
+    { key: "social", label: "Social" },
     { key: "agent", label: "AI Agent" },
   ];
 
   return (
     <div className="min-h-screen bg-background pt-14">
-      <div className="mx-auto max-w-4xl px-6 py-12">
+      <div className="mx-auto max-w-7xl px-6 py-12">
         {/* Header */}
         <div className="mb-8">
           <p className="text-xs font-medium text-primary uppercase tracking-widest mb-3">
@@ -668,14 +763,12 @@ export default function AuditPage() {
                 {data.link_id}
               </code>
               {data._rift_meta.tenant_domain && (
-                <>
-                  <span className="text-xs text-muted-foreground">
-                    {data._rift_meta.tenant_domain}
-                    {data._rift_meta.tenant_verified && (
-                      <span className="text-primary ml-1">{"\u2713"}</span>
-                    )}
-                  </span>
-                </>
+                <span className="text-xs text-muted-foreground">
+                  {data._rift_meta.tenant_domain}
+                  {data._rift_meta.tenant_verified && (
+                    <span className="text-primary ml-1">{"\u2713"}</span>
+                  )}
+                </span>
               )}
               <Badge
                 variant={
@@ -704,59 +797,70 @@ export default function AuditPage() {
               </p>
             )}
 
-            {/* Tabbed preview area */}
-            <Card>
-              <CardHeader className="pb-0">
-                <div className="flex items-center gap-1">
-                  {tabs.map((tab) => (
-                    <button
-                      key={tab.key}
-                      onClick={() => setActiveTab(tab.key)}
-                      className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                        activeTab === tab.key
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {activeTab === "iphone" && <IPhoneMockup data={data} />}
-                {activeTab === "slack" && <SlackMockup data={data} />}
-                {activeTab === "agent" && <AIAgentMockup data={data} />}
-              </CardContent>
-            </Card>
+            {/* Tabs */}
+            <div className="flex items-center gap-1 border-b border-border pb-0">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-[1px] ${
+                    activeTab === tab.key
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-            {/* Contextual diagnostics */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">
-                  {activeTab === "iphone" && "iOS Routing & Deep Linking"}
-                  {activeTab === "slack" && "Social Presentation"}
-                  {activeTab === "agent" && "AI Agent Context"}
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  {activeTab === "iphone" &&
-                    "Fields that control where iOS users land"}
-                  {activeTab === "slack" &&
-                    "Fields that control how the link unfurls in social apps"}
-                  {activeTab === "agent" &&
-                    "Fields that help AI agents understand this link"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {tabItems.map((item) => (
-                  <DiagnosticItem
-                    key={item.field}
-                    item={item}
+            {/* Split: Preview (left) + Diagnostics (right) */}
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
+              {/* Left: Preview */}
+              <div className="flex items-start justify-center pt-4">
+                {activeTab === "ios" && (
+                  <LandingPageIframe linkId={data.link_id} />
+                )}
+                {activeTab === "android" && (
+                  <LandingPageIframe linkId={data.link_id} />
+                )}
+                {activeTab === "desktop" && (
+                  <DesktopIframe
                     linkId={data.link_id}
+                    domain={data._rift_meta.tenant_domain}
                   />
-                ))}
-              </CardContent>
-            </Card>
+                )}
+                {activeTab === "social" && <SlackMockup data={data} />}
+                {activeTab === "agent" && <AIAgentMockup data={data} />}
+              </div>
+
+              {/* Right: Diagnostics */}
+              <div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">{tabMeta.title}</CardTitle>
+                    <CardDescription className="text-xs">
+                      {tabMeta.description}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {tabItems.length > 0 ? (
+                      tabItems.map((item) => (
+                        <DiagnosticItem
+                          key={item.field}
+                          item={item}
+                          linkId={data.link_id}
+                        />
+                      ))
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        No fields to configure for this surface.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
 
             {/* All Fields collapsible */}
             <Card>
