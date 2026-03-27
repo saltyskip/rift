@@ -185,6 +185,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Create semver tag for SPM
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git tag "${VERSION}" "${{ steps.version.outputs.tag }}" || true
+          git push origin "${VERSION}" || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Update Package.swift and Swift sources
         if: steps.version.outputs.skip != 'true'
         run: |
