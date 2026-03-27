@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 
 const API_BASE = "https://api.riftl.ink";
+const SAMPLE_LINK = "landing-home-apple";
 
 interface LinkData {
   link_id: string;
@@ -42,97 +43,160 @@ interface LinkData {
 }
 
 interface CheckItem {
+  field: string;
   label: string;
   configured: boolean;
   value: string | null;
   hint: string;
-  docs: string;
+  patchField: string;
+  placeholder: string;
+}
+
+// ── Tiers ──
+
+interface Tier {
+  name: string;
+  description: string;
+  items: CheckItem[];
+}
+
+function computeTiers(data: LinkData): Tier[] {
+  return [
+    {
+      name: "Routing",
+      description: "Where users land on each platform",
+      items: [
+        {
+          field: "web_url",
+          label: "Web URL",
+          configured: !!data.web_url,
+          value: data.web_url,
+          hint: "Desktop users won't have a destination",
+          patchField: "web_url",
+          placeholder: "https://yourcompany.com",
+        },
+        {
+          field: "ios_store_url",
+          label: "iOS App Store",
+          configured: !!data.ios_store_url,
+          value: data.ios_store_url,
+          hint: "iOS users without the app can't download it",
+          patchField: "ios_store_url",
+          placeholder: "https://apps.apple.com/app/id123456789",
+        },
+        {
+          field: "android_store_url",
+          label: "Android Play Store",
+          configured: !!data.android_store_url,
+          value: data.android_store_url,
+          hint: "Android users without the app can't download it",
+          patchField: "android_store_url",
+          placeholder: "https://play.google.com/store/apps/details?id=com.example",
+        },
+      ],
+    },
+    {
+      name: "Deep Linking",
+      description: "Which screen opens in the app",
+      items: [
+        {
+          field: "ios_deep_link",
+          label: "iOS Deep Link",
+          configured: !!data.ios_deep_link,
+          value: data.ios_deep_link,
+          hint: "App opens to the home screen instead of specific content",
+          patchField: "ios_deep_link",
+          placeholder: "myapp://product/123",
+        },
+        {
+          field: "android_deep_link",
+          label: "Android Deep Link",
+          configured: !!data.android_deep_link,
+          value: data.android_deep_link,
+          hint: "App opens to the home screen instead of specific content",
+          patchField: "android_deep_link",
+          placeholder: "myapp://product/123",
+        },
+      ],
+    },
+    {
+      name: "Presentation",
+      description: "How the link looks when shared",
+      items: [
+        {
+          field: "metadata.title",
+          label: "Social Title",
+          configured: !!data.metadata?.title,
+          value: data.metadata?.title || null,
+          hint: "Social previews show the raw URL instead of a title",
+          patchField: "metadata",
+          placeholder: '{"title": "Your Title", "description": "..."}',
+        },
+        {
+          field: "metadata.description",
+          label: "Social Description",
+          configured: !!data.metadata?.description,
+          value: data.metadata?.description || null,
+          hint: "Social previews won't have a description",
+          patchField: "metadata",
+          placeholder: '{"title": "...", "description": "Your description"}',
+        },
+        {
+          field: "metadata.image",
+          label: "Social Image",
+          configured: !!data.metadata?.image,
+          value: data.metadata?.image || null,
+          hint: "Social previews won't have an image",
+          patchField: "metadata",
+          placeholder: '{"image": "https://example.com/og.jpg"}',
+        },
+        {
+          field: "agent_context",
+          label: "AI Agent Context",
+          configured: !!(
+            data.agent_context?.action ||
+            data.agent_context?.cta ||
+            data.agent_context?.description
+          ),
+          value: data.agent_context?.action || null,
+          hint: "AI agents won't understand what this link does",
+          patchField: "agent_context",
+          placeholder:
+            '{"action": "download", "cta": "Get the App", "description": "..."}',
+        },
+      ],
+    },
+  ];
+}
+
+function qualitativeLabel(
+  configured: number,
+  total: number
+): { label: string; color: string } {
+  const pct = total > 0 ? configured / total : 0;
+  if (pct >= 1) return { label: "Ready to ship", color: "text-green-400" };
+  if (pct >= 0.7) return { label: "Almost there", color: "text-yellow-400" };
+  if (pct >= 0.4) return { label: "Needs work", color: "text-orange-400" };
+  return { label: "Getting started", color: "text-muted-foreground" };
+}
+
+function worstProblem(tiers: Tier[]): string | null {
+  for (const tier of tiers) {
+    const missing = tier.items.find((i) => !i.configured);
+    if (missing) return missing.hint;
+  }
+  return null;
 }
 
 function extractLinkId(input: string): string {
   const trimmed = input.trim();
-  // Handle full URLs: https://go.example.com/my-link or https://api.riftl.ink/r/my-link
   try {
     const url = new URL(trimmed);
     const segments = url.pathname.split("/").filter(Boolean);
-    // /r/link-id → take last segment
     return segments[segments.length - 1] || trimmed;
   } catch {
-    // Not a URL — treat as bare link_id
     return trimmed;
   }
-}
-
-function computeChecks(data: LinkData): CheckItem[] {
-  return [
-    {
-      label: "iOS Store URL",
-      configured: !!data.ios_store_url,
-      value: data.ios_store_url,
-      hint: "iOS users without the app won't have a store fallback",
-      docs: "/docs/links",
-    },
-    {
-      label: "Android Store URL",
-      configured: !!data.android_store_url,
-      value: data.android_store_url,
-      hint: "Android users without the app won't have a store fallback",
-      docs: "/docs/links",
-    },
-    {
-      label: "Web URL",
-      configured: !!data.web_url,
-      value: data.web_url,
-      hint: "Desktop users won't have a destination",
-      docs: "/docs/links",
-    },
-    {
-      label: "iOS Deep Link",
-      configured: !!data.ios_deep_link,
-      value: data.ios_deep_link,
-      hint: "App won't know which screen to open after Universal Link",
-      docs: "/docs/links",
-    },
-    {
-      label: "Android Deep Link",
-      configured: !!data.android_deep_link,
-      value: data.android_deep_link,
-      hint: "App won't know which screen to open after App Link",
-      docs: "/docs/links",
-    },
-    {
-      label: "Social Title",
-      configured: !!data.metadata?.title,
-      value: data.metadata?.title || null,
-      hint: "Social previews will show the raw URL instead of a title",
-      docs: "/docs/links",
-    },
-    {
-      label: "Social Description",
-      configured: !!data.metadata?.description,
-      value: data.metadata?.description || null,
-      hint: "Social previews won't have a description",
-      docs: "/docs/links",
-    },
-    {
-      label: "Social Image",
-      configured: !!data.metadata?.image,
-      value: data.metadata?.image || null,
-      hint: "Social previews won't have an image",
-      docs: "/docs/links",
-    },
-    {
-      label: "Agent Context",
-      configured: !!(
-        data.agent_context?.action ||
-        data.agent_context?.cta ||
-        data.agent_context?.description
-      ),
-      value: data.agent_context?.action || null,
-      hint: "AI agents won't understand what this link does",
-      docs: "/docs/links",
-    },
-  ];
 }
 
 export default function AuditPage() {
@@ -140,9 +204,11 @@ export default function AuditPage() {
   const [data, setData] = useState<LinkData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showJson, setShowJson] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  async function audit() {
-    const linkId = extractLinkId(input);
+  const audit = useCallback(async (linkIdOverride?: string) => {
+    const linkId = linkIdOverride || extractLinkId(input);
     if (!linkId) return;
 
     setLoading(true);
@@ -162,37 +228,35 @@ export default function AuditPage() {
 
       const json = await resp.json();
       setData(json);
-
-      // Update URL for shareability
-      window.history.replaceState(null, "", `/tools/audit?link=${linkId}`);
+      if (!linkIdOverride) {
+        window.history.replaceState(null, "", `/tools/audit?link=${linkId}`);
+      }
     } catch {
       setError("Failed to fetch link data");
     } finally {
       setLoading(false);
     }
-  }
+  }, [input]);
 
   // Load from query param on mount
-  if (typeof window !== "undefined" && !data && !loading && !input) {
+  useEffect(() => {
+    if (mounted) return;
+    setMounted(true);
     const params = new URLSearchParams(window.location.search);
     const link = params.get("link");
     if (link) {
       setInput(link);
-      // Defer the audit to next tick
-      setTimeout(() => {
-        const id = extractLinkId(link);
-        if (id) {
-          setInput(link);
-          audit();
-        }
-      }, 0);
+      audit(extractLinkId(link));
     }
-  }
+  }, [mounted, audit]);
 
-  const checks = data ? computeChecks(data) : [];
-  const configured = checks.filter((c) => c.configured).length;
-  const total = checks.length;
+  const tiers = data ? computeTiers(data) : [];
+  const allItems = tiers.flatMap((t) => t.items);
+  const configured = allItems.filter((i) => i.configured).length;
+  const total = allItems.length;
   const score = total > 0 ? Math.round((configured / total) * 100) : 0;
+  const qual = qualitativeLabel(configured, total);
+  const worst = data ? worstProblem(tiers) : null;
 
   return (
     <div className="min-h-screen bg-background pt-14">
@@ -206,23 +270,37 @@ export default function AuditPage() {
             Link Audit
           </h1>
           <p className="text-lg text-muted-foreground">
-            Paste a Rift link to see how it appears across every surface.
+            Paste any Rift link to see how it&apos;s configured across every surface.
           </p>
         </div>
 
         {/* Input */}
-        <div className="flex gap-2 mb-8">
+        <div className="flex gap-2 mb-2">
           <Input
-            placeholder="https://go.yourcompany.com/link-id"
+            placeholder="https://go.acme.com/summer-sale"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && audit()}
             className="flex-1"
           />
-          <Button onClick={audit} disabled={loading || !input.trim()}>
+          <Button onClick={() => audit()} disabled={loading || !input.trim()}>
             {loading ? "Auditing..." : "Audit"}
           </Button>
         </div>
+        <p className="text-xs text-muted-foreground mb-8">
+          Works with any Rift link URL or bare link ID.{" "}
+          {!data && (
+            <button
+              className="text-primary hover:underline"
+              onClick={() => {
+                setInput(SAMPLE_LINK);
+                audit(SAMPLE_LINK);
+              }}
+            >
+              Try an example
+            </button>
+          )}
+        </p>
 
         {/* Error */}
         {error && (
@@ -233,121 +311,166 @@ export default function AuditPage() {
           </Card>
         )}
 
+        {/* Empty state */}
+        {!data && !error && !loading && (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <p className="text-muted-foreground text-sm mb-4">
+                Paste a link above to see its configuration across iOS, Android,
+                desktop, social previews, and AI agents.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setInput(SAMPLE_LINK);
+                  audit(SAMPLE_LINK);
+                }}
+              >
+                Try with example link
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Results */}
         {data && (
           <div className="space-y-6">
-            {/* Score */}
+            {/* Score + Tiered Checklist (merged) */}
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>
-                      {configured}/{total} configured
+                    <CardTitle className="flex items-center gap-3">
+                      <span className={qual.color}>{qual.label}</span>
+                      <span className="text-sm font-normal text-muted-foreground">
+                        {configured}/{total}
+                      </span>
                     </CardTitle>
-                    <CardDescription>
-                      {data.link_id}
+                    <CardDescription className="flex items-center gap-1.5">
+                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
+                        {data.link_id}
+                      </code>
                       {data._rift_meta.tenant_domain && (
-                        <span>
-                          {" "}
-                          &middot; {data._rift_meta.tenant_domain}
+                        <>
+                          <span>&middot;</span>
+                          <span>{data._rift_meta.tenant_domain}</span>
                           {data._rift_meta.tenant_verified && (
-                            <span className="text-primary"> ✓</span>
+                            <span className="text-primary">✓</span>
                           )}
-                        </span>
+                        </>
                       )}
                     </CardDescription>
                   </div>
-                  <Badge
-                    variant={
-                      data._rift_meta.status === "active"
-                        ? "default"
-                        : "destructive"
-                    }
-                  >
-                    {data._rift_meta.status}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={
+                        data._rift_meta.status === "active"
+                          ? "default"
+                          : "destructive"
+                      }
+                    >
+                      {data._rift_meta.status}
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => audit()}
+                    >
+                      Re-audit
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
-              <CardContent>
-                <Progress value={score} className="h-2" />
+              <CardContent className="space-y-6">
+                <div>
+                  <Progress value={score} className="h-2 mb-2" />
+                  {worst && (
+                    <p className="text-xs text-muted-foreground">{worst}</p>
+                  )}
+                </div>
+
+                {/* Tiered checklist */}
+                {tiers.map((tier) => {
+                  const tierConfigured = tier.items.filter(
+                    (i) => i.configured
+                  ).length;
+                  return (
+                    <div key={tier.name}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <h3 className="text-sm font-medium text-foreground">
+                          {tier.name}
+                        </h3>
+                        <span className="text-xs text-muted-foreground">
+                          {tierConfigured}/{tier.items.length}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          &middot; {tier.description}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {tier.items.map((item) => (
+                          <div key={item.field} className="space-y-1">
+                            <div className="flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={
+                                    item.configured
+                                      ? "text-primary"
+                                      : "text-muted-foreground"
+                                  }
+                                >
+                                  {item.configured ? "✓" : "○"}
+                                </span>
+                                <span
+                                  className={
+                                    item.configured
+                                      ? "text-foreground"
+                                      : "text-muted-foreground"
+                                  }
+                                >
+                                  {item.label}
+                                </span>
+                              </div>
+                              {item.configured && item.value && (
+                                <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                  {item.value}
+                                </span>
+                              )}
+                            </div>
+                            {!item.configured && (
+                              <div className="ml-6 space-y-1">
+                                <p className="text-xs text-muted-foreground">
+                                  {item.hint}
+                                </p>
+                                <pre className="text-[10px] text-muted-foreground/70 bg-muted/50 rounded px-2 py-1 overflow-x-auto">
+                                  {`curl -X PUT ${API_BASE}/v1/links/${data.link_id} \\
+  -H "Authorization: Bearer rl_live_YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"${item.patchField}": ${item.patchField === "metadata" || item.patchField === "agent_context" ? item.placeholder : `"${item.placeholder}"`}}'`}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
-
-            {/* Platform Coverage */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <Card size="sm">
-                <CardHeader>
-                  <CardTitle>iOS</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Store URL</span>
-                    <Badge variant={data.ios_store_url ? "default" : "outline"}>
-                      {data.ios_store_url ? "✓" : "—"}
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Deep Link</span>
-                    <Badge
-                      variant={data.ios_deep_link ? "default" : "outline"}
-                    >
-                      {data.ios_deep_link ? "✓" : "—"}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card size="sm">
-                <CardHeader>
-                  <CardTitle>Android</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Store URL</span>
-                    <Badge
-                      variant={data.android_store_url ? "default" : "outline"}
-                    >
-                      {data.android_store_url ? "✓" : "—"}
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Deep Link</span>
-                    <Badge
-                      variant={data.android_deep_link ? "default" : "outline"}
-                    >
-                      {data.android_deep_link ? "✓" : "—"}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card size="sm">
-                <CardHeader>
-                  <CardTitle>Desktop</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Web URL</span>
-                    <Badge variant={data.web_url ? "default" : "outline"}>
-                      {data.web_url ? "✓" : "—"}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
 
             {/* Social Preview */}
             <Card>
               <CardHeader>
-                <CardTitle>Social Preview</CardTitle>
+                <CardTitle>Twitter Card Preview</CardTitle>
                 <CardDescription>
-                  How this link appears when shared on Twitter, Slack, iMessage
+                  How this link appears when shared on Twitter / X
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="rounded-lg border border-border overflow-hidden">
-                  {data.metadata?.image && (
-                    <div className="h-40 bg-muted flex items-center justify-center overflow-hidden">
+                <div className="rounded-xl border border-border overflow-hidden max-w-md">
+                  {data.metadata?.image ? (
+                    <div className="h-40 bg-muted overflow-hidden">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={data.metadata.image}
@@ -355,29 +478,30 @@ export default function AuditPage() {
                         className="w-full h-full object-cover"
                       />
                     </div>
-                  )}
-                  {!data.metadata?.image && (
-                    <div className="h-32 bg-muted/50 flex items-center justify-center">
-                      <span className="text-xs text-muted-foreground">
-                        No preview image configured
+                  ) : (
+                    <div className="h-24 bg-muted/30 flex items-center justify-center border-b border-border">
+                      <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">
+                        No image
                       </span>
                     </div>
                   )}
-                  <div className="p-3 space-y-1">
-                    <p className="text-sm font-medium text-foreground">
+                  <div className="p-3 space-y-0.5">
+                    <p className="text-[11px] text-muted-foreground/60">
+                      {data._rift_meta.tenant_domain || "riftl.ink"}
+                    </p>
+                    <p className="text-sm font-normal text-foreground leading-snug">
                       {data.metadata?.title || (
-                        <span className="text-muted-foreground italic">
-                          No title
+                        <span className="text-muted-foreground/40 italic">
+                          No title set
                         </span>
                       )}
                     </p>
                     <p className="text-xs text-muted-foreground line-clamp-2">
                       {data.metadata?.description || (
-                        <span className="italic">No description</span>
+                        <span className="italic text-muted-foreground/40">
+                          No description set
+                        </span>
                       )}
-                    </p>
-                    <p className="text-xs text-muted-foreground/60">
-                      {data._rift_meta.tenant_domain || "riftl.ink"}
                     </p>
                   </div>
                 </div>
@@ -398,7 +522,7 @@ export default function AuditPage() {
                   data.agent_context.cta ||
                   data.agent_context.description) ? (
                   <div className="space-y-3">
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       {data.agent_context.action && (
                         <Badge variant="outline">
                           {data.agent_context.action}
@@ -409,6 +533,16 @@ export default function AuditPage() {
                           verified
                         </Badge>
                       )}
+                      <Badge
+                        variant="outline"
+                        className={
+                          data._rift_meta.status === "active"
+                            ? "text-green-400"
+                            : "text-destructive"
+                        }
+                      >
+                        {data._rift_meta.status}
+                      </Badge>
                     </div>
                     {data.agent_context.cta && (
                       <p className="text-sm font-medium text-foreground">
@@ -416,7 +550,7 @@ export default function AuditPage() {
                       </p>
                     )}
                     {data.agent_context.description && (
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-muted-foreground leading-relaxed">
                         {data.agent_context.description}
                       </p>
                     )}
@@ -424,86 +558,32 @@ export default function AuditPage() {
                 ) : (
                   <p className="text-sm text-muted-foreground italic">
                     No agent context configured. AI agents won&apos;t understand
-                    what this link does.{" "}
-                    <a
-                      href="/docs/links"
-                      className="text-primary hover:underline"
-                    >
-                      Learn more
-                    </a>
+                    what this link does.
                   </p>
                 )}
               </CardContent>
             </Card>
 
-            {/* Checklist */}
+            {/* Raw JSON (collapsed) */}
             <Card>
-              <CardHeader>
-                <CardTitle>Configuration Checklist</CardTitle>
-                <CardDescription>
-                  {configured === total
-                    ? "Everything is configured"
-                    : `${total - configured} item${total - configured === 1 ? "" : "s"} missing`}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {checks.map((check) => (
-                    <div
-                      key={check.label}
-                      className="flex items-center justify-between text-sm"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={
-                            check.configured
-                              ? "text-primary"
-                              : "text-muted-foreground"
-                          }
-                        >
-                          {check.configured ? "✓" : "○"}
-                        </span>
-                        <span
-                          className={
-                            check.configured
-                              ? "text-foreground"
-                              : "text-muted-foreground"
-                          }
-                        >
-                          {check.label}
-                        </span>
-                      </div>
-                      {!check.configured && (
-                        <a
-                          href={check.docs}
-                          className="text-xs text-primary hover:underline"
-                        >
-                          Fix
-                        </a>
-                      )}
-                    </div>
-                  ))}
+              <CardHeader
+                className="cursor-pointer"
+                onClick={() => setShowJson(!showJson)}
+              >
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">Raw JSON Response</CardTitle>
+                  <span className="text-xs text-muted-foreground">
+                    {showJson ? "▼" : "▶"}
+                  </span>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Raw JSON */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Raw JSON Response</CardTitle>
-                <CardDescription>
-                  What{" "}
-                  <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                    Accept: application/json
-                  </code>{" "}
-                  returns
-                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <pre className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-4 overflow-x-auto">
-                  {JSON.stringify(data, null, 2)}
-                </pre>
-              </CardContent>
+              {showJson && (
+                <CardContent>
+                  <pre className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-4 overflow-x-auto">
+                    {JSON.stringify(data, null, 2)}
+                  </pre>
+                </CardContent>
+              )}
             </Card>
           </div>
         )}
