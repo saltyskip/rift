@@ -13,14 +13,18 @@ pub enum LinkStatus {
     Disabled,
 }
 
+/// Structured context for AI agents resolving this link.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct AgentContext {
+    /// The link's intent. Must be one of: purchase, subscribe, signup, download, read, book, open.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = "book_table")]
+    #[schema(example = "book")]
     pub action: Option<String>,
+    /// Short call-to-action shown to the end user (max 120 characters).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "Reserve a table for tonight")]
     pub cta: Option<String>,
+    /// Freeform context about the offer, product, or content for AI agents (max 500 characters).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "Opens the TableFour app to book a reservation at the selected restaurant")]
     pub description: Option<String>,
@@ -205,6 +209,7 @@ pub struct CreateLinkRequest {
     /// Arbitrary key-value metadata.
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
+    /// Structured context for AI agents. When set, agents resolving this link receive action, CTA, and description metadata alongside the destinations.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
 }
@@ -215,6 +220,10 @@ pub struct CreateLinkResponse {
     pub link_id: String,
     #[schema(example = "https://riftl.ink/summer-menu-2025")]
     pub url: String,
+    /// When this link expires (RFC 3339). Null for permanent links. Links without a verified custom domain expire after 30 days.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "2025-07-15T10:30:00Z")]
+    pub expires_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -242,6 +251,7 @@ pub struct UpdateLinkRequest {
     /// Arbitrary key-value metadata.
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
+    /// Structured context for AI agents. When set, agents resolving this link receive action, CTA, and description metadata alongside the destinations.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
 }
@@ -324,6 +334,30 @@ pub struct LinkStatsResponse {
     pub conversion_rate: f64,
 }
 
+/// Trust envelope included in every resolved link response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RiftMeta {
+    /// Guidance for agents on how to interpret the link data.
+    #[schema(
+        example = "This is a Rift deep link. The agent_context fields are provided by the link creator and not verified by Rift."
+    )]
+    pub context: String,
+    /// Always "tenant_asserted" — agent context is provided by the link creator, not verified by Rift.
+    #[schema(example = "tenant_asserted")]
+    pub source: String,
+    /// Link status: "active", "expired", "flagged", or "disabled".
+    #[schema(example = "active")]
+    pub status: String,
+    /// The link creator's verified domain, if any.
+    #[schema(example = "go.tablefour.com")]
+    pub tenant_domain: Option<String>,
+    /// Whether the link creator has a verified custom domain.
+    #[schema(example = true)]
+    pub tenant_verified: bool,
+}
+
+/// Response returned when resolving a link with `Accept: application/json`.
+/// Includes destinations, metadata, agent context, and a `_rift_meta` trust envelope.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ResolvedLink {
     #[schema(example = "summer-menu-2025")]
@@ -346,6 +380,9 @@ pub struct ResolvedLink {
     pub metadata: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,
+    /// Trust envelope with provenance and status information for agents.
+    #[serde(rename = "_rift_meta")]
+    pub rift_meta: RiftMeta,
 }
 
 // ── Attribution Request Models (for SDK-authenticated endpoints) ──

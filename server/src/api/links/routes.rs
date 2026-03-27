@@ -211,12 +211,14 @@ pub async fn create_link(
 
     // Links without a verified custom domain expire after 30 days.
     let has_domain = tenant_has_verified_domain(state.domains_repo.as_deref(), &tenant.0).await;
-    if !has_domain {
+    let expires_at = if !has_domain {
         let thirty_days_ms = 30 * 24 * 60 * 60 * 1000_i64;
-        input = input.expires_at(DateTime::from_millis(
-            DateTime::now().timestamp_millis() + thirty_days_ms,
-        ));
-    }
+        let expiry = DateTime::from_millis(DateTime::now().timestamp_millis() + thirty_days_ms);
+        input = input.expires_at(expiry);
+        Some(expiry)
+    } else {
+        None
+    };
 
     match repo.create_link(input).await {
         Ok(_) => {}
@@ -234,11 +236,11 @@ pub async fn create_link(
     }
 
     let url = format!("{}/r/{}", state.config.public_url, link_id);
-    (
-        StatusCode::CREATED,
-        Json(json!({ "link_id": link_id, "url": url })),
-    )
-        .into_response()
+    let mut resp = json!({ "link_id": link_id, "url": url });
+    if let Some(exp) = expires_at {
+        resp["expires_at"] = json!(exp.try_to_rfc3339_string().unwrap_or_default());
+    }
+    (StatusCode::CREATED, Json(resp)).into_response()
 }
 
 // ── GET /v1/links — List links for tenant with cursor pagination (authenticated) ──
@@ -618,10 +620,11 @@ pub async fn get_link_stats(
     get,
     path = "/r/{link_id}",
     tag = "Links",
+    description = "Content-negotiated link resolution. Browsers receive a redirect or smart landing page. Requests with `Accept: application/json` receive structured link data including `agent_context` and a `_rift_meta` trust envelope.",
     params(("link_id" = String, Path, description = "Link ID")),
     responses(
         (status = 302, description = "Redirect to destination"),
-        (status = 200, description = "Link metadata (JSON)", body = ResolvedLink),
+        (status = 200, description = "Structured link data with agent context and trust metadata", body = ResolvedLink),
         (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
     ),
 )]

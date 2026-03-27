@@ -8,7 +8,7 @@ const FRAMEWORKS = [
     id: "html",
     label: "HTML",
     lang: "html",
-    code: `<script src="https://cdn.riftl.ink/rift.js"></script>
+    code: `<script src="https://api.riftl.ink/sdk/rift.js"></script>
 <script>
   Rift.init("pk_live_YOUR_KEY");
 </script>
@@ -32,7 +32,7 @@ import Script from "next/script";
 export function RiftScript() {
   return (
     <Script
-      src="https://cdn.riftl.ink/rift.js"
+      src="https://api.riftl.ink/sdk/rift.js"
       strategy="afterInteractive"
       onLoad={() => {
         if (window.Rift && process.env.NEXT_PUBLIC_RIFT_PK) {
@@ -78,7 +78,7 @@ export function DownloadButton({ linkId }: { linkId: string }) {
     label: "Svelte",
     lang: "svelte",
     code: `<svelte:head>
-  <script src="https://cdn.riftl.ink/rift.js" on:load={() => Rift.init('pk_live_YOUR_KEY')}></script>
+  <script src="https://api.riftl.ink/sdk/rift.js" on:load={() => Rift.init('pk_live_YOUR_KEY')}></script>
 </svelte:head>
 
 <a
@@ -98,7 +98,7 @@ import { onMounted } from "vue";
 
 onMounted(() => {
   const s = document.createElement("script");
-  s.src = "https://cdn.riftl.ink/rift.js";
+  s.src = "https://api.riftl.ink/sdk/rift.js";
   s.onload = () => window.Rift.init("pk_live_YOUR_KEY");
   document.head.appendChild(s);
 });
@@ -207,7 +207,7 @@ export default function WebSdkPage() {
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">
-              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">Rift.click(linkId)</code>
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">Rift.click(linkId, opts?)</code>
             </h3>
             <p className="text-[15px] text-[#a1a1aa]">
               Records a click event via <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">sendBeacon</code>.
@@ -228,10 +228,15 @@ export default function WebSdkPage() {
                   </tr>
                 </thead>
                 <tbody className="text-[#a1a1aa]">
-                  <tr>
+                  <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">linkId</td>
                     <td className="px-4 py-2.5 font-mono">string</td>
                     <td className="px-4 py-2.5">The link ID to record a click for.</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">opts.domain</td>
+                    <td className="px-4 py-2.5 font-mono">string</td>
+                    <td className="px-4 py-2.5">Custom domain for the clipboard URL written during the click (e.g., <code className="text-[#71717a]">go.yourcompany.com</code>). Defaults to the current page hostname.</td>
                   </tr>
                 </tbody>
               </table>
