@@ -199,6 +199,315 @@ function extractLinkId(input: string): string {
   }
 }
 
+type SurfaceTab = "iphone" | "slack" | "agent";
+
+function getTabItems(tab: SurfaceTab, tiers: Tier[]): CheckItem[] {
+  const allItems = tiers.flatMap((t) => t.items);
+  switch (tab) {
+    case "iphone":
+      return allItems.filter((i) =>
+        ["web_url", "ios_store_url", "ios_deep_link"].includes(i.field)
+      );
+    case "slack":
+      return allItems.filter((i) =>
+        ["metadata.title", "metadata.description", "metadata.image"].includes(
+          i.field
+        )
+      );
+    case "agent":
+      return allItems.filter((i) => i.field === "agent_context");
+  }
+}
+
+// ── Mockup components ──
+
+function IPhoneMockup({ data }: { data: LinkData }) {
+  return (
+    <div className="flex justify-center py-6">
+      <div className="w-[250px] rounded-[36px] border-[3px] border-foreground/20 bg-black p-2 shadow-2xl">
+        {/* Notch / Dynamic Island */}
+        <div className="mx-auto w-24 h-5 bg-black rounded-b-2xl relative z-10" />
+        {/* Screen */}
+        <div className="bg-[#0a0a0a] rounded-[28px] -mt-2.5 pt-8 pb-5 px-4 min-h-[440px] flex flex-col items-center justify-center text-center">
+          {data.metadata?.image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={data.metadata.image}
+              alt=""
+              className="w-16 h-16 rounded-2xl mb-4 object-cover shadow-lg"
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl mb-4 bg-white/5 flex items-center justify-center">
+              <span className="text-white/20 text-2xl">?</span>
+            </div>
+          )}
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary mb-2">
+            {data.metadata?.title || data.link_id}
+          </p>
+          <p className="text-[11px] text-white/60 mb-4 px-3 line-clamp-3 leading-relaxed">
+            {data.metadata?.description || "Open in app"}
+          </p>
+          <div className="bg-primary rounded-xl px-6 py-2 shadow-lg shadow-primary/20">
+            <p className="text-[10px] font-bold text-white tracking-wide">
+              {data.ios_store_url
+                ? "Get the App"
+                : data.web_url
+                  ? "Continue"
+                  : "Open"}
+            </p>
+          </div>
+          {data.ios_store_url && (
+            <p className="text-[8px] text-white/25 mt-3 truncate max-w-full px-2">
+              {data.ios_store_url.replace("https://", "")}
+            </p>
+          )}
+          {data.ios_deep_link && (
+            <p className="text-[7px] text-white/15 mt-1 truncate max-w-full px-2 font-mono">
+              {data.ios_deep_link}
+            </p>
+          )}
+        </div>
+        {/* Home indicator */}
+        <div className="mx-auto w-20 h-1 bg-foreground/20 rounded-full mt-2" />
+      </div>
+    </div>
+  );
+}
+
+function SlackMockup({ data }: { data: LinkData }) {
+  return (
+    <div className="flex justify-center py-6">
+      <div className="w-full max-w-[500px] bg-[#1a1d21] rounded-lg overflow-hidden shadow-2xl">
+        {/* Channel header */}
+        <div className="border-b border-white/5 px-4 py-2.5 flex items-center gap-2">
+          <span className="text-white/40 text-sm font-bold">#</span>
+          <span className="text-[13px] font-bold text-white/90">general</span>
+          <span className="text-[11px] text-white/30 ml-1">
+            Your team&apos;s main channel
+          </span>
+        </div>
+
+        {/* Messages area */}
+        <div className="px-4 py-4 space-y-4">
+          {/* First message */}
+          <div className="flex gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-emerald-700 flex-shrink-0 flex items-center justify-center">
+              <span className="text-[13px] text-white font-bold">A</span>
+            </div>
+            <div className="flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[13px] font-bold text-white">
+                  Alice Chen
+                </span>
+                <span className="text-[10px] text-white/30">11:42 AM</span>
+              </div>
+              <p className="text-[13px] text-[#d1d2d3] mt-0.5">
+                Check out this link{" "}
+                <span className="text-[#1d9bd1]">
+                  {data._rift_meta.tenant_domain || "riftl.ink"}/{data.link_id}
+                </span>
+              </p>
+
+              {/* Unfurl card */}
+              <div className="mt-2 border-l-[3px] border-[#4a9cc5] pl-3 py-1 max-w-md">
+                <p className="text-[11px] text-[#8b8d90] mb-0.5 flex items-center gap-1">
+                  {data._rift_meta.tenant_domain || "riftl.ink"}
+                  {data._rift_meta.tenant_verified && (
+                    <span className="text-primary text-[9px]">&#10003;</span>
+                  )}
+                </p>
+                <p className="text-[13px] font-bold text-[#1d9bd1] mb-0.5 hover:underline cursor-default">
+                  {data.metadata?.title || (
+                    <span className="text-[#8b8d90] italic font-normal">
+                      No title configured
+                    </span>
+                  )}
+                </p>
+                <p className="text-[12px] text-[#d1d2d3] line-clamp-2 mb-2 leading-relaxed">
+                  {data.metadata?.description || (
+                    <span className="text-[#8b8d90] italic">
+                      No description configured
+                    </span>
+                  )}
+                </p>
+                {data.metadata?.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={data.metadata.image}
+                    alt=""
+                    className="w-full max-h-[200px] object-cover rounded"
+                  />
+                ) : (
+                  <div className="w-full h-24 bg-[#2c2d30] rounded flex items-center justify-center">
+                    <span className="text-[11px] text-[#8b8d90]">
+                      No image configured
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Reaction */}
+          <div className="ml-[46px] -mt-2">
+            <div className="inline-flex items-center gap-1 bg-white/5 rounded-full px-2 py-0.5 border border-white/10">
+              <span className="text-[12px]">&#128064;</span>
+              <span className="text-[11px] text-[#1d9bd1]">2</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Input bar */}
+        <div className="px-4 pb-4">
+          <div className="bg-[#22252a] rounded-lg border border-white/10 px-3 py-2.5 flex items-center">
+            <span className="text-[12px] text-white/25">
+              Message #general
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AIAgentMockup({ data }: { data: LinkData }) {
+  return (
+    <div className="flex justify-center py-6">
+      <div className="w-full max-w-[500px] bg-[#111113] rounded-lg border border-border overflow-hidden shadow-2xl flex flex-col min-h-[400px]">
+        {/* Header */}
+        <div className="border-b border-border px-4 py-3 flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center">
+            <span className="text-[11px] text-primary font-bold">AI</span>
+          </div>
+          <div>
+            <p className="text-[12px] font-semibold text-foreground">
+              Assistant
+            </p>
+            <p className="text-[10px] text-muted-foreground">Online</p>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 px-4 py-5 space-y-4">
+          {/* User message */}
+          <div className="flex justify-end">
+            <div className="bg-primary/15 border border-primary/20 rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%]">
+              <p className="text-[13px] text-foreground">
+                What is this link?
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                {data._rift_meta.tenant_domain || "riftl.ink"}/{data.link_id}
+              </p>
+            </div>
+          </div>
+
+          {/* Agent response */}
+          <div className="flex justify-start">
+            <div className="bg-muted/50 border border-border rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%]">
+              {data.agent_context?.description ? (
+                <div className="space-y-2.5">
+                  {data.agent_context.action && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-2 py-0.5"
+                    >
+                      {data.agent_context.action}
+                    </Badge>
+                  )}
+                  {data.agent_context.cta && (
+                    <p className="text-[13px] font-semibold text-foreground">
+                      {data.agent_context.cta}
+                    </p>
+                  )}
+                  <p className="text-[12px] text-muted-foreground leading-relaxed">
+                    {data.agent_context.description}
+                  </p>
+                  {data._rift_meta.tenant_verified && (
+                    <p className="text-[10px] text-muted-foreground/60 italic pt-1 border-t border-border">
+                      Source: {data._rift_meta.tenant_domain} (verified)
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[13px] text-muted-foreground">
+                    This appears to be a link from{" "}
+                    <span className="text-foreground font-medium">
+                      {data._rift_meta.tenant_domain || "an unknown source"}
+                    </span>
+                    .
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/50 italic">
+                    No agent context configured — I can&apos;t provide
+                    structured information about what this link does or what
+                    action it represents.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Input bar */}
+        <div className="border-t border-border px-4 py-3">
+          <div className="bg-muted/30 rounded-xl px-4 py-2.5 flex items-center">
+            <span className="text-[12px] text-muted-foreground/40">
+              Ask a follow-up...
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DiagnosticItem({
+  item,
+  linkId,
+}: {
+  item: CheckItem;
+  linkId: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center gap-2">
+          <span
+            className={
+              item.configured ? "text-primary" : "text-muted-foreground"
+            }
+          >
+            {item.configured ? "\u2713" : "\u25CB"}
+          </span>
+          <span
+            className={
+              item.configured ? "text-foreground" : "text-muted-foreground"
+            }
+          >
+            {item.label}
+          </span>
+        </div>
+        {item.configured && item.value && (
+          <span className="text-xs text-muted-foreground truncate max-w-[300px] ml-4">
+            {item.value}
+          </span>
+        )}
+      </div>
+      {!item.configured && (
+        <div className="ml-6 space-y-1">
+          <p className="text-xs text-muted-foreground">{item.hint}</p>
+          <pre className="text-[10px] text-muted-foreground/70 bg-muted/50 rounded px-2 py-1 overflow-x-auto">
+            {`curl -X PUT ${API_BASE}/v1/links/${linkId} \\
+  -H "Authorization: Bearer rl_live_YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"${item.patchField}": ${item.patchField === "metadata" || item.patchField === "agent_context" ? item.placeholder : `"${item.placeholder}"`}}'`}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AuditPage() {
   const [input, setInput] = useState("");
   const [data, setData] = useState<LinkData | null>(null);
@@ -206,6 +515,8 @@ export default function AuditPage() {
   const [loading, setLoading] = useState(false);
   const [showJson, setShowJson] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [activeTab, setActiveTab] = useState<SurfaceTab>("iphone");
+  const [showAllFields, setShowAllFields] = useState(false);
 
   const audit = useCallback(async (linkIdOverride?: string) => {
     const linkId = linkIdOverride || extractLinkId(input);
@@ -257,12 +568,19 @@ export default function AuditPage() {
   const score = total > 0 ? Math.round((configured / total) * 100) : 0;
   const qual = qualitativeLabel(configured, total);
   const worst = data ? worstProblem(tiers) : null;
+  const tabItems = data ? getTabItems(activeTab, tiers) : [];
+
+  const tabs: { key: SurfaceTab; label: string }[] = [
+    { key: "iphone", label: "iPhone" },
+    { key: "slack", label: "Slack" },
+    { key: "agent", label: "AI Agent" },
+  ];
 
   return (
     <div className="min-h-screen bg-background pt-14">
-      <div className="mx-auto max-w-3xl px-6 py-12">
+      <div className="mx-auto max-w-4xl px-6 py-12">
         {/* Header */}
-        <div className="mb-10">
+        <div className="mb-8">
           <p className="text-xs font-medium text-primary uppercase tracking-widest mb-3">
             Tools
           </p>
@@ -270,11 +588,12 @@ export default function AuditPage() {
             Link Audit
           </h1>
           <p className="text-lg text-muted-foreground">
-            Paste any Rift link to see how it&apos;s configured across every surface.
+            Paste any Rift link to see how it&apos;s configured across every
+            surface.
           </p>
         </div>
 
-        {/* Input */}
+        {/* Compact input bar */}
         <div className="flex gap-2 mb-2">
           <Input
             placeholder="https://go.acme.com/summer-sale"
@@ -316,8 +635,8 @@ export default function AuditPage() {
           <Card>
             <CardContent className="py-12 text-center">
               <p className="text-muted-foreground text-sm mb-4">
-                Paste a link above to see its configuration across iOS, Android,
-                desktop, social previews, and AI agents.
+                Paste a link above to see its configuration across iOS,
+                Android, desktop, social previews, and AI agents.
               </p>
               <Button
                 variant="outline"
@@ -335,269 +654,156 @@ export default function AuditPage() {
         {/* Results */}
         {data && (
           <div className="space-y-6">
-            {/* Score + Tiered Checklist (merged) */}
+            {/* Score strip */}
+            <div className="flex items-center gap-3 flex-wrap rounded-lg border border-border bg-card px-4 py-3">
+              <Progress value={score} className="h-2 w-24 flex-shrink-0" />
+              <span className={`text-sm font-semibold ${qual.color}`}>
+                {qual.label}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {configured}/{total}
+              </span>
+              <span className="text-muted-foreground/30">|</span>
+              <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono text-muted-foreground">
+                {data.link_id}
+              </code>
+              {data._rift_meta.tenant_domain && (
+                <>
+                  <span className="text-xs text-muted-foreground">
+                    {data._rift_meta.tenant_domain}
+                    {data._rift_meta.tenant_verified && (
+                      <span className="text-primary ml-1">{"\u2713"}</span>
+                    )}
+                  </span>
+                </>
+              )}
+              <Badge
+                variant={
+                  data._rift_meta.status === "active"
+                    ? "default"
+                    : "destructive"
+                }
+                className="text-[10px]"
+              >
+                {data._rift_meta.status}
+              </Badge>
+              <div className="flex-1" />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => audit()}
+                className="text-xs"
+              >
+                Re-audit
+              </Button>
+            </div>
+
+            {worst && (
+              <p className="text-xs text-muted-foreground -mt-4 ml-1">
+                {worst}
+              </p>
+            )}
+
+            {/* Tabbed preview area */}
             <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-3">
-                      <span className={qual.color}>{qual.label}</span>
-                      <span className="text-sm font-normal text-muted-foreground">
-                        {configured}/{total}
-                      </span>
-                    </CardTitle>
-                    <CardDescription className="flex items-center gap-1.5">
-                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
-                        {data.link_id}
-                      </code>
-                      {data._rift_meta.tenant_domain && (
-                        <>
-                          <span>&middot;</span>
-                          <span>{data._rift_meta.tenant_domain}</span>
-                          {data._rift_meta.tenant_verified && (
-                            <span className="text-primary">✓</span>
-                          )}
-                        </>
-                      )}
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        data._rift_meta.status === "active"
-                          ? "default"
-                          : "destructive"
-                      }
+              <CardHeader className="pb-0">
+                <div className="flex items-center gap-1">
+                  {tabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveTab(tab.key)}
+                      className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                        activeTab === tab.key
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                      }`}
                     >
-                      {data._rift_meta.status}
-                    </Badge>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => audit()}
-                    >
-                      Re-audit
-                    </Button>
-                  </div>
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <Progress value={score} className="h-2 mb-2" />
-                  {worst && (
-                    <p className="text-xs text-muted-foreground">{worst}</p>
-                  )}
-                </div>
-
-                {/* Tiered checklist */}
-                {tiers.map((tier) => {
-                  const tierConfigured = tier.items.filter(
-                    (i) => i.configured
-                  ).length;
-                  return (
-                    <div key={tier.name}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <h3 className="text-sm font-medium text-foreground">
-                          {tier.name}
-                        </h3>
-                        <span className="text-xs text-muted-foreground">
-                          {tierConfigured}/{tier.items.length}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          &middot; {tier.description}
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {tier.items.map((item) => (
-                          <div key={item.field} className="space-y-1">
-                            <div className="flex items-center justify-between text-sm">
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={
-                                    item.configured
-                                      ? "text-primary"
-                                      : "text-muted-foreground"
-                                  }
-                                >
-                                  {item.configured ? "✓" : "○"}
-                                </span>
-                                <span
-                                  className={
-                                    item.configured
-                                      ? "text-foreground"
-                                      : "text-muted-foreground"
-                                  }
-                                >
-                                  {item.label}
-                                </span>
-                              </div>
-                              {item.configured && item.value && (
-                                <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                                  {item.value}
-                                </span>
-                              )}
-                            </div>
-                            {!item.configured && (
-                              <div className="ml-6 space-y-1">
-                                <p className="text-xs text-muted-foreground">
-                                  {item.hint}
-                                </p>
-                                <pre className="text-[10px] text-muted-foreground/70 bg-muted/50 rounded px-2 py-1 overflow-x-auto">
-                                  {`curl -X PUT ${API_BASE}/v1/links/${data.link_id} \\
-  -H "Authorization: Bearer rl_live_YOUR_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"${item.patchField}": ${item.patchField === "metadata" || item.patchField === "agent_context" ? item.placeholder : `"${item.placeholder}"`}}'`}
-                                </pre>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
+              <CardContent>
+                {activeTab === "iphone" && <IPhoneMockup data={data} />}
+                {activeTab === "slack" && <SlackMockup data={data} />}
+                {activeTab === "agent" && <AIAgentMockup data={data} />}
               </CardContent>
             </Card>
 
-            {/* Device Mockups */}
+            {/* Contextual diagnostics */}
             <Card>
               <CardHeader>
-                <CardTitle>How your link appears</CardTitle>
-                <CardDescription>
-                  Preview across mobile, social, and AI surfaces
+                <CardTitle className="text-sm">
+                  {activeTab === "iphone" && "iOS Routing & Deep Linking"}
+                  {activeTab === "slack" && "Social Presentation"}
+                  {activeTab === "agent" && "AI Agent Context"}
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {activeTab === "iphone" &&
+                    "Fields that control where iOS users land"}
+                  {activeTab === "slack" &&
+                    "Fields that control how the link unfurls in social apps"}
+                  {activeTab === "agent" &&
+                    "Fields that help AI agents understand this link"}
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-                  {/* iPhone mockup */}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-2 text-center">iPhone</p>
-                    <div className="mx-auto w-[200px] rounded-[28px] border-[3px] border-foreground/20 bg-black p-1.5 shadow-lg">
-                      {/* Notch */}
-                      <div className="mx-auto w-20 h-4 bg-black rounded-b-xl relative z-10" />
-                      {/* Screen */}
-                      <div className="bg-[#0a0a0a] rounded-[22px] -mt-2 pt-6 pb-4 px-3 min-h-[340px] flex flex-col items-center justify-center text-center">
-                        {data.metadata?.image && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={data.metadata.image} alt="" className="w-12 h-12 rounded-xl mb-3 object-cover" />
-                        )}
-                        <p className="text-[8px] font-semibold uppercase tracking-[0.15em] text-primary mb-2">
-                          {data.metadata?.title || data.link_id}
-                        </p>
-                        <p className="text-[9px] text-white/60 mb-3 px-2 line-clamp-2">
-                          {data.metadata?.description || "Open in app"}
-                        </p>
-                        <div className="bg-primary rounded-lg px-4 py-1.5">
-                          <p className="text-[8px] font-semibold text-white">
-                            {data.ios_store_url ? "Get the App" : data.web_url ? "Continue" : "Open"}
-                          </p>
-                        </div>
-                        {data.ios_store_url && (
-                          <p className="text-[7px] text-white/30 mt-2 truncate max-w-full">
-                            {data.ios_store_url.replace("https://", "")}
-                          </p>
-                        )}
-                      </div>
-                      {/* Home indicator */}
-                      <div className="mx-auto w-16 h-1 bg-foreground/20 rounded-full mt-1.5" />
-                    </div>
-                  </div>
-
-                  {/* Slack unfurl mockup */}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-2 text-center">Slack</p>
-                    <div className="bg-[#1a1d21] rounded-lg p-3 min-h-[340px] flex flex-col">
-                      {/* Message */}
-                      <div className="flex gap-2 mb-3">
-                        <div className="w-7 h-7 rounded bg-primary/20 flex-shrink-0 flex items-center justify-center">
-                          <span className="text-[10px] text-primary font-bold">U</span>
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-bold text-white">User</p>
-                          <p className="text-[10px] text-[#d1d2d3]">Check out this link</p>
-                        </div>
-                      </div>
-                      {/* Unfurl card */}
-                      <div className="border-l-[3px] border-foreground/20 pl-3 ml-1">
-                        <p className="text-[9px] text-[#8b8d90] mb-1">
-                          {data._rift_meta.tenant_domain || "riftl.ink"}
-                        </p>
-                        <p className="text-[10px] font-bold text-[#1d9bd1] mb-0.5">
-                          {data.metadata?.title || (
-                            <span className="text-[#8b8d90] italic font-normal">No title</span>
-                          )}
-                        </p>
-                        <p className="text-[9px] text-[#d1d2d3] line-clamp-2 mb-2">
-                          {data.metadata?.description || (
-                            <span className="text-[#8b8d90] italic">No description</span>
-                          )}
-                        </p>
-                        {data.metadata?.image ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={data.metadata.image} alt="" className="w-full h-28 object-cover rounded" />
-                        ) : (
-                          <div className="w-full h-16 bg-[#2c2d30] rounded flex items-center justify-center">
-                            <span className="text-[8px] text-[#8b8d90]">No image</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1" />
-                    </div>
-                  </div>
-
-                  {/* AI chat mockup */}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-2 text-center">AI Agent</p>
-                    <div className="bg-[#111113] rounded-lg border border-border p-3 min-h-[340px] flex flex-col">
-                      {/* User message */}
-                      <div className="self-end bg-primary/10 rounded-2xl rounded-br-sm px-3 py-2 max-w-[85%] mb-3">
-                        <p className="text-[10px] text-foreground">What is this link?</p>
-                      </div>
-                      {/* Agent response */}
-                      <div className="self-start bg-muted/50 rounded-2xl rounded-bl-sm px-3 py-2 max-w-[90%]">
-                        {data.agent_context?.description ? (
-                          <div className="space-y-1.5">
-                            {data.agent_context.action && (
-                              <Badge variant="outline" className="text-[8px] px-1.5 py-0">
-                                {data.agent_context.action}
-                              </Badge>
-                            )}
-                            {data.agent_context.cta && (
-                              <p className="text-[10px] font-medium text-foreground">
-                                {data.agent_context.cta}
-                              </p>
-                            )}
-                            <p className="text-[9px] text-muted-foreground leading-relaxed line-clamp-4">
-                              {data.agent_context.description}
-                            </p>
-                            {data._rift_meta.tenant_verified && (
-                              <p className="text-[8px] text-muted-foreground/50 italic">
-                                Source: {data._rift_meta.tenant_domain} (verified)
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <p className="text-[10px] text-muted-foreground">
-                              This appears to be a download link from{" "}
-                              {data._rift_meta.tenant_domain || "an unknown source"}.
-                            </p>
-                            <p className="text-[9px] text-muted-foreground/50 italic">
-                              No agent context configured — I can&apos;t tell you more about it.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1" />
-                      {/* Input bar */}
-                      <div className="mt-3 bg-muted/30 rounded-full px-3 py-1.5 flex items-center">
-                        <span className="text-[9px] text-muted-foreground/40">Ask a follow-up...</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              <CardContent className="space-y-2">
+                {tabItems.map((item) => (
+                  <DiagnosticItem
+                    key={item.field}
+                    item={item}
+                    linkId={data.link_id}
+                  />
+                ))}
               </CardContent>
+            </Card>
+
+            {/* All Fields collapsible */}
+            <Card>
+              <CardHeader
+                className="cursor-pointer"
+                onClick={() => setShowAllFields(!showAllFields)}
+              >
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">All Fields</CardTitle>
+                  <span className="text-xs text-muted-foreground">
+                    {showAllFields ? "\u25BC" : "\u25B6"}
+                  </span>
+                </div>
+              </CardHeader>
+              {showAllFields && (
+                <CardContent className="space-y-6">
+                  {tiers.map((tier) => {
+                    const tierConfigured = tier.items.filter(
+                      (i) => i.configured
+                    ).length;
+                    return (
+                      <div key={tier.name}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <h3 className="text-sm font-medium text-foreground">
+                            {tier.name}
+                          </h3>
+                          <span className="text-xs text-muted-foreground">
+                            {tierConfigured}/{tier.items.length}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            &middot; {tier.description}
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {tier.items.map((item) => (
+                            <DiagnosticItem
+                              key={item.field}
+                              item={item}
+                              linkId={data.link_id}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              )}
             </Card>
 
             {/* Raw JSON (collapsed) */}
@@ -609,7 +815,7 @@ export default function AuditPage() {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm">Raw JSON Response</CardTitle>
                   <span className="text-xs text-muted-foreground">
-                    {showJson ? "▼" : "▶"}
+                    {showJson ? "\u25BC" : "\u25B6"}
                   </span>
                 </div>
               </CardHeader>
