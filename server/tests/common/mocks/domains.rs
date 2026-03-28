@@ -28,6 +28,7 @@ impl DomainsRepository for MockDomainsRepo {
             domain,
             verified: false,
             verification_token,
+            theme_id: None,
             created_at: DateTime::now(),
         };
         domains.push(doc.clone());
@@ -55,6 +56,20 @@ impl DomainsRepository for MockDomainsRepo {
             .collect())
     }
 
+    async fn find_by_tenant_and_domain(
+        &self,
+        tenant_id: &ObjectId,
+        domain: &str,
+    ) -> Result<Option<Domain>, String> {
+        Ok(self
+            .domains
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|d| &d.tenant_id == tenant_id && d.domain == domain)
+            .cloned())
+    }
+
     async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String> {
         let mut domains = self.domains.lock().unwrap();
         let len_before = domains.len();
@@ -68,5 +83,37 @@ impl DomainsRepository for MockDomainsRepo {
             d.verified = true;
         }
         Ok(())
+    }
+
+    async fn update_theme(
+        &self,
+        tenant_id: &ObjectId,
+        domain: &str,
+        theme_id: Option<ObjectId>,
+    ) -> Result<bool, String> {
+        let mut domains = self.domains.lock().unwrap();
+        if let Some(found) = domains
+            .iter_mut()
+            .find(|d| &d.tenant_id == tenant_id && d.domain == domain)
+        {
+            found.theme_id = theme_id;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    async fn count_by_theme(
+        &self,
+        tenant_id: &ObjectId,
+        theme_id: &ObjectId,
+    ) -> Result<u64, String> {
+        Ok(self
+            .domains
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|d| &d.tenant_id == tenant_id && d.theme_id.as_ref() == Some(theme_id))
+            .count() as u64)
     }
 }

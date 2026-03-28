@@ -79,6 +79,12 @@ pub trait LinksRepository: Send + Sync {
     ) -> Result<bool, String>;
 
     async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
+
+    async fn count_by_theme(
+        &self,
+        tenant_id: &ObjectId,
+        theme_id: &ObjectId,
+    ) -> Result<u64, String>;
 }
 
 // ── Repository ──
@@ -221,6 +227,7 @@ impl LinksRepository for LinksRepo {
             flag_reason: None,
             expires_at: input.expires_at,
             agent_context: input.agent_context,
+            theme_override: input.theme_override,
         };
         self.links
             .insert_one(&link)
@@ -455,6 +462,20 @@ impl LinksRepository for LinksRepo {
     async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
         self.attributions
             .count_documents(doc! { "tenant_id": tenant_id, "link_id": link_id })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn count_by_theme(
+        &self,
+        tenant_id: &ObjectId,
+        theme_id: &ObjectId,
+    ) -> Result<u64, String> {
+        self.links
+            .count_documents(doc! {
+                "tenant_id": tenant_id,
+                "theme_override.theme_id": theme_id.to_hex(),
+            })
             .await
             .map_err(|e| e.to_string())
     }

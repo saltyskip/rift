@@ -1,3 +1,4 @@
+pub mod landing_page;
 pub mod models;
 pub mod repo;
 pub mod routes;
@@ -39,6 +40,11 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
 
     // Public routes with rate limiting.
     let public = Router::new()
+        .route("/__preview/theme/{theme_slug}", get(routes::preview_theme))
+        .route(
+            "/__preview/assets/{theme_slug}/{asset_name}",
+            get(routes::preview_asset),
+        )
         .route("/r/{link_id}", get(routes::resolve_link))
         .route("/{link_id}", get(routes::resolve_link_custom))
         .route("/llms.txt", get(routes::llms_txt))

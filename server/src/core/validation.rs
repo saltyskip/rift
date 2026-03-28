@@ -1,6 +1,9 @@
 use std::net::IpAddr;
 use url::Url;
 
+use crate::api::links::models::LinkThemeOverride;
+use crate::api::themes::models::{ThemeCopy, ThemeMedia, ThemeSeo, ThemeTokens};
+
 const MAX_URL_LEN: usize = 2048;
 
 const BLOCKED_SCHEMES: &[&str] = &["javascript", "data", "vbscript", "blob", "file"];
@@ -103,6 +106,187 @@ pub fn validate_metadata(v: &serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
+pub fn validate_slug(s: &str) -> Result<(), String> {
+    if s.len() < 3 || s.len() > 64 {
+        return Err("slug must be 3-64 characters".into());
+    }
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return Err("slug must contain lowercase letters, numbers, and hyphens only".into());
+    }
+    if s.starts_with('-') || s.ends_with('-') {
+        return Err("slug must not start or end with a hyphen".into());
+    }
+    Ok(())
+}
+
+pub fn validate_theme_request(
+    name: &str,
+    slug: &str,
+    tokens: &ThemeTokens,
+    copy: &ThemeCopy,
+    media: &ThemeMedia,
+    seo: &ThemeSeo,
+) -> Result<(), String> {
+    validate_length("name", name, 80)?;
+    validate_slug(slug)?;
+
+    if let Some(palette) = &tokens.palette {
+        for (field, value) in [
+            ("primary", palette.primary.as_deref()),
+            ("secondary", palette.secondary.as_deref()),
+            ("accent", palette.accent.as_deref()),
+            ("background", palette.background.as_deref()),
+            ("surface", palette.surface.as_deref()),
+            ("surface_muted", palette.surface_muted.as_deref()),
+            ("text", palette.text.as_deref()),
+            ("text_muted", palette.text_muted.as_deref()),
+            ("border", palette.border.as_deref()),
+            ("success", palette.success.as_deref()),
+            ("warning", palette.warning.as_deref()),
+            ("danger", palette.danger.as_deref()),
+        ] {
+            if let Some(value) = value {
+                validate_hex_color(value).map_err(|e| format!("palette.{field}: {e}"))?;
+            }
+        }
+
+        validate_contrast_pair(
+            "palette.text",
+            palette.text.as_deref(),
+            palette.background.as_deref(),
+        )?;
+        validate_primary_cta_contrast(palette.primary.as_deref())?;
+    }
+
+    if let Some(background) = &tokens.background {
+        if let Some(solid) = background.solid.as_deref() {
+            validate_hex_color(solid).map_err(|e| format!("background.solid: {e}"))?;
+        }
+        if let Some(gradient) = &background.gradient {
+            if let Some(from) = gradient.from.as_deref() {
+                validate_hex_color(from).map_err(|e| format!("background.gradient.from: {e}"))?;
+            }
+            if let Some(to) = gradient.to.as_deref() {
+                validate_hex_color(to).map_err(|e| format!("background.gradient.to: {e}"))?;
+            }
+        }
+        if let Some(url) = background.image_url.as_deref() {
+            validate_web_url(url).map_err(|e| format!("background.image_url: {e}"))?;
+        }
+        if let Some(opacity) = background.overlay_opacity {
+            if !(0.0..=0.9).contains(&opacity) {
+                return Err("background.overlay_opacity must be between 0.0 and 0.9".into());
+            }
+        }
+    }
+
+    for (field, value, max) in [
+        ("copy.brand_name", copy.brand_name.as_deref(), 80),
+        ("copy.tagline", copy.tagline.as_deref(), 120),
+        (
+            "copy.default_headline",
+            copy.default_headline.as_deref(),
+            120,
+        ),
+        (
+            "copy.default_subheadline",
+            copy.default_subheadline.as_deref(),
+            240,
+        ),
+        (
+            "copy.primary_cta_label",
+            copy.primary_cta_label.as_deref(),
+            40,
+        ),
+        (
+            "copy.secondary_cta_label",
+            copy.secondary_cta_label.as_deref(),
+            40,
+        ),
+        ("copy.footer_text", copy.footer_text.as_deref(), 160),
+    ] {
+        if let Some(value) = value {
+            validate_length(field, value, max)?;
+        }
+    }
+
+    for (field, value) in [
+        ("media.logo_url", media.logo_url.as_deref()),
+        ("media.wordmark_url", media.wordmark_url.as_deref()),
+        ("media.icon_url", media.icon_url.as_deref()),
+        ("media.hero_image_url", media.hero_image_url.as_deref()),
+        ("media.og_image_url", media.og_image_url.as_deref()),
+    ] {
+        if let Some(value) = value {
+            validate_web_url(value).map_err(|e| format!("{field}: {e}"))?;
+        }
+    }
+
+    for (field, value, max) in [
+        (
+            "seo.default_og_title_template",
+            seo.default_og_title_template.as_deref(),
+            120,
+        ),
+        (
+            "seo.default_og_description_template",
+            seo.default_og_description_template.as_deref(),
+            240,
+        ),
+        ("seo.twitter_card", seo.twitter_card.as_deref(), 40),
+    ] {
+        if let Some(value) = value {
+            validate_length(field, value, max)?;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn validate_link_theme_override(theme: &LinkThemeOverride) -> Result<(), String> {
+    for (field, value, max) in [
+        ("theme_override.headline", theme.headline.as_deref(), 120),
+        (
+            "theme_override.subheadline",
+            theme.subheadline.as_deref(),
+            240,
+        ),
+        ("theme_override.badge_text", theme.badge_text.as_deref(), 40),
+        (
+            "theme_override.primary_cta_label",
+            theme.primary_cta_label.as_deref(),
+            40,
+        ),
+        ("theme_override.og_title", theme.og_title.as_deref(), 120),
+        (
+            "theme_override.og_description",
+            theme.og_description.as_deref(),
+            240,
+        ),
+    ] {
+        if let Some(value) = value {
+            validate_length(field, value, max)?;
+        }
+    }
+
+    for (field, value) in [
+        (
+            "theme_override.hero_image_url",
+            theme.hero_image_url.as_deref(),
+        ),
+        ("theme_override.og_image_url", theme.og_image_url.as_deref()),
+    ] {
+        if let Some(value) = value {
+            validate_web_url(value).map_err(|e| format!("{field}: {e}"))?;
+        }
+    }
+
+    Ok(())
+}
+
 const INJECTION_PATTERNS: &[&str] = &[
     "ignore previous",
     "ignore above",
@@ -158,6 +342,77 @@ pub fn validate_agent_description(s: &str) -> Result<(), String> {
         return Err("Description contains disallowed content".into());
     }
     Ok(())
+}
+
+fn validate_length(field: &str, value: &str, max: usize) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err(format!("{field} must not be empty"));
+    }
+    if value.len() > max {
+        return Err(format!("{field} must be {max} characters or fewer"));
+    }
+    Ok(())
+}
+
+fn validate_contrast_pair(field: &str, fg: Option<&str>, bg: Option<&str>) -> Result<(), String> {
+    let (Some(fg), Some(bg)) = (fg, bg) else {
+        return Ok(());
+    };
+
+    let ratio = contrast_ratio(fg, bg).ok_or_else(|| format!("{field}: invalid color"))?;
+    if ratio < 4.5 {
+        return Err(format!("{field} contrast ratio must be at least 4.5:1"));
+    }
+    Ok(())
+}
+
+fn validate_primary_cta_contrast(bg: Option<&str>) -> Result<(), String> {
+    let Some(bg) = bg else {
+        return Ok(());
+    };
+
+    let white = contrast_ratio("#FFFFFF", bg).unwrap_or(0.0);
+    let black = contrast_ratio("#000000", bg).unwrap_or(0.0);
+    if white.max(black) < 4.5 {
+        return Err(
+            "palette.primary must provide at least 4.5:1 contrast with black or white text".into(),
+        );
+    }
+    Ok(())
+}
+
+fn contrast_ratio(fg: &str, bg: &str) -> Option<f64> {
+    let fg = hex_to_rgb(fg)?;
+    let bg = hex_to_rgb(bg)?;
+    let l1 = relative_luminance(fg);
+    let l2 = relative_luminance(bg);
+    let (lighter, darker) = if l1 > l2 { (l1, l2) } else { (l2, l1) };
+    Some((lighter + 0.05) / (darker + 0.05))
+}
+
+fn hex_to_rgb(s: &str) -> Option<(f64, f64, f64)> {
+    let s = s.trim().strip_prefix('#')?;
+    let expanded = match s.len() {
+        3 => s.chars().flat_map(|c| [c, c]).collect::<String>(),
+        6 => s.to_string(),
+        _ => return None,
+    };
+    let r = u8::from_str_radix(&expanded[0..2], 16).ok()? as f64 / 255.0;
+    let g = u8::from_str_radix(&expanded[2..4], 16).ok()? as f64 / 255.0;
+    let b = u8::from_str_radix(&expanded[4..6], 16).ok()? as f64 / 255.0;
+    Some((r, g, b))
+}
+
+fn relative_luminance((r, g, b): (f64, f64, f64)) -> f64 {
+    fn channel(c: f64) -> f64 {
+        if c <= 0.03928 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 }
 
 #[cfg(test)]

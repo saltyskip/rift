@@ -1,0 +1,57 @@
+{
+  "name": "Nord Roast",
+  "slug": "nord-roast",
+  "is_default": true,
+  "tokens": {
+    "palette": {
+      "primary": "#C46A2D",
+      "secondary": "#7B4B2A",
+      "accent": "#E6B17E",
+      "background": "#F4EBDD",
+      "surface": "#FFF8EF",
+      "surface_muted": "#EBDDCB",
+      "text": "#2F241D",
+      "text_muted": "#6B5A4D",
+      "border": "#D7C3AA",
+      "success": "#4F7A4C",
+      "warning": "#B7791F",
+      "danger": "#B54A3A"
+    },
+    "typography": {
+      "heading_font": "editorial_serif",
+      "body_font": "humanist_sans",
+      "scale": "comfortable"
+    },
+    "shape": {
+      "radius": "soft",
+      "button_style": "solid",
+      "card_style": "elevated",
+      "shadow": "soft"
+    },
+    "background": {
+      "style": "image",
+      "image_url": "https://assets.riftl.ink/demo-themes/nord-roast/hero.png",
+      "overlay_opacity": 0.18
+    }
+  },
+  "copy": {
+    "brand_name": "Nord Roast",
+    "tagline": "Small-batch coffee, delivered beautifully.",
+    "default_headline": "Your next bag is one tap away",
+    "default_subheadline": "Open the app to claim this roast, track delivery, and save your grind preferences.",
+    "primary_cta_label": "Open Nord Roast",
+    "footer_text": "Roasted weekly in Chicago."
+  },
+  "media": {
+    "logo_url": "https://assets.riftl.ink/demo-themes/nord-roast/logo.png",
+    "wordmark_url": "https://assets.riftl.ink/demo-themes/nord-roast/wordmark.png",
+    "icon_url": "https://assets.riftl.ink/demo-themes/nord-roast/icon.png",
+    "hero_image_url": "https://assets.riftl.ink/demo-themes/nord-roast/hero.png",
+    "og_image_url": "https://assets.riftl.ink/demo-themes/nord-roast/hero.png"
+  },
+  "layout": {
+    "template": "editorial",
+    "alignment": "left",
+    "content_width": "regular"
+  }
+}

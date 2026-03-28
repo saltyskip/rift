@@ -3,6 +3,7 @@ pub mod auth;
 pub mod domains;
 pub mod health;
 pub mod links;
+pub mod themes;
 pub mod webhooks;
 
 use axum::routing::get;
@@ -17,6 +18,7 @@ use crate::api::auth::publishable_keys::repo::SdkKeysRepository;
 use crate::api::auth::secret_keys::repo::AuthRepository;
 use crate::api::domains::repo::DomainsRepository;
 use crate::api::links::repo::LinksRepository;
+use crate::api::themes::repo::ThemesRepository;
 use crate::api::webhooks::repo::WebhooksRepository;
 use crate::core::config::Config;
 use crate::core::threat_feed::ThreatFeed;
@@ -32,6 +34,7 @@ pub struct AppState {
     pub links_repo: Option<StdArc<dyn LinksRepository>>,
     pub domains_repo: Option<StdArc<dyn DomainsRepository>>,
     pub apps_repo: Option<StdArc<dyn AppsRepository>>,
+    pub themes_repo: Option<StdArc<dyn ThemesRepository>>,
     pub config: Config,
     pub facilitator: Option<CdpFacilitator>,
     pub x402_price_tags: Vec<v1::PriceTag>,
@@ -73,6 +76,7 @@ pub struct AppState {
         webhooks::routes::patch_webhook,
         domains::routes::create_domain,
         domains::routes::list_domains,
+        domains::routes::update_domain_theme,
         domains::routes::delete_domain,
         domains::routes::verify_domain,
         apps::routes::create_app,
@@ -80,6 +84,11 @@ pub struct AppState {
         apps::routes::delete_app,
         apps::routes::serve_aasa,
         apps::routes::serve_assetlinks,
+        themes::routes::create_theme,
+        themes::routes::list_themes,
+        themes::routes::get_theme,
+        themes::routes::update_theme,
+        themes::routes::delete_theme,
     ),
     components(schemas(
         health::models::HealthResponse,
@@ -99,6 +108,7 @@ pub struct AppState {
         links::models::LinkAttributionRequest,
         links::models::AttributionResponse,
         links::models::AgentContext,
+        links::models::LinkThemeOverride,
         links::models::TimeseriesDataPoint,
         links::models::TimeseriesResponse,
         auth::publishable_keys::models::CreateSdkKeyRequest,
@@ -108,9 +118,38 @@ pub struct AppState {
         domains::models::CreateDomainRequest,
         domains::models::CreateDomainResponse,
         domains::models::DomainDetail,
+        domains::models::UpdateDomainThemeRequest,
         domains::models::VerifyDomainResponse,
         apps::models::CreateAppRequest,
         apps::models::AppDetail,
+        themes::models::CreateThemeRequest,
+        themes::models::UpdateThemeRequest,
+        themes::models::ThemeDetail,
+        themes::models::ListThemesResponse,
+        themes::models::ThemeStatus,
+        themes::models::ThemeTokens,
+        themes::models::ThemePalette,
+        themes::models::ThemeTypography,
+        themes::models::ThemeShape,
+        themes::models::ThemeBackground,
+        themes::models::GradientConfig,
+        themes::models::ThemeMotion,
+        themes::models::ThemeCopy,
+        themes::models::ThemeMedia,
+        themes::models::ThemeLayout,
+        themes::models::ThemeModules,
+        themes::models::ThemeSeo,
+        themes::models::LayoutTemplate,
+        themes::models::ContentAlignment,
+        themes::models::ContentWidth,
+        themes::models::AgentPanelMode,
+        themes::models::FontPreset,
+        themes::models::TypeScale,
+        themes::models::RadiusPreset,
+        themes::models::ButtonStyle,
+        themes::models::CardStyle,
+        themes::models::ShadowPreset,
+        themes::models::BackgroundStyle,
         webhooks::models::CreateWebhookRequest,
         webhooks::models::CreateWebhookResponse,
         webhooks::models::WebhookDetail,
@@ -129,6 +168,7 @@ pub struct AppState {
         (name = "System", description = "Health checks and operational endpoints"),
         (name = "Domains", description = "Custom domain management"),
         (name = "Apps", description = "App configuration and association files"),
+        (name = "Themes", description = "Tenant-managed landing page themes"),
         (name = "Webhooks", description = "Webhook management for real-time event notifications"),
     )
 )]
@@ -162,6 +202,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(links::router(state.clone()))
         .merge(domains::router(state.clone()))
         .merge(apps::router(state.clone()))
+        .merge(themes::router(state.clone()))
         .merge(webhooks::router(state.clone()))
         .merge(openapi_json)
         .merge(sdk)

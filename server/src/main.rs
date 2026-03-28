@@ -17,6 +17,7 @@ use crate::api::auth::publishable_keys::repo::SdkKeysRepo;
 use crate::api::auth::secret_keys::repo::AuthRepo;
 use crate::api::domains::repo::DomainsRepo;
 use crate::api::links::repo::LinksRepo;
+use crate::api::themes::repo::ThemesRepo;
 use crate::api::webhooks::dispatcher::RiftWebhookDispatcher;
 use crate::api::webhooks::repo::WebhooksRepo;
 use crate::api::AppState;
@@ -42,47 +43,49 @@ async fn main() {
         .init();
 
     // Connect to MongoDB (optional — server boots without it).
-    let (auth_repo, links_repo, domains_repo, apps_repo, webhooks_repo, sdk_keys_repo) = if cfg
-        .mongo_uri
-        .is_empty()
-    {
-        tracing::warn!(
-            "MONGO_URI not set — auth, links, domains, apps, webhooks, and sdk_keys disabled"
+    let (auth_repo, links_repo, domains_repo, apps_repo, themes_repo, webhooks_repo, sdk_keys_repo) =
+        if cfg.mongo_uri.is_empty() {
+            tracing::warn!(
+            "MONGO_URI not set — auth, links, domains, apps, themes, webhooks, and sdk_keys disabled"
         );
-        (None, None, None, None, None, None)
-    } else {
-        match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
-            Some(database) => {
-                tracing::info!(uri = %cfg.mongo_uri, db = %cfg.mongo_db, "Connected to MongoDB");
-                let auth: Arc<dyn crate::api::auth::secret_keys::repo::AuthRepository> =
-                    Arc::new(AuthRepo::new(&database).await);
-                let links: Arc<dyn crate::api::links::repo::LinksRepository> =
-                    Arc::new(LinksRepo::new(&database).await);
-                let domains: Arc<dyn crate::api::domains::repo::DomainsRepository> =
-                    Arc::new(DomainsRepo::new(&database).await);
-                let apps: Arc<dyn crate::api::apps::repo::AppsRepository> =
-                    Arc::new(AppsRepo::new(&database).await);
-                let webhooks: Arc<dyn crate::api::webhooks::repo::WebhooksRepository> =
-                    Arc::new(WebhooksRepo::new(&database).await);
-                let sdk_keys: Arc<dyn crate::api::auth::publishable_keys::repo::SdkKeysRepository> =
-                    Arc::new(SdkKeysRepo::new(&database).await);
-                (
-                    Some(auth),
-                    Some(links),
-                    Some(domains),
-                    Some(apps),
-                    Some(webhooks),
-                    Some(sdk_keys),
-                )
-            }
-            None => {
-                tracing::warn!(
-                        "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, and sdk_keys disabled"
+            (None, None, None, None, None, None, None)
+        } else {
+            match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
+                Some(database) => {
+                    tracing::info!(uri = %cfg.mongo_uri, db = %cfg.mongo_db, "Connected to MongoDB");
+                    let auth: Arc<dyn crate::api::auth::secret_keys::repo::AuthRepository> =
+                        Arc::new(AuthRepo::new(&database).await);
+                    let links: Arc<dyn crate::api::links::repo::LinksRepository> =
+                        Arc::new(LinksRepo::new(&database).await);
+                    let domains: Arc<dyn crate::api::domains::repo::DomainsRepository> =
+                        Arc::new(DomainsRepo::new(&database).await);
+                    let apps: Arc<dyn crate::api::apps::repo::AppsRepository> =
+                        Arc::new(AppsRepo::new(&database).await);
+                    let themes: Arc<dyn crate::api::themes::repo::ThemesRepository> =
+                        Arc::new(ThemesRepo::new(&database).await);
+                    let webhooks: Arc<dyn crate::api::webhooks::repo::WebhooksRepository> =
+                        Arc::new(WebhooksRepo::new(&database).await);
+                    let sdk_keys: Arc<
+                        dyn crate::api::auth::publishable_keys::repo::SdkKeysRepository,
+                    > = Arc::new(SdkKeysRepo::new(&database).await);
+                    (
+                        Some(auth),
+                        Some(links),
+                        Some(domains),
+                        Some(apps),
+                        Some(themes),
+                        Some(webhooks),
+                        Some(sdk_keys),
+                    )
+                }
+                None => {
+                    tracing::warn!(
+                        "Failed to connect to MongoDB — auth, links, domains, apps, themes, webhooks, and sdk_keys disabled"
                     );
-                (None, None, None, None, None, None)
+                    (None, None, None, None, None, None, None)
+                }
             }
-        }
-    };
+        };
 
     // Initialise x402 payment facilitator (optional).
     let (facilitator, x402_price_tags) = if cfg.x402_enabled && !cfg.x402_recipient.is_empty() {
@@ -127,6 +130,7 @@ async fn main() {
         links_repo,
         domains_repo,
         apps_repo,
+        themes_repo,
         config: cfg.clone(),
         facilitator,
         x402_price_tags,

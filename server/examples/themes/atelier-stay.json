@@ -1,0 +1,56 @@
+{
+  "name": "Atelier Stay",
+  "slug": "atelier-stay",
+  "is_default": false,
+  "tokens": {
+    "palette": {
+      "primary": "#1E3A5F",
+      "secondary": "#C8A96B",
+      "accent": "#8DA9C4",
+      "background": "#F7F4EF",
+      "surface": "#FFFCF8",
+      "surface_muted": "#EFE8DE",
+      "text": "#1F2933",
+      "text_muted": "#6B7280",
+      "border": "#DDD4C8",
+      "success": "#507A5B",
+      "warning": "#B8893D",
+      "danger": "#A94E4E"
+    },
+    "typography": {
+      "heading_font": "editorial_serif",
+      "body_font": "modern_sans",
+      "scale": "spacious"
+    },
+    "shape": {
+      "radius": "rounded",
+      "button_style": "soft",
+      "card_style": "flat",
+      "shadow": "none"
+    },
+    "background": {
+      "style": "solid",
+      "solid": "#F7F4EF"
+    }
+  },
+  "copy": {
+    "brand_name": "Atelier Stay",
+    "tagline": "Private hotels for slower travel.",
+    "default_headline": "Continue your reservation",
+    "default_subheadline": "Open the app to view suite details, arrival notes, and concierge recommendations.",
+    "primary_cta_label": "Open Atelier Stay",
+    "footer_text": "Member support available 24/7."
+  },
+  "media": {
+    "logo_url": "https://assets.riftl.ink/demo-themes/atelier-stay/logo.png",
+    "wordmark_url": "https://assets.riftl.ink/demo-themes/atelier-stay/wordmark.png",
+    "icon_url": "https://assets.riftl.ink/demo-themes/atelier-stay/icon.png",
+    "hero_image_url": "https://assets.riftl.ink/demo-themes/atelier-stay/hero.png",
+    "og_image_url": "https://assets.riftl.ink/demo-themes/atelier-stay/hero.png"
+  },
+  "layout": {
+    "template": "centered",
+    "alignment": "center",
+    "content_width": "narrow"
+  }
+}

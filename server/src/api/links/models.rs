@@ -30,6 +30,38 @@ pub struct AgentContext {
     pub description: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct LinkThemeOverride {
+    /// Optional theme to layer on top of the tenant/domain default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    pub theme_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Your next bag is one tap away")]
+    pub headline: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Open the app to claim this roast.")]
+    pub subheadline: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Limited Drop")]
+    pub badge_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://cdn.example.com/campaign-hero.png")]
+    pub hero_image_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Claim your bag")]
+    pub primary_cta_label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Nord Roast | Rwanda Natural")]
+    pub og_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Small-batch coffee delivered beautifully.")]
+    pub og_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://cdn.example.com/og.png")]
+    pub og_image_url: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Link {
     #[serde(rename = "_id")]
@@ -68,6 +100,8 @@ pub struct Link {
     pub expires_at: Option<DateTime>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub agent_context: Option<AgentContext>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub theme_override: Option<LinkThemeOverride>,
 }
 
 /// Click event stored in the `click_events` time series collection.
@@ -119,6 +153,7 @@ pub struct CreateLinkInput {
     pub metadata: Option<Document>,
     pub expires_at: Option<DateTime>,
     pub agent_context: Option<AgentContext>,
+    pub theme_override: Option<LinkThemeOverride>,
 }
 
 impl CreateLinkInput {
@@ -134,6 +169,7 @@ impl CreateLinkInput {
             metadata: None,
             expires_at: None,
             agent_context: None,
+            theme_override: None,
         }
     }
 
@@ -176,6 +212,11 @@ impl CreateLinkInput {
         self.agent_context = Some(v);
         self
     }
+
+    pub fn theme_override(mut self, v: LinkThemeOverride) -> Self {
+        self.theme_override = Some(v);
+        self
+    }
 }
 
 // ── API Request / Response Models ──
@@ -212,6 +253,9 @@ pub struct CreateLinkRequest {
     /// Structured context for AI agents. When set, agents resolving this link receive action, CTA, and description metadata alongside the destinations.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
+    /// Lightweight landing-page theming overrides for campaign pages.
+    #[serde(default)]
+    pub theme_override: Option<LinkThemeOverride>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -254,6 +298,9 @@ pub struct UpdateLinkRequest {
     /// Structured context for AI agents. When set, agents resolving this link receive action, CTA, and description metadata alongside the destinations.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
+    /// Landing-page theming overrides. Send `null` values inside the object by replacing the whole override.
+    #[serde(default)]
+    pub theme_override: Option<LinkThemeOverride>,
 }
 
 /// Deserializes a field that can be absent, null, or present.
@@ -292,6 +339,8 @@ pub struct LinkDetail {
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_override: Option<LinkThemeOverride>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -380,6 +429,8 @@ pub struct ResolvedLink {
     pub metadata: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_override: Option<LinkThemeOverride>,
     /// Trust envelope with provenance and status information for agents.
     #[serde(rename = "_rift_meta")]
     pub rift_meta: RiftMeta,

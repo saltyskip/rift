@@ -8,12 +8,13 @@ use tokio::net::TcpListener;
 use rift::api::auth::publishable_keys::repo::SdkKeysRepository;
 use rift::api::auth::secret_keys::repo::{ApiKeyDoc, AuthRepository};
 use rift::api::domains::repo::DomainsRepository;
+use rift::api::themes::repo::ThemesRepository;
 use rift::api::AppState;
 use rift::core::config::Config;
 use rift::core::webhook_dispatcher::WebhookDispatcher;
 
 use mocks::{
-    MockAppsRepo, MockAuthRepo, MockDomainsRepo, MockLinksRepo, MockSdkKeysRepo,
+    MockAppsRepo, MockAuthRepo, MockDomainsRepo, MockLinksRepo, MockSdkKeysRepo, MockThemesRepo,
     MockWebhookDispatcher, MockWebhooksRepo,
 };
 
@@ -25,6 +26,7 @@ pub struct TestApp {
     pub links_repo: Arc<MockLinksRepo>,
     pub domains_repo: Arc<MockDomainsRepo>,
     pub apps_repo: Arc<MockAppsRepo>,
+    pub themes_repo: Arc<MockThemesRepo>,
     pub webhooks_repo: Arc<MockWebhooksRepo>,
     pub webhook_dispatcher: Arc<MockWebhookDispatcher>,
     pub sdk_keys_repo: Arc<MockSdkKeysRepo>,
@@ -42,6 +44,7 @@ pub async fn spawn_app() -> TestApp {
     let links_repo = Arc::new(MockLinksRepo::default());
     let domains_repo = Arc::new(MockDomainsRepo::default());
     let apps_repo = Arc::new(MockAppsRepo::default());
+    let themes_repo = Arc::new(MockThemesRepo::default());
     let webhooks_repo = Arc::new(MockWebhooksRepo::default());
     let webhook_dispatcher = Arc::new(MockWebhookDispatcher::default());
     let sdk_keys_repo = Arc::new(MockSdkKeysRepo::default());
@@ -75,6 +78,7 @@ pub async fn spawn_app() -> TestApp {
             domains_repo.clone() as Arc<dyn rift::api::domains::repo::DomainsRepository>
         ),
         apps_repo: Some(apps_repo.clone() as Arc<dyn rift::api::apps::repo::AppsRepository>),
+        themes_repo: Some(themes_repo.clone() as Arc<dyn ThemesRepository>),
         config,
         facilitator: None,
         x402_price_tags: vec![],
@@ -106,6 +110,7 @@ pub async fn spawn_app() -> TestApp {
         links_repo,
         domains_repo,
         apps_repo,
+        themes_repo,
         webhooks_repo,
         webhook_dispatcher,
         sdk_keys_repo,

@@ -152,7 +152,7 @@ async fn redirect_no_store_url_falls_back_to_landing() {
     let body = resp.text().await.unwrap();
     // Should be the landing page, not a redirect page.
     assert!(
-        body.contains("split"),
+        body.contains("side-human"),
         "should fall back to landing page layout"
     );
 
@@ -178,7 +178,7 @@ async fn landing_page_ios() {
 
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
-    assert!(body.contains("split"), "should contain split layout");
+    assert!(body.contains("side-human"), "should contain split layout");
     assert!(
         body.contains("apps.apple.com"),
         "should contain App Store link"
@@ -224,7 +224,7 @@ async fn landing_page_android() {
 
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
-    assert!(body.contains("split"), "should contain landing page layout");
+    assert!(body.contains("side-human"), "should contain landing page layout");
     assert!(
         body.contains("play.google.com"),
         "should contain Play Store link"
@@ -270,7 +270,7 @@ async fn landing_page_desktop() {
 
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
-    assert!(body.contains("split"), "should contain landing page layout");
+    assert!(body.contains("side-human"), "should contain landing page layout");
 
     let clicks = app.links_repo.clicks.lock().unwrap();
     assert_eq!(clicks.len(), 1, "click should be recorded");

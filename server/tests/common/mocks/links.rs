@@ -47,6 +47,7 @@ impl LinksRepository for MockLinksRepo {
             flag_reason: None,
             expires_at: input.expires_at,
             agent_context: input.agent_context,
+            theme_override: input.theme_override,
         };
         links.push(link.clone());
         Ok(link)
@@ -111,6 +112,9 @@ impl LinksRepository for MockLinksRepo {
         }
         if let Ok(v) = set.get_document("agent_context") {
             link.agent_context = mongodb::bson::from_document(v.clone()).ok();
+        }
+        if let Ok(v) = set.get_document("theme_override") {
+            link.theme_override = mongodb::bson::from_document(v.clone()).ok();
         }
         // Apply $unset fields.
         for key in unset.keys() {
@@ -259,6 +263,27 @@ impl LinksRepository for MockLinksRepo {
             .unwrap()
             .iter()
             .filter(|a| &a.tenant_id == tenant_id && a.link_id == link_id)
+            .count() as u64)
+    }
+
+    async fn count_by_theme(
+        &self,
+        tenant_id: &ObjectId,
+        theme_id: &ObjectId,
+    ) -> Result<u64, String> {
+        Ok(self
+            .links
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|link| {
+                &link.tenant_id == tenant_id
+                    && link
+                        .theme_override
+                        .as_ref()
+                        .and_then(|theme| theme.theme_id.as_deref())
+                        .is_some_and(|id| id == theme_id.to_hex())
+            })
             .count() as u64)
     }
 }
