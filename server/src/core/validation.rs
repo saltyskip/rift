@@ -153,7 +153,11 @@ pub fn validate_theme_request(
             }
         }
 
-        validate_contrast_pair("palette.text", palette.text.as_deref(), palette.background.as_deref())?;
+        validate_contrast_pair(
+            "palette.text",
+            palette.text.as_deref(),
+            palette.background.as_deref(),
+        )?;
         validate_primary_cta_contrast(palette.primary.as_deref())?;
     }
 
@@ -182,10 +186,26 @@ pub fn validate_theme_request(
     for (field, value, max) in [
         ("copy.brand_name", copy.brand_name.as_deref(), 80),
         ("copy.tagline", copy.tagline.as_deref(), 120),
-        ("copy.default_headline", copy.default_headline.as_deref(), 120),
-        ("copy.default_subheadline", copy.default_subheadline.as_deref(), 240),
-        ("copy.primary_cta_label", copy.primary_cta_label.as_deref(), 40),
-        ("copy.secondary_cta_label", copy.secondary_cta_label.as_deref(), 40),
+        (
+            "copy.default_headline",
+            copy.default_headline.as_deref(),
+            120,
+        ),
+        (
+            "copy.default_subheadline",
+            copy.default_subheadline.as_deref(),
+            240,
+        ),
+        (
+            "copy.primary_cta_label",
+            copy.primary_cta_label.as_deref(),
+            40,
+        ),
+        (
+            "copy.secondary_cta_label",
+            copy.secondary_cta_label.as_deref(),
+            40,
+        ),
         ("copy.footer_text", copy.footer_text.as_deref(), 160),
     ] {
         if let Some(value) = value {
@@ -229,7 +249,11 @@ pub fn validate_theme_request(
 pub fn validate_link_theme_override(theme: &LinkThemeOverride) -> Result<(), String> {
     for (field, value, max) in [
         ("theme_override.headline", theme.headline.as_deref(), 120),
-        ("theme_override.subheadline", theme.subheadline.as_deref(), 240),
+        (
+            "theme_override.subheadline",
+            theme.subheadline.as_deref(),
+            240,
+        ),
         ("theme_override.badge_text", theme.badge_text.as_deref(), 40),
         (
             "theme_override.primary_cta_label",
@@ -249,7 +273,10 @@ pub fn validate_link_theme_override(theme: &LinkThemeOverride) -> Result<(), Str
     }
 
     for (field, value) in [
-        ("theme_override.hero_image_url", theme.hero_image_url.as_deref()),
+        (
+            "theme_override.hero_image_url",
+            theme.hero_image_url.as_deref(),
+        ),
         ("theme_override.og_image_url", theme.og_image_url.as_deref()),
     ] {
         if let Some(value) = value {
@@ -347,7 +374,9 @@ fn validate_primary_cta_contrast(bg: Option<&str>) -> Result<(), String> {
     let white = contrast_ratio("#FFFFFF", bg).unwrap_or(0.0);
     let black = contrast_ratio("#000000", bg).unwrap_or(0.0);
     if white.max(black) < 4.5 {
-        return Err("palette.primary must provide at least 4.5:1 contrast with black or white text".into());
+        return Err(
+            "palette.primary must provide at least 4.5:1 contrast with black or white text".into(),
+        );
     }
     Ok(())
 }
@@ -364,10 +393,7 @@ fn contrast_ratio(fg: &str, bg: &str) -> Option<f64> {
 fn hex_to_rgb(s: &str) -> Option<(f64, f64, f64)> {
     let s = s.trim().strip_prefix('#')?;
     let expanded = match s.len() {
-        3 => s
-            .chars()
-            .flat_map(|c| [c, c])
-            .collect::<String>(),
+        3 => s.chars().flat_map(|c| [c, c]).collect::<String>(),
         6 => s.to_string(),
         _ => return None,
     };

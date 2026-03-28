@@ -35,7 +35,8 @@ pub trait ThemesRepository: Send + Sync {
         tenant_id: &ObjectId,
         except_theme_id: Option<&ObjectId>,
     ) -> Result<(), String>;
-    async fn delete_theme(&self, tenant_id: &ObjectId, theme_id: &ObjectId) -> Result<bool, String>;
+    async fn delete_theme(&self, tenant_id: &ObjectId, theme_id: &ObjectId)
+        -> Result<bool, String>;
 }
 
 #[derive(Clone)]
@@ -52,7 +53,11 @@ impl ThemesRepo {
             IndexOptions::builder().unique(true).build(),
             "themes_tenant_slug_unique"
         );
-        ensure_index!(themes, doc! { "tenant_id": 1, "is_default": 1 }, "themes_tenant_default");
+        ensure_index!(
+            themes,
+            doc! { "tenant_id": 1, "is_default": 1 },
+            "themes_tenant_default"
+        );
         Self { themes }
     }
 }
@@ -60,7 +65,10 @@ impl ThemesRepo {
 #[async_trait]
 impl ThemesRepository for ThemesRepo {
     async fn create_theme(&self, theme: LandingTheme) -> Result<LandingTheme, String> {
-        self.themes.insert_one(&theme).await.map_err(|e| e.to_string())?;
+        self.themes
+            .insert_one(&theme)
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(theme)
     }
 
@@ -122,7 +130,10 @@ impl ThemesRepository for ThemesRepo {
 
     async fn replace_theme(&self, theme: LandingTheme) -> Result<LandingTheme, String> {
         self.themes
-            .replace_one(doc! { "_id": &theme.id, "tenant_id": &theme.tenant_id }, &theme)
+            .replace_one(
+                doc! { "_id": &theme.id, "tenant_id": &theme.tenant_id },
+                &theme,
+            )
             .await
             .map_err(|e| e.to_string())?;
         Ok(theme)
@@ -145,7 +156,11 @@ impl ThemesRepository for ThemesRepo {
         Ok(())
     }
 
-    async fn delete_theme(&self, tenant_id: &ObjectId, theme_id: &ObjectId) -> Result<bool, String> {
+    async fn delete_theme(
+        &self,
+        tenant_id: &ObjectId,
+        theme_id: &ObjectId,
+    ) -> Result<bool, String> {
         let result = self
             .themes
             .delete_one(doc! { "_id": theme_id, "tenant_id": tenant_id })

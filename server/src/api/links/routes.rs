@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 use super::landing_page::{
     content_type_for_asset, demo_preview_theme, html_escape, preview_asset_path,
-    render_smart_landing_page, resolve_effective_theme, LandingPageContext,
+    render_smart_landing_page, resolve_effective_theme, LandingPageContext, ThemeResolutionInput,
 };
 use super::models::*;
 use super::repo::LinksRepository;
@@ -737,7 +737,16 @@ pub async fn resolve_link(
 
     let redirect = query.redirect.as_deref() == Some("1");
 
-    do_resolve(&state, repo.as_ref(), link, &link_id, &headers, redirect, None).await
+    do_resolve(
+        &state,
+        repo.as_ref(),
+        link,
+        &link_id,
+        &headers,
+        redirect,
+        None,
+    )
+    .await
 }
 
 // ── GET /{link_id} — Resolve via custom domain (public) ──
@@ -840,7 +849,16 @@ pub async fn resolve_link_custom(
 
     let redirect = query.redirect.as_deref() == Some("1");
 
-    do_resolve(&state, repo.as_ref(), link, &link_id, &headers, redirect, Some(&domain)).await
+    do_resolve(
+        &state,
+        repo.as_ref(),
+        link,
+        &link_id,
+        &headers,
+        redirect,
+        Some(&domain),
+    )
+    .await
 }
 
 /// Check if a link is resolvable (active, not expired, not flagged/disabled).
@@ -1077,14 +1095,16 @@ async fn do_resolve(
 
         let theme = resolve_effective_theme(
             state,
-            &link.tenant_id,
-            resolved_domain,
-            link.theme_override.as_ref(),
-            app_name.as_deref(),
-            app_icon_url.as_deref(),
-            meta_title.as_deref(),
-            meta_description.as_deref(),
-            meta_image.as_deref(),
+            &ThemeResolutionInput {
+                tenant_id: &link.tenant_id,
+                resolved_domain,
+                link_override: link.theme_override.as_ref(),
+                app_name: app_name.as_deref(),
+                app_icon_url: app_icon_url.as_deref(),
+                meta_title: meta_title.as_deref(),
+                meta_description: meta_description.as_deref(),
+                meta_image: meta_image.as_deref(),
+            },
         )
         .await;
 
@@ -1760,7 +1780,6 @@ fn build_rift_meta(
         "tenant_verified": tenant_verified,
     })
 }
-
 
 fn urlencoding(s: &str) -> String {
     let mut out = String::with_capacity(s.len());

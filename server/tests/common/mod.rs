@@ -14,8 +14,8 @@ use rift::core::config::Config;
 use rift::core::webhook_dispatcher::WebhookDispatcher;
 
 use mocks::{
-    MockAppsRepo, MockAuthRepo, MockDomainsRepo, MockLinksRepo, MockSdkKeysRepo,
-    MockThemesRepo, MockWebhookDispatcher, MockWebhooksRepo,
+    MockAppsRepo, MockAuthRepo, MockDomainsRepo, MockLinksRepo, MockSdkKeysRepo, MockThemesRepo,
+    MockWebhookDispatcher, MockWebhooksRepo,
 };
 
 #[allow(dead_code)]

@@ -80,7 +80,11 @@ pub trait LinksRepository: Send + Sync {
 
     async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
 
-    async fn count_by_theme(&self, tenant_id: &ObjectId, theme_id: &ObjectId) -> Result<u64, String>;
+    async fn count_by_theme(
+        &self,
+        tenant_id: &ObjectId,
+        theme_id: &ObjectId,
+    ) -> Result<u64, String>;
 }
 
 // ── Repository ──
@@ -462,14 +466,16 @@ impl LinksRepository for LinksRepo {
             .map_err(|e| e.to_string())
     }
 
-    async fn count_by_theme(&self, tenant_id: &ObjectId, theme_id: &ObjectId) -> Result<u64, String> {
+    async fn count_by_theme(
+        &self,
+        tenant_id: &ObjectId,
+        theme_id: &ObjectId,
+    ) -> Result<u64, String> {
         self.links
-            .count_documents(
-                doc! {
-                    "tenant_id": tenant_id,
-                    "theme_override.theme_id": theme_id.to_hex(),
-                },
-            )
+            .count_documents(doc! {
+                "tenant_id": tenant_id,
+                "theme_override.theme_id": theme_id.to_hex(),
+            })
             .await
             .map_err(|e| e.to_string())
     }

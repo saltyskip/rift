@@ -103,7 +103,10 @@ impl ThemesRepository for MockThemesRepo {
         except_theme_id: Option<&ObjectId>,
     ) -> Result<(), String> {
         let mut themes = self.themes.lock().unwrap();
-        for theme in themes.iter_mut().filter(|theme| &theme.tenant_id == tenant_id) {
+        for theme in themes
+            .iter_mut()
+            .filter(|theme| &theme.tenant_id == tenant_id)
+        {
             if except_theme_id.is_some_and(|id| &theme.id == id) {
                 continue;
             }
@@ -112,7 +115,11 @@ impl ThemesRepository for MockThemesRepo {
         Ok(())
     }
 
-    async fn delete_theme(&self, tenant_id: &ObjectId, theme_id: &ObjectId) -> Result<bool, String> {
+    async fn delete_theme(
+        &self,
+        tenant_id: &ObjectId,
+        theme_id: &ObjectId,
+    ) -> Result<bool, String> {
         let mut themes = self.themes.lock().unwrap();
         let before = themes.len();
         themes.retain(|theme| !(&theme.tenant_id == tenant_id && &theme.id == theme_id));

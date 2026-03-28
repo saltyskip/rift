@@ -7,8 +7,8 @@ use crate::api::domains::models::Domain;
 use crate::api::themes::models::{
     BackgroundStyle, ButtonStyle, CardStyle, ContentAlignment, ContentWidth, FontPreset,
     LandingTheme, LayoutTemplate, RadiusPreset, ShadowPreset, ThemeBackground, ThemeCopy,
-    ThemeLayout, ThemeMedia, ThemeModules, ThemePalette, ThemeShape, ThemeTokens, ThemeTypography,
-    ThemeSeo, TypeScale,
+    ThemeLayout, ThemeMedia, ThemeModules, ThemePalette, ThemeSeo, ThemeShape, ThemeTokens,
+    ThemeTypography, TypeScale,
 };
 use crate::api::AppState;
 
@@ -221,7 +221,10 @@ pub fn render_smart_landing_page(ctx: &LandingPageContext<'_>) -> String {
                 html_escape(&theme.brand_name)
             )
         } else {
-            format!(r#"<div class="brand-name">{}</div>"#, html_escape(&theme.brand_name))
+            format!(
+                r#"<div class="brand-name">{}</div>"#,
+                html_escape(&theme.brand_name)
+            )
         }
     } else {
         String::new()
@@ -251,7 +254,8 @@ pub fn render_smart_landing_page(ctx: &LandingPageContext<'_>) -> String {
         String::new()
     };
     let footer_html = if theme.show_footer {
-        theme.footer_text
+        theme
+            .footer_text
             .as_deref()
             .map(|text| format!(r#"<p class="human-footer">{}</p>"#, html_escape(text)))
             .unwrap_or_default()
@@ -294,7 +298,10 @@ pub fn render_smart_landing_page(ctx: &LandingPageContext<'_>) -> String {
     render_template(&[
         ("{{OG_TITLE}}", html_escape(&theme.og_title)),
         ("{{OG_TITLE_ESCAPED}}", html_escape(&theme.og_title)),
-        ("{{OG_DESCRIPTION_ESCAPED}}", html_escape(&theme.og_description)),
+        (
+            "{{OG_DESCRIPTION_ESCAPED}}",
+            html_escape(&theme.og_description),
+        ),
         ("{{META_DESCRIPTION_TAG}}", meta_desc_tag),
         ("{{OG_IMAGE_TAG}}", og_image_tag),
         ("{{JSON_LD}}", json_ld),
@@ -305,7 +312,10 @@ pub fn render_smart_landing_page(ctx: &LandingPageContext<'_>) -> String {
         ("{{TEXT_MUTED}}", html_escape(&theme.text_muted)),
         ("{{BORDER}}", html_escape(&theme.border)),
         ("{{PRIMARY}}", html_escape(&theme.primary)),
-        ("{{PRIMARY_TEXT}}", preferred_text_on(&theme.primary).to_string()),
+        (
+            "{{PRIMARY_TEXT}}",
+            preferred_text_on(&theme.primary).to_string(),
+        ),
         ("{{SECONDARY}}", html_escape(&theme.secondary)),
         ("{{ACCENT}}", html_escape(&theme.accent)),
         ("{{SUCCESS}}", html_escape(&theme.success)),
@@ -321,12 +331,33 @@ pub fn render_smart_landing_page(ctx: &LandingPageContext<'_>) -> String {
         ("{{BODY_SIZE}}", theme.body_size_px.to_string()),
         ("{{BADGE_HTML}}", badge_html),
         ("{{LOGO_HTML}}", logo_html),
-        ("{{ICON_BLOCK}}", if theme.show_icon { icon_html } else { String::new() }),
+        (
+            "{{ICON_BLOCK}}",
+            if theme.show_icon {
+                icon_html
+            } else {
+                String::new()
+            },
+        ),
         ("{{TAGLINE_HTML}}", tagline_html),
         ("{{HEADLINE}}", html_escape(&theme.headline)),
-        ("{{SUBHEADLINE}}", html_escape(theme.subheadline.as_deref().unwrap_or("Open the app to continue."))),
-        ("{{BUTTON_CLASS}}", button_class(&theme.cta_style).to_string()),
-        ("{{DEFAULT_CTA}}", html_escape(theme.primary_cta_label.as_deref().unwrap_or("Continue"))),
+        (
+            "{{SUBHEADLINE}}",
+            html_escape(
+                theme
+                    .subheadline
+                    .as_deref()
+                    .unwrap_or("Open the app to continue."),
+            ),
+        ),
+        (
+            "{{BUTTON_CLASS}}",
+            button_class(&theme.cta_style).to_string(),
+        ),
+        (
+            "{{DEFAULT_CTA}}",
+            html_escape(theme.primary_cta_label.as_deref().unwrap_or("Continue")),
+        ),
         ("{{FOOTER_HTML}}", footer_html),
         ("{{HERO_IMAGE_HTML}}", hero_image_html),
         ("{{AGENT_PANEL}}", agent_panel),
@@ -337,46 +368,72 @@ pub fn render_smart_landing_page(ctx: &LandingPageContext<'_>) -> String {
     ])
 }
 
+pub struct ThemeResolutionInput<'a> {
+    pub tenant_id: &'a ObjectId,
+    pub resolved_domain: Option<&'a Domain>,
+    pub link_override: Option<&'a LinkThemeOverride>,
+    pub app_name: Option<&'a str>,
+    pub app_icon_url: Option<&'a str>,
+    pub meta_title: Option<&'a str>,
+    pub meta_description: Option<&'a str>,
+    pub meta_image: Option<&'a str>,
+}
+
 pub async fn resolve_effective_theme(
     state: &Arc<AppState>,
-    tenant_id: &ObjectId,
-    resolved_domain: Option<&Domain>,
-    link_override: Option<&LinkThemeOverride>,
-    app_name: Option<&str>,
-    app_icon_url: Option<&str>,
-    meta_title: Option<&str>,
-    meta_description: Option<&str>,
-    meta_image: Option<&str>,
+    input: &ThemeResolutionInput<'_>,
 ) -> EffectiveTheme {
-    let mut themed = EffectiveTheme::default_from(app_name, app_icon_url, meta_title, meta_description);
+    let mut themed = EffectiveTheme::default_from(
+        input.app_name,
+        input.app_icon_url,
+        input.meta_title,
+        input.meta_description,
+    );
 
     if let Some(repo) = &state.themes_repo {
-        if let Ok(Some(default_theme)) = repo.find_default_by_tenant(tenant_id).await {
+        if let Ok(Some(default_theme)) = repo.find_default_by_tenant(input.tenant_id).await {
             themed.apply_theme(&default_theme);
         }
 
-        if let Some(domain_theme_id) = resolved_domain.and_then(|domain| domain.theme_id.as_ref()) {
-            if let Ok(Some(domain_theme)) = repo.find_by_tenant_and_id(tenant_id, domain_theme_id).await {
+        if let Some(domain_theme_id) = input
+            .resolved_domain
+            .and_then(|domain| domain.theme_id.as_ref())
+        {
+            if let Ok(Some(domain_theme)) = repo
+                .find_by_tenant_and_id(input.tenant_id, domain_theme_id)
+                .await
+            {
                 themed.apply_theme(&domain_theme);
             }
         }
 
-        if let Some(theme_id) = link_override
+        if let Some(theme_id) = input
+            .link_override
             .and_then(|override_theme| override_theme.theme_id.as_deref())
             .and_then(|theme_id| ObjectId::parse_str(theme_id).ok())
         {
-            if let Ok(Some(link_theme)) = repo.find_by_tenant_and_id(tenant_id, &theme_id).await {
+            if let Ok(Some(link_theme)) =
+                repo.find_by_tenant_and_id(input.tenant_id, &theme_id).await
+            {
                 themed.apply_theme(&link_theme);
             }
         }
     }
 
-    themed.apply_link_override(link_override, meta_title, meta_description, meta_image);
+    themed.apply_link_override(
+        input.link_override,
+        input.meta_title,
+        input.meta_description,
+        input.meta_image,
+    );
     themed
 }
 
 pub fn demo_preview_theme(state: &AppState, theme_slug: &str) -> Option<EffectiveTheme> {
-    let base = format!("{}/__preview/assets/{theme_slug}", state.config.public_url.trim_end_matches('/'));
+    let base = format!(
+        "{}/__preview/assets/{theme_slug}",
+        state.config.public_url.trim_end_matches('/')
+    );
     let mut theme = match theme_slug {
         "nord-roast" => EffectiveTheme {
             brand_name: "Nord Roast".to_string(),
@@ -540,7 +597,10 @@ pub fn demo_preview_theme(state: &AppState, theme_slug: &str) -> Option<Effectiv
 
 pub fn preview_asset_path(theme_slug: &str, asset_name: &str) -> Option<String> {
     let allowed_theme = matches!(theme_slug, "nord-roast" | "volt-run" | "atelier-stay");
-    let allowed_asset = matches!(asset_name, "hero.png" | "icon.png" | "logo.png" | "wordmark.png");
+    let allowed_asset = matches!(
+        asset_name,
+        "hero.png" | "icon.png" | "logo.png" | "wordmark.png"
+    );
     if !allowed_theme || !allowed_asset {
         return None;
     }
@@ -702,24 +762,54 @@ fn apply_tokens(theme: &mut EffectiveTheme, tokens: &ThemeTokens) {
 }
 
 fn apply_palette(theme: &mut EffectiveTheme, palette: &ThemePalette) {
-    if let Some(value) = &palette.primary { theme.primary = value.clone(); }
-    if let Some(value) = &palette.secondary { theme.secondary = value.clone(); }
-    if let Some(value) = &palette.accent { theme.accent = value.clone(); }
-    if let Some(value) = &palette.background { theme.background_solid = value.clone(); }
-    if let Some(value) = &palette.surface { theme.surface = value.clone(); }
-    if let Some(value) = &palette.surface_muted { theme.surface_muted = value.clone(); }
-    if let Some(value) = &palette.text { theme.text = value.clone(); }
-    if let Some(value) = &palette.text_muted { theme.text_muted = value.clone(); }
-    if let Some(value) = &palette.border { theme.border = value.clone(); }
-    if let Some(value) = &palette.success { theme.success = value.clone(); }
-    if let Some(value) = &palette.warning { theme.warning = value.clone(); }
-    if let Some(value) = &palette.danger { theme.danger = value.clone(); }
+    if let Some(value) = &palette.primary {
+        theme.primary = value.clone();
+    }
+    if let Some(value) = &palette.secondary {
+        theme.secondary = value.clone();
+    }
+    if let Some(value) = &palette.accent {
+        theme.accent = value.clone();
+    }
+    if let Some(value) = &palette.background {
+        theme.background_solid = value.clone();
+    }
+    if let Some(value) = &palette.surface {
+        theme.surface = value.clone();
+    }
+    if let Some(value) = &palette.surface_muted {
+        theme.surface_muted = value.clone();
+    }
+    if let Some(value) = &palette.text {
+        theme.text = value.clone();
+    }
+    if let Some(value) = &palette.text_muted {
+        theme.text_muted = value.clone();
+    }
+    if let Some(value) = &palette.border {
+        theme.border = value.clone();
+    }
+    if let Some(value) = &palette.success {
+        theme.success = value.clone();
+    }
+    if let Some(value) = &palette.warning {
+        theme.warning = value.clone();
+    }
+    if let Some(value) = &palette.danger {
+        theme.danger = value.clone();
+    }
 }
 
 fn apply_typography(theme: &mut EffectiveTheme, typography: &ThemeTypography) {
-    if let Some(value) = &typography.heading_font { theme.heading_font = font_stack(value); }
-    if let Some(value) = &typography.body_font { theme.body_font = font_stack(value); }
-    if let Some(value) = &typography.mono_font { theme.mono_font = font_stack(value); }
+    if let Some(value) = &typography.heading_font {
+        theme.heading_font = font_stack(value);
+    }
+    if let Some(value) = &typography.body_font {
+        theme.body_font = font_stack(value);
+    }
+    if let Some(value) = &typography.mono_font {
+        theme.mono_font = font_stack(value);
+    }
     if let Some(scale) = &typography.scale {
         match scale {
             TypeScale::Compact => {
@@ -766,9 +856,15 @@ fn apply_background(theme: &mut EffectiveTheme, background: &ThemeBackground) {
         theme.background_solid = solid.clone();
     }
     if let Some(gradient) = &background.gradient {
-        if let Some(from) = &gradient.from { theme.background_gradient_from = from.clone(); }
-        if let Some(to) = &gradient.to { theme.background_gradient_to = to.clone(); }
-        if let Some(angle) = gradient.angle { theme.background_gradient_angle = angle; }
+        if let Some(from) = &gradient.from {
+            theme.background_gradient_from = from.clone();
+        }
+        if let Some(to) = &gradient.to {
+            theme.background_gradient_to = to.clone();
+        }
+        if let Some(angle) = gradient.angle {
+            theme.background_gradient_angle = angle;
+        }
     }
     if let Some(image_url) = &background.image_url {
         theme.background_image_url = Some(image_url.clone());
@@ -779,8 +875,12 @@ fn apply_background(theme: &mut EffectiveTheme, background: &ThemeBackground) {
 }
 
 fn apply_copy(theme: &mut EffectiveTheme, copy: &ThemeCopy) {
-    if let Some(value) = &copy.brand_name { theme.brand_name = value.clone(); }
-    if let Some(value) = &copy.tagline { theme.tagline = Some(value.clone()); }
+    if let Some(value) = &copy.brand_name {
+        theme.brand_name = value.clone();
+    }
+    if let Some(value) = &copy.tagline {
+        theme.tagline = Some(value.clone());
+    }
     if let Some(value) = &copy.default_headline {
         theme.headline = value.clone();
         theme.og_title = value.clone();
@@ -789,30 +889,60 @@ fn apply_copy(theme: &mut EffectiveTheme, copy: &ThemeCopy) {
         theme.subheadline = Some(value.clone());
         theme.og_description = value.clone();
     }
-    if let Some(value) = &copy.primary_cta_label { theme.primary_cta_label = Some(value.clone()); }
-    if let Some(value) = &copy.footer_text { theme.footer_text = Some(value.clone()); }
+    if let Some(value) = &copy.primary_cta_label {
+        theme.primary_cta_label = Some(value.clone());
+    }
+    if let Some(value) = &copy.footer_text {
+        theme.footer_text = Some(value.clone());
+    }
 }
 
 fn apply_media(theme: &mut EffectiveTheme, media: &ThemeMedia) {
-    if let Some(value) = &media.logo_url { theme.logo_url = Some(value.clone()); }
-    if let Some(value) = &media.wordmark_url { theme.wordmark_url = Some(value.clone()); }
-    if let Some(value) = &media.icon_url { theme.icon_url = Some(value.clone()); }
-    if let Some(value) = &media.hero_image_url { theme.hero_image_url = Some(value.clone()); }
-    if let Some(value) = &media.og_image_url { theme.og_image_url = Some(value.clone()); }
+    if let Some(value) = &media.logo_url {
+        theme.logo_url = Some(value.clone());
+    }
+    if let Some(value) = &media.wordmark_url {
+        theme.wordmark_url = Some(value.clone());
+    }
+    if let Some(value) = &media.icon_url {
+        theme.icon_url = Some(value.clone());
+    }
+    if let Some(value) = &media.hero_image_url {
+        theme.hero_image_url = Some(value.clone());
+    }
+    if let Some(value) = &media.og_image_url {
+        theme.og_image_url = Some(value.clone());
+    }
 }
 
 fn apply_layout(theme: &mut EffectiveTheme, layout: &ThemeLayout) {
-    if let Some(value) = &layout.template { theme.template = value.clone(); }
-    if let Some(value) = &layout.alignment { theme.alignment = value.clone(); }
-    if let Some(value) = &layout.content_width { theme.content_width = value.clone(); }
+    if let Some(value) = &layout.template {
+        theme.template = value.clone();
+    }
+    if let Some(value) = &layout.alignment {
+        theme.alignment = value.clone();
+    }
+    if let Some(value) = &layout.content_width {
+        theme.content_width = value.clone();
+    }
 }
 
 fn apply_modules(theme: &mut EffectiveTheme, modules: &ThemeModules) {
-    if let Some(value) = modules.show_logo { theme.show_logo = value; }
-    if let Some(value) = modules.show_icon { theme.show_icon = value; }
-    if let Some(value) = modules.show_hero_image { theme.show_hero_image = value; }
-    if let Some(value) = modules.show_footer { theme.show_footer = value; }
-    if let Some(value) = modules.show_store_badges { theme.show_store_badges = value; }
+    if let Some(value) = modules.show_logo {
+        theme.show_logo = value;
+    }
+    if let Some(value) = modules.show_icon {
+        theme.show_icon = value;
+    }
+    if let Some(value) = modules.show_hero_image {
+        theme.show_hero_image = value;
+    }
+    if let Some(value) = modules.show_footer {
+        theme.show_footer = value;
+    }
+    if let Some(value) = modules.show_store_badges {
+        theme.show_store_badges = value;
+    }
 }
 
 fn apply_seo(theme: &mut EffectiveTheme, seo: &ThemeSeo) {
@@ -837,7 +967,9 @@ fn build_agent_panel(ctx: &LandingPageContext<'_>) -> String {
         r#"<div class="badge"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3" y="4" width="10" height="8" rx="2" stroke="{theme}" stroke-width="1.4"/><circle cx="6.25" cy="8" r="1" fill="{theme}"/><circle cx="9.75" cy="8" r="1" fill="{theme}"/><line x1="5" y1="3" x2="5" y2="4.5" stroke="{theme}" stroke-width="1.2" stroke-linecap="round"/><line x1="11" y1="3" x2="11" y2="4.5" stroke="{theme}" stroke-width="1.2" stroke-linecap="round"/></svg>Machine-Readable Link</div>"#,
         theme = html_escape(theme)
     ));
-    html.push_str(r#"<p class="agent-tagline">This link is structured for both humans and AI agents.</p>"#);
+    html.push_str(
+        r#"<p class="agent-tagline">This link is structured for both humans and AI agents.</p>"#,
+    );
     html.push_str(r#"<div class="trust-group trust-verified"><div class="trust-group-header">Verified by Rift</div>"#);
     if let Some(domain) = ctx.tenant_domain {
         let check = if ctx.tenant_verified {
@@ -878,7 +1010,10 @@ fn build_agent_panel(ctx: &LandingPageContext<'_>) -> String {
             ));
         }
         if let Some(desc) = &ac.description {
-            html.push_str(&format!(r#"<div class="desc-block">{}</div>"#, html_escape(desc)));
+            html.push_str(&format!(
+                r#"<div class="desc-block">{}</div>"#,
+                html_escape(desc)
+            ));
             if let Some(domain) = ctx.tenant_domain {
                 html.push_str(&format!(
                     r#"<p class="attr-note">Provided by the owner of {}. Not independently verified.</p>"#,
@@ -890,11 +1025,21 @@ fn build_agent_panel(ctx: &LandingPageContext<'_>) -> String {
     }
 
     let mut dests = Vec::new();
-    if let Some(v) = &link.ios_deep_link { dests.push(("iOS", v.as_str())); }
-    if let Some(v) = &link.android_deep_link { dests.push(("Android", v.as_str())); }
-    if let Some(v) = &link.web_url { dests.push(("Web", v.as_str())); }
-    if let Some(v) = &link.ios_store_url { dests.push(("App Store", v.as_str())); }
-    if let Some(v) = &link.android_store_url { dests.push(("Play Store", v.as_str())); }
+    if let Some(v) = &link.ios_deep_link {
+        dests.push(("iOS", v.as_str()));
+    }
+    if let Some(v) = &link.android_deep_link {
+        dests.push(("Android", v.as_str()));
+    }
+    if let Some(v) = &link.web_url {
+        dests.push(("Web", v.as_str()));
+    }
+    if let Some(v) = &link.ios_store_url {
+        dests.push(("App Store", v.as_str()));
+    }
+    if let Some(v) = &link.android_store_url {
+        dests.push(("Play Store", v.as_str()));
+    }
     if !dests.is_empty() {
         html.push_str(r#"<div class="dest-section"><div class="dest-header">Destinations</div>"#);
         for (label, url) in &dests {
@@ -981,11 +1126,15 @@ pub(crate) fn html_escape(s: &str) -> String {
 
 fn font_stack(font: &FontPreset) -> &'static str {
     match font {
-        FontPreset::SystemSans => "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        FontPreset::SystemSans => {
+            "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+        }
         FontPreset::ModernSans => "\"Avenir Next\", \"Segoe UI\", Helvetica, Arial, sans-serif",
         FontPreset::HumanistSans => "\"Gill Sans\", \"Trebuchet MS\", \"Segoe UI\", sans-serif",
         FontPreset::GeometricSans => "\"Futura\", \"Century Gothic\", \"Avenir Next\", sans-serif",
-        FontPreset::EditorialSerif => "\"Iowan Old Style\", \"Palatino Linotype\", \"Book Antiqua\", Georgia, serif",
+        FontPreset::EditorialSerif => {
+            "\"Iowan Old Style\", \"Palatino Linotype\", \"Book Antiqua\", Georgia, serif"
+        }
     }
 }
 
@@ -1001,8 +1150,12 @@ fn shadow_css(shadow: &ShadowPreset) -> &'static str {
 fn card_surface_css(card_style: &CardStyle) -> String {
     match card_style {
         CardStyle::Flat => "var(--surface-muted)".to_string(),
-        CardStyle::Elevated => "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))".to_string(),
-        CardStyle::Glass => "linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04))".to_string(),
+        CardStyle::Elevated => {
+            "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))".to_string()
+        }
+        CardStyle::Glass => {
+            "linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04))".to_string()
+        }
     }
 }
 

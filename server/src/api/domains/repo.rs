@@ -39,7 +39,11 @@ pub trait DomainsRepository: Send + Sync {
         theme_id: Option<ObjectId>,
     ) -> Result<bool, String>;
 
-    async fn count_by_theme(&self, tenant_id: &ObjectId, theme_id: &ObjectId) -> Result<u64, String>;
+    async fn count_by_theme(
+        &self,
+        tenant_id: &ObjectId,
+        theme_id: &ObjectId,
+    ) -> Result<u64, String>;
 }
 
 // ── Repository ──
@@ -159,7 +163,11 @@ impl DomainsRepository for DomainsRepo {
         Ok(result.matched_count > 0)
     }
 
-    async fn count_by_theme(&self, tenant_id: &ObjectId, theme_id: &ObjectId) -> Result<u64, String> {
+    async fn count_by_theme(
+        &self,
+        tenant_id: &ObjectId,
+        theme_id: &ObjectId,
+    ) -> Result<u64, String> {
         self.domains
             .count_documents(doc! { "tenant_id": tenant_id, "theme_id": theme_id })
             .await

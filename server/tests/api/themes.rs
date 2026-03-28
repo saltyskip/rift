@@ -82,7 +82,10 @@ async fn creating_new_default_theme_clears_previous_default() {
             .count(),
         1
     );
-    let default_theme = themes.iter().find(|theme| theme["is_default"] == true).unwrap();
+    let default_theme = themes
+        .iter()
+        .find(|theme| theme["is_default"] == true)
+        .unwrap();
     assert_eq!(default_theme["slug"], "volt-run");
 }
 

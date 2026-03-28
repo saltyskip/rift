@@ -118,7 +118,10 @@ pub async fn list_themes(
         return service_unavailable();
     };
 
-    match repo.list_by_tenant(&tenant.0, query.status.as_deref()).await {
+    match repo
+        .list_by_tenant(&tenant.0, query.status.as_deref())
+        .await
+    {
         Ok(themes) => Json(json!({
             "themes": themes.iter().map(to_detail).collect::<Vec<_>>()
         }))
@@ -201,16 +204,36 @@ pub async fn update_theme(
         return not_found();
     };
 
-    if let Some(name) = req.name { theme.name = name; }
-    if let Some(slug) = req.slug { theme.slug = slug; }
-    if let Some(is_default) = req.is_default { theme.is_default = is_default; }
-    if let Some(status) = req.status { theme.status = status; }
-    if let Some(tokens) = req.tokens { theme.tokens = tokens; }
-    if let Some(copy) = req.copy { theme.copy = copy; }
-    if let Some(media) = req.media { theme.media = media; }
-    if let Some(layout) = req.layout { theme.layout = layout; }
-    if let Some(modules) = req.modules { theme.modules = modules; }
-    if let Some(seo) = req.seo { theme.seo = seo; }
+    if let Some(name) = req.name {
+        theme.name = name;
+    }
+    if let Some(slug) = req.slug {
+        theme.slug = slug;
+    }
+    if let Some(is_default) = req.is_default {
+        theme.is_default = is_default;
+    }
+    if let Some(status) = req.status {
+        theme.status = status;
+    }
+    if let Some(tokens) = req.tokens {
+        theme.tokens = tokens;
+    }
+    if let Some(copy) = req.copy {
+        theme.copy = copy;
+    }
+    if let Some(media) = req.media {
+        theme.media = media;
+    }
+    if let Some(layout) = req.layout {
+        theme.layout = layout;
+    }
+    if let Some(modules) = req.modules {
+        theme.modules = modules;
+    }
+    if let Some(seo) = req.seo {
+        theme.seo = seo;
+    }
 
     if let Err(e) = validation::validate_theme_request(
         &theme.name,
@@ -243,7 +266,10 @@ pub async fn update_theme(
     }
 
     if theme.is_default {
-        if let Err(e) = repo.clear_default_for_tenant(&tenant.0, Some(&theme.id)).await {
+        if let Err(e) = repo
+            .clear_default_for_tenant(&tenant.0, Some(&theme.id))
+            .await
+        {
             tracing::error!("Failed to clear default themes: {e}");
             return db_error();
         }
@@ -329,7 +355,11 @@ pub async fn delete_theme(
     }
 }
 
-async fn theme_is_referenced(state: &Arc<AppState>, tenant_id: &ObjectId, theme_id: &ObjectId) -> bool {
+async fn theme_is_referenced(
+    state: &Arc<AppState>,
+    tenant_id: &ObjectId,
+    theme_id: &ObjectId,
+) -> bool {
     let domain_count = match &state.domains_repo {
         Some(repo) => repo.count_by_theme(tenant_id, theme_id).await.unwrap_or(0),
         None => 0,

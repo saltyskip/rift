@@ -57,8 +57,14 @@ pub async fn create_domain(
     }
 
     let theme_id = match parse_theme_id(req.theme_id.as_deref()) {
-        Ok(id) => id,
-        Err(resp) => return resp,
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid theme_id", "code": "invalid_theme_id" })),
+            )
+                .into_response();
+        }
     };
 
     if let Some(theme_id) = theme_id {
@@ -197,8 +203,14 @@ pub async fn update_domain_theme(
     };
 
     let theme_id = match parse_theme_id(req.theme_id.as_deref()) {
-        Ok(id) => id,
-        Err(resp) => return resp,
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "Invalid theme_id", "code": "invalid_theme_id" })),
+            )
+                .into_response();
+        }
     };
 
     if let Some(theme_id) = theme_id {
@@ -295,16 +307,10 @@ pub async fn delete_domain(
     }
 }
 
-fn parse_theme_id(theme_id: Option<&str>) -> Result<Option<ObjectId>, Response> {
+fn parse_theme_id(theme_id: Option<&str>) -> Option<Option<ObjectId>> {
     match theme_id {
-        Some(id) => ObjectId::parse_str(id).map(Some).map_err(|_| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "Invalid theme_id", "code": "invalid_theme_id" })),
-            )
-                .into_response()
-        }),
-        None => Ok(None),
+        Some(id) => ObjectId::parse_str(id).ok().map(Some),
+        None => Some(None),
     }
 }
 

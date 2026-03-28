@@ -103,7 +103,11 @@ impl DomainsRepository for MockDomainsRepo {
         }
     }
 
-    async fn count_by_theme(&self, tenant_id: &ObjectId, theme_id: &ObjectId) -> Result<u64, String> {
+    async fn count_by_theme(
+        &self,
+        tenant_id: &ObjectId,
+        theme_id: &ObjectId,
+    ) -> Result<u64, String> {
         Ok(self
             .domains
             .lock()
