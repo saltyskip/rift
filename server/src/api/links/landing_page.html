@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{OG_TITLE}} — Rift</title>
+    <meta property="og:title" content="{{OG_TITLE_ESCAPED}}" />
+    <meta property="og:description" content="{{OG_DESCRIPTION_ESCAPED}}" />
+{{META_DESCRIPTION_TAG}}
+{{OG_IMAGE_TAG}}
+{{JSON_LD}}
+    <style>
+        *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+        :root {
+            --bg: {{BACKGROUND_CSS}};
+            --surface: {{SURFACE}};
+            --surface-muted: {{SURFACE_MUTED}};
+            --text: {{TEXT}};
+            --text-muted: {{TEXT_MUTED}};
+            --border: {{BORDER}};
+            --primary: {{PRIMARY}};
+            --primary-contrast: {{PRIMARY_TEXT}};
+            --secondary: {{SECONDARY}};
+            --accent: {{ACCENT}};
+            --success: {{SUCCESS}};
+            --warning: {{WARNING}};
+            --danger: {{DANGER}};
+            --radius: {{RADIUS}}px;
+            --shadow: {{SHADOW_CSS}};
+            --card-surface: {{CARD_SURFACE}};
+            --heading-font: {{HEADING_FONT}};
+            --body-font: {{BODY_FONT}};
+            --mono-font: {{MONO_FONT}};
+            --heading-size: {{HEADING_SIZE}}px;
+            --body-size: {{BODY_SIZE}}px;
+        }
+        body { font-family:var(--body-font); background:var(--bg); color:var(--text); min-height:100vh; display:flex; flex-direction:column; }
+        .page { display:flex; flex:1; min-height:100vh; }
+        .side-human { width:70%; }
+        .side-agent { width:30%; }
+        .side-human { display:flex; align-items:center; justify-content:center; padding:48px 40px; border-right:1px solid var(--border); position:relative; }
+        .side-agent { background:var(--surface); padding:36px 28px; display:flex; flex-direction:column; overflow-y:auto; }
+        .human-shell { width:100%; max-width:1120px; display:grid; grid-template-columns:minmax(0, 1.05fr) minmax(320px, 460px); gap:40px; align-items:center; }
+        .human-inner { display:flex; flex-direction:column; gap:18px; max-width:560px; text-align:left; align-items:flex-start; }
+        .theme-badge { display:inline-flex; align-items:center; gap:8px; background:color-mix(in srgb, var(--primary) 12%, transparent); border:1px solid color-mix(in srgb, var(--primary) 28%, transparent); border-radius:999px; padding:8px 14px; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--primary); }
+        .brand-lockup { display:flex; align-items:center; gap:14px; }
+        .brand-mark.logo { width:72px; height:72px; object-fit:cover; border-radius:calc(var(--radius) + 8px); box-shadow:var(--shadow); }
+        .brand-name { font-size:14px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:var(--text); }
+        .app-icon { width:72px; height:72px; object-fit:cover; border-radius:calc(var(--radius) + 8px); box-shadow:var(--shadow); }
+        .tagline { color:var(--primary); font-size:12px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; }
+        h1 { font-family:var(--heading-font); font-size:var(--heading-size); line-height:1.02; letter-spacing:-0.04em; }
+        .subtitle { color:var(--text-muted); font-size:var(--body-size); line-height:1.65; max-width:56ch; }
+        .cta-row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+        .btn { display:inline-flex; align-items:center; justify-content:center; min-height:52px; padding:0 28px; border-radius:999px; text-decoration:none; font-size:15px; font-weight:700; transition:transform 160ms ease, opacity 160ms ease, background 160ms ease; }
+        .btn:hover { opacity:0.95; transform:translateY(-1px); }
+        .btn-solid { background:var(--primary); color:var(--primary-contrast); }
+        .btn-outline { background:transparent; color:var(--primary); border:1px solid color-mix(in srgb, var(--primary) 60%, var(--border)); }
+        .btn-soft { background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary); }
+        .sub { color:var(--text-muted); font-size:12px; margin-top:4px; }
+        .human-footer { color:var(--text-muted); font-size:12px; padding-top:8px; }
+        .hero-image-shell { border-radius:calc(var(--radius) + 12px); overflow:hidden; box-shadow:var(--shadow); background:var(--card-surface); border:1px solid var(--border); min-height:320px; }
+        .hero-image { width:100%; height:100%; object-fit:cover; object-position:center center; display:block; min-height:320px; }
+        .badge { display:inline-flex; align-items:center; gap:8px; background:color-mix(in srgb, var(--primary) 12%, transparent); border:1px solid color-mix(in srgb, var(--primary) 28%, transparent); border-radius:999px; padding:6px 14px; font-size:12px; font-weight:600; color:var(--primary); margin-bottom:8px; width:fit-content; }
+        .badge svg { flex-shrink:0; }
+        .agent-tagline { font-size:13px; color:var(--text-muted); margin-bottom:24px; }
+        .trust-group { border-radius:calc(var(--radius) - 2px); background:var(--surface-muted); border:1px solid var(--border); padding:16px 18px; margin-bottom:12px; }
+        .trust-group-header { font-size:10px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+        .trust-verified { border-left:3px solid var(--primary); }
+        .trust-verified .trust-group-header { color:var(--primary); }
+        .trust-creator { border-left:3px solid var(--secondary); }
+        .trust-creator .trust-group-header { color:var(--text-muted); }
+        .trust-row { display:flex; align-items:baseline; margin-bottom:8px; font-size:13px; line-height:1.5; }
+        .trust-row:last-child { margin-bottom:0; }
+        .trust-label { color:var(--text-muted); min-width:80px; flex-shrink:0; font-size:12px; }
+        .trust-value { color:var(--text); font-size:13px; }
+        .trust-value .check { color:var(--primary); margin-left:4px; }
+        .status-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--success); margin-right:6px; vertical-align:middle; position:relative; top:-1px; }
+        .status-dot.expired { background:var(--danger); }
+        .status-dot.flagged { background:var(--warning); }
+        .desc-block { margin-top:10px; padding:12px 14px; background:var(--surface); border-radius:calc(var(--radius) - 4px); border:1px solid var(--border); font-size:12px; line-height:1.65; color:var(--text-muted); }
+        .attr-note { font-size:11px; color:var(--text-muted); margin-top:8px; font-style:italic; }
+        .dest-section { margin-top:8px; }
+        .dest-header { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }
+        .dest-item { display:flex; align-items:center; gap:8px; background:var(--surface-muted); border:1px solid var(--border); border-radius:calc(var(--radius) - 4px); padding:10px 14px; font-size:12px; margin-bottom:6px; }
+        .dest-type { color:var(--text-muted); min-width:70px; flex-shrink:0; font-weight:500; }
+        .dest-arrow { color:color-mix(in srgb, var(--text-muted) 70%, transparent); }
+        .dest-url { color:var(--primary); text-decoration:none; word-break:break-all; }
+        .dest-url:hover { text-decoration:underline; }
+        .agent-footer { margin-top:auto; padding-top:24px; }
+        .agent-footer .powered { font-size:12px; color:var(--text-muted); }
+        .agent-footer .powered a { color:var(--text); text-decoration:none; }
+        .agent-footer .powered a:hover { color:var(--primary); }
+        .agent-footer .hint { font-size:10px; color:color-mix(in srgb, var(--text-muted) 70%, transparent); margin-top:6px; font-family:var(--mono-font); }
+        @media (max-width:767px) {
+            .page { flex-direction:column; min-height:auto; }
+            .side-human, .side-agent { width:100%; }
+            .side-human { width:100%; border-right:none; border-bottom:1px solid var(--border); padding:56px 24px; min-height:100vh; min-height:100dvh; }
+            .side-agent { width:100%; padding:28px 20px; }
+            .human-shell { grid-template-columns:1fr; gap:28px; }
+            .hero-image-shell { order:-1; min-height:240px; }
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="side-human">
+        <div class="human-shell">
+            <div class="human-inner">
+                {{BADGE_HTML}}
+                {{LOGO_HTML}}
+                {{ICON_BLOCK}}
+                {{TAGLINE_HTML}}
+                <h1>{{HEADLINE}}</h1>
+                <p class="subtitle">{{SUBHEADLINE}}</p>
+                <div class="cta-row">
+                    <a id="open-btn" class="btn {{BUTTON_CLASS}}" href="#">{{DEFAULT_CTA}}</a>
+                </div>
+                <p class="sub" id="fallback-msg"></p>
+                {{FOOTER_HTML}}
+            </div>
+            {{HERO_IMAGE_HTML}}
+        </div>
+    </div>
+    <div class="side-agent">
+        {{AGENT_PANEL}}
+    </div>
+</div>
+    <script>
+    (function() {
+        var platform = "{{PLATFORM_JS}}";
+        var storeUrl = "{{STORE_URL_JS}}";
+        var webUrl = "{{WEB_URL_JS}}";
+
+        var btn = document.getElementById("open-btn");
+        var msg = document.getElementById("fallback-msg");
+
+        // Copy link URL to clipboard on button tap (requires user gesture).
+        btn.addEventListener("click", function() {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(window.location.href).catch(function(){});
+            }
+        });
+
+        if (platform === "ios" || platform === "android") {
+            if (storeUrl) {
+                btn.href = storeUrl;
+                btn.textContent = "Get {{BRAND_NAME}}";
+            } else if (webUrl) {
+                btn.href = webUrl;
+                btn.textContent = "Continue";
+            }
+        } else {
+            if (webUrl) {
+                btn.href = webUrl;
+                btn.textContent = "Continue";
+            } else if (storeUrl) {
+                btn.href = storeUrl;
+                btn.textContent = "Get {{BRAND_NAME}}";
+            }
+        }
+    })();
+    </script>
+</body>
+</html>
