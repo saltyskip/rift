@@ -24,7 +24,7 @@ worker/          Cloudflare Worker for custom domain routing
 worker-slack/    Cloudflare Worker for Slack webhook proxy
 ```
 
-The server uses a **vertical slice architecture** — each domain (links, webhooks, domains, apps) has its own directory under `api/` with routes, models, and repository. The `auth/` slice contains sub-slices: `secret_keys/` (signup/verify with `rl_live_` keys) and `publishable_keys/` (SDK keys with `pk_live_` prefix).
+The server separates **domain logic** (`services/`) from **transport layers** (`api/` for HTTP, `mcp/` for MCP protocol). Both transports share the same services, repos, and models. `AppState` lives in `app.rs`.
 
 ## Quick Start
 
@@ -111,6 +111,34 @@ Response:
   }
 }
 ```
+
+## MCP Server (for Claude Code, Cursor, etc.)
+
+Rift exposes an [MCP](https://modelcontextprotocol.io/) endpoint at `/mcp` using streamable HTTP transport. This lets AI coding tools manage deep links directly.
+
+### Setup with Claude Code
+
+Add a `.mcp.json` to your project root:
+
+```json
+{
+  "mcpServers": {
+    "rift": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp",
+      "headers": {
+        "x-api-key": "rl_live_YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}
+```
+
+Claude will then have access to these tools: `create_link`, `get_link`, `list_links`, `update_link`, `delete_link`.
+
+### Setup with other MCP clients
+
+Any MCP client that supports streamable HTTP transport can connect to `http://localhost:3000/mcp`. Pass your API key via the `x-api-key` HTTP header or the `_meta.api_key` field during initialization.
 
 ## CI Checks
 
