@@ -563,19 +563,19 @@ mod tests {
             else {
                 return Ok(false);
             };
-            if let Some(v) = update.get_str("web_url").ok() {
+            if let Ok(v) = update.get_str("web_url") {
                 link.web_url = Some(v.to_string());
             }
-            if let Some(v) = update.get_str("ios_deep_link").ok() {
+            if let Ok(v) = update.get_str("ios_deep_link") {
                 link.ios_deep_link = Some(v.to_string());
             }
-            if let Some(v) = update.get_str("android_deep_link").ok() {
+            if let Ok(v) = update.get_str("android_deep_link") {
                 link.android_deep_link = Some(v.to_string());
             }
-            if let Some(v) = update.get_str("ios_store_url").ok() {
+            if let Ok(v) = update.get_str("ios_store_url") {
                 link.ios_store_url = Some(v.to_string());
             }
-            if let Some(v) = update.get_str("android_store_url").ok() {
+            if let Ok(v) = update.get_str("android_store_url") {
                 link.android_store_url = Some(v.to_string());
             }
             Ok(true)
