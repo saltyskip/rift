@@ -3,10 +3,10 @@ use mongodb::bson::{oid::ObjectId, DateTime, Document};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use rift::api::links::models::{
+use rift::services::links::models::{
     ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus, TimeseriesDataPoint,
 };
-use rift::api::links::repo::LinksRepository;
+use rift::services::links::repo::LinksRepository;
 
 struct Attribution {
     tenant_id: ObjectId,

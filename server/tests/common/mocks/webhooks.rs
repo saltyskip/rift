@@ -2,12 +2,12 @@ use async_trait::async_trait;
 use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
-use rift::api::webhooks::models::Webhook;
-use rift::api::webhooks::models::WebhookEventType;
-use rift::api::webhooks::repo::WebhooksRepository;
 use rift::core::webhook_dispatcher::{
     AttributionEventPayload, ClickEventPayload, WebhookDispatcher,
 };
+use rift::services::webhooks::models::Webhook;
+use rift::services::webhooks::models::WebhookEventType;
+use rift::services::webhooks::repo::WebhooksRepository;
 
 #[derive(Default)]
 pub struct MockWebhooksRepo {

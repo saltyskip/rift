@@ -1,11 +1,10 @@
-pub mod repo;
 pub mod routes;
 
 use axum::routing::{get, post};
 use axum::Router;
 use std::sync::Arc;
 
-use crate::api::AppState;
+use crate::app::AppState;
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()

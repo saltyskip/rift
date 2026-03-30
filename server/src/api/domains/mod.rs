@@ -1,5 +1,3 @@
-pub mod models;
-pub mod repo;
 pub mod routes;
 
 use axum::middleware;
@@ -8,7 +6,7 @@ use axum::Router;
 use std::sync::Arc;
 
 use super::auth::middleware::auth_gate;
-use crate::api::AppState;
+use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     Router::new()

@@ -5,9 +5,9 @@ use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
-use super::models::*;
 use crate::api::auth::middleware::TenantId;
-use crate::api::AppState;
+use crate::app::AppState;
+use crate::services::apps::models::*;
 
 // ── POST /v1/apps — Register an app (iOS or Android) ──
 
@@ -75,7 +75,7 @@ pub async fn create_app(
         }
     }
 
-    let app = super::models::App {
+    let app = crate::services::apps::models::App {
         id: ObjectId::new(),
         tenant_id: tenant.0,
         platform: platform.clone(),
@@ -363,7 +363,7 @@ async fn resolve_tenant_from_host(state: &Arc<AppState>, headers: &HeaderMap) ->
     Some(domain.tenant_id)
 }
 
-fn to_detail(app: &super::models::App) -> AppDetail {
+fn to_detail(app: &crate::services::apps::models::App) -> AppDetail {
     AppDetail {
         id: app.id.to_hex(),
         platform: app.platform.clone(),

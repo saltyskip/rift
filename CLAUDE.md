@@ -4,19 +4,25 @@ Deep links for humans and agents.
 
 **Stack:** Rust, Axum, MongoDB, Sentry, x402
 
-## Backend API Conventions
+## Architecture
 
-The API layer uses a **vertical slice architecture**:
+The server separates **domain logic** from **transport layers**:
 
-- Each domain (auth, links, etc.) has its own directory under `api/`
-- Each slice has: `mod.rs` (router), `routes.rs` (handlers), `models.rs` (domain types)
-- Each `mod.rs` exports `pub fn router() -> Router<Arc<AppState>>` merged in `api/mod.rs`
-- **Slices own their models** — no shared models module. Types live in the slice that owns them
-- **Slices own their repositories** — db queries live in the slice's `repo.rs`, not in a shared db module
-- `core/` is for shared infra only (db connection, config) — no business logic
-- `AppState` and OpenAPI spec live in `api/mod.rs`
-- **Slices should not import from other slices** — cross-slice data goes through AppState
-- **Auth sub-slices** — `auth/` contains `secret_keys/` (signup/verify, `rl_live_` keys) and `publishable_keys/` (SDK keys, `pk_live_` prefix). Each sub-slice has its own `mod.rs`, `routes.rs`, `models.rs`, and `repo.rs`. The parent `auth/mod.rs` merges their routers. Shared auth logic (middleware, key hashing) lives at the `auth/` level.
+- **`services/`** — Transport-agnostic business logic. Each domain (links, auth, domains, apps, webhooks) has its own directory with `models.rs`, `repo.rs`, and optionally `service.rs`
+- **`api/`** — HTTP transport. Each slice has `mod.rs` (router) and `routes.rs` (handlers). Imports models/repos from `services/`
+- **`mcp/`** — MCP protocol transport. Imports from `services/`, not from `api/`
+- **`app.rs`** — `AppState` struct, shared across transports
+- **`core/`** — Shared infra only (db connection, config, rate limiting) — no business logic
+- **Transport layers must not import from each other** — both `api/` and `mcp/` import from `services/`
+- **Domains own their models and repositories** in `services/<domain>/`
+- **Auth sub-slices** — `services/auth/` contains `secret_keys/` (signup/verify, `rl_live_` keys) and `publishable_keys/` (SDK keys, `pk_live_` prefix). Transport routes live in `api/auth/`
+
+### Cargo Features
+
+- `api` — HTTP API routes (enabled by default)
+- `mcp` — MCP protocol server, pulls in `rmcp` and `schemars` (enabled by default)
+- Both can be independently disabled: `cargo build --no-default-features --features mcp`
+- **CI runs with default features (both enabled).** Individual feature subsets may produce dead-code warnings since `services/` is shared infrastructure
 
 ## Multi-Tenancy
 
@@ -26,11 +32,11 @@ extract it via `Extension<TenantId>`.
 
 Public endpoints (landing page, attribution reporting) resolve the tenant from the link_id itself.
 
-## Adding a New Slice
+## Adding a New Domain
 
-1. Create `api/<name>/mod.rs` with `pub fn router() -> Router<Arc<AppState>>`
-2. Create `routes.rs` for handlers, `models.rs` for types
-3. If the slice needs db: create `repo.rs` with a repo struct initialized from `Database`
+1. Create `services/<name>/mod.rs`, `models.rs` for types, `repo.rs` for database access
+2. Create `api/<name>/mod.rs` with `pub fn router() -> Router<Arc<AppState>>`
+3. Create `api/<name>/routes.rs` for HTTP handlers — import models/repos from `crate::services::<name>`
 4. Merge the router in `api/mod.rs` and register paths in the OpenAPI derive
 5. Add `#[tracing::instrument]` to all route handlers (skip large args like state, body)
 
@@ -106,6 +112,26 @@ cargo test                    # Run all tests including architecture tests
 ### CI/CD
 - `sdk-ci.yml` — runs on every push/PR touching `sdk/mobile/`
 - `sdk-release.yml` — triggered by `sdk-v*` tags or manual dispatch
+
+## MCP with Claude Code
+
+The server exposes an MCP endpoint at `/mcp` (streamable HTTP transport). To enable it in Claude Code, add a `.mcp.json` in the project root:
+
+```json
+{
+  "mcpServers": {
+    "rift": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp",
+      "headers": {
+        "x-api-key": "rl_live_YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}
+```
+
+This gives Claude access to `create_link`, `get_link`, `list_links`, `update_link`, and `delete_link` tools. The API key authenticates each MCP session — use the same `rl_live_` key you'd use with the REST API.
 
 ## Environment Variables
 

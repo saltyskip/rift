@@ -6,17 +6,16 @@ use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
 use serde_json::json;
 use std::sync::Arc;
-use uuid::Uuid;
 
 use serde::Deserialize;
 
-use super::models::*;
-use super::repo::LinksRepository;
 use crate::api::auth::middleware::{SdkDomain, TenantId};
-use crate::api::domains::repo::DomainsRepository;
-use crate::api::AppState;
-use crate::core::validation;
+use crate::app::AppState;
 use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload};
+use crate::services::domains::repo::DomainsRepository;
+use crate::services::links::models::*;
+use crate::services::links::repo::LinksRepository;
+use crate::services::links::service::LinkError;
 
 // ── Resolve Query Params ──
 
@@ -24,6 +23,24 @@ use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload
 pub struct ResolveQuery {
     #[serde(default)]
     pub redirect: Option<String>,
+}
+
+fn link_error_to_response(err: LinkError) -> Response {
+    let status = match &err {
+        LinkError::InvalidCustomId(_)
+        | LinkError::InvalidUrl(_)
+        | LinkError::InvalidMetadata(_)
+        | LinkError::InvalidAgentContext(_)
+        | LinkError::ThreatDetected(_)
+        | LinkError::NoVerifiedDomain
+        | LinkError::EmptyUpdate => StatusCode::BAD_REQUEST,
+        LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
+        LinkError::NotFound => StatusCode::NOT_FOUND,
+        LinkError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    let code = err.code();
+    let message = err.to_string();
+    (status, Json(json!({ "error": message, "code": code }))).into_response()
 }
 
 // ── Platform Detection ──
@@ -76,7 +93,7 @@ pub async fn create_link(
     axum::Extension(tenant): axum::Extension<TenantId>,
     Json(req): Json<CreateLinkRequest>,
 ) -> Response {
-    let Some(repo) = &state.links_repo else {
+    let Some(ref svc) = state.links_service else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Database not configured", "code": "no_database" })),
@@ -84,163 +101,10 @@ pub async fn create_link(
             .into_response();
     };
 
-    let link_id = match &req.custom_id {
-        Some(custom) => {
-            if let Err(e) = validate_custom_id(custom) {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": e, "code": "invalid_custom_id" })),
-                )
-                    .into_response();
-            }
-
-            // Custom IDs require a verified custom domain.
-            if !tenant_has_verified_domain(state.domains_repo.as_deref(), &tenant.0).await {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": "Custom IDs require a verified custom domain", "code": "no_verified_domain" })),
-                )
-                    .into_response();
-            }
-
-            if repo
-                .find_link_by_tenant_and_id(&tenant.0, custom)
-                .await
-                .ok()
-                .flatten()
-                .is_some()
-            {
-                return (StatusCode::CONFLICT, Json(json!({ "error": format!("'{}' is already taken", custom), "code": "link_id_taken" }))).into_response();
-            }
-            custom.clone()
-        }
-        None => generate_link_id(),
-    };
-
-    if let Err(e) = validate_link_urls(
-        req.web_url.as_deref(),
-        req.ios_deep_link.as_deref(),
-        req.android_deep_link.as_deref(),
-        req.ios_store_url.as_deref(),
-        req.android_store_url.as_deref(),
-    ) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e, "code": "invalid_url" })),
-        )
-            .into_response();
+    match svc.create_link(tenant.0, req).await {
+        Ok(resp) => (StatusCode::CREATED, Json(json!(resp))).into_response(),
+        Err(e) => link_error_to_response(e),
     }
-
-    // Check web_url against known threat feeds (only vector for phishing redirects).
-    if let Some(ref web_url) = req.web_url {
-        if let Some(reason) = state.threat_feed.check_url(web_url).await {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": reason, "code": "threat_detected" })),
-            )
-                .into_response();
-        }
-    }
-
-    if let Some(ref meta) = req.metadata {
-        if let Err(e) = validation::validate_metadata(meta) {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": e, "code": "invalid_metadata" })),
-            )
-                .into_response();
-        }
-    }
-
-    if let Some(ref ac) = req.agent_context {
-        if let Some(ref action) = ac.action {
-            if let Err(e) = validation::validate_agent_action(action) {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
-                )
-                    .into_response();
-            }
-        }
-        if let Some(ref cta) = ac.cta {
-            if let Err(e) = validation::validate_cta(cta) {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
-                )
-                    .into_response();
-            }
-        }
-        if let Some(ref desc) = ac.description {
-            if let Err(e) = validation::validate_agent_description(desc) {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
-                )
-                    .into_response();
-            }
-        }
-    }
-
-    let metadata = req
-        .metadata
-        .and_then(|v| mongodb::bson::to_document(&v).ok());
-
-    let mut input = CreateLinkInput::new(tenant.0, link_id.clone());
-    if let Some(v) = req.ios_deep_link {
-        input = input.ios_deep_link(v);
-    }
-    if let Some(v) = req.android_deep_link {
-        input = input.android_deep_link(v);
-    }
-    if let Some(v) = req.web_url {
-        input = input.web_url(v);
-    }
-    if let Some(v) = req.ios_store_url {
-        input = input.ios_store_url(v);
-    }
-    if let Some(v) = req.android_store_url {
-        input = input.android_store_url(v);
-    }
-    if let Some(v) = metadata {
-        input = input.metadata(v);
-    }
-    if let Some(ac) = req.agent_context {
-        input = input.agent_context(ac);
-    }
-
-    // Links without a verified custom domain expire after 30 days.
-    let has_domain = tenant_has_verified_domain(state.domains_repo.as_deref(), &tenant.0).await;
-    let expires_at = if !has_domain {
-        let thirty_days_ms = 30 * 24 * 60 * 60 * 1000_i64;
-        let expiry = DateTime::from_millis(DateTime::now().timestamp_millis() + thirty_days_ms);
-        input = input.expires_at(expiry);
-        Some(expiry)
-    } else {
-        None
-    };
-
-    match repo.create_link(input).await {
-        Ok(_) => {}
-        Err(e) if e.contains("E11000") => {
-            return (StatusCode::CONFLICT, Json(json!({ "error": format!("'{}' is already taken", link_id), "code": "link_id_taken" }))).into_response();
-        }
-        Err(e) => {
-            tracing::error!("Failed to create link: {e}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Internal error", "code": "db_error" })),
-            )
-                .into_response();
-        }
-    }
-
-    let url = format!("{}/r/{}", state.config.public_url, link_id);
-    let mut resp = json!({ "link_id": link_id, "url": url });
-    if let Some(exp) = expires_at {
-        resp["expires_at"] = json!(exp.try_to_rfc3339_string().unwrap_or_default());
-    }
-    (StatusCode::CREATED, Json(resp)).into_response()
 }
 
 // ── GET /v1/links — List links for tenant with cursor pagination (authenticated) ──
@@ -261,7 +125,7 @@ pub async fn list_links(
     axum::Extension(tenant): axum::Extension<TenantId>,
     Query(query): Query<ListLinksQuery>,
 ) -> Response {
-    let Some(repo) = &state.links_repo else {
+    let Some(ref svc) = state.links_service else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Database not configured", "code": "no_database" })),
@@ -269,50 +133,9 @@ pub async fn list_links(
             .into_response();
     };
 
-    let limit = query.limit.unwrap_or(50).clamp(1, 100);
-
-    let cursor_id = query.cursor.and_then(|c| ObjectId::parse_str(&c).ok());
-
-    // Fetch one extra to determine if there's a next page.
-    match repo
-        .list_links_by_tenant(&tenant.0, limit + 1, cursor_id)
-        .await
-    {
-        Ok(links) => {
-            let has_more = links.len() as i64 > limit;
-            let page: Vec<&Link> = links.iter().take(limit as usize).collect();
-
-            let next_cursor = if has_more {
-                page.last().map(|l| l.id.to_hex())
-            } else {
-                None
-            };
-
-            let details: Vec<LinkDetail> = page
-                .iter()
-                .map(|l| LinkDetail {
-                    link_id: l.link_id.clone(),
-                    url: format!("{}/r/{}", state.config.public_url, l.link_id),
-                    ios_deep_link: l.ios_deep_link.clone(),
-                    android_deep_link: l.android_deep_link.clone(),
-                    web_url: l.web_url.clone(),
-                    ios_store_url: l.ios_store_url.clone(),
-                    android_store_url: l.android_store_url.clone(),
-                    created_at: l.created_at.try_to_rfc3339_string().unwrap_or_default(),
-                    agent_context: l.agent_context.clone(),
-                })
-                .collect();
-
-            Json(json!({ "links": details, "next_cursor": next_cursor })).into_response()
-        }
-        Err(e) => {
-            tracing::error!("Failed to list links: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Internal error", "code": "db_error" })),
-            )
-                .into_response()
-        }
+    match svc.list_links(&tenant.0, query.limit, query.cursor).await {
+        Ok(resp) => Json(json!(resp)).into_response(),
+        Err(e) => link_error_to_response(e),
     }
 }
 
@@ -337,7 +160,7 @@ pub async fn update_link(
     Path(link_id): Path<String>,
     Json(req): Json<UpdateLinkRequest>,
 ) -> Response {
-    let Some(repo) = &state.links_repo else {
+    let Some(ref svc) = state.links_service else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Database not configured", "code": "no_database" })),
@@ -345,167 +168,9 @@ pub async fn update_link(
             .into_response();
     };
 
-    // Flatten Option<Option<String>> to Option<&str> for validation.
-    let ios_dl = req.ios_deep_link.as_ref().and_then(|v| v.as_deref());
-    let android_dl = req.android_deep_link.as_ref().and_then(|v| v.as_deref());
-
-    if let Err(e) = validate_link_urls(
-        req.web_url.as_deref(),
-        ios_dl,
-        android_dl,
-        req.ios_store_url.as_deref(),
-        req.android_store_url.as_deref(),
-    ) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": e, "code": "invalid_url" })),
-        )
-            .into_response();
-    }
-
-    // Check web_url against threat feeds on update too.
-    if let Some(ref web_url) = req.web_url {
-        if let Some(reason) = state.threat_feed.check_url(web_url).await {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": reason, "code": "threat_detected" })),
-            )
-                .into_response();
-        }
-    }
-
-    if let Some(ref meta) = req.metadata {
-        if let Err(e) = validation::validate_metadata(meta) {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": e, "code": "invalid_metadata" })),
-            )
-                .into_response();
-        }
-    }
-
-    if let Some(ref ac) = req.agent_context {
-        if let Some(ref action) = ac.action {
-            if let Err(e) = validation::validate_agent_action(action) {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
-                )
-                    .into_response();
-            }
-        }
-        if let Some(ref cta) = ac.cta {
-            if let Err(e) = validation::validate_cta(cta) {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
-                )
-                    .into_response();
-            }
-        }
-        if let Some(ref desc) = ac.description {
-            if let Err(e) = validation::validate_agent_description(desc) {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": e, "code": "invalid_agent_context" })),
-                )
-                    .into_response();
-            }
-        }
-    }
-
-    let mut update = mongodb::bson::Document::new();
-    let mut unset = mongodb::bson::Document::new();
-
-    // ios_deep_link and android_deep_link support null to clear.
-    match &req.ios_deep_link {
-        None => {}
-        Some(None) => {
-            unset.insert("ios_deep_link", "");
-        }
-        Some(Some(v)) => {
-            update.insert("ios_deep_link", v.clone());
-        }
-    }
-    match &req.android_deep_link {
-        None => {}
-        Some(None) => {
-            unset.insert("android_deep_link", "");
-        }
-        Some(Some(v)) => {
-            update.insert("android_deep_link", v.clone());
-        }
-    }
-
-    if let Some(v) = &req.web_url {
-        update.insert("web_url", v.clone());
-    }
-    if let Some(v) = &req.ios_store_url {
-        update.insert("ios_store_url", v.clone());
-    }
-    if let Some(v) = &req.android_store_url {
-        update.insert("android_store_url", v.clone());
-    }
-    if let Some(v) = &req.metadata {
-        if let Ok(doc) = mongodb::bson::to_document(v) {
-            update.insert("metadata", doc);
-        }
-    }
-    if let Some(ref ac) = req.agent_context {
-        if let Ok(doc) = mongodb::bson::to_document(ac) {
-            update.insert("agent_context", doc);
-        }
-    }
-
-    if update.is_empty() && unset.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "No fields to update", "code": "empty_update" })),
-        )
-            .into_response();
-    }
-
-    match repo.update_link(&tenant.0, &link_id, update, unset).await {
-        Ok(true) => {
-            // Fetch updated link to return.
-            let link = repo
-                .find_link_by_tenant_and_id(&tenant.0, &link_id)
-                .await
-                .ok()
-                .flatten();
-            match link {
-                Some(l) => Json(json!({
-                    "link_id": l.link_id,
-                    "url": format!("{}/r/{}", state.config.public_url, l.link_id),
-                    "ios_deep_link": l.ios_deep_link,
-                    "android_deep_link": l.android_deep_link,
-                    "web_url": l.web_url,
-                    "ios_store_url": l.ios_store_url,
-                    "android_store_url": l.android_store_url,
-                    "created_at": l.created_at.try_to_rfc3339_string().unwrap_or_default(),
-                    "agent_context": l.agent_context,
-                }))
-                .into_response(),
-                None => (
-                    StatusCode::NOT_FOUND,
-                    Json(json!({ "error": "Link not found", "code": "not_found" })),
-                )
-                    .into_response(),
-            }
-        }
-        Ok(false) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Link not found", "code": "not_found" })),
-        )
-            .into_response(),
-        Err(e) => {
-            tracing::error!("Failed to update link: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Internal error", "code": "db_error" })),
-            )
-                .into_response()
-        }
+    match svc.update_link(&tenant.0, &link_id, req).await {
+        Ok(detail) => Json(json!(detail)).into_response(),
+        Err(e) => link_error_to_response(e),
     }
 }
 
@@ -528,7 +193,7 @@ pub async fn delete_link(
     axum::Extension(tenant): axum::Extension<TenantId>,
     Path(link_id): Path<String>,
 ) -> Response {
-    let Some(repo) = &state.links_repo else {
+    let Some(ref svc) = state.links_service else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Database not configured", "code": "no_database" })),
@@ -536,21 +201,9 @@ pub async fn delete_link(
             .into_response();
     };
 
-    match repo.delete_link(&tenant.0, &link_id).await {
-        Ok(true) => StatusCode::NO_CONTENT.into_response(),
-        Ok(false) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Link not found", "code": "not_found" })),
-        )
-            .into_response(),
-        Err(e) => {
-            tracing::error!("Failed to delete link: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Internal error", "code": "db_error" })),
-            )
-                .into_response()
-        }
+    match svc.delete_link(&tenant.0, &link_id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => link_error_to_response(e),
     }
 }
 
@@ -1779,70 +1432,8 @@ pub async fn llms_txt() -> impl IntoResponse {
 
 // ── Helpers ──
 
-async fn tenant_has_verified_domain(
-    domains_repo: Option<&dyn DomainsRepository>,
-    tenant_id: &ObjectId,
-) -> bool {
-    let Some(repo) = domains_repo else {
-        return false;
-    };
-    repo.list_by_tenant(tenant_id)
-        .await
-        .ok()
-        .map(|domains| domains.iter().any(|d| d.verified))
-        .unwrap_or(false)
-}
-
-fn generate_link_id() -> String {
-    Uuid::new_v4()
-        .simple()
-        .to_string()
-        .chars()
-        .take(8)
-        .collect::<String>()
-        .to_uppercase()
-}
-
 fn is_valid_link_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-}
-
-fn validate_custom_id(id: &str) -> Result<(), String> {
-    if id.len() < 3 || id.len() > 64 {
-        return Err("custom_id must be 3-64 characters".to_string());
-    }
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
-        return Err("custom_id must be alphanumeric with hyphens only".to_string());
-    }
-    if id.starts_with('-') || id.ends_with('-') {
-        return Err("custom_id must not start or end with a hyphen".to_string());
-    }
-    Ok(())
-}
-
-fn validate_link_urls(
-    web_url: Option<&str>,
-    ios_deep_link: Option<&str>,
-    android_deep_link: Option<&str>,
-    ios_store_url: Option<&str>,
-    android_store_url: Option<&str>,
-) -> Result<(), String> {
-    if let Some(v) = web_url {
-        validation::validate_web_url(v).map_err(|e| format!("web_url: {e}"))?;
-    }
-    if let Some(v) = ios_deep_link {
-        validation::validate_deep_link(v).map_err(|e| format!("ios_deep_link: {e}"))?;
-    }
-    if let Some(v) = android_deep_link {
-        validation::validate_deep_link(v).map_err(|e| format!("android_deep_link: {e}"))?;
-    }
-    if let Some(v) = ios_store_url {
-        validation::validate_store_url(v).map_err(|e| format!("ios_store_url: {e}"))?;
-    }
-    if let Some(v) = android_store_url {
-        validation::validate_store_url(v).map_err(|e| format!("android_store_url: {e}"))?;
-    }
-    Ok(())
 }
 
 fn js_escape(s: &str) -> String {

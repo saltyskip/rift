@@ -1,6 +1,11 @@
+#[cfg(feature = "api")]
 mod api;
+mod app;
 mod core;
 mod error;
+#[cfg(feature = "mcp")]
+mod mcp;
+mod services;
 
 use std::sync::Arc;
 
@@ -12,15 +17,15 @@ use tracing_subscriber::EnvFilter;
 use x402_chain_eip155::{KnownNetworkEip155, V1Eip155Exact};
 use x402_types::networks::USDC;
 
-use crate::api::apps::repo::AppsRepo;
-use crate::api::auth::publishable_keys::repo::SdkKeysRepo;
-use crate::api::auth::secret_keys::repo::AuthRepo;
-use crate::api::domains::repo::DomainsRepo;
-use crate::api::links::repo::LinksRepo;
-use crate::api::webhooks::dispatcher::RiftWebhookDispatcher;
-use crate::api::webhooks::repo::WebhooksRepo;
-use crate::api::AppState;
+use crate::app::AppState;
 use crate::core::config::Config;
+use crate::services::apps::repo::AppsRepo;
+use crate::services::auth::publishable_keys::repo::SdkKeysRepo;
+use crate::services::auth::secret_keys::repo::AuthRepo;
+use crate::services::domains::repo::DomainsRepo;
+use crate::services::links::repo::LinksRepo;
+use crate::services::webhooks::dispatcher::RiftWebhookDispatcher;
+use crate::services::webhooks::repo::WebhooksRepo;
 
 #[tokio::main]
 async fn main() {
@@ -54,18 +59,19 @@ async fn main() {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
             Some(database) => {
                 tracing::info!(uri = %cfg.mongo_uri, db = %cfg.mongo_db, "Connected to MongoDB");
-                let auth: Arc<dyn crate::api::auth::secret_keys::repo::AuthRepository> =
+                let auth: Arc<dyn crate::services::auth::secret_keys::repo::AuthRepository> =
                     Arc::new(AuthRepo::new(&database).await);
-                let links: Arc<dyn crate::api::links::repo::LinksRepository> =
+                let links: Arc<dyn crate::services::links::repo::LinksRepository> =
                     Arc::new(LinksRepo::new(&database).await);
-                let domains: Arc<dyn crate::api::domains::repo::DomainsRepository> =
+                let domains: Arc<dyn crate::services::domains::repo::DomainsRepository> =
                     Arc::new(DomainsRepo::new(&database).await);
-                let apps: Arc<dyn crate::api::apps::repo::AppsRepository> =
+                let apps: Arc<dyn crate::services::apps::repo::AppsRepository> =
                     Arc::new(AppsRepo::new(&database).await);
-                let webhooks: Arc<dyn crate::api::webhooks::repo::WebhooksRepository> =
+                let webhooks: Arc<dyn crate::services::webhooks::repo::WebhooksRepository> =
                     Arc::new(WebhooksRepo::new(&database).await);
-                let sdk_keys: Arc<dyn crate::api::auth::publishable_keys::repo::SdkKeysRepository> =
-                    Arc::new(SdkKeysRepo::new(&database).await);
+                let sdk_keys: Arc<
+                    dyn crate::services::auth::publishable_keys::repo::SdkKeysRepository,
+                > = Arc::new(SdkKeysRepo::new(&database).await);
                 (
                     Some(auth),
                     Some(links),
@@ -122,6 +128,15 @@ async fn main() {
                 as Arc<dyn crate::core::webhook_dispatcher::WebhookDispatcher>
         });
 
+    let links_service = links_repo.as_ref().map(|repo| {
+        Arc::new(crate::services::links::service::LinksService::new(
+            repo.clone(),
+            domains_repo.clone(),
+            threat_feed.clone(),
+            cfg.public_url.clone(),
+        ))
+    });
+
     let state = Arc::new(AppState {
         auth_repo,
         links_repo,
@@ -130,14 +145,31 @@ async fn main() {
         config: cfg.clone(),
         facilitator,
         x402_price_tags,
-        threat_feed,
         webhooks_repo,
         webhook_dispatcher,
         sdk_keys_repo,
+        links_service,
     });
 
-    let app = api::router(state.clone())
-        .with_state(state)
+    // ── Build app: API + optional MCP on same port ──
+    let mut app = axum::Router::new();
+
+    #[cfg(feature = "api")]
+    {
+        app = api::router(state.clone())
+            .with_state(state.clone())
+            .merge(app);
+    }
+
+    #[cfg(feature = "mcp")]
+    {
+        if let (Some(links_svc), Some(auth)) = (&state.links_service, &state.auth_repo) {
+            tracing::info!("MCP enabled at /mcp");
+            app = app.merge(mcp::mcp_router(links_svc.clone(), auth.clone()));
+        }
+    }
+
+    let app = app
         .layer(RequestBodyLimitLayer::new(64 * 1024))
         .layer(CorsLayer::permissive());
 

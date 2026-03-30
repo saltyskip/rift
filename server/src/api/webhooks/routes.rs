@@ -5,9 +5,9 @@ use mongodb::bson::{oid::ObjectId, DateTime};
 use serde_json::json;
 use std::sync::Arc;
 
-use super::models::*;
 use crate::api::auth::middleware::TenantId;
-use crate::api::AppState;
+use crate::app::AppState;
+use crate::services::webhooks::models::*;
 
 const MAX_WEBHOOKS_PER_TENANT: usize = 2;
 

@@ -50,6 +50,13 @@ dashmap = "6"
 url = "2"
 hmac = "0.12"
 futures = "0.3"
+rmcp = { version = "1.2", features = ["server", "transport-streamable-http-server"], optional = true }
+schemars = { version = "1.2", optional = true }
+
+[features]
+default = ["api", "mcp"]
+api = []
+mcp = ["dep:rmcp", "dep:schemars"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
