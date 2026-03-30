@@ -163,12 +163,14 @@ impl LinksService {
         }
 
         // Links without a verified custom domain expire after 30 days.
-        if !self.tenant_has_verified_domain(&tenant_id).await {
+        let expires_at = if !self.tenant_has_verified_domain(&tenant_id).await {
             let thirty_days_ms = 30 * 24 * 60 * 60 * 1000_i64;
-            input = input.expires_at(DateTime::from_millis(
-                DateTime::now().timestamp_millis() + thirty_days_ms,
-            ));
-        }
+            let expiry = DateTime::from_millis(DateTime::now().timestamp_millis() + thirty_days_ms);
+            input = input.expires_at(expiry);
+            Some(expiry.try_to_rfc3339_string().unwrap_or_default())
+        } else {
+            None
+        };
 
         self.links_repo.create_link(input).await.map_err(|e| {
             if e.contains("E11000") {
@@ -180,7 +182,11 @@ impl LinksService {
         })?;
 
         let url = format!("{}/r/{}", self.public_url, link_id);
-        Ok(CreateLinkResponse { link_id, url })
+        Ok(CreateLinkResponse {
+            link_id,
+            url,
+            expires_at,
+        })
     }
 
     pub async fn get_link(

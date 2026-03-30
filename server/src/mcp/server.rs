@@ -30,7 +30,7 @@ async fn extract_api_key_header(mut req: Request, next: Next) -> Response {
 
 use super::tools::*;
 use crate::api::auth::keys;
-use crate::api::auth::repo::AuthRepository;
+use crate::api::auth::secret_keys::repo::AuthRepository;
 use crate::api::links::models::{AgentContext, CreateLinkRequest, UpdateLinkRequest};
 use crate::api::links::service::LinksService;
 
@@ -128,8 +128,8 @@ impl RiftMcp {
     ) -> Result<String, String> {
         let tenant_id = self.tenant_id()?;
         let req = UpdateLinkRequest {
-            ios_deep_link: input.ios_deep_link,
-            android_deep_link: input.android_deep_link,
+            ios_deep_link: input.ios_deep_link.map(Some),
+            android_deep_link: input.android_deep_link.map(Some),
             web_url: input.web_url,
             ios_store_url: input.ios_store_url,
             android_store_url: input.android_store_url,
