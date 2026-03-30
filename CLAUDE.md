@@ -22,6 +22,7 @@ The server separates **domain logic** from **transport layers**:
 - `api` — HTTP API routes (enabled by default)
 - `mcp` — MCP protocol server, pulls in `rmcp` and `schemars` (enabled by default)
 - Both can be independently disabled: `cargo build --no-default-features --features mcp`
+- **CI runs with default features (both enabled).** Individual feature subsets may produce dead-code warnings since `services/` is shared infrastructure
 
 ## Multi-Tenancy
 

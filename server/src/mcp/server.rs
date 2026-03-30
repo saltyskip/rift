@@ -127,9 +127,19 @@ impl RiftMcp {
         Parameters(input): Parameters<UpdateLinkInput>,
     ) -> Result<String, String> {
         let tenant_id = self.tenant_id()?;
+        let ios_deep_link = if input.clear_ios_deep_link {
+            Some(None) // unset
+        } else {
+            input.ios_deep_link.map(Some) // set or leave unchanged
+        };
+        let android_deep_link = if input.clear_android_deep_link {
+            Some(None)
+        } else {
+            input.android_deep_link.map(Some)
+        };
         let req = UpdateLinkRequest {
-            ios_deep_link: input.ios_deep_link.map(Some),
-            android_deep_link: input.android_deep_link.map(Some),
+            ios_deep_link,
+            android_deep_link,
             web_url: input.web_url,
             ios_store_url: input.ios_store_url,
             android_store_url: input.android_store_url,
@@ -210,7 +220,9 @@ impl ServerHandler for RiftMcp {
             .await
             .ok_or_else(|| McpError::invalid_params("Invalid or unverified API key", None))?;
 
-        let tenant_id = key_doc.id.unwrap_or_else(ObjectId::new);
+        let tenant_id = key_doc
+            .id
+            .ok_or_else(|| McpError::internal_error("API key has no tenant ID", None))?;
         self.tenant_id
             .set(tenant_id)
             .map_err(|_| McpError::internal_error("Session already authenticated", None))?;

@@ -47,6 +47,12 @@ pub struct UpdateLinkInput {
     pub ios_deep_link: Option<String>,
     /// Android deep link URI.
     pub android_deep_link: Option<String>,
+    /// Set to true to clear (unset) the iOS deep link.
+    #[serde(default)]
+    pub clear_ios_deep_link: bool,
+    /// Set to true to clear (unset) the Android deep link.
+    #[serde(default)]
+    pub clear_android_deep_link: bool,
     /// Web fallback URL.
     pub web_url: Option<String>,
     /// App Store link for iOS.

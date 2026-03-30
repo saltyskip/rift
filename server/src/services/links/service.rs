@@ -87,16 +87,19 @@ impl LinksService {
         }
     }
 
+    #[tracing::instrument(skip(self, req))]
     pub async fn create_link(
         &self,
         tenant_id: ObjectId,
         req: CreateLinkRequest,
     ) -> Result<CreateLinkResponse, LinkError> {
+        let has_verified_domain = self.tenant_has_verified_domain(&tenant_id).await;
+
         let link_id = match &req.custom_id {
             Some(custom) => {
                 validate_custom_id(custom)?;
 
-                if !self.tenant_has_verified_domain(&tenant_id).await {
+                if !has_verified_domain {
                     return Err(LinkError::NoVerifiedDomain);
                 }
 
@@ -163,7 +166,7 @@ impl LinksService {
         }
 
         // Links without a verified custom domain expire after 30 days.
-        let expires_at = if !self.tenant_has_verified_domain(&tenant_id).await {
+        let expires_at = if !has_verified_domain {
             let thirty_days_ms = 30 * 24 * 60 * 60 * 1000_i64;
             let expiry = DateTime::from_millis(DateTime::now().timestamp_millis() + thirty_days_ms);
             input = input.expires_at(expiry);
@@ -189,6 +192,7 @@ impl LinksService {
         })
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_link(
         &self,
         tenant_id: &ObjectId,
@@ -204,6 +208,7 @@ impl LinksService {
         Ok(self.link_to_detail(&link))
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn list_links(
         &self,
         tenant_id: &ObjectId,
@@ -240,6 +245,7 @@ impl LinksService {
         })
     }
 
+    #[tracing::instrument(skip(self, req))]
     pub async fn update_link(
         &self,
         tenant_id: &ObjectId,
@@ -334,6 +340,7 @@ impl LinksService {
         self.get_link(tenant_id, link_id).await
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<(), LinkError> {
         let deleted = self
             .links_repo
