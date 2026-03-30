@@ -29,10 +29,10 @@ async fn extract_api_key_header(mut req: Request, next: Next) -> Response {
 }
 
 use super::tools::*;
-use crate::api::auth::keys;
-use crate::api::auth::secret_keys::repo::AuthRepository;
-use crate::api::links::models::{AgentContext, CreateLinkRequest, UpdateLinkRequest};
-use crate::api::links::service::LinksService;
+use crate::services::auth::keys;
+use crate::services::auth::secret_keys::repo::AuthRepository;
+use crate::services::links::models::{AgentContext, CreateLinkRequest, UpdateLinkRequest};
+use crate::services::links::service::LinksService;
 
 pub struct RiftMcp {
     service: Arc<LinksService>,

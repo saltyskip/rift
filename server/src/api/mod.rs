@@ -10,36 +10,7 @@ use axum::Router;
 use std::sync::Arc;
 use utoipa::OpenApi;
 
-use std::sync::Arc as StdArc;
-
-use crate::api::apps::repo::AppsRepository;
-use crate::api::auth::publishable_keys::repo::SdkKeysRepository;
-use crate::api::auth::secret_keys::repo::AuthRepository;
-use crate::api::domains::repo::DomainsRepository;
-use crate::api::links::repo::LinksRepository;
-use crate::api::links::service::LinksService;
-use crate::api::webhooks::repo::WebhooksRepository;
-use crate::core::config::Config;
-use crate::core::webhook_dispatcher::WebhookDispatcher;
-
-use x402_types::proto::v1;
-
-use crate::core::cdp::CdpFacilitator;
-
-/// Shared application state available to all route handlers.
-pub struct AppState {
-    pub auth_repo: Option<StdArc<dyn AuthRepository>>,
-    pub links_repo: Option<StdArc<dyn LinksRepository>>,
-    pub domains_repo: Option<StdArc<dyn DomainsRepository>>,
-    pub apps_repo: Option<StdArc<dyn AppsRepository>>,
-    pub config: Config,
-    pub facilitator: Option<CdpFacilitator>,
-    pub x402_price_tags: Vec<v1::PriceTag>,
-    pub webhooks_repo: Option<StdArc<dyn WebhooksRepository>>,
-    pub webhook_dispatcher: Option<StdArc<dyn WebhookDispatcher>>,
-    pub sdk_keys_repo: Option<StdArc<dyn SdkKeysRepository>>,
-    pub links_service: Option<Arc<LinksService>>,
-}
+use crate::app::AppState;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -86,37 +57,37 @@ pub struct AppState {
         crate::error::ErrorResponse,
         auth::secret_keys::routes::SignupRequest,
         auth::secret_keys::routes::SignupResponse,
-        links::models::CreateLinkRequest,
-        links::models::CreateLinkResponse,
-        links::models::UpdateLinkRequest,
-        links::models::LinkDetail,
-        links::models::ListLinksResponse,
-        links::models::LinkStatsResponse,
-        links::models::ResolvedLink,
-        links::models::RiftMeta,
-        links::models::ClickRequest,
-        links::models::AttributionReportRequest,
-        links::models::LinkAttributionRequest,
-        links::models::AttributionResponse,
-        links::models::AgentContext,
-        links::models::TimeseriesDataPoint,
-        links::models::TimeseriesResponse,
-        auth::publishable_keys::models::CreateSdkKeyRequest,
-        auth::publishable_keys::models::CreateSdkKeyResponse,
-        auth::publishable_keys::models::SdkKeyDetail,
-        auth::publishable_keys::models::ListSdkKeysResponse,
-        domains::models::CreateDomainRequest,
-        domains::models::CreateDomainResponse,
-        domains::models::DomainDetail,
-        domains::models::VerifyDomainResponse,
-        apps::models::CreateAppRequest,
-        apps::models::AppDetail,
-        webhooks::models::CreateWebhookRequest,
-        webhooks::models::CreateWebhookResponse,
-        webhooks::models::WebhookDetail,
-        webhooks::models::ListWebhooksResponse,
-        webhooks::models::UpdateWebhookRequest,
-        webhooks::models::WebhookEventType,
+        crate::services::links::models::CreateLinkRequest,
+        crate::services::links::models::CreateLinkResponse,
+        crate::services::links::models::UpdateLinkRequest,
+        crate::services::links::models::LinkDetail,
+        crate::services::links::models::ListLinksResponse,
+        crate::services::links::models::LinkStatsResponse,
+        crate::services::links::models::ResolvedLink,
+        crate::services::links::models::RiftMeta,
+        crate::services::links::models::ClickRequest,
+        crate::services::links::models::AttributionReportRequest,
+        crate::services::links::models::LinkAttributionRequest,
+        crate::services::links::models::AttributionResponse,
+        crate::services::links::models::AgentContext,
+        crate::services::links::models::TimeseriesDataPoint,
+        crate::services::links::models::TimeseriesResponse,
+        crate::services::auth::publishable_keys::models::CreateSdkKeyRequest,
+        crate::services::auth::publishable_keys::models::CreateSdkKeyResponse,
+        crate::services::auth::publishable_keys::models::SdkKeyDetail,
+        crate::services::auth::publishable_keys::models::ListSdkKeysResponse,
+        crate::services::domains::models::CreateDomainRequest,
+        crate::services::domains::models::CreateDomainResponse,
+        crate::services::domains::models::DomainDetail,
+        crate::services::domains::models::VerifyDomainResponse,
+        crate::services::apps::models::CreateAppRequest,
+        crate::services::apps::models::AppDetail,
+        crate::services::webhooks::models::CreateWebhookRequest,
+        crate::services::webhooks::models::CreateWebhookResponse,
+        crate::services::webhooks::models::WebhookDetail,
+        crate::services::webhooks::models::ListWebhooksResponse,
+        crate::services::webhooks::models::UpdateWebhookRequest,
+        crate::services::webhooks::models::WebhookEventType,
     )),
     security(
         ("api_key" = []),

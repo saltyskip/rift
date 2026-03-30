@@ -6,9 +6,9 @@ use serde_json::json;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
-use super::repo::{self, ApiKeyDoc};
-use crate::api::auth::keys;
-use crate::api::AppState;
+use crate::app::AppState;
+use crate::services::auth::keys;
+use crate::services::auth::secret_keys::repo::{self, ApiKeyDoc};
 
 #[derive(Deserialize, ToSchema)]
 pub struct SignupRequest {

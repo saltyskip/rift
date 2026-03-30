@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
-use rift::api::apps::models::App;
-use rift::api::apps::repo::AppsRepository;
+use rift::services::apps::models::App;
+use rift::services::apps::repo::AppsRepository;
 
 #[derive(Default)]
 pub struct MockAppsRepo {

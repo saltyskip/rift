@@ -1,7 +1,4 @@
-pub mod models;
-pub mod repo;
 pub mod routes;
-pub mod service;
 
 use axum::middleware;
 use axum::routing::{get, post, put};
@@ -9,7 +6,7 @@ use axum::Router;
 use std::sync::Arc;
 
 use super::auth::middleware::{auth_gate, sdk_auth_gate};
-use crate::api::AppState;
+use crate::app::AppState;
 use crate::core::rate_limit::{rate_limit_middleware, RateLimiter};
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {

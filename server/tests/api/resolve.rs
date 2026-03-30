@@ -1,4 +1,4 @@
-use rift::api::domains::repo::DomainsRepository;
+use rift::services::domains::repo::DomainsRepository;
 
 use crate::common;
 

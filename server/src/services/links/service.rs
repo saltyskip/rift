@@ -6,9 +6,9 @@ use uuid::Uuid;
 
 use super::models::*;
 use super::repo::LinksRepository;
-use crate::api::domains::repo::DomainsRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
+use crate::services::domains::repo::DomainsRepository;
 
 // ── Error ──
 
@@ -457,9 +457,9 @@ fn validate_agent_context(agent_context: &Option<AgentContext>) -> Result<(), Li
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::domains::repo::DomainsRepository;
-    use crate::api::links::models::TimeseriesDataPoint;
-    use crate::api::links::repo::LinksRepository;
+    use crate::services::domains::repo::DomainsRepository;
+    use crate::services::links::models::TimeseriesDataPoint;
+    use crate::services::links::repo::LinksRepository;
     use async_trait::async_trait;
     use mongodb::bson::{oid::ObjectId, DateTime, Document};
     use std::sync::Mutex;
@@ -662,23 +662,23 @@ mod tests {
             _tenant_id: ObjectId,
             _domain: String,
             _verification_token: String,
-        ) -> Result<crate::api::domains::models::Domain, String> {
+        ) -> Result<crate::services::domains::models::Domain, String> {
             unimplemented!()
         }
 
         async fn find_by_domain(
             &self,
             _domain: &str,
-        ) -> Result<Option<crate::api::domains::models::Domain>, String> {
+        ) -> Result<Option<crate::services::domains::models::Domain>, String> {
             unimplemented!()
         }
 
         async fn list_by_tenant(
             &self,
             _tenant_id: &ObjectId,
-        ) -> Result<Vec<crate::api::domains::models::Domain>, String> {
+        ) -> Result<Vec<crate::services::domains::models::Domain>, String> {
             if self.has_verified {
-                Ok(vec![crate::api::domains::models::Domain {
+                Ok(vec![crate::services::domains::models::Domain {
                     id: ObjectId::new(),
                     tenant_id: ObjectId::new(),
                     domain: "example.com".to_string(),

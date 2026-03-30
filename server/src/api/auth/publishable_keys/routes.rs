@@ -6,10 +6,10 @@ use mongodb::bson::DateTime;
 use serde_json::json;
 use std::sync::Arc;
 
-use super::models::*;
-use crate::api::auth::keys;
 use crate::api::auth::middleware::TenantId;
-use crate::api::AppState;
+use crate::app::AppState;
+use crate::services::auth::keys;
+use crate::services::auth::publishable_keys::models::*;
 
 // ── POST /v1/auth/publishable-keys — Create a new SDK key (authenticated via rl_live_) ──
 

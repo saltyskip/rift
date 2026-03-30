@@ -9,13 +9,13 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-use super::models::*;
-use super::repo::LinksRepository;
-use super::service::LinkError;
 use crate::api::auth::middleware::{SdkDomain, TenantId};
-use crate::api::domains::repo::DomainsRepository;
-use crate::api::AppState;
+use crate::app::AppState;
 use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload};
+use crate::services::domains::repo::DomainsRepository;
+use crate::services::links::models::*;
+use crate::services::links::repo::LinksRepository;
+use crate::services::links::service::LinkError;
 
 // ── Resolve Query Params ──
 

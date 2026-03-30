@@ -5,12 +5,12 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-use rift::api::auth::publishable_keys::repo::SdkKeysRepository;
-use rift::api::auth::secret_keys::repo::{ApiKeyDoc, AuthRepository};
-use rift::api::domains::repo::DomainsRepository;
-use rift::api::AppState;
+use rift::app::AppState;
 use rift::core::config::Config;
 use rift::core::webhook_dispatcher::WebhookDispatcher;
+use rift::services::auth::publishable_keys::repo::SdkKeysRepository;
+use rift::services::auth::secret_keys::repo::{ApiKeyDoc, AuthRepository};
+use rift::services::domains::repo::DomainsRepository;
 
 use mocks::{
     MockAppsRepo, MockAuthRepo, MockDomainsRepo, MockLinksRepo, MockSdkKeysRepo,
@@ -68,29 +68,31 @@ pub async fn spawn_app() -> TestApp {
 
     let threat_feed = rift::core::threat_feed::ThreatFeed::new();
 
-    let links_service = Some(Arc::new(rift::api::links::service::LinksService::new(
-        links_repo.clone() as Arc<dyn rift::api::links::repo::LinksRepository>,
-        Some(domains_repo.clone() as Arc<dyn rift::api::domains::repo::DomainsRepository>),
+    let links_service = Some(Arc::new(rift::services::links::service::LinksService::new(
+        links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>,
+        Some(domains_repo.clone() as Arc<dyn rift::services::domains::repo::DomainsRepository>),
         threat_feed.clone(),
         config.public_url.clone(),
     )));
 
     let state = Arc::new(AppState {
         auth_repo: Some(auth_repo.clone() as Arc<dyn AuthRepository>),
-        links_repo: Some(links_repo.clone() as Arc<dyn rift::api::links::repo::LinksRepository>),
-        domains_repo: Some(
-            domains_repo.clone() as Arc<dyn rift::api::domains::repo::DomainsRepository>
+        links_repo: Some(
+            links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>
         ),
-        apps_repo: Some(apps_repo.clone() as Arc<dyn rift::api::apps::repo::AppsRepository>),
+        domains_repo: Some(
+            domains_repo.clone() as Arc<dyn rift::services::domains::repo::DomainsRepository>
+        ),
+        apps_repo: Some(apps_repo.clone() as Arc<dyn rift::services::apps::repo::AppsRepository>),
         config,
         facilitator: None,
         x402_price_tags: vec![],
         webhooks_repo: Some(
-            webhooks_repo.clone() as Arc<dyn rift::api::webhooks::repo::WebhooksRepository>
+            webhooks_repo.clone() as Arc<dyn rift::services::webhooks::repo::WebhooksRepository>
         ),
         webhook_dispatcher: Some(webhook_dispatcher.clone() as Arc<dyn WebhookDispatcher>),
         sdk_keys_repo: Some(sdk_keys_repo.clone()
-            as Arc<dyn rift::api::auth::publishable_keys::repo::SdkKeysRepository>),
+            as Arc<dyn rift::services::auth::publishable_keys::repo::SdkKeysRepository>),
         links_service,
     });
 
@@ -132,7 +134,7 @@ pub async fn seed_verified_domain(app: &TestApp, tenant_id: &ObjectId, domain: &
 pub async fn seed_sdk_key(app: &TestApp, tenant_id: &ObjectId, domain: &str) -> String {
     let raw_key = format!("pk_live_test_{}", hex::encode(ObjectId::new().bytes()));
     let hash = hex::encode(sha2::Sha256::digest(raw_key.as_bytes()));
-    let doc = rift::api::auth::publishable_keys::models::SdkKeyDoc {
+    let doc = rift::services::auth::publishable_keys::models::SdkKeyDoc {
         id: ObjectId::new(),
         tenant_id: *tenant_id,
         key_hash: hash,
