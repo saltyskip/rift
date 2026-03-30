@@ -113,6 +113,26 @@ cargo test                    # Run all tests including architecture tests
 - `sdk-ci.yml` — runs on every push/PR touching `sdk/mobile/`
 - `sdk-release.yml` — triggered by `sdk-v*` tags or manual dispatch
 
+## MCP with Claude Code
+
+The server exposes an MCP endpoint at `/mcp` (streamable HTTP transport). To enable it in Claude Code, add a `.mcp.json` in the project root:
+
+```json
+{
+  "mcpServers": {
+    "rift": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp",
+      "headers": {
+        "x-api-key": "rl_live_YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}
+```
+
+This gives Claude access to `create_link`, `get_link`, `list_links`, `update_link`, and `delete_link` tools. The API key authenticates each MCP session — use the same `rl_live_` key you'd use with the REST API.
+
 ## Environment Variables
 
 | Variable | Required | Purpose |
