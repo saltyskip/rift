@@ -13,13 +13,10 @@ const FRAMEWORKS = [
   Rift.init("pk_live_YOUR_KEY");
 </script>
 
-<a
-  href="https://go.yourcompany.com/summer-sale"
-  onclick="if(window.Rift) Rift.click('summer-sale')"
->
+<a href="https://go.yourcompany.com/summer-sale" data-rift="summer-sale">
   Get the App
 </a>`,
-    notes: "The link is a plain <a> tag pointing to your Universal Link domain. Universal Links open the app if installed; the landing page loads if not. Rift.click() fires a beacon to record the click without blocking navigation.",
+    notes: "Add data-rift=\"link-id\" to any element. The SDK auto-tracks clicks after Rift.init() — no inline JavaScript needed. Universal Links open the app if installed; the landing page loads if not.",
   },
   {
     id: "nextjs",
@@ -57,21 +54,16 @@ export default function RootLayout({ children }) {
   );
 }
 
-// components/download-button.tsx — plain <a> tag with click tracking
-"use client";
-
+// components/download-button.tsx — just a plain <a> with data-rift
 export function DownloadButton({ linkId }: { linkId: string }) {
   const href = \`https://go.yourcompany.com/\${linkId}\`;
   return (
-    <a
-      href={href}
-      onClick={() => window.Rift?.click(linkId)}
-    >
+    <a href={href} data-rift={linkId}>
       Get the App
     </a>
   );
 }`,
-    notes: "The script must be loaded in a Client Component (Server Components can't use onLoad). The download button is a plain <a> tag — Universal Links fire on tap, Rift.click() records the click via sendBeacon without blocking.",
+    notes: "The script must be loaded in a Client Component (Server Components can't use onLoad). The download button is a plain <a> tag with data-rift — no onClick handler needed. Works with dynamic rendering and SPA navigation automatically.",
   },
   {
     id: "svelte",
@@ -81,13 +73,10 @@ export function DownloadButton({ linkId }: { linkId: string }) {
   <script src="https://api.riftl.ink/sdk/rift.js" on:load={() => Rift.init('pk_live_YOUR_KEY')}></script>
 </svelte:head>
 
-<a
-  href="https://go.yourcompany.com/summer-sale"
-  on:click={() => window.Rift?.click('summer-sale')}
->
+<a href="https://go.yourcompany.com/summer-sale" data-rift="summer-sale">
   Get the App
 </a>`,
-    notes: "Uses <svelte:head> to load the script and initialize with your publishable key. The click handler records the event without preventing the default navigation.",
+    notes: "Uses <svelte:head> to load the script and initialize with your publishable key. The data-rift attribute handles click tracking automatically — no on:click needed.",
   },
   {
     id: "vue",
@@ -105,14 +94,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <a
-    href="https://go.yourcompany.com/summer-sale"
-    @click="window.Rift?.click('summer-sale')"
-  >
+  <a href="https://go.yourcompany.com/summer-sale" data-rift="summer-sale">
     Get the App
   </a>
 </template>`,
-    notes: "Loads the script dynamically in onMounted and calls Rift.init() with your publishable key on load. The link is a plain <a> tag — no preventDefault needed.",
+    notes: "Loads the script dynamically in onMounted and calls Rift.init() with your publishable key on load. The data-rift attribute handles click tracking — no @click handler needed.",
   },
 ];
 
@@ -207,13 +193,47 @@ export default function WebSdkPage() {
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">data-rift=&quot;linkId&quot;</code>
+            </h3>
+            <p className="text-[15px] text-[#a1a1aa]">
+              Add this attribute to any clickable element to auto-track clicks after{" "}
+              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">Rift.init()</code>.
+              Uses event delegation, so it works with dynamically rendered elements (React, Vue, Svelte, etc.)
+              without re-binding. Multiple{" "}
+              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">data-rift</code> elements
+              on the same page work independently.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px] border border-[#1e1e22] rounded-lg overflow-hidden">
+                <thead>
+                  <tr className="bg-[#0c0c0e]">
+                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Attribute</th>
+                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[#a1a1aa]">
+                  <tr className="border-b border-[#1e1e22]">
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">data-rift</td>
+                    <td className="px-4 py-2.5">The link ID to track. Required.</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">data-rift-domain</td>
+                    <td className="px-4 py-2.5">Custom domain for the clipboard URL (e.g., <code className="text-[#71717a]">go.yourcompany.com</code>). Defaults to the current page hostname.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-[#fafafa]">
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">Rift.click(linkId, opts?)</code>
             </h3>
             <p className="text-[15px] text-[#a1a1aa]">
-              Records a click event via <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">sendBeacon</code>.
+              Imperative alternative to <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">data-rift</code> for
+              programmatic use cases. Records a click event via{" "}
+              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">sendBeacon</code>.
               Fire-and-forget &mdash; does not block navigation, does not return data.
-              Use in the <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">onClick</code> handler
-              of an <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">&lt;a&gt;</code> tag.
               Do not call <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">preventDefault()</code> &mdash;
               the <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">&lt;a&gt;</code> tag handles navigation
               so Universal Links work.
@@ -269,10 +289,11 @@ console.log(link._rift_meta);    // { status, tenant_domain, ... }`}</CodeBlock>
               tag pointing to your Universal Link domain.
             </li>
             <li>
-              When the user taps the link, <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">Rift.click()</code>{" "}
-              fires a <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">sendBeacon</code> to{" "}
+              When the user taps the link, the SDK auto-fires a{" "}
+              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">sendBeacon</code> to{" "}
               <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/click</code>{" "}
-              to record the click. This is fire-and-forget and does not block navigation.
+              to record the click (via the <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">data-rift</code> attribute).
+              This is fire-and-forget and does not block navigation.
             </li>
             <li>
               <strong className="text-[#fafafa]">App installed:</strong> iOS/Android intercepts the tap via Universal Links / App Links
