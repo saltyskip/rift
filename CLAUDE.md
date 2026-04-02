@@ -9,8 +9,8 @@ Deep links for humans and agents.
 The server separates **domain logic** from **transport layers**:
 
 - **`services/`** — Transport-agnostic business logic. Each domain (links, auth, domains, apps, webhooks) has its own directory with `models.rs`, `repo.rs`, and optionally `service.rs`
-- **`api/`** — HTTP transport. Each slice has `mod.rs` (router) and `routes.rs` (handlers). Imports models/repos from `services/`
-- **`mcp/`** — MCP protocol transport. Imports from `services/`, not from `api/`
+- **`api/`** — HTTP transport. Each slice has `mod.rs` (router) and `routes.rs` (handlers). Route handlers must be **thin wrappers**: extract HTTP params, call a service method, format the response. No business logic, validation, or database calls in route handlers — all of that belongs in `services/`
+- **`mcp/`** — MCP protocol transport. Same rule: thin wrappers around service methods. Imports from `services/`, not from `api/`
 - **`app.rs`** — `AppState` struct, shared across transports
 - **`core/`** — Shared infra only (db connection, config, rate limiting) — no business logic
 - **Transport layers must not import from each other** — both `api/` and `mcp/` import from `services/`
