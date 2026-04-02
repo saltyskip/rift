@@ -9,8 +9,8 @@ Deep links for humans and agents.
 The server separates **domain logic** from **transport layers**:
 
 - **`services/`** — Transport-agnostic business logic. Each domain (links, auth, domains, apps, webhooks) has its own directory with `models.rs`, `repo.rs`, and optionally `service.rs`
-- **`api/`** — HTTP transport. Each slice has `mod.rs` (router) and `routes.rs` (handlers). Imports models/repos from `services/`
-- **`mcp/`** — MCP protocol transport. Imports from `services/`, not from `api/`
+- **`api/`** — HTTP transport. Each slice has `mod.rs` (router) and `routes.rs` (handlers). Route handlers must be **thin wrappers**: extract HTTP params, call a service method, format the response. No business logic, validation, or database calls in route handlers — all of that belongs in `services/`
+- **`mcp/`** — MCP protocol transport. Same rule: thin wrappers around service methods. Imports from `services/`, not from `api/`
 - **`app.rs`** — `AppState` struct, shared across transports
 - **`core/`** — Shared infra only (db connection, config, rate limiting) — no business logic
 - **Transport layers must not import from each other** — both `api/` and `mcp/` import from `services/`
@@ -39,6 +39,7 @@ Public endpoints (landing page, attribution reporting) resolve the tenant from t
 3. Create `api/<name>/routes.rs` for HTTP handlers — import models/repos from `crate::services::<name>`
 4. Merge the router in `api/mod.rs` and register paths in the OpenAPI derive
 5. Add `#[tracing::instrument]` to all route handlers (skip large args like state, body)
+6. Add `#[schema(example = "...")]` to all `ToSchema` struct fields for good OpenAPI documentation
 
 ## Style Guidelines
 

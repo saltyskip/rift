@@ -162,6 +162,27 @@ async fn main() {
         ))
     });
 
+    let users_service = match (&tenants_repo, &users_repo, &new_secret_keys_repo) {
+        (Some(t), Some(u), Some(sk)) => Some(Arc::new(
+            crate::services::auth::users::service::UsersService::new(
+                t.clone(),
+                u.clone(),
+                sk.clone(),
+            ),
+        )),
+        _ => None,
+    };
+
+    let secret_keys_service = match (&new_secret_keys_repo, &users_repo) {
+        (Some(sk), Some(u)) => Some(Arc::new(
+            crate::services::auth::secret_keys::service::SecretKeysService::new(
+                sk.clone(),
+                u.clone(),
+            ),
+        )),
+        _ => None,
+    };
+
     let state = Arc::new(AppState {
         auth_repo,
         tenants_repo,
@@ -178,6 +199,8 @@ async fn main() {
         webhook_dispatcher,
         sdk_keys_repo,
         links_service,
+        users_service,
+        secret_keys_service,
     });
 
     // ── Build app: API + optional MCP on same port ──

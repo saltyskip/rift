@@ -23,8 +23,6 @@ pub struct TenantId(pub ObjectId);
 
 /// The ObjectId of the secret key used for authentication.
 /// Handlers extract this via `Extension<AuthKeyId>`.
-/// Used by delete endpoint guard in PR 3.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AuthKeyId(pub ObjectId);
 

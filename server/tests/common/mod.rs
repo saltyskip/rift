@@ -112,6 +112,19 @@ pub async fn spawn_app() -> TestApp {
         sdk_keys_repo: Some(sdk_keys_repo.clone()
             as Arc<dyn rift::services::auth::publishable_keys::repo::SdkKeysRepository>),
         links_service,
+        users_service: Some(Arc::new(
+            rift::services::auth::users::service::UsersService::new(
+                tenants_repo.clone() as Arc<dyn TenantsRepository>,
+                users_repo.clone() as Arc<dyn UsersRepository>,
+                new_secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>,
+            ),
+        )),
+        secret_keys_service: Some(Arc::new(
+            rift::services::auth::secret_keys::service::SecretKeysService::new(
+                new_secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>,
+                users_repo.clone() as Arc<dyn UsersRepository>,
+            ),
+        )),
     });
 
     let app = rift::api::router(state.clone())
