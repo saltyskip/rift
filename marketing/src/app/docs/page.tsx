@@ -35,20 +35,19 @@ export default function QuickStartPage() {
 
           <Step n={1} title="Sign up">
             <p>
-              Send a POST request with your email to get an API key.
-              You&apos;ll receive a verification email.
+              Send a POST request with your email. You&apos;ll receive a verification email.
             </p>
             <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/auth/signup \\
   -H "Content-Type: application/json" \\
   -d '{"email": "you@example.com"}'`}</CodeBlock>
-            <p>
-              The response contains your API key prefix (starts with <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">rl_live_</code>).
-              The full key is in the verification email — save it, it won&apos;t be shown again.
-            </p>
           </Step>
 
-          <Step n={2} title="Verify your email">
-            <p>Click the verification link in your inbox. Your key is now active.</p>
+          <Step n={2} title="Verify your email and get your key">
+            <p>
+              Click the verification link in your inbox. The response will contain your full API key
+              (starts with <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">rl_live_</code>).
+              Save it immediately — it&apos;s shown only once and never sent via email.
+            </p>
           </Step>
 
           <Step n={3} title="Create a publishable key">
