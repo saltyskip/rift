@@ -1,6 +1,7 @@
 (function() {
   var DEFAULT_BASE = "https://api.riftl.ink";
   var _publishableKey = null;
+  var _domain = null;
   var _bound = false;
 
   var Rift = {
@@ -8,34 +9,39 @@
       opts = opts || {};
       _publishableKey = publishableKey;
       if (opts.baseUrl) DEFAULT_BASE = opts.baseUrl;
+      if (opts.domain) _domain = opts.domain;
 
-      // Auto-bind click tracking for [data-rift] elements via event delegation.
-      if (!_bound && typeof document !== "undefined") {
+      // Auto-track clicks on links matching the custom domain.
+      if (!_bound && _domain && typeof document !== "undefined") {
         _bound = true;
         document.addEventListener("click", function(e) {
-          var el = e.target.closest("[data-rift]");
-          if (!el) return;
-          var linkId = el.getAttribute("data-rift");
-          if (linkId) {
-            Rift.click(linkId, { domain: el.getAttribute("data-rift-domain") || undefined });
+          var a = e.target.closest("a[href]");
+          if (!a) return;
+          var prefix = "https://" + _domain + "/";
+          var href = a.href;
+          if (href.indexOf(prefix) === 0) {
+            var linkId = href.slice(prefix.length).split("?")[0].split("#")[0];
+            if (linkId) {
+              Rift.click(linkId, { domain: _domain });
+            }
           }
         }, true);
       }
     },
 
     // Fire-and-forget click tracking + clipboard write.
-    // Called automatically for [data-rift] elements, or manually
-    // via Rift.click('link-id') for programmatic use cases.
+    // Called automatically for links matching the custom domain.
+    // Can also be called manually for programmatic use cases.
     // Does NOT navigate — the <a> tag handles navigation so Universal Links work.
     //
     // opts.domain — custom domain for clipboard URL (e.g. "go.yourcompany.com").
-    //               Defaults to location.hostname.
+    //               Defaults to the init domain or location.hostname.
     click: function(linkId, opts) {
       opts = opts || {};
 
       // Clipboard write — must happen here while we have the user gesture.
       if (typeof navigator !== "undefined" && navigator.clipboard) {
-        var domain = opts.domain || (typeof location !== "undefined" ? location.hostname : null);
+        var domain = opts.domain || _domain || (typeof location !== "undefined" ? location.hostname : null);
         if (domain) {
           var clipUrl = "https://" + domain + "/" + linkId;
           navigator.clipboard.writeText(clipUrl).catch(function(){});
