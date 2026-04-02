@@ -54,7 +54,7 @@ pub struct ListUsersResponse {
 #[utoipa::path(
     post,
     path = "/v1/auth/users",
-    tag = "Authentication",
+    tag = "Team Members",
     request_body = InviteUserRequest,
     responses(
         (status = 201, description = "Invitation sent", body = InviteUserResponse),
@@ -106,7 +106,7 @@ pub async fn invite_user(
 #[utoipa::path(
     get,
     path = "/v1/auth/users",
-    tag = "Authentication",
+    tag = "Team Members",
     responses(
         (status = 200, description = "List of users", body = ListUsersResponse),
     ),
@@ -146,7 +146,7 @@ pub async fn list_users(
 #[utoipa::path(
     delete,
     path = "/v1/auth/users/{user_id}",
-    tag = "Authentication",
+    tag = "Team Members",
     params(("user_id" = String, Path, description = "User ID")),
     responses(
         (status = 204, description = "User removed"),

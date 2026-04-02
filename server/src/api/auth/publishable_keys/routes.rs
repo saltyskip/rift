@@ -16,7 +16,7 @@ use crate::services::auth::publishable_keys::models::*;
 #[utoipa::path(
     post,
     path = "/v1/auth/publishable-keys",
-    tag = "Authentication",
+    tag = "Publishable Keys",
     request_body = CreateSdkKeyRequest,
     responses(
         (status = 201, description = "SDK key created", body = CreateSdkKeyResponse),
@@ -120,7 +120,7 @@ pub async fn create_sdk_key(
 #[utoipa::path(
     get,
     path = "/v1/auth/publishable-keys",
-    tag = "Authentication",
+    tag = "Publishable Keys",
     responses(
         (status = 200, description = "List of SDK keys", body = ListSdkKeysResponse),
     ),
@@ -168,7 +168,7 @@ pub async fn list_sdk_keys(
 #[utoipa::path(
     delete,
     path = "/v1/auth/publishable-keys/{key_id}",
-    tag = "Authentication",
+    tag = "Publishable Keys",
     params(("key_id" = String, Path, description = "SDK Key ID")),
     responses(
         (status = 204, description = "SDK key revoked"),
