@@ -39,6 +39,7 @@ Public endpoints (landing page, attribution reporting) resolve the tenant from t
 3. Create `api/<name>/routes.rs` for HTTP handlers — import models/repos from `crate::services::<name>`
 4. Merge the router in `api/mod.rs` and register paths in the OpenAPI derive
 5. Add `#[tracing::instrument]` to all route handlers (skip large args like state, body)
+6. Add `#[schema(example = "...")]` to all `ToSchema` struct fields for good OpenAPI documentation
 
 ## Style Guidelines
 
