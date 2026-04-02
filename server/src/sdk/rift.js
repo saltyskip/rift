@@ -1,17 +1,32 @@
 (function() {
   var DEFAULT_BASE = "https://api.riftl.ink";
   var _publishableKey = null;
+  var _bound = false;
 
   var Rift = {
     init: function(publishableKey, opts) {
       opts = opts || {};
       _publishableKey = publishableKey;
       if (opts.baseUrl) DEFAULT_BASE = opts.baseUrl;
+
+      // Auto-bind click tracking for [data-rift] elements via event delegation.
+      if (!_bound && typeof document !== "undefined") {
+        _bound = true;
+        document.addEventListener("click", function(e) {
+          var el = e.target.closest("[data-rift]");
+          if (!el) return;
+          var linkId = el.getAttribute("data-rift");
+          if (linkId) {
+            Rift.click(linkId, { domain: el.getAttribute("data-rift-domain") || undefined });
+          }
+        }, true);
+      }
     },
 
     // Fire-and-forget click tracking + clipboard write.
-    // Use on <a> tag onClick handlers. Does NOT navigate —
-    // the <a> tag handles navigation so Universal Links work.
+    // Called automatically for [data-rift] elements, or manually
+    // via Rift.click('link-id') for programmatic use cases.
+    // Does NOT navigate — the <a> tag handles navigation so Universal Links work.
     //
     // opts.domain — custom domain for clipboard URL (e.g. "go.yourcompany.com").
     //               Defaults to location.hostname.
