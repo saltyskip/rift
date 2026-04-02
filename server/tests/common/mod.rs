@@ -9,8 +9,9 @@ use rift::app::AppState;
 use rift::core::config::Config;
 use rift::core::webhook_dispatcher::WebhookDispatcher;
 use rift::services::auth::publishable_keys::repo::SdkKeysRepository;
-use rift::services::auth::secret_keys::new_repo::SecretKeysRepository;
+use rift::services::auth::secret_keys::new_repo::{SecretKeyDoc, SecretKeysRepository};
 use rift::services::auth::secret_keys::repo::{ApiKeyDoc, AuthRepository};
+use rift::services::auth::tenants::repo::TenantDoc;
 use rift::services::auth::tenants::repo::TenantsRepository;
 use rift::services::auth::usage::repo::UsageRepository;
 use rift::services::auth::users::repo::UsersRepository;
@@ -191,4 +192,39 @@ pub async fn seed_api_key_with(app: &TestApp, raw_key: &str) -> (String, ObjectI
 
     app.auth_repo.upsert_key(&doc).await.unwrap();
     (raw_key.to_string(), key_id)
+}
+
+/// Seed a verified API key using the new Tenant/SecretKey model. Returns (raw_key, tenant_id).
+#[allow(dead_code)]
+pub async fn seed_api_key_v2(app: &TestApp) -> (String, ObjectId) {
+    seed_api_key_v2_with(app, "rl_live_test1234567890abcdef1234567890abcdef12345678").await
+}
+
+/// Seed a verified API key using the new model with a specific raw key.
+#[allow(dead_code)]
+pub async fn seed_api_key_v2_with(app: &TestApp, raw_key: &str) -> (String, ObjectId) {
+    let hash = hex::encode(Sha256::digest(raw_key.as_bytes()));
+    let tenant_id = ObjectId::new();
+    let user_id = ObjectId::new();
+
+    // Create tenant
+    let tenant_doc = TenantDoc {
+        id: Some(tenant_id),
+        monthly_quota: 1000,
+        created_at: mongodb::bson::DateTime::now(),
+    };
+    app.tenants_repo.create(&tenant_doc).await.unwrap();
+
+    // Create secret key
+    let key_doc = SecretKeyDoc {
+        id: ObjectId::new(),
+        tenant_id,
+        created_by: user_id,
+        key_hash: hash,
+        key_prefix: format!("{}...", &raw_key[..18]),
+        created_at: mongodb::bson::DateTime::now(),
+    };
+    app.new_secret_keys_repo.create_key(&key_doc).await.unwrap();
+
+    (raw_key.to_string(), tenant_id)
 }

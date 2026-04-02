@@ -30,6 +30,7 @@ async fn extract_api_key_header(mut req: Request, next: Next) -> Response {
 
 use super::tools::*;
 use crate::services::auth::keys;
+use crate::services::auth::secret_keys::new_repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::repo::AuthRepository;
 use crate::services::links::models::{AgentContext, CreateLinkRequest, UpdateLinkRequest};
 use crate::services::links::service::LinksService;
@@ -37,15 +38,21 @@ use crate::services::links::service::LinksService;
 pub struct RiftMcp {
     service: Arc<LinksService>,
     auth_repo: Arc<dyn AuthRepository>,
+    secret_keys_repo: Option<Arc<dyn SecretKeysRepository>>,
     tenant_id: OnceLock<ObjectId>,
     tool_router: ToolRouter<Self>,
 }
 
 impl RiftMcp {
-    pub fn new(service: Arc<LinksService>, auth_repo: Arc<dyn AuthRepository>) -> Self {
+    pub fn new(
+        service: Arc<LinksService>,
+        auth_repo: Arc<dyn AuthRepository>,
+        secret_keys_repo: Option<Arc<dyn SecretKeysRepository>>,
+    ) -> Self {
         Self {
             service,
             auth_repo,
+            secret_keys_repo,
             tenant_id: OnceLock::new(),
             tool_router: Self::tool_router(),
         }
@@ -212,17 +219,35 @@ impl ServerHandler for RiftMcp {
                 )
             })?;
 
-        // Hash and look up the key
+        // Hash and look up the key — try new repo first, fall back to old
         let key_hash = keys::hash_key(&api_key);
-        let key_doc = self
-            .auth_repo
-            .find_key_by_hash(&key_hash)
-            .await
-            .ok_or_else(|| McpError::invalid_params("Invalid or unverified API key", None))?;
 
-        let tenant_id = key_doc
-            .id
-            .ok_or_else(|| McpError::internal_error("API key has no tenant ID", None))?;
+        let tenant_id = if let Some(sk_repo) = &self.secret_keys_repo {
+            if let Ok(Some(key_doc)) = sk_repo.find_by_hash(&key_hash).await {
+                key_doc.tenant_id
+            } else {
+                // Fall back to old repo
+                let key_doc = self
+                    .auth_repo
+                    .find_key_by_hash(&key_hash)
+                    .await
+                    .ok_or_else(|| {
+                        McpError::invalid_params("Invalid or unverified API key", None)
+                    })?;
+                key_doc
+                    .id
+                    .ok_or_else(|| McpError::internal_error("API key has no tenant ID", None))?
+            }
+        } else {
+            let key_doc = self
+                .auth_repo
+                .find_key_by_hash(&key_hash)
+                .await
+                .ok_or_else(|| McpError::invalid_params("Invalid or unverified API key", None))?;
+            key_doc
+                .id
+                .ok_or_else(|| McpError::internal_error("API key has no tenant ID", None))?
+        };
         self.tenant_id
             .set(tenant_id)
             .map_err(|_| McpError::internal_error("Session already authenticated", None))?;
@@ -241,9 +266,16 @@ impl ServerHandler for RiftMcp {
 pub fn mcp_router(
     links_service: Arc<LinksService>,
     auth_repo: Arc<dyn AuthRepository>,
+    secret_keys_repo: Option<Arc<dyn SecretKeysRepository>>,
 ) -> axum::Router {
     let service = StreamableHttpService::new(
-        move || Ok(RiftMcp::new(links_service.clone(), auth_repo.clone())),
+        move || {
+            Ok(RiftMcp::new(
+                links_service.clone(),
+                auth_repo.clone(),
+                secret_keys_repo.clone(),
+            ))
+        },
         Arc::new(LocalSessionManager::default()),
         StreamableHttpServerConfig::default(),
     );

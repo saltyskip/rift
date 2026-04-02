@@ -194,7 +194,11 @@ async fn main() {
     {
         if let (Some(links_svc), Some(auth)) = (&state.links_service, &state.auth_repo) {
             tracing::info!("MCP enabled at /mcp");
-            app = app.merge(mcp::mcp_router(links_svc.clone(), auth.clone()));
+            app = app.merge(mcp::mcp_router(
+                links_svc.clone(),
+                auth.clone(),
+                state.secret_keys_repo.clone(),
+            ));
         }
     }
 
