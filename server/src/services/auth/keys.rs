@@ -46,7 +46,6 @@ pub fn hash_key(key: &str) -> String {
     hex::encode(Sha256::digest(key.as_bytes()))
 }
 
-#[allow(dead_code)]
 /// Generate a 6-character uppercase alphanumeric code for email confirmation.
 pub fn generate_key_create_code() -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";

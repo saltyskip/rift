@@ -54,13 +54,10 @@ impl UserError {
 
 // ── Response types ──
 
-pub struct SignupResult {
-    pub tenant_id: ObjectId,
-}
+pub struct SignupResult;
 
 pub struct VerifyResult {
     pub tenant_id: ObjectId,
-    pub is_owner: bool,
     pub email: String,
     /// Only set for owner verification — the full key shown once.
     pub key: Option<String>,
@@ -182,7 +179,7 @@ impl UsersService {
         .await
         .map_err(UserError::EmailFailed)?;
 
-        Ok(SignupResult { tenant_id })
+        Ok(SignupResult)
     }
 
     /// Verify a user's email. For owners, generates the first key.
@@ -214,7 +211,6 @@ impl UsersService {
 
             Ok(VerifyResult {
                 tenant_id: user.tenant_id,
-                is_owner: true,
                 email: user.email,
                 key: Some(full_key),
                 key_prefix: Some(key_prefix),
@@ -222,7 +218,6 @@ impl UsersService {
         } else {
             Ok(VerifyResult {
                 tenant_id: user.tenant_id,
-                is_owner: false,
                 email: user.email,
                 key: None,
                 key_prefix: None,

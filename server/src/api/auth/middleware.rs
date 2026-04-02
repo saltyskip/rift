@@ -2,7 +2,6 @@ use axum::extract::Request;
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Json, Response};
-use chrono::{Datelike, Utc};
 use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::net::SocketAddr;
@@ -13,7 +12,6 @@ use x402_types::proto::v1;
 use crate::app::AppState;
 use crate::services::auth::keys;
 use crate::services::auth::secret_keys::new_repo::SecretKeysRepository;
-use crate::services::auth::secret_keys::repo::{self, AuthRepository, UsageDoc};
 use crate::services::auth::usage::repo::{self as usage_repo};
 
 /// Tenant identity injected by the auth middleware.
@@ -33,7 +31,7 @@ pub struct SdkDomain(pub String);
 /// Auth + rate-limit middleware for protected endpoints.
 ///
 /// Priority:
-/// 1. API key present -> validate, check monthly quota, inject TenantId, proceed
+/// 1. API key present -> validate, inject TenantId, proceed
 /// 2. x402 payment header -> verify with facilitator, proceed, settle after
 /// 3. No key, within IP daily limit -> proceed (anonymous free tier)
 /// 4. No key, IP limit exceeded -> 429
@@ -42,7 +40,7 @@ pub async fn auth_gate(
     mut req: Request,
     next: Next,
 ) -> Response {
-    let auth_repo = match &state.auth_repo {
+    let usage_repo = match &state.usage_repo {
         Some(r) => r.as_ref(),
         None => return next.run(req).await,
     };
@@ -53,9 +51,7 @@ pub async fn auth_gate(
     // ── Path 1: API key ──
     if let Some(raw_key) = extract_bearer(&req) {
         let (tenant_id, key_id) =
-            match validate_api_key_dual(auth_repo, state.secret_keys_repo.as_deref(), &raw_key)
-                .await
-            {
+            match validate_api_key(state.secret_keys_repo.as_deref(), &raw_key).await {
                 Ok(ids) => ids,
                 Err(resp) => return resp,
             };
@@ -66,20 +62,15 @@ pub async fn auth_gate(
 
         let response = next.run(req).await;
         if response.status().is_success() {
-            // Use new usage repo if available, fall back to old auth_repo
-            if let Some(usage) = &state.usage_repo {
-                usage
-                    .record_usage(usage_repo::UsageDoc {
-                        id: None,
-                        api_key_id: Some(key_id),
-                        ip: ip.clone(),
-                        endpoint: endpoint.clone(),
-                        ts: usage_repo::now_bson(),
-                    })
-                    .await;
-            } else {
-                record_usage(auth_repo, Some(key_id), ip, &endpoint).await;
-            }
+            usage_repo
+                .record_usage(usage_repo::UsageDoc {
+                    id: None,
+                    api_key_id: Some(key_id),
+                    ip: ip.clone(),
+                    endpoint: endpoint.clone(),
+                    ts: usage_repo::now_bson(),
+                })
+                .await;
         }
         return response;
     }
@@ -139,20 +130,7 @@ pub async fn auth_gate(
             if let Err(e) = facilitator.settle(&verify_request).await {
                 tracing::error!("x402 settlement failed: {e}");
             }
-            record_usage(auth_repo, None, ip, &endpoint).await;
-        }
-        return response;
-    }
-
-    // ── Path 3: Anonymous / IP rate limit ──
-    if let Err(resp) = check_anonymous_limit(&state, auth_repo, &ip).await {
-        return resp;
-    }
-
-    let response = next.run(req).await;
-    if response.status().is_success() {
-        if let Some(usage) = &state.usage_repo {
-            usage
+            usage_repo
                 .record_usage(usage_repo::UsageDoc {
                     id: None,
                     api_key_id: None,
@@ -161,9 +139,26 @@ pub async fn auth_gate(
                     ts: usage_repo::now_bson(),
                 })
                 .await;
-        } else {
-            record_usage(auth_repo, None, ip, &endpoint).await;
         }
+        return response;
+    }
+
+    // ── Path 3: Anonymous / IP rate limit ──
+    if let Err(resp) = check_anonymous_limit(&state, usage_repo, &ip).await {
+        return resp;
+    }
+
+    let response = next.run(req).await;
+    if response.status().is_success() {
+        usage_repo
+            .record_usage(usage_repo::UsageDoc {
+                id: None,
+                api_key_id: None,
+                ip: ip.clone(),
+                endpoint: endpoint.clone(),
+                ts: usage_repo::now_bson(),
+            })
+            .await;
     }
     response
 }
@@ -270,79 +265,75 @@ fn extract_sdk_query_key(req: &Request) -> Option<String> {
     })
 }
 
-async fn record_usage(
-    auth_repo: &dyn AuthRepository,
-    api_key_id: Option<ObjectId>,
-    ip: String,
-    endpoint: &str,
-) {
-    auth_repo
-        .record_usage(UsageDoc {
-            id: None,
-            api_key_id,
-            ip,
-            endpoint: endpoint.to_string(),
-            ts: repo::now_bson(),
-        })
-        .await;
-}
-
-/// Dual-read key validation: try new SecretKeysRepository first, fall back to old AuthRepository.
+/// Validate an API key against SecretKeysRepository.
 /// Returns (tenant_id, key_id).
-///
-/// Quota checks are skipped for the new repo path — quota enforcement is deferred to a future PR.
-async fn validate_api_key_dual(
-    auth_repo: &dyn AuthRepository,
+async fn validate_api_key(
     secret_keys_repo: Option<&dyn SecretKeysRepository>,
     raw_key: &str,
 ) -> Result<(ObjectId, ObjectId), Response> {
     let hash = keys::hash_key(raw_key);
 
-    // Try new repo first — no quota checks for now
-    if let Some(sk_repo) = secret_keys_repo {
-        if let Ok(Some(key_doc)) = sk_repo.find_by_hash(&hash).await {
-            return Ok((key_doc.tenant_id, key_doc.id));
-        }
-    }
-
-    // Fall back to old repo (with existing quota checks)
-    let key_doc = auth_repo.find_key_by_hash(&hash).await.ok_or_else(|| {
+    let sk_repo = secret_keys_repo.ok_or_else(|| {
         (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({
-                "error": "Invalid or unverified API key",
-                "code": "invalid_key"
-            })),
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Auth not configured", "code": "no_database" })),
         )
             .into_response()
     })?;
 
-    let key_id = key_doc.id.unwrap_or_else(ObjectId::new);
-    let month_start = Utc::now()
+    let key_doc = sk_repo
+        .find_by_hash(&hash)
+        .await
+        .map_err(|e| {
+            tracing::error!("Key lookup failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
+        })?
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "error": "Invalid or unverified API key",
+                    "code": "invalid_key"
+                })),
+            )
+                .into_response()
+        })?;
+
+    Ok((key_doc.tenant_id, key_doc.id))
+}
+
+async fn check_anonymous_limit(
+    state: &AppState,
+    usage_repo: &dyn usage_repo::UsageRepository,
+    ip: &str,
+) -> Result<(), Response> {
+    let today_start = chrono::Utc::now()
         .date_naive()
-        .with_day(1)
-        .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap()
         .and_utc();
-    let used = auth_repo.count_key_usage_since(&key_id, month_start).await;
+    let ip_used = usage_repo.count_ip_usage_since(ip, today_start).await;
+    let daily_limit = state.config.free_daily_limit;
 
-    if used >= key_doc.monthly_quota {
-        return Err((
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(json!({
-                "error": "Monthly quota exceeded",
-                "code": "quota_exceeded",
-                "used": used,
-                "quota": key_doc.monthly_quota,
-                "hint": "Contact us for higher limits"
-            })),
-        )
-            .into_response());
+    if ip_used < daily_limit {
+        return Ok(());
     }
 
-    // For old keys, tenant_id = key_id (the ApiKeyDoc._id)
-    Ok((key_id, key_id))
+    Err((
+        StatusCode::TOO_MANY_REQUESTS,
+        Json(json!({
+            "error": "Daily free limit exceeded",
+            "code": "rate_limited",
+            "used": ip_used,
+            "limit": daily_limit,
+            "hint": "Sign up for a free API key (100/month) at POST /v1/auth/signup"
+        })),
+    )
+        .into_response())
 }
 
 #[allow(clippy::result_large_err)]
@@ -385,34 +376,4 @@ fn decode_payment_header(
         )
             .into_response()
     })
-}
-
-async fn check_anonymous_limit(
-    state: &AppState,
-    auth_repo: &dyn AuthRepository,
-    ip: &str,
-) -> Result<(), Response> {
-    let today_start = Utc::now()
-        .date_naive()
-        .and_hms_opt(0, 0, 0)
-        .unwrap()
-        .and_utc();
-    let ip_used = auth_repo.count_ip_usage_since(ip, today_start).await;
-    let daily_limit = state.config.free_daily_limit;
-
-    if ip_used < daily_limit {
-        return Ok(());
-    }
-
-    Err((
-        StatusCode::TOO_MANY_REQUESTS,
-        Json(json!({
-            "error": "Daily free limit exceeded",
-            "code": "rate_limited",
-            "used": ip_used,
-            "limit": daily_limit,
-            "hint": "Sign up for a free API key (100/month) at POST /v1/auth/signup"
-        })),
-    )
-        .into_response())
 }

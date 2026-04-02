@@ -18,7 +18,6 @@ pub struct TenantDoc {
 #[async_trait]
 pub trait TenantsRepository: Send + Sync {
     async fn create(&self, doc: &TenantDoc) -> Result<(), String>;
-    async fn find_by_id(&self, id: &ObjectId) -> Result<Option<TenantDoc>, String>;
 }
 
 // ── Repository ──
@@ -43,12 +42,5 @@ impl TenantsRepository for TenantsRepo {
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
-    }
-
-    async fn find_by_id(&self, id: &ObjectId) -> Result<Option<TenantDoc>, String> {
-        self.tenants
-            .find_one(doc! { "_id": id })
-            .await
-            .map_err(|e| e.to_string())
     }
 }

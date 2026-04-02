@@ -1,4 +1,4 @@
-use crate::common::{self, seed_api_key_v2};
+use crate::common;
 
 #[tokio::test]
 async fn signup_rejects_invalid_email() {
@@ -51,24 +51,12 @@ async fn verify_rejects_invalid_token() {
 #[tokio::test]
 async fn anonymous_requests_are_rate_limited() {
     let app = common::spawn_app().await;
-    let (_key, _) = common::seed_api_key(&app).await;
-
-    // Create a link so resolve succeeds (which records usage through the middleware
-    // on the authenticated link-creation side, but clicks are public).
-    // Instead, we'll seed a link directly and test the protected endpoint.
-    // Since anonymous requests that fail at the handler (500) don't record usage,
-    // we need to test with an endpoint that actually succeeds anonymously through auth_gate.
-    //
-    // Strategy: create a link via API key, then hit the protected GET /v1/links endpoint
-    // anonymously. The anonymous path passes auth_gate but fails at the handler (no TenantId).
-    // Usage is only recorded on success, so the rate limit won't trigger.
-    //
-    // Better approach: verify the rate limit response directly by pre-filling usage records.
-    use rift::services::auth::secret_keys::repo::{AuthRepository, UsageDoc};
 
     // Pre-fill 5 anonymous usage records for the IP "unknown" (default when no ConnectInfo).
+    use rift::services::auth::usage::repo::{UsageDoc, UsageRepository};
+
     for _ in 0..5 {
-        app.auth_repo
+        app.usage_repo
             .record_usage(UsageDoc {
                 id: None,
                 api_key_id: None,
@@ -121,22 +109,4 @@ async fn invalid_api_key_returns_401() {
     assert_eq!(resp.status(), 401);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["code"], "invalid_key");
-}
-
-#[tokio::test]
-async fn v2_api_key_auth_works_via_dual_read() {
-    let app = common::spawn_app().await;
-    let (key, _tenant_id) = seed_api_key_v2(&app).await;
-
-    let resp = app
-        .client
-        .get(app.url("/v1/links"))
-        .header("Authorization", format!("Bearer {key}"))
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(resp.status(), 200);
-    let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["links"].as_array().unwrap().len(), 0);
 }
