@@ -27,7 +27,6 @@ pub struct UserDoc {
 pub trait UsersRepository: Send + Sync {
     async fn create(&self, doc: &UserDoc) -> Result<(), String>;
     async fn find_by_email(&self, email: &str) -> Result<Option<UserDoc>, String>;
-    async fn find_by_id(&self, id: &ObjectId) -> Result<Option<UserDoc>, String>;
     async fn find_by_tenant_and_email(
         &self,
         tenant_id: &ObjectId,
@@ -76,13 +75,6 @@ impl UsersRepository for UsersRepo {
     async fn find_by_email(&self, email: &str) -> Result<Option<UserDoc>, String> {
         self.users
             .find_one(doc! { "email": email })
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    async fn find_by_id(&self, id: &ObjectId) -> Result<Option<UserDoc>, String> {
-        self.users
-            .find_one(doc! { "_id": id })
             .await
             .map_err(|e| e.to_string())
     }

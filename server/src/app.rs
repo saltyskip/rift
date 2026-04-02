@@ -6,7 +6,6 @@ use crate::core::webhook_dispatcher::WebhookDispatcher;
 use crate::services::apps::repo::AppsRepository;
 use crate::services::auth::publishable_keys::repo::SdkKeysRepository;
 use crate::services::auth::secret_keys::new_repo::SecretKeysRepository;
-use crate::services::auth::secret_keys::repo::AuthRepository;
 use crate::services::auth::secret_keys::service::SecretKeysService;
 use crate::services::auth::tenants::repo::TenantsRepository;
 use crate::services::auth::usage::repo::UsageRepository;
@@ -25,7 +24,6 @@ use x402_types::proto::v1;
 /// read by any handler — that happens in the next PR. Allow dead_code for now.
 #[allow(dead_code)]
 pub struct AppState {
-    pub auth_repo: Option<Arc<dyn AuthRepository>>,
     pub tenants_repo: Option<Arc<dyn TenantsRepository>>,
     pub users_repo: Option<Arc<dyn UsersRepository>>,
     pub secret_keys_repo: Option<Arc<dyn SecretKeysRepository>>,

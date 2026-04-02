@@ -18,7 +18,7 @@ async fn list_secret_keys_requires_auth() {
 #[tokio::test]
 async fn list_secret_keys_returns_keys_for_v2() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key_v2(&app).await;
+    let (key, _) = common::seed_api_key(&app).await;
 
     let resp = app
         .client
@@ -41,7 +41,7 @@ async fn list_secret_keys_returns_keys_for_v2() {
 #[tokio::test]
 async fn delete_last_secret_key_returns_409() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key_v2(&app).await;
+    let (key, _) = common::seed_api_key(&app).await;
 
     // List to get the key ID
     let resp = app
@@ -73,7 +73,7 @@ async fn delete_last_secret_key_returns_409() {
 #[tokio::test]
 async fn request_create_key_rejects_non_member() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key_v2(&app).await;
+    let (key, _) = common::seed_api_key(&app).await;
 
     let resp = app
         .client

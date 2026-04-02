@@ -24,7 +24,6 @@ use crate::core::config::Config;
 use crate::services::apps::repo::AppsRepo;
 use crate::services::auth::publishable_keys::repo::SdkKeysRepo;
 use crate::services::auth::secret_keys::new_repo::SecretKeysRepo;
-use crate::services::auth::secret_keys::repo::AuthRepo;
 use crate::services::auth::tenants::repo::TenantsRepo;
 use crate::services::auth::usage::repo::UsageRepo;
 use crate::services::auth::users::repo::UsersRepo;
@@ -150,10 +149,9 @@ async fn run_server(cfg: Config) {
 
     // Connect to MongoDB (optional — server boots without it).
     let (
-        auth_repo,
         tenants_repo,
         users_repo,
-        new_secret_keys_repo,
+        secret_keys_repo,
         usage_repo,
         links_repo,
         domains_repo,
@@ -164,13 +162,11 @@ async fn run_server(cfg: Config) {
         tracing::warn!(
             "MONGO_URI not set — auth, links, domains, apps, webhooks, and sdk_keys disabled"
         );
-        (None, None, None, None, None, None, None, None, None, None)
+        (None, None, None, None, None, None, None, None, None)
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
             Some(database) => {
                 tracing::info!(uri = %cfg.mongo_uri, db = %cfg.mongo_db, "Connected to MongoDB");
-                let auth: Arc<dyn crate::services::auth::secret_keys::repo::AuthRepository> =
-                    Arc::new(AuthRepo::new(&database).await);
                 let tenants: Arc<dyn crate::services::auth::tenants::repo::TenantsRepository> =
                     Arc::new(TenantsRepo::new(&database).await);
                 let users: Arc<dyn crate::services::auth::users::repo::UsersRepository> =
@@ -192,7 +188,6 @@ async fn run_server(cfg: Config) {
                     dyn crate::services::auth::publishable_keys::repo::SdkKeysRepository,
                 > = Arc::new(SdkKeysRepo::new(&database).await);
                 (
-                    Some(auth),
                     Some(tenants),
                     Some(users),
                     Some(secret_keys),
@@ -208,7 +203,7 @@ async fn run_server(cfg: Config) {
                 tracing::warn!(
                     "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, and sdk_keys disabled"
                 );
-                (None, None, None, None, None, None, None, None, None, None)
+                (None, None, None, None, None, None, None, None, None)
             }
         }
     };
@@ -260,7 +255,7 @@ async fn run_server(cfg: Config) {
         ))
     });
 
-    let users_service = match (&tenants_repo, &users_repo, &new_secret_keys_repo) {
+    let users_service = match (&tenants_repo, &users_repo, &secret_keys_repo) {
         (Some(t), Some(u), Some(sk)) => Some(Arc::new(
             crate::services::auth::users::service::UsersService::new(
                 t.clone(),
@@ -271,7 +266,7 @@ async fn run_server(cfg: Config) {
         _ => None,
     };
 
-    let secret_keys_service = match (&new_secret_keys_repo, &users_repo) {
+    let secret_keys_service = match (&secret_keys_repo, &users_repo) {
         (Some(sk), Some(u)) => Some(Arc::new(
             crate::services::auth::secret_keys::service::SecretKeysService::new(
                 sk.clone(),
@@ -282,10 +277,9 @@ async fn run_server(cfg: Config) {
     };
 
     let state = Arc::new(AppState {
-        auth_repo,
         tenants_repo,
         users_repo,
-        secret_keys_repo: new_secret_keys_repo,
+        secret_keys_repo,
         usage_repo,
         links_repo,
         domains_repo,
@@ -313,13 +307,9 @@ async fn run_server(cfg: Config) {
 
     #[cfg(feature = "mcp")]
     {
-        if let (Some(links_svc), Some(auth)) = (&state.links_service, &state.auth_repo) {
+        if let (Some(links_svc), Some(sk_repo)) = (&state.links_service, &state.secret_keys_repo) {
             tracing::info!("MCP enabled at /mcp");
-            app = app.merge(mcp::mcp_router(
-                links_svc.clone(),
-                auth.clone(),
-                state.secret_keys_repo.clone(),
-            ));
+            app = app.merge(mcp::mcp_router(links_svc.clone(), sk_repo.clone()));
         }
     }
 

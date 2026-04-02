@@ -15,7 +15,7 @@ async fn list_users_requires_auth() {
 }
 
 #[tokio::test]
-async fn list_users_returns_empty_for_old_key() {
+async fn list_users_returns_empty() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;
 
@@ -27,7 +27,6 @@ async fn list_users_returns_empty_for_old_key() {
         .await
         .unwrap();
 
-    // Old keys don't have users in the new collection
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["users"].as_array().unwrap().len(), 0);
@@ -36,7 +35,7 @@ async fn list_users_returns_empty_for_old_key() {
 #[tokio::test]
 async fn invite_user_rejects_invalid_email() {
     let app = common::spawn_app().await;
-    let (key, _) = common::seed_api_key_v2(&app).await;
+    let (key, _) = common::seed_api_key(&app).await;
 
     let resp = app
         .client

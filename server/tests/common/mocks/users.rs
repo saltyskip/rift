@@ -26,16 +26,6 @@ impl UsersRepository for MockUsersRepo {
             .cloned())
     }
 
-    async fn find_by_id(&self, id: &ObjectId) -> Result<Option<UserDoc>, String> {
-        Ok(self
-            .users
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|u| u.id.as_ref() == Some(id))
-            .cloned())
-    }
-
     async fn find_by_tenant_and_email(
         &self,
         tenant_id: &ObjectId,

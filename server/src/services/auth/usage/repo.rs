@@ -32,7 +32,6 @@ pub fn now_bson() -> bson::DateTime {
 #[async_trait]
 pub trait UsageRepository: Send + Sync {
     async fn record_usage(&self, usage_doc: UsageDoc);
-    async fn count_key_usage_since(&self, key_id: &ObjectId, since: DateTime<Utc>) -> i64;
     async fn count_ip_usage_since(&self, ip: &str, since: DateTime<Utc>) -> i64;
 }
 
@@ -66,16 +65,6 @@ impl UsageRepo {
 impl UsageRepository for UsageRepo {
     async fn record_usage(&self, usage_doc: UsageDoc) {
         let _ = self.usage.insert_one(usage_doc).await;
-    }
-
-    async fn count_key_usage_since(&self, key_id: &ObjectId, since: DateTime<Utc>) -> i64 {
-        self.usage
-            .count_documents(doc! {
-                "api_key_id": key_id,
-                "ts": { "$gte": to_bson_dt(since) },
-            })
-            .await
-            .unwrap_or(0) as i64
     }
 
     async fn count_ip_usage_since(&self, ip: &str, since: DateTime<Utc>) -> i64 {
