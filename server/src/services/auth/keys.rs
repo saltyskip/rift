@@ -45,3 +45,16 @@ pub fn generate_verify_token() -> String {
 pub fn hash_key(key: &str) -> String {
     hex::encode(Sha256::digest(key.as_bytes()))
 }
+
+#[allow(dead_code)]
+/// Generate a 6-character uppercase alphanumeric code for email confirmation.
+pub fn generate_key_create_code() -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let mut rng = rand::rng();
+    (0..6)
+        .map(|_| {
+            let idx = rng.random_range(0..CHARS.len());
+            CHARS[idx] as char
+        })
+        .collect()
+}
