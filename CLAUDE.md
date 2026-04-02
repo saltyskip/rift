@@ -15,7 +15,7 @@ The server separates **domain logic** from **transport layers**:
 - **`core/`** — Shared infra only (db connection, config, rate limiting) — no business logic
 - **Transport layers must not import from each other** — both `api/` and `mcp/` import from `services/`
 - **Domains own their models and repositories** in `services/<domain>/`
-- **Auth sub-slices** — `services/auth/` contains `secret_keys/` (signup/verify, `rl_live_` keys) and `publishable_keys/` (SDK keys, `pk_live_` prefix). Transport routes live in `api/auth/`
+- **Auth sub-slices** — `services/auth/` contains `tenants/` (billing entity), `users/` (team members, email verification), `secret_keys/` (signup/verify/CRUD, `rl_live_` keys with `service.rs`), `publishable_keys/` (SDK keys, `pk_live_` prefix), and `usage/` (request tracking). Transport routes live in `api/auth/`
 
 ### Cargo Features
 
@@ -26,9 +26,14 @@ The server separates **domain logic** from **transport layers**:
 
 ## Multi-Tenancy
 
-All link data is scoped by `tenant_id` (the API key's ObjectId). The auth middleware injects
-a `TenantId` extension into the request on successful API key validation. Route handlers
-extract it via `Extension<TenantId>`.
+All resources (links, domains, apps, webhooks, keys) are scoped by `tenant_id`. The data model
+is Tenant → User → SecretKey: a tenant owns all resources, users are team members who authenticate
+via email, and secret keys (`rl_live_`) are the API credentials. The auth middleware looks up
+the secret key hash in the `secret_keys` collection, resolves the `tenant_id`, and injects
+`TenantId` + `AuthKeyId` extensions. Route handlers extract these via `Extension<TenantId>`.
+
+Team members invited via `POST /v1/auth/users` share the same tenant and all its resources.
+Creating new secret keys requires email confirmation (6-char code sent to a verified team member).
 
 Public endpoints (landing page, attribution reporting) resolve the tenant from the link_id itself.
 

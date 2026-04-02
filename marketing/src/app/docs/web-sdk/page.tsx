@@ -164,7 +164,7 @@ export default function WebSdkPage() {
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">Rift.init(publishableKey, opts?)</code>
             </h3>
             <p className="text-[15px] text-[#a1a1aa]">
-              Initializes the SDK with your publishable key. Must be called before <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">Rift.click()</code>.
+              Initializes the SDK with your publishable key. Must be called before click tracking works.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-[13px] border border-[#1e1e22] rounded-lg overflow-hidden">
@@ -234,9 +234,6 @@ export default function WebSdkPage() {
               programmatic use cases. Records a click event via{" "}
               <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">sendBeacon</code>.
               Fire-and-forget &mdash; does not block navigation, does not return data.
-              Do not call <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">preventDefault()</code> &mdash;
-              the <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">&lt;a&gt;</code> tag handles navigation
-              so Universal Links work.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-[13px] border border-[#1e1e22] rounded-lg overflow-hidden">
@@ -256,7 +253,7 @@ export default function WebSdkPage() {
                   <tr>
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">opts.domain</td>
                     <td className="px-4 py-2.5 font-mono">string</td>
-                    <td className="px-4 py-2.5">Custom domain for the clipboard URL written during the click (e.g., <code className="text-[#71717a]">go.yourcompany.com</code>). Defaults to the current page hostname.</td>
+                    <td className="px-4 py-2.5">Custom domain for the clipboard URL (e.g., <code className="text-[#71717a]">go.yourcompany.com</code>). Defaults to the current page hostname.</td>
                   </tr>
                 </tbody>
               </table>
