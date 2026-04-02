@@ -72,6 +72,21 @@ match cached_find(id).await {
 }
 ```
 
+## Migrations
+
+Migrations live in `src/migrations/` and implement the `Migration` trait. Run via CLI:
+
+```sh
+cargo run -- migrate --list                        # Show available migrations
+cargo run -- migrate --name m001_auth_split        # Dry run (default, no writes)
+cargo run -- migrate --name m001_auth_split --apply  # Actually execute
+```
+
+- **Dry run is the default** — migrations must always accept a `dry_run: bool` parameter and perform **zero writes** when `dry_run` is true
+- In dry run mode, log what *would* happen (e.g. "Would migrate: alice@example.com")
+- Migrations should be idempotent — skip documents that are already migrated
+- Each migration is a separate file: `m001_description.rs`, `m002_description.rs`, etc.
+
 ## CI Checks
 
 Before pushing, always run all three checks that CI enforces:

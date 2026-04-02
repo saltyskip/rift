@@ -5,10 +5,12 @@ mod core;
 mod error;
 #[cfg(feature = "mcp")]
 mod mcp;
+mod migrations;
 mod services;
 
 use std::sync::Arc;
 
+use clap::{Parser, Subcommand};
 use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 use tracing_subscriber::prelude::*;
@@ -31,17 +33,35 @@ use crate::services::links::repo::LinksRepo;
 use crate::services::webhooks::dispatcher::RiftWebhookDispatcher;
 use crate::services::webhooks::repo::WebhooksRepo;
 
+#[derive(Parser)]
+#[command(name = "rift", about = "Deep links for humans and agents")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Run a named migration (dry run by default)
+    Migrate {
+        /// Migration name (e.g. m001_auth_split)
+        #[arg(long)]
+        name: Option<String>,
+
+        /// List available migrations
+        #[arg(long)]
+        list: bool,
+
+        /// Actually apply the migration (default is dry run)
+        #[arg(long)]
+        apply: bool,
+    },
+}
+
 #[tokio::main]
 async fn main() {
     let _ = dotenvy::dotenv();
     let cfg = Config::from_env();
-
-    // Initialise Sentry (no-op if SENTRY_DSN is empty).
-    let _sentry_guard = sentry::init(sentry::ClientOptions {
-        dsn: cfg.sentry_dsn.parse().ok(),
-        traces_sample_rate: 0.2,
-        ..sentry::ClientOptions::default()
-    });
 
     // Initialise tracing with Sentry layer (respects RUST_LOG env var).
     tracing_subscriber::registry()
@@ -49,6 +69,84 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .with(sentry_tracing::layer())
         .init();
+
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Command::Migrate { list: true, .. }) => {
+            println!("Available migrations:");
+            for m in migrations::all() {
+                println!("  {} — {}", m.id(), m.description());
+            }
+        }
+        Some(Command::Migrate {
+            name: Some(name),
+            apply,
+            ..
+        }) => {
+            let migration = match migrations::get_by_name(&name) {
+                Some(m) => m,
+                None => {
+                    eprintln!("Unknown migration: {name}");
+                    eprintln!("Run with --list to see available migrations.");
+                    std::process::exit(1);
+                }
+            };
+
+            let db = match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
+                Some(db) => db,
+                None => {
+                    eprintln!("Failed to connect to MongoDB");
+                    std::process::exit(1);
+                }
+            };
+
+            if apply {
+                println!(
+                    "Applying migration: {} — {}",
+                    migration.id(),
+                    migration.description()
+                );
+                match migration.run(&db, false).await {
+                    Ok(()) => println!("Migration {} completed successfully", migration.id()),
+                    Err(e) => {
+                        eprintln!("Migration failed: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                println!(
+                    "Dry run for migration: {} — {}",
+                    migration.id(),
+                    migration.description()
+                );
+                println!("(pass --apply to execute)\n");
+                match migration.run(&db, true).await {
+                    Ok(()) => println!("\nDry run complete. No changes were made."),
+                    Err(e) => {
+                        eprintln!("Dry run failed: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
+        Some(Command::Migrate { .. }) => {
+            eprintln!("Provide --name <migration> or --list");
+            std::process::exit(1);
+        }
+
+        // Default: run the server
+        None => run_server(cfg).await,
+    }
+}
+
+async fn run_server(cfg: Config) {
+    // Initialise Sentry (no-op if SENTRY_DSN is empty).
+    let _sentry_guard = sentry::init(sentry::ClientOptions {
+        dsn: cfg.sentry_dsn.parse().ok(),
+        traces_sample_rate: 0.2,
+        ..sentry::ClientOptions::default()
+    });
 
     // Connect to MongoDB (optional — server boots without it).
     let (
