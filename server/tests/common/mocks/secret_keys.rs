@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
-use rift::services::auth::secret_keys::new_repo::{
+use rift::services::auth::secret_keys::repo::{
     SecretKeyCreateRequestDoc, SecretKeyDoc, SecretKeysRepository,
 };
 

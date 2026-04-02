@@ -9,7 +9,7 @@ use rift::app::AppState;
 use rift::core::config::Config;
 use rift::core::webhook_dispatcher::WebhookDispatcher;
 use rift::services::auth::publishable_keys::repo::SdkKeysRepository;
-use rift::services::auth::secret_keys::new_repo::{SecretKeyDoc, SecretKeysRepository};
+use rift::services::auth::secret_keys::repo::{SecretKeyDoc, SecretKeysRepository};
 use rift::services::auth::tenants::repo::{TenantDoc, TenantsRepository};
 use rift::services::auth::usage::repo::UsageRepository;
 use rift::services::auth::users::repo::UsersRepository;
@@ -85,8 +85,6 @@ pub async fn spawn_app() -> TestApp {
     )));
 
     let state = Arc::new(AppState {
-        tenants_repo: Some(tenants_repo.clone() as Arc<dyn TenantsRepository>),
-        users_repo: Some(users_repo.clone() as Arc<dyn UsersRepository>),
         secret_keys_repo: Some(secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>),
         usage_repo: Some(usage_repo.clone() as Arc<dyn UsageRepository>),
         links_repo: Some(

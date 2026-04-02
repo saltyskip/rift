@@ -11,7 +11,7 @@ use x402_types::proto::v1;
 
 use crate::app::AppState;
 use crate::services::auth::keys;
-use crate::services::auth::secret_keys::new_repo::SecretKeysRepository;
+use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::usage::repo::{self as usage_repo};
 
 /// Tenant identity injected by the auth middleware.

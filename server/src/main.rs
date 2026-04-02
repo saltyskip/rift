@@ -23,7 +23,7 @@ use crate::app::AppState;
 use crate::core::config::Config;
 use crate::services::apps::repo::AppsRepo;
 use crate::services::auth::publishable_keys::repo::SdkKeysRepo;
-use crate::services::auth::secret_keys::new_repo::SecretKeysRepo;
+use crate::services::auth::secret_keys::repo::SecretKeysRepo;
 use crate::services::auth::tenants::repo::TenantsRepo;
 use crate::services::auth::usage::repo::UsageRepo;
 use crate::services::auth::users::repo::UsersRepo;
@@ -172,7 +172,7 @@ async fn run_server(cfg: Config) {
                 let users: Arc<dyn crate::services::auth::users::repo::UsersRepository> =
                     Arc::new(UsersRepo::new(&database).await);
                 let secret_keys: Arc<
-                    dyn crate::services::auth::secret_keys::new_repo::SecretKeysRepository,
+                    dyn crate::services::auth::secret_keys::repo::SecretKeysRepository,
                 > = Arc::new(SecretKeysRepo::new(&database).await);
                 let usage: Arc<dyn crate::services::auth::usage::repo::UsageRepository> =
                     Arc::new(UsageRepo::new(&database).await);
@@ -277,8 +277,6 @@ async fn run_server(cfg: Config) {
     };
 
     let state = Arc::new(AppState {
-        tenants_repo,
-        users_repo,
         secret_keys_repo,
         usage_repo,
         links_repo,
