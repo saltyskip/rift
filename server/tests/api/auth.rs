@@ -1,4 +1,4 @@
-use crate::common;
+use crate::common::{self, seed_api_key_v2};
 
 #[tokio::test]
 async fn signup_rejects_invalid_email() {
@@ -121,4 +121,22 @@ async fn invalid_api_key_returns_401() {
     assert_eq!(resp.status(), 401);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["code"], "invalid_key");
+}
+
+#[tokio::test]
+async fn v2_api_key_auth_works_via_dual_read() {
+    let app = common::spawn_app().await;
+    let (key, _tenant_id) = seed_api_key_v2(&app).await;
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["links"].as_array().unwrap().len(), 0);
 }

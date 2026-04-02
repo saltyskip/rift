@@ -12,12 +12,21 @@ use x402_types::proto::v1;
 
 use crate::app::AppState;
 use crate::services::auth::keys;
+use crate::services::auth::secret_keys::new_repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::repo::{self, AuthRepository, UsageDoc};
+use crate::services::auth::usage::repo::{self as usage_repo};
 
 /// Tenant identity injected by the auth middleware.
 /// Handlers extract this via `Extension<TenantId>`.
 #[derive(Debug, Clone)]
 pub struct TenantId(pub ObjectId);
+
+/// The ObjectId of the secret key used for authentication.
+/// Handlers extract this via `Extension<AuthKeyId>`.
+/// Used by delete endpoint guard in PR 3.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct AuthKeyId(pub ObjectId);
 
 /// Domain associated with an SDK key, injected by `sdk_auth_gate`.
 #[derive(Debug, Clone)]
@@ -45,17 +54,34 @@ pub async fn auth_gate(
 
     // ── Path 1: API key ──
     if let Some(raw_key) = extract_bearer(&req) {
-        let key_id = match validate_api_key(auth_repo, &raw_key).await {
-            Ok(id) => id,
-            Err(resp) => return resp,
-        };
+        let (tenant_id, key_id) =
+            match validate_api_key_dual(auth_repo, state.secret_keys_repo.as_deref(), &raw_key)
+                .await
+            {
+                Ok(ids) => ids,
+                Err(resp) => return resp,
+            };
 
-        // Inject tenant identity for downstream handlers.
-        req.extensions_mut().insert(TenantId(key_id));
+        // Inject tenant identity and key identity for downstream handlers.
+        req.extensions_mut().insert(TenantId(tenant_id));
+        req.extensions_mut().insert(AuthKeyId(key_id));
 
         let response = next.run(req).await;
         if response.status().is_success() {
-            record_usage(auth_repo, Some(key_id), ip, &endpoint).await;
+            // Use new usage repo if available, fall back to old auth_repo
+            if let Some(usage) = &state.usage_repo {
+                usage
+                    .record_usage(usage_repo::UsageDoc {
+                        id: None,
+                        api_key_id: Some(key_id),
+                        ip: ip.clone(),
+                        endpoint: endpoint.clone(),
+                        ts: usage_repo::now_bson(),
+                    })
+                    .await;
+            } else {
+                record_usage(auth_repo, Some(key_id), ip, &endpoint).await;
+            }
         }
         return response;
     }
@@ -127,7 +153,19 @@ pub async fn auth_gate(
 
     let response = next.run(req).await;
     if response.status().is_success() {
-        record_usage(auth_repo, None, ip, &endpoint).await;
+        if let Some(usage) = &state.usage_repo {
+            usage
+                .record_usage(usage_repo::UsageDoc {
+                    id: None,
+                    api_key_id: None,
+                    ip: ip.clone(),
+                    endpoint: endpoint.clone(),
+                    ts: usage_repo::now_bson(),
+                })
+                .await;
+        } else {
+            record_usage(auth_repo, None, ip, &endpoint).await;
+        }
     }
     response
 }
@@ -251,11 +289,25 @@ async fn record_usage(
         .await;
 }
 
-async fn validate_api_key(
+/// Dual-read key validation: try new SecretKeysRepository first, fall back to old AuthRepository.
+/// Returns (tenant_id, key_id).
+///
+/// Quota checks are skipped for the new repo path — quota enforcement is deferred to a future PR.
+async fn validate_api_key_dual(
     auth_repo: &dyn AuthRepository,
+    secret_keys_repo: Option<&dyn SecretKeysRepository>,
     raw_key: &str,
-) -> Result<ObjectId, Response> {
+) -> Result<(ObjectId, ObjectId), Response> {
     let hash = keys::hash_key(raw_key);
+
+    // Try new repo first — no quota checks for now
+    if let Some(sk_repo) = secret_keys_repo {
+        if let Ok(Some(key_doc)) = sk_repo.find_by_hash(&hash).await {
+            return Ok((key_doc.tenant_id, key_doc.id));
+        }
+    }
+
+    // Fall back to old repo (with existing quota checks)
     let key_doc = auth_repo.find_key_by_hash(&hash).await.ok_or_else(|| {
         (
             StatusCode::UNAUTHORIZED,
@@ -291,7 +343,8 @@ async fn validate_api_key(
             .into_response());
     }
 
-    Ok(key_id)
+    // For old keys, tenant_id = key_id (the ApiKeyDoc._id)
+    Ok((key_id, key_id))
 }
 
 #[allow(clippy::result_large_err)]
