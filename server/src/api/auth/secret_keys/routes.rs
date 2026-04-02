@@ -87,7 +87,7 @@ pub struct ListSecretKeysResponse {
 #[utoipa::path(
     post,
     path = "/v1/auth/signup",
-    tag = "Authentication",
+    tag = "Signup",
     request_body = SignupRequest,
     responses(
         (status = 201, description = "Verification email sent", body = SignupResponse),
@@ -230,7 +230,7 @@ pub async fn signup(
 #[utoipa::path(
     get,
     path = "/v1/auth/verify",
-    tag = "Authentication",
+    tag = "Signup",
     params(
         ("token" = String, Query, description = "Verification token from the email link"),
     ),
@@ -322,7 +322,7 @@ pub async fn verify_email(
 #[utoipa::path(
     post,
     path = "/v1/auth/secret-keys",
-    tag = "Authentication",
+    tag = "Secret Keys",
     request_body = RequestCreateKeyRequest,
     responses(
         (status = 200, description = "Confirmation code sent", body = serde_json::Value),
@@ -374,7 +374,7 @@ pub async fn request_create_key(
 #[utoipa::path(
     post,
     path = "/v1/auth/secret-keys/confirm",
-    tag = "Authentication",
+    tag = "Secret Keys",
     request_body = ConfirmCreateKeyRequest,
     responses(
         (status = 201, description = "Key created", body = CreateKeyResponse),
@@ -421,7 +421,7 @@ pub async fn confirm_create_key(
 #[utoipa::path(
     get,
     path = "/v1/auth/secret-keys",
-    tag = "Authentication",
+    tag = "Secret Keys",
     responses(
         (status = 200, description = "List of secret keys", body = ListSecretKeysResponse),
     ),
@@ -460,7 +460,7 @@ pub async fn list_secret_keys(
 #[utoipa::path(
     delete,
     path = "/v1/auth/secret-keys/{key_id}",
-    tag = "Authentication",
+    tag = "Secret Keys",
     params(("key_id" = String, Path, description = "Secret Key ID")),
     responses(
         (status = 204, description = "Key deleted"),

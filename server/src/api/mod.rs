@@ -117,7 +117,10 @@ use crate::app::AppState;
         ("x402" = []),
     ),
     tags(
-        (name = "Authentication", description = "Signup, verification, secret key management, publishable keys, and team members"),
+        (name = "Signup", description = "Account registration and email verification"),
+        (name = "Secret Keys", description = "Server-side API key management (rl_live_)"),
+        (name = "Publishable Keys", description = "Client-safe SDK key management (pk_live_)"),
+        (name = "Team Members", description = "Invite and manage users on your team"),
         (name = "Domains", description = "Custom domain setup and verification"),
         (name = "Apps", description = "App configuration and association files (AASA / Asset Links)"),
         (name = "Links", description = "Create, list, update, delete, and resolve deep links"),
@@ -143,7 +146,24 @@ async fn serve_rift_js() -> impl axum::response::IntoResponse {
 }
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
-    let spec = ApiDoc::openapi();
+    let mut spec = ApiDoc::openapi();
+
+    // Add x-tagGroups for nested sidebar in Scalar
+    spec.extensions = Some(
+        utoipa::openapi::extensions::ExtensionsBuilder::new()
+            .add(
+                "x-tagGroups",
+                serde_json::json!([
+                    { "name": "Authentication", "tags": ["Signup", "Secret Keys", "Publishable Keys", "Team Members"] },
+                    { "name": "Configuration", "tags": ["Domains", "Apps"] },
+                    { "name": "Links", "tags": ["Links", "Attribution"] },
+                    { "name": "Integrations", "tags": ["Webhooks"] },
+                    { "name": "System", "tags": ["System"] },
+                ]),
+            )
+            .build(),
+    );
+
     let openapi_json = Router::new().route(
         "/openapi.json",
         get(move || async move { axum::Json(spec) }),
