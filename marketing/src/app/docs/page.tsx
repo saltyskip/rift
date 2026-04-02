@@ -42,11 +42,12 @@ export default function QuickStartPage() {
   -d '{"email": "you@example.com"}'`}</CodeBlock>
           </Step>
 
-          <Step n={2} title="Verify your email and get your key">
+          <Step n={2} title="Verify your email and get your secret key">
             <p>
-              Click the verification link in your inbox. The response will contain your full API key
+              Click the verification link in your inbox. The response will contain your secret API key
               (starts with <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">rl_live_</code>).
               Save it immediately — it&apos;s shown only once and never sent via email.
+              This is your server-side key for managing links, domains, and keys. Never expose it in client code.
             </p>
           </Step>
 
