@@ -21,7 +21,11 @@ use crate::app::AppState;
 use crate::core::config::Config;
 use crate::services::apps::repo::AppsRepo;
 use crate::services::auth::publishable_keys::repo::SdkKeysRepo;
+use crate::services::auth::secret_keys::new_repo::SecretKeysRepo;
 use crate::services::auth::secret_keys::repo::AuthRepo;
+use crate::services::auth::tenants::repo::TenantsRepo;
+use crate::services::auth::usage::repo::UsageRepo;
+use crate::services::auth::users::repo::UsersRepo;
 use crate::services::domains::repo::DomainsRepo;
 use crate::services::links::repo::LinksRepo;
 use crate::services::webhooks::dispatcher::RiftWebhookDispatcher;
@@ -47,20 +51,37 @@ async fn main() {
         .init();
 
     // Connect to MongoDB (optional — server boots without it).
-    let (auth_repo, links_repo, domains_repo, apps_repo, webhooks_repo, sdk_keys_repo) = if cfg
-        .mongo_uri
-        .is_empty()
-    {
+    let (
+        auth_repo,
+        tenants_repo,
+        users_repo,
+        new_secret_keys_repo,
+        usage_repo,
+        links_repo,
+        domains_repo,
+        apps_repo,
+        webhooks_repo,
+        sdk_keys_repo,
+    ) = if cfg.mongo_uri.is_empty() {
         tracing::warn!(
             "MONGO_URI not set — auth, links, domains, apps, webhooks, and sdk_keys disabled"
         );
-        (None, None, None, None, None, None)
+        (None, None, None, None, None, None, None, None, None, None)
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
             Some(database) => {
                 tracing::info!(uri = %cfg.mongo_uri, db = %cfg.mongo_db, "Connected to MongoDB");
                 let auth: Arc<dyn crate::services::auth::secret_keys::repo::AuthRepository> =
                     Arc::new(AuthRepo::new(&database).await);
+                let tenants: Arc<dyn crate::services::auth::tenants::repo::TenantsRepository> =
+                    Arc::new(TenantsRepo::new(&database).await);
+                let users: Arc<dyn crate::services::auth::users::repo::UsersRepository> =
+                    Arc::new(UsersRepo::new(&database).await);
+                let secret_keys: Arc<
+                    dyn crate::services::auth::secret_keys::new_repo::SecretKeysRepository,
+                > = Arc::new(SecretKeysRepo::new(&database).await);
+                let usage: Arc<dyn crate::services::auth::usage::repo::UsageRepository> =
+                    Arc::new(UsageRepo::new(&database).await);
                 let links: Arc<dyn crate::services::links::repo::LinksRepository> =
                     Arc::new(LinksRepo::new(&database).await);
                 let domains: Arc<dyn crate::services::domains::repo::DomainsRepository> =
@@ -74,6 +95,10 @@ async fn main() {
                 > = Arc::new(SdkKeysRepo::new(&database).await);
                 (
                     Some(auth),
+                    Some(tenants),
+                    Some(users),
+                    Some(secret_keys),
+                    Some(usage),
                     Some(links),
                     Some(domains),
                     Some(apps),
@@ -83,9 +108,9 @@ async fn main() {
             }
             None => {
                 tracing::warn!(
-                        "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, and sdk_keys disabled"
-                    );
-                (None, None, None, None, None, None)
+                    "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, and sdk_keys disabled"
+                );
+                (None, None, None, None, None, None, None, None, None, None)
             }
         }
     };
@@ -139,6 +164,10 @@ async fn main() {
 
     let state = Arc::new(AppState {
         auth_repo,
+        tenants_repo,
+        users_repo,
+        secret_keys_repo: new_secret_keys_repo,
+        usage_repo,
         links_repo,
         domains_repo,
         apps_repo,

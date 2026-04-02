@@ -9,12 +9,17 @@ use rift::app::AppState;
 use rift::core::config::Config;
 use rift::core::webhook_dispatcher::WebhookDispatcher;
 use rift::services::auth::publishable_keys::repo::SdkKeysRepository;
+use rift::services::auth::secret_keys::new_repo::SecretKeysRepository;
 use rift::services::auth::secret_keys::repo::{ApiKeyDoc, AuthRepository};
+use rift::services::auth::tenants::repo::TenantsRepository;
+use rift::services::auth::usage::repo::UsageRepository;
+use rift::services::auth::users::repo::UsersRepository;
 use rift::services::domains::repo::DomainsRepository;
 
 use mocks::{
     MockAppsRepo, MockAuthRepo, MockDomainsRepo, MockLinksRepo, MockSdkKeysRepo,
-    MockWebhookDispatcher, MockWebhooksRepo,
+    MockSecretKeysRepo, MockTenantsRepo, MockUsageRepo, MockUsersRepo, MockWebhookDispatcher,
+    MockWebhooksRepo,
 };
 
 #[allow(dead_code)]
@@ -22,6 +27,10 @@ pub struct TestApp {
     pub addr: String,
     pub client: reqwest::Client,
     pub auth_repo: Arc<MockAuthRepo>,
+    pub tenants_repo: Arc<MockTenantsRepo>,
+    pub users_repo: Arc<MockUsersRepo>,
+    pub new_secret_keys_repo: Arc<MockSecretKeysRepo>,
+    pub usage_repo: Arc<MockUsageRepo>,
     pub links_repo: Arc<MockLinksRepo>,
     pub domains_repo: Arc<MockDomainsRepo>,
     pub apps_repo: Arc<MockAppsRepo>,
@@ -39,6 +48,10 @@ impl TestApp {
 
 pub async fn spawn_app() -> TestApp {
     let auth_repo = Arc::new(MockAuthRepo::default());
+    let tenants_repo = Arc::new(MockTenantsRepo::default());
+    let users_repo = Arc::new(MockUsersRepo::default());
+    let new_secret_keys_repo = Arc::new(MockSecretKeysRepo::default());
+    let usage_repo = Arc::new(MockUsageRepo::default());
     let links_repo = Arc::new(MockLinksRepo::default());
     let domains_repo = Arc::new(MockDomainsRepo::default());
     let apps_repo = Arc::new(MockAppsRepo::default());
@@ -77,6 +90,10 @@ pub async fn spawn_app() -> TestApp {
 
     let state = Arc::new(AppState {
         auth_repo: Some(auth_repo.clone() as Arc<dyn AuthRepository>),
+        tenants_repo: Some(tenants_repo.clone() as Arc<dyn TenantsRepository>),
+        users_repo: Some(users_repo.clone() as Arc<dyn UsersRepository>),
+        secret_keys_repo: Some(new_secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>),
+        usage_repo: Some(usage_repo.clone() as Arc<dyn UsageRepository>),
         links_repo: Some(
             links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>
         ),
@@ -111,6 +128,10 @@ pub async fn spawn_app() -> TestApp {
         addr,
         client: reqwest::Client::new(),
         auth_repo,
+        tenants_repo,
+        users_repo,
+        new_secret_keys_repo,
+        usage_repo,
         threat_feed,
         links_repo,
         domains_repo,
