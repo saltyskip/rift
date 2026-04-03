@@ -38,6 +38,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     // Public routes with rate limiting.
     let public = Router::new()
         .route("/r/{link_id}", get(routes::resolve_link))
+        .route("/open/{link_id}", get(routes::bounce))
         .route("/{link_id}", get(routes::resolve_link_custom))
         .route("/llms.txt", get(routes::llms_txt))
         .layer(middleware::from_fn(rate_limit_middleware))
