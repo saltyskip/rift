@@ -66,6 +66,24 @@ export default function QuickStartPage() {
               See <a href="/docs/publishable-keys" className="text-[#2dd4bf] hover:underline">Publishable Keys</a> for details.
             </p>
           </Step>
+
+          <Step n={4} title="Add click tracking to your website">
+            <p>
+              Load the SDK and pass your publishable key with your custom domain. The SDK auto-tracks clicks
+              on any link pointing to your domain — no attributes or event handlers needed.
+            </p>
+            <CodeBlock lang="html">{`<script src="https://api.riftl.ink/sdk/rift.js"></script>
+<script>
+  Rift.init("pk_live_YOUR_KEY", { domain: "go.yourcompany.com" });
+</script>
+
+<!-- Just a normal link. Click tracking happens automatically. -->
+<a href="https://go.yourcompany.com/summer-sale">Get the App</a>`}</CodeBlock>
+            <p>
+              See <a href="/docs/web-sdk" className="text-[#2dd4bf] hover:underline">Web SDK</a> for framework-specific examples
+              (Next.js, Svelte, Vue) and the full API reference.
+            </p>
+          </Step>
         </section>
 
         <div className="gradient-line" />
