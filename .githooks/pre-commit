@@ -1,0 +1,18 @@
+#!/bin/bash
+set -e
+
+# ── Mobile SDK: check core crate for UniFFI violations ──
+if [ -d "sdk/mobile/core/src" ]; then
+    sdk/mobile/.githooks/pre-commit "sdk/mobile/core/src"
+fi
+
+# ── Web SDK: rebuild IIFE if source changed ──
+if git diff --cached --name-only | grep -q "^sdk/web/src/"; then
+    echo "Web SDK source changed — rebuilding..."
+    cd sdk/web
+    npm run build --silent
+    cp dist/index.global.js ../../server/src/sdk/rift.js
+    cd ../..
+    git add server/src/sdk/rift.js
+    echo "Web SDK IIFE updated and staged."
+fi

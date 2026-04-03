@@ -4,12 +4,12 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'sdk/web/**'
+      - 'sdk/web/src/**'
       - 'server/src/sdk/rift.js'
   push:
     branches: [main]
     paths:
-      - 'sdk/web/**'
+      - 'sdk/web/src/**'
       - 'server/src/sdk/rift.js'
 
 jobs:
@@ -34,4 +34,8 @@ jobs:
         run: npm run build
 
       - name: Verify server IIFE is in sync
-        run: diff dist/index.global.js ../../server/src/sdk/rift.js
+        run: |
+          diff dist/index.global.js ../../server/src/sdk/rift.js || {
+            echo "::error::server/src/sdk/rift.js is out of date. Run: cd sdk/web && npm run build && cp dist/index.global.js ../../server/src/sdk/rift.js"
+            exit 1
+          }
