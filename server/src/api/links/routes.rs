@@ -402,6 +402,49 @@ pub async fn resolve_link_custom(
             .into_response();
     };
 
+    // Alternate domain: redirect to store (no landing page, no click recording).
+    // This only runs when the app is NOT installed — if it IS installed, Universal
+    // Links intercept the tap and this endpoint is never reached.
+    if domain.role == crate::services::domains::models::DomainRole::Alternate {
+        let link = repo
+            .find_link_by_tenant_and_id(&domain.tenant_id, &link_id)
+            .await
+            .ok()
+            .flatten();
+
+        let Some(link) = link else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
+            )
+                .into_response();
+        };
+
+        let user_agent = headers
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let platform = detect_platform(user_agent);
+
+        let redirect_url = match platform {
+            Platform::Ios => link.ios_store_url.as_deref().or(link.web_url.as_deref()),
+            Platform::Android => link
+                .android_store_url
+                .as_deref()
+                .or(link.web_url.as_deref()),
+            Platform::Other => link.web_url.as_deref(),
+        };
+
+        return match redirect_url {
+            Some(url) => Redirect::temporary(url).into_response(),
+            None => (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "No destination configured", "code": "not_found" })),
+            )
+                .into_response(),
+        };
+    }
+
     let Some(link) = repo
         .find_link_by_tenant_and_id(&domain.tenant_id, &link_id)
         .await
@@ -655,6 +698,18 @@ async fn do_resolve(
             .and_then(|d| d.get_str("image").ok())
             .map(|s| s.to_string());
 
+        // Look up alternate domain for the "Open in App" button.
+        let alternate_domain = if let Some(domains_repo) = &state.domains_repo {
+            domains_repo
+                .find_alternate_by_tenant(&link.tenant_id)
+                .await
+                .ok()
+                .flatten()
+                .map(|d| d.domain)
+        } else {
+            None
+        };
+
         let html = render_smart_landing_page(&LandingPageContext {
             platform,
             link: &link,
@@ -669,6 +724,7 @@ async fn do_resolve(
             link_status,
             tenant_domain: tenant_domain.as_deref(),
             tenant_verified,
+            alternate_domain: alternate_domain.as_deref(),
         });
         return (StatusCode::OK, axum::response::Html(html)).into_response();
     }
@@ -1111,6 +1167,7 @@ struct LandingPageContext<'a> {
     link_status: &'a str,
     tenant_domain: Option<&'a str>,
     tenant_verified: bool,
+    alternate_domain: Option<&'a str>,
 }
 
 fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
@@ -1142,6 +1199,13 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
 
     let web_url = link.web_url.as_deref().unwrap_or("");
     let web_url_js = js_escape(web_url);
+
+    // Alternate domain URL for the "Open in App" button (cross-domain Universal Link trigger).
+    let alternate_url = ctx
+        .alternate_domain
+        .map(|d| format!("https://{}/{}", d, ctx.link_id))
+        .unwrap_or_default();
+    let alternate_url_js = js_escape(&alternate_url);
 
     let og_title = ctx.meta_title.unwrap_or(app_name_display);
     let og_description = ctx.meta_description.unwrap_or("Open in app");
@@ -1366,6 +1430,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         var platform = "{platform_js}";
         var storeUrl = "{store_url_js}";
         var webUrl = "{web_url_js}";
+        var alternateUrl = "{alternate_url_js}";
 
         var btn = document.getElementById("open-btn");
         var msg = document.getElementById("fallback-msg");
@@ -1378,7 +1443,12 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         }});
 
         if (platform === "ios" || platform === "android") {{
-            if (storeUrl) {{
+            if (alternateUrl) {{
+                // Cross-domain hop triggers Universal Links / App Links.
+                // If app installed → opens. If not → alternate domain redirects to store.
+                btn.href = alternateUrl;
+                btn.textContent = "Open in {app_name_escaped}";
+            }} else if (storeUrl) {{
                 btn.href = storeUrl;
                 btn.textContent = "Get {app_name_escaped}";
             }} else if (webUrl) {{
@@ -1413,6 +1483,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         platform_js = platform_js,
         store_url_js = store_url_js,
         web_url_js = web_url_js,
+        alternate_url_js = alternate_url_js,
     )
 }
 

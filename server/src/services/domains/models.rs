@@ -4,6 +4,19 @@ use utoipa::ToSchema;
 
 // ── Database Document ──
 
+/// Domain role: Primary domains serve landing pages and resolve links.
+/// Alternate domains exist solely as Universal Link trampolines — the
+/// "Open in App" button on a primary domain's landing page points to
+/// the alternate domain so the cross-domain tap triggers Universal Links.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub enum DomainRole {
+    #[default]
+    #[serde(rename = "primary")]
+    Primary,
+    #[serde(rename = "alternate")]
+    Alternate,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Domain {
     #[serde(rename = "_id")]
@@ -13,6 +26,8 @@ pub struct Domain {
     pub domain: String,
     pub verified: bool,
     pub verification_token: String,
+    #[serde(default)]
+    pub role: DomainRole,
     pub created_at: DateTime,
 }
 
@@ -23,6 +38,9 @@ pub struct CreateDomainRequest {
     /// Custom domain to register (e.g. "go.tablefour.com").
     #[schema(example = "go.tablefour.com")]
     pub domain: String,
+    /// Domain role: "primary" (default) or "alternate" (Universal Link trampoline).
+    #[schema(example = "primary")]
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -47,6 +65,8 @@ pub struct DomainDetail {
     pub domain: String,
     #[schema(example = true)]
     pub verified: bool,
+    #[schema(example = "primary")]
+    pub role: String,
     #[schema(example = "2025-06-15T10:30:00Z")]
     pub created_at: String,
 }

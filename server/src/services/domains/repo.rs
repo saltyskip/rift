@@ -5,7 +5,7 @@ use mongodb::{Collection, Database};
 
 use crate::ensure_index;
 
-use super::models::Domain;
+use super::models::{Domain, DomainRole};
 
 // ── Trait ──
 
@@ -16,6 +16,7 @@ pub trait DomainsRepository: Send + Sync {
         tenant_id: ObjectId,
         domain: String,
         verification_token: String,
+        role: DomainRole,
     ) -> Result<Domain, String>;
 
     async fn find_by_domain(&self, domain: &str) -> Result<Option<Domain>, String>;
@@ -25,6 +26,11 @@ pub trait DomainsRepository: Send + Sync {
     async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String>;
 
     async fn mark_verified(&self, domain: &str) -> Result<(), String>;
+
+    async fn find_alternate_by_tenant(
+        &self,
+        tenant_id: &ObjectId,
+    ) -> Result<Option<Domain>, String>;
 }
 
 // ── Repository ──
@@ -57,6 +63,7 @@ impl DomainsRepository for DomainsRepo {
         tenant_id: ObjectId,
         domain: String,
         verification_token: String,
+        role: DomainRole,
     ) -> Result<Domain, String> {
         let doc = Domain {
             id: ObjectId::new(),
@@ -64,6 +71,7 @@ impl DomainsRepository for DomainsRepo {
             domain,
             verified: false,
             verification_token,
+            role,
             created_at: DateTime::now(),
         };
         self.domains
@@ -113,5 +121,15 @@ impl DomainsRepository for DomainsRepo {
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    async fn find_alternate_by_tenant(
+        &self,
+        tenant_id: &ObjectId,
+    ) -> Result<Option<Domain>, String> {
+        self.domains
+            .find_one(doc! { "tenant_id": tenant_id, "role": "alternate", "verified": true })
+            .await
+            .map_err(|e| e.to_string())
     }
 }

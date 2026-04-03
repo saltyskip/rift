@@ -46,6 +46,29 @@ pub async fn create_domain(
             .into_response();
     }
 
+    let role = match req.role.as_deref() {
+        Some("alternate") => DomainRole::Alternate,
+        Some("primary") | None => DomainRole::Primary,
+        Some(other) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": format!("Invalid role: {other}. Must be 'primary' or 'alternate'."), "code": "invalid_role" })),
+            )
+                .into_response();
+        }
+    };
+
+    // Max 1 alternate domain per tenant.
+    if role == DomainRole::Alternate {
+        if let Ok(Some(_)) = repo.find_alternate_by_tenant(&tenant.0).await {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({ "error": "Only one alternate domain allowed per team", "code": "alternate_limit" })),
+            )
+                .into_response();
+        }
+    }
+
     // Check if already registered.
     if repo.find_by_domain(&domain).await.ok().flatten().is_some() {
         return (
@@ -57,7 +80,7 @@ pub async fn create_domain(
 
     let token = generate_verification_token();
     let created = match repo
-        .create_domain(tenant.0, domain.clone(), token.clone())
+        .create_domain(tenant.0, domain.clone(), token.clone(), role)
         .await
     {
         Ok(d) => d,
@@ -125,6 +148,10 @@ pub async fn list_domains(
                 .map(|d| DomainDetail {
                     domain: d.domain.clone(),
                     verified: d.verified,
+                    role: match d.role {
+                        DomainRole::Primary => "primary".to_string(),
+                        DomainRole::Alternate => "alternate".to_string(),
+                    },
                     created_at: d.created_at.try_to_rfc3339_string().unwrap_or_default(),
                 })
                 .collect();

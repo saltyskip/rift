@@ -152,7 +152,12 @@ pub async fn spawn_app() -> TestApp {
 /// Seed a verified custom domain for a tenant.
 pub async fn seed_verified_domain(app: &TestApp, tenant_id: &ObjectId, domain: &str) {
     app.domains_repo
-        .create_domain(*tenant_id, domain.to_string(), "tok".to_string())
+        .create_domain(
+            *tenant_id,
+            domain.to_string(),
+            "tok".to_string(),
+            rift::services::domains::models::DomainRole::Primary,
+        )
         .await
         .unwrap();
     app.domains_repo.mark_verified(domain).await.unwrap();

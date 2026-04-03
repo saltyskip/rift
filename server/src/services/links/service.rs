@@ -669,6 +669,7 @@ mod tests {
             _tenant_id: ObjectId,
             _domain: String,
             _verification_token: String,
+            _role: crate::services::domains::models::DomainRole,
         ) -> Result<crate::services::domains::models::Domain, String> {
             unimplemented!()
         }
@@ -691,6 +692,7 @@ mod tests {
                     domain: "example.com".to_string(),
                     verified: true,
                     verification_token: "token".to_string(),
+                    role: crate::services::domains::models::DomainRole::Primary,
                     created_at: DateTime::now(),
                 }])
             } else {
@@ -708,6 +710,13 @@ mod tests {
 
         async fn mark_verified(&self, _domain: &str) -> Result<(), String> {
             Ok(())
+        }
+
+        async fn find_alternate_by_tenant(
+            &self,
+            _tenant_id: &ObjectId,
+        ) -> Result<Option<crate::services::domains::models::Domain>, String> {
+            Ok(None)
         }
     }
 
