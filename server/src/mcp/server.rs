@@ -30,7 +30,7 @@ async fn extract_api_key_header(mut req: Request, next: Next) -> Response {
 
 use super::tools::*;
 use crate::services::auth::keys;
-use crate::services::auth::secret_keys::new_repo::SecretKeysRepository;
+use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::links::models::{AgentContext, CreateLinkRequest, UpdateLinkRequest};
 use crate::services::links::service::LinksService;
 

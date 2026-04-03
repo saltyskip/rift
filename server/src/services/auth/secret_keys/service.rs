@@ -2,7 +2,7 @@ use mongodb::bson::oid::ObjectId;
 use std::fmt;
 use std::sync::Arc;
 
-use super::new_repo::{SecretKeyCreateRequestDoc, SecretKeyDoc, SecretKeysRepository};
+use super::repo::{SecretKeyCreateRequestDoc, SecretKeyDoc, SecretKeysRepository};
 use crate::core::email;
 use crate::services::auth::keys;
 use crate::services::auth::users::repo::UsersRepository;

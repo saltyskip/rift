@@ -5,7 +5,7 @@ use std::sync::Arc;
 use super::repo::{UserDoc, UsersRepository};
 use crate::core::email;
 use crate::services::auth::keys;
-use crate::services::auth::secret_keys::new_repo::{SecretKeyDoc, SecretKeysRepository};
+use crate::services::auth::secret_keys::repo::{SecretKeyDoc, SecretKeysRepository};
 use crate::services::auth::tenants::repo::{TenantDoc, TenantsRepository};
 
 // ── Error ──

@@ -5,11 +5,9 @@ use crate::core::config::Config;
 use crate::core::webhook_dispatcher::WebhookDispatcher;
 use crate::services::apps::repo::AppsRepository;
 use crate::services::auth::publishable_keys::repo::SdkKeysRepository;
-use crate::services::auth::secret_keys::new_repo::SecretKeysRepository;
+use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::SecretKeysService;
-use crate::services::auth::tenants::repo::TenantsRepository;
 use crate::services::auth::usage::repo::UsageRepository;
-use crate::services::auth::users::repo::UsersRepository;
 use crate::services::auth::users::service::UsersService;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::repo::LinksRepository;
@@ -19,13 +17,7 @@ use crate::services::webhooks::repo::WebhooksRepository;
 use x402_types::proto::v1;
 
 /// Shared application state available to all route handlers.
-///
-/// New repo fields (tenants, users, secret_keys, usage) are wired up but not yet
-/// read by any handler — that happens in the next PR. Allow dead_code for now.
-#[allow(dead_code)]
 pub struct AppState {
-    pub tenants_repo: Option<Arc<dyn TenantsRepository>>,
-    pub users_repo: Option<Arc<dyn UsersRepository>>,
     pub secret_keys_repo: Option<Arc<dyn SecretKeysRepository>>,
     pub usage_repo: Option<Arc<dyn UsageRepository>>,
     pub links_repo: Option<Arc<dyn LinksRepository>>,
