@@ -424,34 +424,6 @@ pub async fn resolve_link_custom(
     do_resolve(&state, repo.as_ref(), link, &link_id, &headers, redirect).await
 }
 
-// ── GET /open/:link_id — Bounce endpoint for Universal Links ──
-//
-// Redirects to the link's custom domain URL. The cross-domain hop from
-// riftl.ink → go.example.com triggers Universal Links on iOS/Android,
-// which won't fire for same-domain taps on the landing page.
-
-#[derive(Deserialize)]
-pub struct BounceQuery {
-    /// The custom domain to redirect to.
-    pub d: String,
-}
-
-#[tracing::instrument(skip(params))]
-pub async fn bounce(Path(link_id): Path<String>, Query(params): Query<BounceQuery>) -> Response {
-    // Validate domain looks reasonable (no injection)
-    let domain = params.d.trim();
-    if domain.is_empty() || domain.contains('/') || domain.contains(' ') {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid domain", "code": "bad_request" })),
-        )
-            .into_response();
-    }
-
-    let target = format!("https://{}/{}", domain, link_id);
-    Redirect::temporary(&target).into_response()
-}
-
 /// Check if a link is resolvable (active, not expired, not flagged/disabled).
 /// Returns None if ok, Some(response) if the link should not be resolved.
 fn check_link_resolvable(link: &Link) -> Option<Response> {
@@ -697,7 +669,6 @@ async fn do_resolve(
             link_status,
             tenant_domain: tenant_domain.as_deref(),
             tenant_verified,
-            public_url: &state.config.public_url,
         });
         return (StatusCode::OK, axum::response::Html(html)).into_response();
     }
@@ -1140,7 +1111,6 @@ struct LandingPageContext<'a> {
     link_status: &'a str,
     tenant_domain: Option<&'a str>,
     tenant_verified: bool,
-    public_url: &'a str,
 }
 
 fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
@@ -1172,19 +1142,6 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
 
     let web_url = link.web_url.as_deref().unwrap_or("");
     let web_url_js = js_escape(web_url);
-
-    // Bounce URL for the "Open in App" button: cross-domain hop through
-    // the platform domain triggers Universal Links on the custom domain.
-    let bounce_url = if let Some(domain) = ctx.tenant_domain {
-        let encoded_domain = urlencoding(domain);
-        format!(
-            "{}/open/{}?d={}",
-            ctx.public_url, ctx.link_id, encoded_domain
-        )
-    } else {
-        String::new()
-    };
-    let bounce_url_js = js_escape(&bounce_url);
 
     let og_title = ctx.meta_title.unwrap_or(app_name_display);
     let og_description = ctx.meta_description.unwrap_or("Open in app");
@@ -1409,7 +1366,6 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         var platform = "{platform_js}";
         var storeUrl = "{store_url_js}";
         var webUrl = "{web_url_js}";
-        var bounceUrl = "{bounce_url_js}";
 
         var btn = document.getElementById("open-btn");
         var msg = document.getElementById("fallback-msg");
@@ -1422,12 +1378,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         }});
 
         if (platform === "ios" || platform === "android") {{
-            if (bounceUrl) {{
-                // Cross-domain bounce triggers Universal Links / App Links.
-                // If app installed → opens. If not → redirects back here → landing page.
-                btn.href = bounceUrl;
-                btn.textContent = "Open in {app_name_escaped}";
-            }} else if (storeUrl) {{
+            if (storeUrl) {{
                 btn.href = storeUrl;
                 btn.textContent = "Get {app_name_escaped}";
             }} else if (webUrl) {{
