@@ -5,6 +5,20 @@ import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 
 const FRAMEWORKS = [
   {
+    id: "npm",
+    label: "npm",
+    lang: "typescript",
+    code: `// npm install @riftlinks/sdk
+
+import { Rift } from '@riftlinks/sdk';
+
+Rift.init("pk_live_YOUR_KEY", { domain: "go.yourcompany.com" });
+
+// All <a href="https://go.yourcompany.com/..."> links are auto-tracked.
+// No additional setup needed — just use normal links in your app.`,
+    notes: "Install via npm for TypeScript support, tree-shaking, and ESM/CJS compatibility. Works with any bundler (Vite, Next.js, Webpack, etc.).",
+  },
+  {
     id: "html",
     label: "HTML",
     lang: "html",
