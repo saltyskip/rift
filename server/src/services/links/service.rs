@@ -341,6 +341,37 @@ impl LinksService {
     }
 
     #[tracing::instrument(skip(self))]
+    /// Resolve a link via an alternate domain. Returns the store/web URL to redirect to.
+    /// No click recording, no landing page — the alternate domain is a Universal Link trampoline.
+    pub async fn resolve_alternate(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+        user_agent: &str,
+    ) -> Result<String, LinkError> {
+        let link = self
+            .links_repo
+            .find_link_by_tenant_and_id(tenant_id, link_id)
+            .await
+            .map_err(LinkError::Internal)?
+            .ok_or(LinkError::NotFound)?;
+
+        let ua = user_agent.to_lowercase();
+        let redirect_url = if ua.contains("iphone") || ua.contains("ipad") || ua.contains("ipod") {
+            link.ios_store_url.as_deref().or(link.web_url.as_deref())
+        } else if ua.contains("android") {
+            link.android_store_url
+                .as_deref()
+                .or(link.web_url.as_deref())
+        } else {
+            link.web_url.as_deref()
+        };
+
+        redirect_url
+            .map(|s| s.to_string())
+            .ok_or(LinkError::NotFound)
+    }
+
     pub async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<(), LinkError> {
         let deleted = self
             .links_repo

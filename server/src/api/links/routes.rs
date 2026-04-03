@@ -406,16 +406,10 @@ pub async fn resolve_link_custom(
     // This only runs when the app is NOT installed — if it IS installed, Universal
     // Links intercept the tap and this endpoint is never reached.
     if domain.role == crate::services::domains::models::DomainRole::Alternate {
-        let link = repo
-            .find_link_by_tenant_and_id(&domain.tenant_id, &link_id)
-            .await
-            .ok()
-            .flatten();
-
-        let Some(link) = link else {
+        let Some(links_svc) = &state.links_service else {
             return (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "error": "Link not found", "code": "not_found" })),
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "error": "Database not configured", "code": "no_database" })),
             )
                 .into_response();
         };
@@ -424,22 +418,15 @@ pub async fn resolve_link_custom(
             .get("user-agent")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
-        let platform = detect_platform(user_agent);
 
-        let redirect_url = match platform {
-            Platform::Ios => link.ios_store_url.as_deref().or(link.web_url.as_deref()),
-            Platform::Android => link
-                .android_store_url
-                .as_deref()
-                .or(link.web_url.as_deref()),
-            Platform::Other => link.web_url.as_deref(),
-        };
-
-        return match redirect_url {
-            Some(url) => Redirect::temporary(url).into_response(),
-            None => (
+        return match links_svc
+            .resolve_alternate(&domain.tenant_id, &link_id, user_agent)
+            .await
+        {
+            Ok(url) => Redirect::temporary(&url).into_response(),
+            Err(_) => (
                 StatusCode::NOT_FOUND,
-                Json(json!({ "error": "No destination configured", "code": "not_found" })),
+                Json(json!({ "error": "Link not found", "code": "not_found" })),
             )
                 .into_response(),
         };
