@@ -19,6 +19,7 @@ Rift is a deep linking platform that creates smart, cross-platform links with st
 ```
 server/          Rust + Axum API server (MongoDB, Sentry)
 sdk/mobile/      Swift/Kotlin mobile SDK via UniFFI
+sdk/web/         TypeScript web SDK (ESM/CJS/IIFE)
 marketing/       Next.js documentation and marketing site
 worker/          Cloudflare Worker for custom domain routing
 worker-slack/    Cloudflare Worker for Slack webhook proxy
@@ -31,8 +32,16 @@ The server separates **domain logic** (`services/`) from **transport layers** (`
 ### Prerequisites
 
 - Rust 1.75+
+- Node.js 20+ (for web SDK builds)
 - MongoDB (local or Atlas)
 - Optional: Cloudflare account (for custom domains)
+
+### Setup
+
+```sh
+# Enable shared git hooks (auto-builds web SDK, checks mobile SDK)
+git config core.hooksPath .githooks
+```
 
 ### Run the server
 

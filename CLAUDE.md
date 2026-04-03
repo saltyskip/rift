@@ -101,6 +101,18 @@ cargo run -- migrate --name m001_auth_split --apply  # Actually execute
 - Migrations should be idempotent — skip documents that are already migrated
 - Each migration is a separate file: `m001_description.rs`, `m002_description.rs`, etc.
 
+## Setup
+
+After cloning, enable the shared git hooks:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+This enables:
+- **Web SDK auto-build** — when you commit changes to `sdk/web/src/`, the pre-commit hook rebuilds the IIFE and stages `server/src/sdk/rift.js` automatically
+- **Mobile SDK UniFFI check** — prevents UniFFI annotations from leaking into the core crate
+
 ## CI Checks
 
 Before pushing, always run all three checks that CI enforces:
@@ -142,6 +154,27 @@ cargo test                    # Run all tests including architecture tests
 ### CI/CD
 - `sdk-ci.yml` — runs on every push/PR touching `sdk/mobile/`
 - `sdk-release.yml` — triggered by `sdk-v*` tags or manual dispatch
+
+## Web SDK (`sdk/web/`)
+
+TypeScript package built with tsup. Single source produces three outputs:
+
+- `dist/index.mjs` — ESM (`import { Rift } from '@riftl/sdk'`)
+- `dist/index.cjs` — CJS (`const { Rift } = require('@riftl/sdk')`)
+- `dist/index.global.js` — IIFE (copied to `server/src/sdk/rift.js`, served at `/sdk/rift.js`)
+
+### Conventions
+- **The TypeScript source is the single source of truth** — `server/src/sdk/rift.js` is a build artifact
+- **The pre-commit hook keeps them in sync** — no manual build step needed (requires `git config core.hooksPath .githooks`)
+- **CI verifies sync** — `web-sdk-ci.yml` fails if the IIFE is out of date
+
+### Building manually (if needed)
+```sh
+cd sdk/web
+npm ci
+npm run build
+cp dist/index.global.js ../../server/src/sdk/rift.js
+```
 
 ## MCP with Claude Code
 
