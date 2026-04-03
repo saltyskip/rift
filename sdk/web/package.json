@@ -1,5 +1,5 @@
 {
-  "name": "@riftl/sdk",
+  "name": "@riftlinks/sdk",
   "version": "0.1.0",
   "description": "Rift web SDK — deep link click tracking and resolution",
   "type": "module",

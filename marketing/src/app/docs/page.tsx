@@ -69,19 +69,20 @@ export default function QuickStartPage() {
 
           <Step n={4} title="Add click tracking to your website">
             <p>
-              Load the SDK and pass your publishable key with your custom domain. The SDK auto-tracks clicks
-              on any link pointing to your domain — no attributes or event handlers needed.
+              Install the SDK via npm or load it via script tag. Pass your publishable key with your custom domain.
+              The SDK auto-tracks clicks on any link pointing to your domain — no attributes or event handlers needed.
+            </p>
+            <CodeBlock lang="bash">{`npm install @riftlinks/sdk`}</CodeBlock>
+            <CodeBlock lang="typescript">{`import { Rift } from '@riftlinks/sdk';
+Rift.init("pk_live_YOUR_KEY", { domain: "go.yourcompany.com" });`}</CodeBlock>
+            <p className="text-[13px] text-[#52525b]">
+              Or via script tag:
             </p>
             <CodeBlock lang="html">{`<script src="https://api.riftl.ink/sdk/rift.js"></script>
-<script>
-  Rift.init("pk_live_YOUR_KEY", { domain: "go.yourcompany.com" });
-</script>
-
-<!-- Just a normal link. Click tracking happens automatically. -->
-<a href="https://go.yourcompany.com/summer-sale">Get the App</a>`}</CodeBlock>
+<script>Rift.init("pk_live_YOUR_KEY", { domain: "go.yourcompany.com" });</script>`}</CodeBlock>
             <p>
-              See <a href="/docs/web-sdk" className="text-[#2dd4bf] hover:underline">Web SDK</a> for framework-specific examples
-              (Next.js, Svelte, Vue) and the full API reference.
+              All links to your domain are auto-tracked. See <a href="/docs/web-sdk" className="text-[#2dd4bf] hover:underline">Web SDK</a> for
+              framework-specific examples (Next.js, Svelte, Vue) and the full API reference.
             </p>
           </Step>
         </section>
