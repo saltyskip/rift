@@ -267,6 +267,7 @@ async fn resolve_custom_domain_unverified_returns_404() {
             tenant_id,
             "unverified.example.com".to_string(),
             "tok".to_string(),
+            rift::services::domains::models::DomainRole::Primary,
         )
         .await
         .unwrap();

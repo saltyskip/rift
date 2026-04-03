@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime};
 use std::sync::Mutex;
 
-use rift::services::domains::models::Domain;
+use rift::services::domains::models::{Domain, DomainRole};
 use rift::services::domains::repo::DomainsRepository;
 
 #[derive(Default)]
@@ -17,6 +17,7 @@ impl DomainsRepository for MockDomainsRepo {
         tenant_id: ObjectId,
         domain: String,
         verification_token: String,
+        role: DomainRole,
     ) -> Result<Domain, String> {
         let mut domains = self.domains.lock().unwrap();
         if domains.iter().any(|d| d.domain == domain) {
@@ -28,6 +29,7 @@ impl DomainsRepository for MockDomainsRepo {
             domain,
             verified: false,
             verification_token,
+            role,
             created_at: DateTime::now(),
         };
         domains.push(doc.clone());
@@ -68,5 +70,18 @@ impl DomainsRepository for MockDomainsRepo {
             d.verified = true;
         }
         Ok(())
+    }
+
+    async fn find_alternate_by_tenant(
+        &self,
+        tenant_id: &ObjectId,
+    ) -> Result<Option<Domain>, String> {
+        Ok(self
+            .domains
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|d| &d.tenant_id == tenant_id && d.role == DomainRole::Alternate && d.verified)
+            .cloned())
     }
 }

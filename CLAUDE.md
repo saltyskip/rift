@@ -37,6 +37,15 @@ Creating new secret keys requires email confirmation (6-char code sent to a veri
 
 Public endpoints (landing page, attribution reporting) resolve the tenant from the link_id itself.
 
+## Custom Domains (Primary + Alternate)
+
+Each tenant registers two custom domains: a **primary** domain for landing pages and link resolution, and an **alternate** domain used solely as a Universal Link trampoline. iOS/Android don't trigger Universal Links for same-domain taps, so the landing page "Open in App" button must point to a different domain.
+
+- **Primary** (`go.example.com`) — serves landing pages, resolves links, records clicks
+- **Alternate** (`open.example.com`) — ONLY handles the "Open in App" tap. No landing pages, no click recording, no analytics. If the app is installed, iOS intercepts the tap. If not, Rift redirects to the store.
+
+Both domains go through the same Cloudflare worker, same AASA serving, same verification flow.
+
 ## Adding a New Domain
 
 1. Create `services/<name>/mod.rs`, `models.rs` for types, `repo.rs` for database access

@@ -38,6 +38,7 @@ async fn create_sdk_key_rejects_unverified_domain() {
             tenant_id,
             "unverified.example.com".to_string(),
             "tok".to_string(),
+            rift::services::domains::models::DomainRole::Primary,
         )
         .await
         .unwrap();
