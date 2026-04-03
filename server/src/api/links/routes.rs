@@ -508,32 +508,28 @@ async fn do_resolve(
         .map(detect_platform)
         .unwrap_or(Platform::Other);
 
-    // Skip click recording for redirect=1 requests — the click was already
-    // recorded by the web SDK beacon or the initial landing page load.
-    if !redirect {
-        if let Err(e) = repo
-            .record_click(
-                link.tenant_id,
-                link_id,
-                user_agent.clone(),
-                referer.clone(),
-                Some(platform.as_str().to_string()),
-            )
-            .await
-        {
-            tracing::warn!(error = %e, "Failed to record click");
-        }
+    if let Err(e) = repo
+        .record_click(
+            link.tenant_id,
+            link_id,
+            user_agent.clone(),
+            referer.clone(),
+            Some(platform.as_str().to_string()),
+        )
+        .await
+    {
+        tracing::warn!(error = %e, "Failed to record click");
+    }
 
-        if let Some(dispatcher) = &state.webhook_dispatcher {
-            dispatcher.dispatch_click(ClickEventPayload {
-                tenant_id: link.tenant_id.to_hex(),
-                link_id: link_id.to_string(),
-                user_agent,
-                referer,
-                platform: platform.as_str().to_string(),
-                timestamp: Utc::now().to_rfc3339(),
-            });
-        }
+    if let Some(dispatcher) = &state.webhook_dispatcher {
+        dispatcher.dispatch_click(ClickEventPayload {
+            tenant_id: link.tenant_id.to_hex(),
+            link_id: link_id.to_string(),
+            user_agent,
+            referer,
+            platform: platform.as_str().to_string(),
+            timestamp: Utc::now().to_rfc3339(),
+        });
     }
 
     // Agents get JSON, humans get a smart landing page or redirect.
@@ -1382,12 +1378,13 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         }});
 
         if (platform === "ios" || platform === "android") {{
-            // Button tries to open the app via Universal Link. If the app is
-            // installed, iOS/Android intercepts the tap and opens the app.
-            // If not, redirect=1 sends the user straight to the store.
-            var ul = window.location.href.split("?")[0] + "?redirect=1";
-            btn.href = ul;
-            btn.textContent = "Open in {app_name_escaped}";
+            if (storeUrl) {{
+                btn.href = storeUrl;
+                btn.textContent = "Get {app_name_escaped}";
+            }} else if (webUrl) {{
+                btn.href = webUrl;
+                btn.textContent = "Continue";
+            }}
         }} else {{
             if (webUrl) {{
                 btn.href = webUrl;

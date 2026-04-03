@@ -63,11 +63,7 @@ async fn redirect_ios_goes_to_app_store() {
     );
 
     let clicks = app.links_repo.clicks.lock().unwrap();
-    assert_eq!(
-        clicks.len(),
-        0,
-        "redirect=1 should NOT record a click (already recorded by SDK beacon or landing page)"
-    );
+    assert_eq!(clicks.len(), 1, "click should be recorded");
 }
 
 #[tokio::test]
@@ -100,11 +96,7 @@ async fn redirect_android_goes_to_play_store() {
     );
 
     let clicks = app.links_repo.clicks.lock().unwrap();
-    assert_eq!(
-        clicks.len(),
-        0,
-        "redirect=1 should NOT record a click (already recorded by SDK beacon or landing page)"
-    );
+    assert_eq!(clicks.len(), 1, "click should be recorded");
 }
 
 #[tokio::test]
@@ -126,11 +118,7 @@ async fn redirect_desktop_goes_to_web_url() {
     assert_eq!(location, "https://example.com");
 
     let clicks = app.links_repo.clicks.lock().unwrap();
-    assert_eq!(
-        clicks.len(),
-        0,
-        "redirect=1 should NOT record a click (already recorded by SDK beacon or landing page)"
-    );
+    assert_eq!(clicks.len(), 1, "click should be recorded");
 }
 
 #[tokio::test]
@@ -169,11 +157,7 @@ async fn redirect_no_store_url_falls_back_to_landing() {
     );
 
     let clicks = app.links_repo.clicks.lock().unwrap();
-    assert_eq!(
-        clicks.len(),
-        0,
-        "redirect=1 should NOT record a click (already recorded by SDK beacon or landing page)"
-    );
+    assert_eq!(clicks.len(), 1, "click should be recorded");
 }
 
 // ── Landing page tests (no redirect) ──
@@ -221,7 +205,7 @@ async fn landing_page_ios() {
     );
 
     let clicks = app.links_repo.clicks.lock().unwrap();
-    assert_eq!(clicks.len(), 1, "landing page should record a click");
+    assert_eq!(clicks.len(), 1, "click should be recorded");
 }
 
 #[tokio::test]
@@ -267,7 +251,7 @@ async fn landing_page_android() {
     );
 
     let clicks = app.links_repo.clicks.lock().unwrap();
-    assert_eq!(clicks.len(), 1, "landing page should record a click");
+    assert_eq!(clicks.len(), 1, "click should be recorded");
 }
 
 #[tokio::test]
@@ -289,7 +273,7 @@ async fn landing_page_desktop() {
     assert!(body.contains("split"), "should contain landing page layout");
 
     let clicks = app.links_repo.clicks.lock().unwrap();
-    assert_eq!(clicks.len(), 1, "landing page should record a click");
+    assert_eq!(clicks.len(), 1, "click should be recorded");
 }
 
 // ── JSON (agent) tests ──
@@ -317,11 +301,7 @@ async fn json_resolve_ignores_redirect() {
     assert!(body["_rift_meta"].is_object(), "should have _rift_meta");
 
     let clicks = app.links_repo.clicks.lock().unwrap();
-    assert_eq!(
-        clicks.len(),
-        0,
-        "redirect=1 should NOT record a click (already recorded by SDK beacon or landing page)"
-    );
+    assert_eq!(clicks.len(), 1, "click should be recorded");
 }
 
 #[tokio::test]
@@ -351,7 +331,7 @@ async fn json_resolve_normal() {
     assert!(body["_rift_meta"].is_object());
 
     let clicks = app.links_repo.clicks.lock().unwrap();
-    assert_eq!(clicks.len(), 1, "JSON resolve should record a click");
+    assert_eq!(clicks.len(), 1, "click should be recorded");
 }
 
 // ── Edge case tests ──
