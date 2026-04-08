@@ -1,22 +1,11 @@
 import type { Metadata } from "next";
 import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
+import { DocsStep as Step } from "@/components/docs-step";
 
 export const metadata: Metadata = {
   title: "Universal Links — Rift Docs",
   description: "Configure iOS Associated Domains and Android App Links with Rift.",
 };
-
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
-  return (
-    <div className="relative pl-10">
-      <div className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full bg-[#2dd4bf]/10 text-[#2dd4bf] text-sm font-semibold border border-[#2dd4bf]/20">
-        {n}
-      </div>
-      <h3 className="text-lg font-semibold text-[#fafafa] mb-3">{title}</h3>
-      <div className="space-y-3 text-[15px] text-[#a1a1aa] leading-relaxed">{children}</div>
-    </div>
-  );
-}
 
 export default function UniversalLinksPage() {
   return (

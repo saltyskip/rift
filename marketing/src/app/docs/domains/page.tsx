@@ -1,41 +1,19 @@
 import type { Metadata } from "next";
 import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
+import { DocsSetupTabs } from "@/components/docs-setup-tabs";
+import { DocsStep as Step } from "@/components/docs-step";
+import { DocsCallout as Callout } from "@/components/docs-callout";
 
 export const metadata: Metadata = {
   title: "Custom Domains — Rift Docs",
   description: "Use your own brand domain for deep links with Rift custom domains.",
 };
 
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
-  return (
-    <div className="relative pl-10">
-      <div className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full bg-[#2dd4bf]/10 text-[#2dd4bf] text-sm font-semibold border border-[#2dd4bf]/20">
-        {n}
-      </div>
-      <h3 className="text-lg font-semibold text-[#fafafa] mb-3">{title}</h3>
-      <div className="space-y-3 text-[15px] text-[#a1a1aa] leading-relaxed">{children}</div>
-    </div>
-  );
-}
-
-function Callout({ type, children }: { type: "info" | "warning"; children: React.ReactNode }) {
-  const styles = {
-    info: "border-[#60a5fa]/30 bg-[#60a5fa]/5 text-[#93bbfd]",
-    warning: "border-[#f59e0b]/30 bg-[#f59e0b]/5 text-[#fbbf24]",
-  };
-  const labels = { info: "Note", warning: "Important" };
-  return (
-    <div className={`rounded-lg border px-4 py-3 text-[13px] leading-relaxed ${styles[type]}`}>
-      <strong>{labels[type]}:</strong> {children}
-    </div>
-  );
-}
-
 export default function DomainsPage() {
   return (
     <div className="max-w-3xl">
       <div className="mb-12">
-        <p className="text-[13px] font-medium text-[#2dd4bf] uppercase tracking-widest mb-3">Getting Started</p>
+        <p className="text-[13px] font-medium text-[#2dd4bf] uppercase tracking-widest mb-3">Setup</p>
         <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Custom Domains</h1>
         <p className="text-lg text-[#71717a] leading-relaxed">
           Use your own brand for links: <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">go.yourcompany.com/summer-sale</code>{" "}
@@ -61,96 +39,116 @@ export default function DomainsPage() {
           </p>
           <Callout type="info">
             A verified custom domain is <strong>required</strong> to use custom IDs (vanity slugs)
-            when <a href="/docs/links" className="underline">creating links</a>. Custom IDs are
-            unique per tenant — different tenants can use the same slug on their own domains.
-            Without a custom domain, links use auto-generated IDs on the
-            primary <code>riftl.ink</code> domain.
+            when <a href="/docs/links" className="underline">creating links</a>. Without a custom
+            domain, links use auto-generated IDs on the shared <code>riftl.ink</code> domain.
           </Callout>
         </section>
 
         <div className="gradient-line" />
 
+        {/* Primary & Alternate */}
+        <section className="space-y-4">
+          <h2 className="text-2xl font-bold text-[#fafafa]">Primary &amp; alternate domains</h2>
+          <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
+            Each tenant registers two custom domains: a <strong className="text-[#fafafa]">primary</strong> domain
+            and an <strong className="text-[#fafafa]">alternate</strong> domain.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf]">Primary</p>
+              <p className="mt-1 font-mono text-[14px] text-[#fafafa]">go.yourcompany.com</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
+                Serves landing pages, resolves links, records clicks. This is the domain your
+                users see in URLs.
+              </p>
+            </div>
+            <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#f59e0b]">Alternate</p>
+              <p className="mt-1 font-mono text-[14px] text-[#fafafa]">open.yourcompany.com</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
+                Used only for the &ldquo;Open in App&rdquo; tap. No landing pages, no click
+                recording, no analytics.
+              </p>
+            </div>
+          </div>
+          <Callout type="info">
+            <strong>Why two domains?</strong> iOS and Android don&apos;t trigger Universal Links /
+            App Links when the tap originates from the same domain as the link destination.
+            The landing page lives on your primary domain, so the &ldquo;Open in App&rdquo; button
+            must point to a <em>different</em> domain for the OS to intercept the tap and open your
+            app directly.
+          </Callout>
+          <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
+            Both domains use the same Cloudflare Worker, the same AASA serving, and the same
+            verification flow. The CLI sets up both in sequence.
+          </p>
+        </section>
+
+        <div className="gradient-line" />
+
+        <DocsSetupTabs
+          title="Set it up"
+          tabs={[
+            {
+              id: "cli",
+              label: "CLI (Recommended)",
+              children: (
+                <div className="space-y-4 text-[15px] leading-relaxed text-[#a1a1aa]">
+                  <p>
+                    The CLI handles domain registration, TXT verification, and testing. It
+                    prompts you through both your primary and alternate domain in one flow.
+                  </p>
+                  <CodeBlock lang="bash">{`rift setup domain`}</CodeBlock>
+                  <div className="rounded-xl border border-[#2dd4bf]/20 bg-[#2dd4bf]/5 p-4">
+                    <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf]">
+                      What the CLI handles
+                    </p>
+                    <div className="mt-3 space-y-2 text-[14px] text-[#d4d4d8]">
+                      <p>1. Recommends a primary domain like <code className="rounded bg-[#18181b] px-1.5 py-0.5 text-[13px]">go.yourcompany.com</code></p>
+                      <p>2. Registers the domain with Rift and shows you the TXT record to add</p>
+                      <p>3. Waits for DNS propagation and verifies ownership</p>
+                      <p>4. Tests your Worker once you finish the Cloudflare side</p>
+                      <p>5. Continues into your alternate domain setup</p>
+                    </div>
+                  </div>
+                  <p>
+                    You still need to create the Cloudflare Worker yourself — see the setup below.
+                  </p>
+                </div>
+              ),
+            },
+            {
+              id: "manual",
+              label: "Manual",
+              children: (
+                <div className="space-y-4 text-[15px] leading-relaxed text-[#a1a1aa]">
+                  <p>
+                    If you prefer full control over the API calls, DNS records, and verification
+                    steps, follow the{" "}
+                    <a href="/docs/manual-setup" className="text-[#2dd4bf] hover:underline">
+                      manual setup guide
+                    </a>
+                    . It walks through every step from account creation to domain verification.
+                  </p>
+                  <p>
+                    Either way, you&apos;ll need to create the Cloudflare Worker below.
+                  </p>
+                </div>
+              ),
+            },
+          ]}
+        />
+
+        <div className="gradient-line" />
+
         <section className="space-y-6">
-          <Step n={1} title="Add your domain to Cloudflare">
-            <p>
-              In the <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" className="text-[#2dd4bf] hover:underline">Cloudflare dashboard</a>,
-              click <strong className="text-[#fafafa]">Add a Site</strong> and enter your root domain
-              (e.g. <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">yourcompany.com</code>).
-              Select the <strong className="text-[#fafafa]">Free</strong> plan.
-            </p>
-            <p>
-              Cloudflare will give you two nameservers. Go to your registrar (GoDaddy, Namecheap, etc.)
-              and change the nameservers to Cloudflare&apos;s. For example:
-            </p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px] border border-[#1e1e22] rounded-lg overflow-hidden">
-                <thead>
-                  <tr className="bg-[#0c0c0e]">
-                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Nameserver</th>
-                  </tr>
-                </thead>
-                <tbody className="text-[#a1a1aa]">
-                  <tr className="border-b border-[#1e1e22]">
-                    <td className="px-4 py-2.5 font-mono">ada.ns.cloudflare.com</td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-2.5 font-mono">bob.ns.cloudflare.com</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <Callout type="info">
-              This is <strong>not</strong> a domain transfer. Your registrar still owns the domain.
-              You&apos;re just telling it to let Cloudflare handle DNS. Cloudflare will auto-import
-              your existing DNS records.
-            </Callout>
-            <p>Wait for the zone to become active in Cloudflare (usually 5–30 minutes).</p>
-          </Step>
+          <h2 className="text-2xl font-bold text-[#fafafa]">Create the Cloudflare Worker</h2>
+          <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
+            This is required regardless of whether you use the CLI or manual setup.
+            The same Worker handles both your primary and alternate domains.
+          </p>
 
-          <Step n={2} title="Register your domain with Rift">
-            <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/domains \\
-  -H "Authorization: Bearer rl_live_YOUR_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"domain": "go.yourcompany.com"}'`}</CodeBlock>
-            <p>Response:</p>
-            <CodeBlock lang="json">{`{
-  "domain": "go.yourcompany.com",
-  "verified": false,
-  "verification_token": "a1b2c3d4e5f6...",
-  "txt_record": "_rift-verify.go.yourcompany.com",
-  "cname_target": "riftl.ink"
-}`}</CodeBlock>
-            <p>Save the <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">verification_token</code> — you&apos;ll need it in the next step.</p>
-          </Step>
-
-          <Step n={3} title="Add DNS records in Cloudflare">
-            <p>In Cloudflare → <strong className="text-[#fafafa]">DNS</strong> → <strong className="text-[#fafafa]">Records</strong>, add a TXT record for domain verification:</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px] border border-[#1e1e22] rounded-lg overflow-hidden">
-                <thead>
-                  <tr className="bg-[#0c0c0e]">
-                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Type</th>
-                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Name</th>
-                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Value</th>
-                  </tr>
-                </thead>
-                <tbody className="text-[#a1a1aa]">
-                  <tr>
-                    <td className="px-4 py-2.5 font-mono text-[#f59e0b]">TXT</td>
-                    <td className="px-4 py-2.5 font-mono">_rift-verify.go</td>
-                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">your verification_token</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <Callout type="warning">
-              Enter just <code>_rift-verify.go</code> as the name — Cloudflare automatically
-              appends your root domain. Entering the full hostname would
-              create <code>_rift-verify.go.yourcompany.com.yourcompany.com</code>.
-            </Callout>
-          </Step>
-
-          <Step n={4} title="Create the Cloudflare Worker">
+          <Step n={1} title="Create the Worker">
             <p>
               In Cloudflare → <strong className="text-[#fafafa]">Workers &amp; Pages</strong> → <strong className="text-[#fafafa]">Create</strong>:
             </p>
@@ -182,69 +180,37 @@ export default function DomainsPage() {
             </ol>
           </Step>
 
-          <Step n={5} title="Attach the worker to your subdomain">
+          <Step n={2} title="Attach it to your domains">
             <p>
-              On the worker page → <strong className="text-[#fafafa]">Settings</strong> → <strong className="text-[#fafafa]">Domains &amp; Routes</strong> → <strong className="text-[#fafafa]">Add</strong> → <strong className="text-[#fafafa]">Custom Domain</strong>:
-            </p>
-            <p>
-              Enter <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">go.yourcompany.com</code>.
-              Cloudflare will auto-create a proxied DNS record for you.
-            </p>
-            <p>
-              Then add a <strong className="text-[#fafafa]">Route</strong> as well:
+              On the Worker page → <strong className="text-[#fafafa]">Settings</strong> → <strong className="text-[#fafafa]">Domains &amp; Routes</strong> → <strong className="text-[#fafafa]">Add</strong> → <strong className="text-[#fafafa]">Custom Domain</strong>.
+              Add both your primary and alternate domains:
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-[13px] border border-[#1e1e22] rounded-lg overflow-hidden">
                 <thead>
                   <tr className="bg-[#0c0c0e]">
-                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Setting</th>
-                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Value</th>
+                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Custom Domain</th>
+                    <th className="text-left text-[#52525b] font-medium px-4 py-2.5 border-b border-[#1e1e22]">Route Pattern</th>
                   </tr>
                 </thead>
                 <tbody className="text-[#a1a1aa]">
                   <tr className="border-b border-[#1e1e22]">
-                    <td className="px-4 py-2.5">Route pattern</td>
-                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">go.yourcompany.com/*</td>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">go.yourcompany.com</td>
+                    <td className="px-4 py-2.5 font-mono">go.yourcompany.com/*</td>
                   </tr>
                   <tr>
-                    <td className="px-4 py-2.5">Worker</td>
-                    <td className="px-4 py-2.5 font-mono">rift-proxy</td>
+                    <td className="px-4 py-2.5 font-mono text-[#f59e0b]">open.yourcompany.com</td>
+                    <td className="px-4 py-2.5 font-mono">open.yourcompany.com/*</td>
                   </tr>
                 </tbody>
               </table>
             </div>
+            <p>
+              Cloudflare auto-creates proxied DNS records for each custom domain.
+            </p>
             <Callout type="warning">
-              The route pattern must include <code>/*</code> at the end. Without the wildcard,
+              Route patterns must include <code>{'/*'}</code> at the end. Without the wildcard,
               only the bare domain will match — paths like <code>/download</code> won&apos;t be proxied.
-            </Callout>
-          </Step>
-
-          <Step n={6} title="Verify ownership">
-            <p>Wait a few minutes for DNS to propagate, then verify:</p>
-            <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/domains/go.yourcompany.com/verify \\
-  -H "Authorization: Bearer rl_live_YOUR_KEY"`}</CodeBlock>
-            <p>
-              If verification fails, check that the TXT record has propagated:
-            </p>
-            <CodeBlock>{`dig +short TXT _rift-verify.go.yourcompany.com`}</CodeBlock>
-            <p>
-              The output should show your verification token. If it&apos;s empty, wait a few more
-              minutes — DNS propagation can take up to 30 minutes.
-            </p>
-          </Step>
-
-          <Step n={7} title="Test it">
-            <CodeBlock>{`# Should return link data as JSON
-curl https://go.yourcompany.com/YOUR_LINK_ID \\
-  -H "Accept: application/json"
-
-# Should serve the AASA file (if you registered an iOS app)
-curl https://go.yourcompany.com/.well-known/apple-app-site-association`}</CodeBlock>
-            <Callout type="info">
-              If you get an SSL error, your local DNS cache may still point to
-              the old IP. Flush it
-              with <code>sudo dscacheutil -flushcache &amp;&amp; sudo killall -HUP mDNSResponder</code> on
-              macOS, or wait a few minutes.
             </Callout>
           </Step>
         </section>

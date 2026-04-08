@@ -314,6 +314,8 @@ pub struct ListLinksResponse {
 pub struct LinkAttributionRequest {
     #[schema(example = "d4f7a1b2-3c8e-4f9a-b5d6-7e8f9a0b1c2d")]
     pub install_id: String,
+    #[schema(example = "user_12345")]
+    pub user_id: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

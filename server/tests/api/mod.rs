@@ -1,3 +1,4 @@
+mod apps;
 mod auth;
 mod domains;
 mod health;

@@ -3,7 +3,7 @@ set -e
 
 echo "Checking SDK core crate for UniFFI usage..."
 
-BASE_DIR="${1:-sdk/mobile/core/src}"
+BASE_DIR="${1:-client/mobile/core/src}"
 
 if [ ! -d "$BASE_DIR" ]; then
     echo "Skipping: $BASE_DIR not found"

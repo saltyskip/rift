@@ -1,35 +1,13 @@
 import type { Metadata } from "next";
 import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
+import { DocsSetupTabs } from "@/components/docs-setup-tabs";
+import { DocsStep as Step } from "@/components/docs-step";
+import { DocsCallout as Callout } from "@/components/docs-callout";
 
 export const metadata: Metadata = {
   title: "Create Links — Rift Docs",
   description: "Create deep links with per-platform destinations, metadata, and smart resolution.",
 };
-
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
-  return (
-    <div className="relative pl-10">
-      <div className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full bg-[#2dd4bf]/10 text-[#2dd4bf] text-sm font-semibold border border-[#2dd4bf]/20">
-        {n}
-      </div>
-      <h3 className="text-lg font-semibold text-[#fafafa] mb-3">{title}</h3>
-      <div className="space-y-3 text-[15px] text-[#a1a1aa] leading-relaxed">{children}</div>
-    </div>
-  );
-}
-
-function Callout({ type, children }: { type: "info" | "warning"; children: React.ReactNode }) {
-  const styles = {
-    info: "border-[#60a5fa]/30 bg-[#60a5fa]/5 text-[#93bbfd]",
-    warning: "border-[#f59e0b]/30 bg-[#f59e0b]/5 text-[#fbbf24]",
-  };
-  const labels = { info: "Note", warning: "Important" };
-  return (
-    <div className={`rounded-lg border px-4 py-3 text-[13px] leading-relaxed ${styles[type]}`}>
-      <strong>{labels[type]}:</strong> {children}
-    </div>
-  );
-}
 
 export default function LinksPage() {
   return (
@@ -43,10 +21,39 @@ export default function LinksPage() {
       </div>
 
       <div className="space-y-10">
-        <section className="space-y-6">
-          <Step n={1} title="Create a link with per-platform destinations">
-            <p>Specify where each platform should go — deep link URI, store URL, and web fallback:</p>
-            <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/links \\
+        <DocsSetupTabs
+          title="Create a link"
+          tabs={[
+            {
+              id: "cli",
+              label: "CLI (Recommended)",
+              children: (
+                <div className="space-y-6">
+                  <div className="space-y-3 text-[15px] leading-relaxed text-[#a1a1aa]">
+                    <p>The CLI walks you through link creation interactively, or you can pass flags directly:</p>
+                    <CodeBlock lang="bash">{`# Interactive — prompts for each field
+rift create-link
+
+# Non-interactive — pass flags directly
+rift create-link \\
+  --web-url https://example.com/promo/summer-sale \\
+  --ios-deep-link myapp://promo/summer-sale \\
+  --android-deep-link myapp://promo/summer-sale \\
+  --custom-id summer-sale`}</CodeBlock>
+                    <p>The CLI outputs the link ID and URL, and suggests <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">rift test-link</code> to preview how it resolves across platforms:</p>
+                    <CodeBlock lang="bash">{`rift test-link summer-sale`}</CodeBlock>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              id: "http",
+              label: "HTTP",
+              children: (
+                <div className="space-y-6">
+                  <div className="space-y-3 text-[15px] leading-relaxed text-[#a1a1aa]">
+                    <p>Specify where each platform should go — deep link URI, store URL, and web fallback:</p>
+                    <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/links \\
   -H "Authorization: Bearer rl_live_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -67,11 +74,20 @@ export default function LinksPage() {
       "description": "Summer clearance sale on all products with free shipping"
     }
   }'`}</CodeBlock>
-            <p>Response:</p>
-            <CodeBlock lang="json">{`{
+                    <p>Response:</p>
+                    <CodeBlock lang="json">{`{
   "link_id": "summer-sale",
   "url": "https://api.riftl.ink/r/summer-sale"
 }`}</CodeBlock>
+                  </div>
+                </div>
+              ),
+            },
+          ]}
+        />
+
+        <section className="space-y-6">
+          <div className="space-y-3 text-[15px] leading-relaxed text-[#a1a1aa]">
             <Callout type="warning">
               Custom IDs (vanity slugs like <code>summer-sale</code>) require a{" "}
               <a href="/docs/domains" className="underline">verified custom domain</a>.
@@ -85,7 +101,7 @@ export default function LinksPage() {
               Auto-generated links work for all tenants and resolve via <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">riftl.ink/r/A1B2C3D4</code> —
               no custom domain required.
             </p>
-          </Step>
+          </div>
 
           <Step n={2} title="How resolution works">
             <p>When a user clicks the link, Rift detects their platform and serves a smart landing page that:</p>

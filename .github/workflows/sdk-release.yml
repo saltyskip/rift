@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'sdk/mobile/**'
+      - 'client/mobile/**'
   workflow_dispatch:
 
 concurrency:
@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: sdk/mobile
+        working-directory: client/mobile
 
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk/mobile
+          workspaces: client/mobile
 
       - name: Run tests
         run: cargo test
@@ -66,8 +66,8 @@ jobs:
         with:
           name: ios-sdk
           path: |
-            sdk/mobile/ios-sdk.tar.gz
-            sdk/mobile/rift_ffiFFI.xcframework.zip
+            client/mobile/ios-sdk.tar.gz
+            client/mobile/rift_ffiFFI.xcframework.zip
           retention-days: 5
 
     outputs:
@@ -79,7 +79,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: sdk/mobile
+        working-directory: client/mobile
 
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +97,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk/mobile
+          workspaces: client/mobile
 
       - name: Build Android SDK
         run: ./build_android.sh
@@ -114,7 +114,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: android-sdk
-          path: sdk/mobile/android-sdk.tar.gz
+          path: client/mobile/android-sdk.tar.gz
           retention-days: 5
 
   release:
@@ -138,7 +138,7 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          SDK_VERSION=$(grep '^version' sdk/mobile/core/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          SDK_VERSION=$(grep '^version' client/mobile/core/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
           TAG="sdk-v${SDK_VERSION}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$SDK_VERSION" >> "$GITHUB_OUTPUT"
@@ -208,13 +208,13 @@ jobs:
           # Extract Swift sources from the iOS SDK artifact for SPM resolution.
           mkdir -p /tmp/ios-extract
           tar -xzf "artifacts/rift-ios-sdk-${TAG}.tar.gz" -C /tmp/ios-extract
-          mkdir -p sdk/mobile/dist/ios/Sources/RiftSDK
-          rm -f sdk/mobile/dist/ios/Sources/RiftSDK/*.swift
-          cp /tmp/ios-extract/ios/Sources/RiftSDK/*.swift sdk/mobile/dist/ios/Sources/RiftSDK/
+          mkdir -p client/mobile/dist/ios/Sources/RiftSDK
+          rm -f client/mobile/dist/ios/Sources/RiftSDK/*.swift
+          cp /tmp/ios-extract/ios/Sources/RiftSDK/*.swift client/mobile/dist/ios/Sources/RiftSDK/
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Package.swift sdk/mobile/dist/ios/Sources/RiftSDK/
+          git add Package.swift client/mobile/dist/ios/Sources/RiftSDK/
           git commit -m "Update Package.swift and Swift sources for ${TAG}" || echo "No changes"
           git push
         env:
