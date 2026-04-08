@@ -122,7 +122,7 @@ jobs:
           VERSION="${{ needs.meta.outputs.version }}"
           NAME="rift-${VERSION}-${{ matrix.label }}"
           mkdir -p dist/$NAME
-          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/$NAME/rift"
+          cp "client/cli/target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/$NAME/rift"
           tar -czf "dist/${NAME}.tar.gz" -C dist "$NAME"
 
       - name: Package archive (windows)
@@ -132,7 +132,7 @@ jobs:
           $version = "${{ needs.meta.outputs.version }}"
           $name = "rift-$version-${{ matrix.label }}"
           New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/$name/rift.exe"
+          Copy-Item "client/cli/target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/$name/rift.exe"
           Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
 
       - uses: actions/upload-artifact@v4
