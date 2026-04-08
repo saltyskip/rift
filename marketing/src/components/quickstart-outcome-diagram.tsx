@@ -4,6 +4,7 @@ import {
   Background,
   Handle,
   MarkerType,
+  type Node as FlowNode,
   Position,
   ReactFlow,
   type Edge,
@@ -12,7 +13,21 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-function LinkNode({ data }: NodeProps<{ title: string; href: string; body: string }>) {
+type LinkNodeData = { title: string; href: string; body: string };
+type RouterNodeData = { title: string; body: string };
+type OutcomeNodeData = {
+  eyebrow: string;
+  title: string;
+  body: string;
+  accent: string;
+  text: string;
+};
+
+type LinkFlowNode = FlowNode<LinkNodeData, "link">;
+type RouterFlowNode = FlowNode<RouterNodeData, "router">;
+type OutcomeFlowNode = FlowNode<OutcomeNodeData, "outcome">;
+
+function LinkNode({ data }: NodeProps<LinkFlowNode>) {
   return (
     <div className="w-[320px] rounded-[24px] border border-[#2dd4bf]/25 bg-[linear-gradient(180deg,#10211f_0%,#0f1416_100%)] p-5 text-left shadow-[0_18px_60px_rgba(0,0,0,0.28)]">
       <Handle type="source" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-[#0f1416] !bg-[#2dd4bf]" />
@@ -27,7 +42,7 @@ function LinkNode({ data }: NodeProps<{ title: string; href: string; body: strin
   );
 }
 
-function RouterNode({ data }: NodeProps<{ title: string; body: string }>) {
+function RouterNode({ data }: NodeProps<RouterFlowNode>) {
   return (
     <div className="w-[220px] rounded-[22px] border border-[#1f2937] bg-[linear-gradient(180deg,#12151b_0%,#0d1014_100%)] p-4 text-center shadow-[0_14px_40px_rgba(0,0,0,0.24)]">
       <Handle type="target" position={Position.Top} className="!h-3 !w-3 !border-2 !border-[#0d1014] !bg-[#2dd4bf]" />
@@ -41,7 +56,7 @@ function RouterNode({ data }: NodeProps<{ title: string; body: string }>) {
 
 function OutcomeNode({
   data,
-}: NodeProps<{ eyebrow: string; title: string; body: string; accent: string; text: string }>) {
+}: NodeProps<OutcomeFlowNode>) {
   return (
     <div className="w-[240px] rounded-[22px] border border-[#1f2937] bg-[linear-gradient(180deg,#121316_0%,#0d0f13_100%)] p-4 text-left shadow-[0_14px_40px_rgba(0,0,0,0.2)]">
       <Handle type="target" position={Position.Top} className={`!h-3 !w-3 !border-2 !border-[#0d0f13] ${data.accent}`} />
