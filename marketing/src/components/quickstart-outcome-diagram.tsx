@@ -1,11 +1,14 @@
 "use client";
 
+import { useCallback, useEffect, useRef } from "react";
 import {
   Background,
   Handle,
   type Node as FlowNode,
   Position,
   ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
   type Edge,
   type Node,
   type NodeProps,
@@ -33,12 +36,12 @@ const HANDLE =
 
 function LinkNode({ data }: NodeProps<LinkFlowNode>) {
   return (
-    <div className="w-[280px] rounded-2xl border border-[#2dd4bf]/20 bg-gradient-to-b from-[#0f1d1b] to-[#0d1114] px-5 py-4 text-left shadow-[0_8px_30px_rgba(0,0,0,0.25)]">
+    <div className="rounded-2xl border border-[#2dd4bf]/20 bg-gradient-to-b from-[#0f1d1b] to-[#0d1114] px-5 py-4 text-left shadow-[0_8px_30px_rgba(0,0,0,0.25)]">
       <Handle type="source" position={Position.Bottom} className={HANDLE} />
       <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf]">
         Branded Link
       </p>
-      <p className="mt-2.5 text-lg font-semibold leading-snug text-[#f0f0f0]">
+      <p className="mt-2.5 whitespace-nowrap text-lg font-semibold leading-snug text-[#f0f0f0]">
         {data.href}
       </p>
     </div>
@@ -47,7 +50,7 @@ function LinkNode({ data }: NodeProps<LinkFlowNode>) {
 
 function PillNode({ data }: NodeProps<PillFlowNode>) {
   return (
-    <div className="rounded-full border border-[#1e293b] bg-gradient-to-b from-[#0f1520] to-[#0c0e13] px-4 py-2 text-center shadow-[0_4px_16px_rgba(0,0,0,0.2)]">
+    <div className="w-[90px] rounded-full border border-[#1e293b] bg-gradient-to-b from-[#0f1520] to-[#0c0e13] px-4 py-2 text-center shadow-[0_4px_16px_rgba(0,0,0,0.2)]">
       <Handle type="target" position={Position.Top} className={HANDLE} />
       <Handle type="source" position={Position.Bottom} className={HANDLE} />
       <p className="text-[12px] font-medium text-[#c8d2df]">{data.label}</p>
@@ -113,7 +116,7 @@ const nodeTypes = {
 const CX = 400;
 
 const CHANNELS = ["Ads", "Email", "Social", "SMS", "QR Code", "Website"];
-const PILL_W = 80;
+const PILL_W = 90;
 const PILL_GAP = 22;
 const PILL_TOTAL = CHANNELS.length * PILL_W + (CHANNELS.length - 1) * PILL_GAP;
 const PILL_START = CX - PILL_TOTAL / 2;
@@ -151,7 +154,7 @@ const nodes: Node[] = [
   {
     id: "link",
     type: "link",
-    position: { x: CX - 140, y: 0 },
+    position: { x: CX - 180, y: 0 },
     ...NODE_DEFAULTS,
     data: { href: "go.yourcompany.com/summer-sale" },
   },
@@ -224,6 +227,53 @@ const edges: Edge[] = [
   ...outcomeEdges,
 ];
 
+function FitOnResize() {
+  const { fitView } = useReactFlow();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const refit = useCallback(() => {
+    fitView({ padding: 0.08 });
+  }, [fitView]);
+
+  useEffect(() => {
+    const el = containerRef.current?.closest(".react-flow") as HTMLElement | null;
+    if (!el) return;
+    const ro = new ResizeObserver(refit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [refit]);
+
+  return <div ref={containerRef} />;
+}
+
+function DiagramFlow() {
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      fitView
+      fitViewOptions={{ padding: 0.08 }}
+      proOptions={{ hideAttribution: true }}
+      nodesDraggable={false}
+      nodesConnectable={false}
+      elementsSelectable={false}
+      zoomOnScroll={false}
+      panOnDrag
+      zoomOnPinch
+      zoomOnDoubleClick={false}
+      preventScrolling={false}
+    >
+      <Background
+        gap={32}
+        size={0.8}
+        color="rgba(148, 163, 184, 0.04)"
+      />
+      <FitOnResize />
+    </ReactFlow>
+  );
+}
+
 export function QuickstartOutcomeDiagram() {
   return (
     <section className="space-y-5">
@@ -256,28 +306,9 @@ export function QuickstartOutcomeDiagram() {
       <div className="rounded-[22px] border border-[#1a1c21] bg-gradient-to-b from-[#0f1217] to-[#0b0d11] p-3 md:p-4">
         <div className="overflow-hidden rounded-2xl border border-[#141820] bg-[radial-gradient(ellipse_at_top,#0e181e_0%,#0c0f14_50%,#0b0d11_100%)]">
           <div className="h-[680px] w-full">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              nodeTypes={nodeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.08 }}
-              proOptions={{ hideAttribution: true }}
-              nodesDraggable={false}
-              nodesConnectable={false}
-              elementsSelectable={false}
-              zoomOnScroll={false}
-              panOnDrag={false}
-              zoomOnPinch
-              zoomOnDoubleClick={false}
-              preventScrolling={false}
-            >
-              <Background
-                gap={32}
-                size={0.8}
-                color="rgba(148, 163, 184, 0.04)"
-              />
-            </ReactFlow>
+            <ReactFlowProvider>
+              <DiagramFlow />
+            </ReactFlowProvider>
           </div>
         </div>
       </div>
