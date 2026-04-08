@@ -1,0 +1,183 @@
+name: CLI Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/cli/**'
+      - 'client/core/**'
+      - '.github/workflows/cli-release.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: cli-release
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  meta:
+    name: Release Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      skip: ${{ steps.version.outputs.skip }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine CLI version
+        id: version
+        run: |
+          VERSION=$(grep '^version' client/cli/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          TAG="rift-cli-v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "CLI version ${VERSION} already has a release tag."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Will publish ${TAG}"
+          fi
+
+  verify:
+    name: Verify CLI
+    runs-on: ubuntu-latest
+    needs: meta
+    if: needs.meta.outputs.skip != 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            client/core
+            client/cli
+
+      - name: Format check
+        run: cargo fmt --manifest-path client/cli/Cargo.toml -- --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path client/cli/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --manifest-path client/cli/Cargo.toml
+
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    needs: [meta, verify]
+    if: needs.meta.outputs.skip != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x86_64
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+            binary: rift
+          - os: macos-14
+            label: macos-arm64
+            target: aarch64-apple-darwin
+            archive: tar.gz
+            binary: rift
+          - os: windows-latest
+            label: windows-x86_64
+            target: x86_64-pc-windows-msvc
+            archive: zip
+            binary: rift.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            client/core
+            client/cli
+
+      - name: Build release binary
+        run: cargo build --manifest-path client/cli/Cargo.toml --release --target ${{ matrix.target }}
+
+      - name: Package archive (unix)
+        if: runner.os != 'Windows'
+        run: |
+          VERSION="${{ needs.meta.outputs.version }}"
+          NAME="rift-${VERSION}-${{ matrix.label }}"
+          mkdir -p dist/$NAME
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/$NAME/rift"
+          tar -czf "dist/${NAME}.tar.gz" -C dist "$NAME"
+
+      - name: Package archive (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "${{ needs.meta.outputs.version }}"
+          $name = "rift-$version-${{ matrix.label }}"
+          New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/$name/rift.exe"
+          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}
+          path: dist/*
+          retention-days: 5
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [meta, build]
+    if: needs.meta.outputs.skip != 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Create Git tag
+        run: git tag "${{ needs.meta.outputs.tag }}" "${{ github.sha }}"
+
+      - name: Push Git tag
+        run: git push origin "${{ needs.meta.outputs.tag }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.meta.outputs.tag }}
+          name: "Rift CLI ${{ needs.meta.outputs.version }}"
+          body: |
+            ## Rift CLI
+
+            Install from source:
+
+            ```bash
+            cargo install --git https://github.com/saltyskip/rift.git rift-cli
+            ```
+
+            Download a prebuilt binary for your platform below.
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
