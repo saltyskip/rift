@@ -1,0 +1,113 @@
+name: Release Index
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-index:
+    name: Update release index
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gather latest versions
+        id: versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # CLI — latest rift-cli-v* release
+          CLI=$(gh release list --json tagName,name --jq '[.[] | select(.tagName | startswith("rift-cli-v"))][0]' 2>/dev/null || echo '{}')
+          CLI_TAG=$(echo "$CLI" | jq -r '.tagName // empty')
+
+          # Mobile SDK — latest sdk-v* release
+          SDK=$(gh release list --json tagName,name --jq '[.[] | select(.tagName | startswith("sdk-v"))][0]' 2>/dev/null || echo '{}')
+          SDK_TAG=$(echo "$SDK" | jq -r '.tagName // empty')
+
+          # Web SDK — version from package.json
+          WEB_VERSION=$(jq -r '.version' sdk/web/package.json 2>/dev/null || echo "")
+
+          {
+            echo "cli_tag=${CLI_TAG}"
+            echo "sdk_tag=${SDK_TAG}"
+            echo "web_version=${WEB_VERSION}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build release body
+        run: |
+          REPO="${{ github.repository }}"
+          CLI_TAG="${{ steps.versions.outputs.cli_tag }}"
+          SDK_TAG="${{ steps.versions.outputs.sdk_tag }}"
+          WEB_VERSION="${{ steps.versions.outputs.web_version }}"
+
+          cat > /tmp/release-body.md << 'HEADER'
+          Current versions of all Rift components.
+          HEADER
+
+          # Trim leading whitespace from heredoc
+          sed -i 's/^          //' /tmp/release-body.md
+
+          if [ -n "$CLI_TAG" ]; then
+            CLI_VER="${CLI_TAG#rift-cli-v}"
+            cat >> /tmp/release-body.md << EOF
+
+          ## CLI v${CLI_VER}
+
+          Install from source:
+
+          \`\`\`bash
+          cargo install --git https://github.com/${REPO}.git rift-cli
+          \`\`\`
+
+          Or download a prebuilt binary from the [release](https://github.com/${REPO}/releases/tag/${CLI_TAG}).
+          EOF
+            sed -i 's/^          //' /tmp/release-body.md
+          fi
+
+          if [ -n "$SDK_TAG" ]; then
+            SDK_VER="${SDK_TAG#sdk-v}"
+            cat >> /tmp/release-body.md << EOF
+
+          ## Mobile SDK v${SDK_VER}
+
+          See the [release](https://github.com/${REPO}/releases/tag/${SDK_TAG}) for Swift and Kotlin packages.
+          EOF
+            sed -i 's/^          //' /tmp/release-body.md
+          fi
+
+          if [ -n "$WEB_VERSION" ]; then
+            cat >> /tmp/release-body.md << EOF
+
+          ## Web SDK v${WEB_VERSION}
+
+          \`\`\`bash
+          npm install @riftl/sdk
+          \`\`\`
+          EOF
+            sed -i 's/^          //' /tmp/release-body.md
+          fi
+
+      - name: Create or update index release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="latest"
+
+          if gh release view "$TAG" &>/dev/null; then
+            gh release edit "$TAG" \
+              --title "Rift — Latest Releases" \
+              --notes-file /tmp/release-body.md \
+              --latest
+          else
+            git tag -f "$TAG"
+            git push -f origin "$TAG"
+            gh release create "$TAG" \
+              --title "Rift — Latest Releases" \
+              --notes-file /tmp/release-body.md \
+              --latest
+          fi

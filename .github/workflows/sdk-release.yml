@@ -165,6 +165,7 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "Rift Mobile SDK ${{ steps.version.outputs.tag }}"
+          make_latest: false
           body: |
             ## Rift Mobile SDK Release
 
