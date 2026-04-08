@@ -33,12 +33,15 @@ const NAV = [
     ],
   },
   {
-    group: "Advanced",
+    group: "Tracking",
     items: [
       { label: "Attribution", href: "/docs/attribution" },
       { label: "Webhooks", href: "/docs/webhooks" },
-      { label: "Manual Setup", href: "/docs/manual-setup" },
     ],
+  },
+  {
+    group: "Advanced",
+    items: [{ label: "Manual Setup", href: "/docs/manual-setup" }],
   },
 ];
 
