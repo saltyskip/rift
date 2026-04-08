@@ -31,11 +31,11 @@ type OutcomeFlowNode = FlowNode<OutcomeNodeData, "outcome">;
 
 function LinkNode({ data }: NodeProps<LinkFlowNode>) {
   return (
-    <div className="w-[300px] rounded-[22px] border border-[#2dd4bf]/25 bg-[linear-gradient(180deg,#10211f_0%,#0f1416_100%)] p-5 text-left shadow-[0_18px_44px_rgba(0,0,0,0.2)]">
+    <div className="w-[288px] rounded-[20px] border border-[#2dd4bf]/25 bg-[linear-gradient(180deg,#10211f_0%,#0f1416_100%)] p-5 text-left shadow-[0_14px_34px_rgba(0,0,0,0.16)]">
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!h-3 !w-3 !border-2 !border-[#0f1416] !bg-[#2dd4bf]"
+        className="!h-3 !w-3 !opacity-0"
       />
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#2dd4bf]">Branded Link</p>
       <p className="mt-3 text-[20px] font-semibold leading-tight text-[#fafafa]">{data.href}</p>
@@ -54,16 +54,16 @@ function LinkNode({ data }: NodeProps<LinkFlowNode>) {
 
 function ChannelNode({ data }: NodeProps<ChannelFlowNode>) {
   return (
-    <div className="w-[420px] rounded-[22px] border border-[#1b2430] bg-[linear-gradient(180deg,#10141b_0%,#0d1015_100%)] p-4 text-left shadow-[0_12px_30px_rgba(0,0,0,0.14)]">
+    <div className="w-[468px] rounded-[18px] border border-[#1b2430] bg-[linear-gradient(180deg,#10141b_0%,#0d1015_100%)] p-4 text-left shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
       <Handle
         type="target"
         position={Position.Top}
-        className="!h-3 !w-3 !border-2 !border-[#0d1015] !bg-[#2dd4bf]"
+        className="!h-3 !w-3 !opacity-0"
       />
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!h-3 !w-3 !border-2 !border-[#0d1015] !bg-[#2dd4bf]"
+        className="!h-3 !w-3 !opacity-0"
       />
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#94a3b8]">{data.title}</p>
       <div className="mt-3 flex flex-wrap gap-2">
@@ -82,16 +82,16 @@ function ChannelNode({ data }: NodeProps<ChannelFlowNode>) {
 
 function RouterNode({ data }: NodeProps<RouterFlowNode>) {
   return (
-    <div className="w-[240px] rounded-[22px] border border-[#1f2937] bg-[linear-gradient(180deg,#12151b_0%,#0d1014_100%)] p-4 text-center shadow-[0_14px_36px_rgba(0,0,0,0.16)]">
+    <div className="w-[232px] rounded-[20px] border border-[#1f2937] bg-[linear-gradient(180deg,#12151b_0%,#0d1014_100%)] p-4 text-center shadow-[0_12px_28px_rgba(0,0,0,0.14)]">
       <Handle
         type="target"
         position={Position.Top}
-        className="!h-3 !w-3 !border-2 !border-[#0d1014] !bg-[#2dd4bf]"
+        className="!h-3 !w-3 !opacity-0"
       />
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!h-3 !w-3 !border-2 !border-[#0d1014] !bg-[#2dd4bf]"
+        className="!h-3 !w-3 !opacity-0"
       />
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#7dd3fc]">Rift</p>
       <p className="mt-2 text-[17px] font-semibold text-[#fafafa]">{data.title}</p>
@@ -102,11 +102,11 @@ function RouterNode({ data }: NodeProps<RouterFlowNode>) {
 
 function OutcomeNode({ data }: NodeProps<OutcomeFlowNode>) {
   return (
-    <div className="w-[220px] rounded-[22px] border border-[#1f2937] bg-[linear-gradient(180deg,#121316_0%,#0d0f13_100%)] p-4 text-left shadow-[0_14px_36px_rgba(0,0,0,0.16)]">
+    <div className="w-[214px] rounded-[20px] border border-[#1f2937] bg-[linear-gradient(180deg,#121316_0%,#0d0f13_100%)] p-4 text-left shadow-[0_12px_28px_rgba(0,0,0,0.14)]">
       <Handle
         type="target"
         position={Position.Top}
-        className={`!h-3 !w-3 !border-2 !border-[#0d0f13] ${data.accent}`}
+        className="!h-3 !w-3 !opacity-0"
       />
       <p className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${data.text}`}>
         {data.eyebrow}
@@ -128,7 +128,7 @@ const nodes: Node[] = [
   {
     id: "link",
     type: "link",
-    position: { x: 180, y: 18 },
+    position: { x: 185, y: 18 },
     draggable: false,
     selectable: false,
     data: {
@@ -139,7 +139,7 @@ const nodes: Node[] = [
   {
     id: "channels",
     type: "channel",
-    position: { x: 120, y: 185 },
+    position: { x: 96, y: 178 },
     draggable: false,
     selectable: false,
     data: {
@@ -150,7 +150,7 @@ const nodes: Node[] = [
   {
     id: "router",
     type: "router",
-    position: { x: 210, y: 330 },
+    position: { x: 214, y: 314 },
     draggable: false,
     selectable: false,
     data: {
@@ -161,7 +161,7 @@ const nodes: Node[] = [
   {
     id: "ios",
     type: "outcome",
-    position: { x: 24, y: 500 },
+    position: { x: 18, y: 470 },
     draggable: false,
     selectable: false,
     data: {
@@ -175,7 +175,7 @@ const nodes: Node[] = [
   {
     id: "android",
     type: "outcome",
-    position: { x: 264, y: 500 },
+    position: { x: 260, y: 470 },
     draggable: false,
     selectable: false,
     data: {
@@ -189,7 +189,7 @@ const nodes: Node[] = [
   {
     id: "web",
     type: "outcome",
-    position: { x: 504, y: 500 },
+    position: { x: 502, y: 470 },
     draggable: false,
     selectable: false,
     data: {
@@ -209,6 +209,7 @@ const edges: Edge[] = [
     target: "channels",
     markerEnd: { type: MarkerType.ArrowClosed, color: "#2dd4bf" },
     style: { stroke: "#2dd4bf", strokeWidth: 2.2 },
+    animated: true,
   },
   {
     id: "channels-router",
@@ -216,6 +217,7 @@ const edges: Edge[] = [
     target: "router",
     markerEnd: { type: MarkerType.ArrowClosed, color: "#2dd4bf" },
     style: { stroke: "#2dd4bf", strokeWidth: 2.2 },
+    animated: true,
   },
   {
     id: "router-ios",
@@ -224,6 +226,7 @@ const edges: Edge[] = [
     markerEnd: { type: MarkerType.ArrowClosed, color: "#7dd3fc" },
     style: { stroke: "#7dd3fc", strokeWidth: 2 },
     type: "smoothstep",
+    animated: true,
   },
   {
     id: "router-android",
@@ -232,6 +235,7 @@ const edges: Edge[] = [
     markerEnd: { type: MarkerType.ArrowClosed, color: "#fbbf24" },
     style: { stroke: "#fbbf24", strokeWidth: 2 },
     type: "smoothstep",
+    animated: true,
   },
   {
     id: "router-web",
@@ -240,6 +244,7 @@ const edges: Edge[] = [
     markerEnd: { type: MarkerType.ArrowClosed, color: "#f472b6" },
     style: { stroke: "#f472b6", strokeWidth: 2 },
     type: "smoothstep",
+    animated: true,
   },
 ];
 
@@ -270,15 +275,15 @@ export function QuickstartOutcomeDiagram() {
         </div>
       </div>
 
-      <div className="rounded-[24px] border border-[#1e1e22] bg-[radial-gradient(circle_at_top,#12201f_0%,#0c0d10_42%,#0b0c0f_100%)] p-3 md:p-4">
-        <div className="overflow-hidden rounded-[18px] border border-[#16191f] bg-[linear-gradient(180deg,#0f1318_0%,#0b0d11_100%)]">
-          <div className="h-[710px] w-full">
+      <div className="rounded-[22px] border border-[#1a1c21] bg-[linear-gradient(180deg,#0f1217_0%,#0b0d11_100%)] p-3 md:p-4">
+        <div className="overflow-hidden rounded-[16px] border border-[#141820] bg-[radial-gradient(circle_at_top,#101a1f_0%,#0d1015_48%,#0b0d11_100%)]">
+          <div className="h-[660px] w-full">
             <ReactFlow
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
               fitView
-              fitViewOptions={{ padding: 0.08 }}
+              fitViewOptions={{ padding: 0.045 }}
               defaultViewport={{ x: 0, y: 0, zoom: 1 }}
               proOptions={{ hideAttribution: true }}
               nodesDraggable={false}
@@ -293,21 +298,6 @@ export function QuickstartOutcomeDiagram() {
               <Background gap={24} size={1} color="rgba(148, 163, 184, 0.08)" />
             </ReactFlow>
           </div>
-        </div>
-      </div>
-
-      <div className="grid gap-3 text-[13px] text-[#a1a1aa] md:grid-cols-3">
-        <div className="rounded-xl border border-[#1e1e22] bg-[#0d0f13] px-4 py-3">
-          <strong className="text-[#fafafa]">For people</strong>
-          <p className="mt-1">The same link feels native on phone and still works on desktop.</p>
-        </div>
-        <div className="rounded-xl border border-[#1e1e22] bg-[#0d0f13] px-4 py-3">
-          <strong className="text-[#fafafa]">For your team</strong>
-          <p className="mt-1">Clicks and attribution stay measurable while you keep one public URL.</p>
-        </div>
-        <div className="rounded-xl border border-[#1e1e22] bg-[#0d0f13] px-4 py-3">
-          <strong className="text-[#fafafa]">For agents</strong>
-          <p className="mt-1">The link can also expose machine-readable metadata when tools need it.</p>
         </div>
       </div>
     </section>
