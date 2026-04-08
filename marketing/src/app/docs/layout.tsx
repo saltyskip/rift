@@ -8,6 +8,7 @@ const NAV = [
     group: "Getting Started",
     items: [
       { label: "Quick Start", href: "/docs" },
+      { label: "Manual Setup", href: "/docs/manual-setup" },
       { label: "Register Your App", href: "/docs/apps" },
       { label: "Custom Domains", href: "/docs/domains" },
       { label: "Publishable Keys", href: "/docs/publishable-keys" },
