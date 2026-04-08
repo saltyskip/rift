@@ -19,6 +19,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/v1/links/{link_id}/timeseries",
             get(routes::get_link_timeseries),
         )
+        .route("/v1/links/{link_id}", get(routes::get_link))
         .route(
             "/v1/links/{link_id}",
             put(routes::update_link).delete(routes::delete_link),

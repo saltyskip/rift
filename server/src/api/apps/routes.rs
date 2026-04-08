@@ -53,6 +53,20 @@ pub async fn create_app(
             .into_response();
     }
 
+    if platform == "android"
+        && req
+            .sha256_fingerprints
+            .as_ref()
+            .map(|fingerprints| fingerprints.is_empty())
+            .unwrap_or(true)
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Android apps require sha256_fingerprints", "code": "missing_fields" })),
+        )
+            .into_response();
+    }
+
     if let Some(ref color) = req.theme_color {
         if let Err(e) = crate::core::validation::validate_hex_color(color) {
             return (

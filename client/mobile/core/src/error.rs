@@ -11,9 +11,3 @@ pub enum RiftError {
     #[error("Deserialization error: {0}")]
     Deserialize(String),
 }
-
-impl From<reqwest::Error> for RiftError {
-    fn from(e: reqwest::Error) -> Self {
-        RiftError::Network(e.to_string())
-    }
-}

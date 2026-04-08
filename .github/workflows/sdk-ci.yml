@@ -4,11 +4,11 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'sdk/mobile/**'
+      - 'client/mobile/**'
   push:
     branches: [main]
     paths:
-      - 'sdk/mobile/**'
+      - 'client/mobile/**'
 
 env:
   CARGO_TERM_COLOR: always
@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: sdk/mobile
+        working-directory: client/mobile
 
     steps:
       - uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sdk/mobile
+          workspaces: client/mobile
 
       - name: Format check
         run: cargo fmt -- --check

@@ -129,7 +129,7 @@ cargo test   # All tests pass
 - If an import is unused, remove it — don't `#[allow(unused_imports)]`
 - Run `cargo fmt` before committing to avoid formatting failures in CI
 
-## Mobile SDK (`sdk/mobile/`)
+## Mobile SDK (`client/mobile/`)
 
 Rust library compiled to Swift/Kotlin via UniFFI. Three-crate workspace:
 
@@ -145,14 +145,14 @@ Rust library compiled to Swift/Kotlin via UniFFI. Three-crate workspace:
 
 ### Building
 ```sh
-cd sdk/mobile
+cd client/mobile
 cargo test                    # Run all tests including architecture tests
 ./build_xcframework.sh        # Build iOS XCFramework
 ./build_android.sh            # Build Android libraries
 ```
 
 ### CI/CD
-- `sdk-ci.yml` — runs on every push/PR touching `sdk/mobile/`
+- `sdk-ci.yml` — runs on every push/PR touching `client/mobile/`
 - `sdk-release.yml` — triggered by `sdk-v*` tags or manual dispatch
 
 ## Web SDK (`sdk/web/`)

@@ -84,6 +84,17 @@ pub struct ClickResult {
     pub metadata: Option<String>,
 }
 
+#[derive(uniffi::Record)]
+pub struct GetLinkResult {
+    pub link_id: String,
+    pub ios_deep_link: Option<String>,
+    pub android_deep_link: Option<String>,
+    pub web_url: Option<String>,
+    pub ios_store_url: Option<String>,
+    pub android_store_url: Option<String>,
+    pub metadata: Option<String>,
+}
+
 // ── SDK Object ──
 
 #[derive(uniffi::Object)]
@@ -144,6 +155,19 @@ impl RiftSdk {
             .client
             .report_attribution(link_id, install_id, app_version)
             .await?)
+    }
+
+    pub async fn get_link(&self, link_id: String) -> Result<GetLinkResult, RiftError> {
+        let resp = self.client.get_link(link_id).await?;
+        Ok(GetLinkResult {
+            link_id: resp.link_id,
+            ios_deep_link: resp.ios_deep_link,
+            android_deep_link: resp.android_deep_link,
+            web_url: resp.web_url,
+            ios_store_url: resp.ios_store_url,
+            android_store_url: resp.android_store_url,
+            metadata: resp.metadata.map(|v| v.to_string()),
+        })
     }
 }
 

@@ -139,6 +139,46 @@ pub async fn list_links(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/links/{link_id}",
+    tag = "Links",
+    params(("link_id" = String, Path, description = "Link ID")),
+    responses(
+        (status = 200, description = "Link details", body = LinkDetail),
+        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
+    ),
+    security(("api_key" = []), ("x402" = [])),
+)]
+#[tracing::instrument(skip(state))]
+pub async fn get_link(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+    Path(link_id): Path<String>,
+) -> Response {
+    let Some(svc) = &state.links_service else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    match svc.get_link(&tenant.0, &link_id).await {
+        Ok(detail) => Json(json!(detail)).into_response(),
+        Err(crate::services::links::service::LinkError::NotFound) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Link not found", "code": "not_found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string(), "code": e.code() })),
+        )
+            .into_response(),
+    }
+}
+
 // ── PUT /v1/links/{link_id} — Update a link (authenticated) ──
 
 #[utoipa::path(
@@ -1098,10 +1138,10 @@ pub async fn link_attribution(
     axum::Extension(tenant): axum::Extension<TenantId>,
     Json(req): Json<LinkAttributionRequest>,
 ) -> Response {
-    if req.install_id.is_empty() {
+    if req.install_id.is_empty() || req.user_id.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "install_id is required", "code": "bad_request" })),
+            Json(json!({ "error": "install_id and user_id are required", "code": "bad_request" })),
         )
             .into_response();
     }
@@ -1115,7 +1155,7 @@ pub async fn link_attribution(
     };
 
     let linked = repo
-        .link_attribution_to_user(&tenant.0, &req.install_id, &req.install_id)
+        .link_attribution_to_user(&tenant.0, &req.install_id, &req.user_id)
         .await;
 
     match linked {

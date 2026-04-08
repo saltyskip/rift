@@ -6,9 +6,19 @@ export const metadata: Metadata = {
   description: "Use your own brand domain for deep links with Rift custom domains.",
 };
 
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+function Step({
+  n,
+  title,
+  id,
+  children,
+}: {
+  n: number;
+  title: string;
+  id?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="relative pl-10">
+    <div id={id} className="relative pl-10 scroll-mt-24">
       <div className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full bg-[#2dd4bf]/10 text-[#2dd4bf] text-sm font-semibold border border-[#2dd4bf]/20">
         {n}
       </div>
@@ -123,7 +133,7 @@ export default function DomainsPage() {
             <p>Save the <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">verification_token</code> — you&apos;ll need it in the next step.</p>
           </Step>
 
-          <Step n={3} title="Add DNS records in Cloudflare">
+          <Step n={3} title="Add DNS records in Cloudflare" id="dns-verification">
             <p>In Cloudflare → <strong className="text-[#fafafa]">DNS</strong> → <strong className="text-[#fafafa]">Records</strong>, add a TXT record for domain verification:</p>
             <div className="overflow-x-auto">
               <table className="w-full text-[13px] border border-[#1e1e22] rounded-lg overflow-hidden">
@@ -150,7 +160,7 @@ export default function DomainsPage() {
             </Callout>
           </Step>
 
-          <Step n={4} title="Create the Cloudflare Worker">
+          <Step n={4} title="Create the Cloudflare Worker" id="cloudflare-worker">
             <p>
               In Cloudflare → <strong className="text-[#fafafa]">Workers &amp; Pages</strong> → <strong className="text-[#fafafa]">Create</strong>:
             </p>
@@ -182,7 +192,7 @@ export default function DomainsPage() {
             </ol>
           </Step>
 
-          <Step n={5} title="Attach the worker to your subdomain">
+          <Step n={5} title="Attach the worker to your subdomain" id="worker-route">
             <p>
               On the worker page → <strong className="text-[#fafafa]">Settings</strong> → <strong className="text-[#fafafa]">Domains &amp; Routes</strong> → <strong className="text-[#fafafa]">Add</strong> → <strong className="text-[#fafafa]">Custom Domain</strong>:
             </p>
@@ -214,7 +224,7 @@ export default function DomainsPage() {
               </table>
             </div>
             <Callout type="warning">
-              The route pattern must include <code>/*</code> at the end. Without the wildcard,
+              The route pattern must include <code>{'/*'}</code> at the end. Without the wildcard,
               only the bare domain will match — paths like <code>/download</code> won&apos;t be proxied.
             </Callout>
           </Step>
@@ -233,7 +243,7 @@ export default function DomainsPage() {
             </p>
           </Step>
 
-          <Step n={7} title="Test it">
+          <Step n={7} title="Test it" id="test-custom-domain">
             <CodeBlock>{`# Should return link data as JSON
 curl https://go.yourcompany.com/YOUR_LINK_ID \\
   -H "Accept: application/json"

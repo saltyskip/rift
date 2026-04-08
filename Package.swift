@@ -18,7 +18,7 @@ let package = Package(
         .target(
             name: "RiftSDK",
             dependencies: ["rift_ffiFFI"],
-            path: "sdk/mobile/dist/ios/Sources/RiftSDK"
+            path: "client/mobile/dist/ios/Sources/RiftSDK"
         ),
     ]
 )

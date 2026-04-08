@@ -2,8 +2,8 @@
 set -e
 
 # ── Mobile SDK: check core crate for UniFFI violations ──
-if [ -d "sdk/mobile/core/src" ]; then
-    sdk/mobile/.githooks/pre-commit "sdk/mobile/core/src"
+if [ -d "client/mobile/core/src" ]; then
+    client/mobile/.githooks/pre-commit "client/mobile/core/src"
 fi
 
 # ── Web SDK: rebuild IIFE if source changed ──

@@ -18,7 +18,7 @@ Rift is a deep linking platform that creates smart, cross-platform links with st
 
 ```
 server/          Rust + Axum API server (MongoDB, Sentry)
-sdk/mobile/      Swift/Kotlin mobile SDK via UniFFI
+client/mobile/   Swift/Kotlin mobile SDK via UniFFI
 sdk/web/         TypeScript web SDK (ESM/CJS/IIFE)
 marketing/       Next.js documentation and marketing site
 worker/          Cloudflare Worker for custom domain routing
@@ -35,6 +35,26 @@ The server separates **domain logic** (`services/`) from **transport layers** (`
 - Node.js 20+ (for web SDK builds)
 - MongoDB (local or Atlas)
 - Optional: Cloudflare account (for custom domains)
+
+### Pick a setup path
+
+#### CLI path
+
+Best if you want the guided onboarding flow.
+
+```sh
+cargo install --path client/cli
+rift init
+rift setup domain
+rift doctor
+```
+
+The CLI handles account setup, stores your secret key locally, helps you verify your primary
+and alternate domains, and tests your Worker setup.
+
+#### Manual path
+
+Best if you want to drive the API and Cloudflare steps yourself.
 
 ### Setup
 
@@ -62,6 +82,16 @@ curl -X POST http://localhost:3000/v1/auth/signup \
   -H "Content-Type: application/json" \
   -d '{"email": "you@example.com"}'
 ```
+
+### Set up a custom domain
+
+Follow the custom domain guide in `marketing/src/app/docs/domains/page.tsx` or the hosted docs at
+`https://riftl.ink/docs/domains`. You will:
+
+- create a primary branded domain
+- verify ownership with a TXT record
+- add the Cloudflare Worker
+- optionally add an alternate domain for more reliable Open in App behavior
 
 ### Create a publishable key
 

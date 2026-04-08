@@ -47,6 +47,7 @@ use crate::app::AppState;
         apps::routes::serve_assetlinks,
         // Links — create, list, update, delete, resolve
         links::routes::create_link,
+        links::routes::get_link,
         links::routes::list_links,
         links::routes::get_link_stats,
         links::routes::update_link,

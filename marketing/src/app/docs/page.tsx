@@ -30,8 +30,100 @@ export default function QuickStartPage() {
       </div>
 
       <div className="space-y-10">
+        <section className="space-y-5">
+          <h2 className="text-2xl font-bold text-[#fafafa]">Choose your path</h2>
+          <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
+            Rift supports two good ways to get to first success. Use the CLI if you want a guided
+            setup flow. Use the manual path if you prefer raw API calls and Cloudflare steps.
+          </p>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-[#2dd4bf]/20 bg-[#0f1416] p-5">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.2em] text-[#2dd4bf]">
+                Recommended
+              </p>
+              <h3 className="mt-3 text-lg font-semibold text-[#fafafa]">CLI path</h3>
+              <p className="mt-2 text-[14px] leading-relaxed text-[#a1a1aa]">
+                Best if you want onboarding, checks, and a guided custom-domain flow with fewer
+                moving pieces to remember.
+              </p>
+              <div className="mt-4 space-y-3">
+                <CodeBlock lang="bash">{`cargo install --git https://github.com/riftl-ink/relay.git rift-cli`}</CodeBlock>
+                <CodeBlock lang="bash">{`rift init
+rift setup domain
+rift doctor`}</CodeBlock>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-[#1f2937] bg-[#111113] p-5">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.2em] text-[#71717a]">
+                Manual
+              </p>
+              <h3 className="mt-3 text-lg font-semibold text-[#fafafa]">API + Cloudflare path</h3>
+              <p className="mt-2 text-[14px] leading-relaxed text-[#a1a1aa]">
+                Best if you want to understand every step, script against the API yourself, or wire
+                Cloudflare up by hand.
+              </p>
+              <div className="mt-4 space-y-2 text-[14px] text-[#d4d4d8]">
+                <p>1. Create your account and secret key</p>
+                <p>2. Verify a custom domain</p>
+                <p>3. Add the Cloudflare Worker manually</p>
+                <p>4. Create a publishable key and links</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div className="gradient-line" />
+
         <section className="space-y-6">
-          <h2 className="text-2xl font-bold text-[#fafafa]">1. Get your API key</h2>
+          <h2 className="text-2xl font-bold text-[#fafafa]">CLI path</h2>
+
+          <Step n={1} title="Install the Rift CLI">
+            <p>
+              Install the onboarding-first CLI directly from this repository. It walks you through
+              account creation, your first link, and custom domain setup.
+            </p>
+            <CodeBlock lang="bash">{`cargo install --git https://github.com/riftl-ink/relay.git rift-cli`}</CodeBlock>
+          </Step>
+
+          <Step n={2} title="Run guided onboarding">
+            <p>
+              Start with <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">rift init</code>.
+              It helps you verify your email, save your secret key locally, and create a starter
+              link so you can see Rift working immediately.
+            </p>
+            <CodeBlock lang="bash">{`rift init`}</CodeBlock>
+          </Step>
+
+          <Step n={3} title="Set up your branded domain">
+            <p>
+              Use the CLI to verify your primary domain, test the Worker setup, and optionally roll
+              straight into your alternate Open in App domain for stronger iOS reliability.
+            </p>
+            <CodeBlock lang="bash">{`rift setup domain
+rift doctor`}</CodeBlock>
+            <p>
+              If you want the underlying details, see{" "}
+              <a href="/docs/domains" className="text-[#2dd4bf] hover:underline">Custom Domains</a>.
+            </p>
+          </Step>
+
+          <Step n={4} title="Create links and test them">
+            <p>
+              Once onboarding and domains are in place, the CLI can create links, inspect platform
+              behavior, and show what is still missing before production.
+            </p>
+            <CodeBlock lang="bash">{`rift create-link
+rift test-link LINK_ID
+rift doctor`}</CodeBlock>
+          </Step>
+        </section>
+
+        <div className="gradient-line" />
+
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold text-[#fafafa]">Manual path</h2>
 
           <Step n={1} title="Sign up">
             <p>
@@ -51,7 +143,15 @@ export default function QuickStartPage() {
             </p>
           </Step>
 
-          <Step n={3} title="Create a publishable key">
+          <Step n={3} title="Set up your custom domain">
+            <p>
+              Before you create a publishable key, verify a primary domain and add the Cloudflare
+              Worker manually. The full walkthrough lives in{" "}
+              <a href="/docs/domains" className="text-[#2dd4bf] hover:underline">Custom Domains</a>.
+            </p>
+          </Step>
+
+          <Step n={4} title="Create a publishable key">
             <p>
               Publishable keys (<code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">pk_live_</code>) are client-safe keys
               used by the web and mobile SDKs for click tracking and attribution. Create one after setting up a{" "}
@@ -67,7 +167,7 @@ export default function QuickStartPage() {
             </p>
           </Step>
 
-          <Step n={4} title="Add click tracking to your website">
+          <Step n={5} title="Add click tracking to your website">
             <p>
               Install the SDK via npm or load it via script tag. Pass your publishable key with your custom domain.
               The SDK auto-tracks clicks on any link pointing to your domain — no attributes or event handlers needed.
