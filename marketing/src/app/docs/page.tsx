@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
+import { QuickstartOutcomeDiagram } from "@/components/quickstart-outcome-diagram";
 
 export const metadata: Metadata = {
   title: "Quick Start — Rift Docs",
@@ -71,6 +72,8 @@ export default function QuickStartPage() {
             infrastructure step.
           </p>
         </Callout>
+
+        <QuickstartOutcomeDiagram />
 
         <div className="gradient-line" />
 
