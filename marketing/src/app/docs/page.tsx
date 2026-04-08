@@ -1,43 +1,13 @@
 import type { Metadata } from "next";
 import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
+import { DocsCalloutCard as Callout } from "@/components/docs-callout";
+import { DocsStep as Step } from "@/components/docs-step";
 import { QuickstartOutcomeDiagram } from "@/components/quickstart-outcome-diagram";
 
 export const metadata: Metadata = {
   title: "Quick Start — Rift Docs",
   description: "Get your first Rift link live with the CLI in a few minutes.",
 };
-
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
-  return (
-    <div className="relative pl-10">
-      <div className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full border border-[#2dd4bf]/20 bg-[#2dd4bf]/10 text-sm font-semibold text-[#2dd4bf]">
-        {n}
-      </div>
-      <h3 className="mb-3 text-lg font-semibold text-[#fafafa]">{title}</h3>
-      <div className="space-y-3 text-[15px] leading-relaxed text-[#a1a1aa]">{children}</div>
-    </div>
-  );
-}
-
-function Callout({
-  eyebrow,
-  title,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-2xl border border-[#1f2937] bg-[#0f1115] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf]">
-        {eyebrow}
-      </p>
-      <h3 className="mt-3 text-lg font-semibold text-[#fafafa]">{title}</h3>
-      <div className="mt-2 space-y-3 text-[14px] leading-relaxed text-[#a1a1aa]">{children}</div>
-    </div>
-  );
-}
 
 export default function QuickStartPage() {
   return (
@@ -54,6 +24,10 @@ export default function QuickStartPage() {
       </div>
 
       <div className="space-y-10">
+        <QuickstartOutcomeDiagram />
+
+        <div className="gradient-line" />
+
         <Callout eyebrow="Recommended" title="Use the CLI">
           <p>
             This is the best path if you want the smoothest setup. Rift guides you through signup,
@@ -72,8 +46,6 @@ export default function QuickStartPage() {
             infrastructure step.
           </p>
         </Callout>
-
-        <QuickstartOutcomeDiagram />
 
         <div className="gradient-line" />
 
@@ -131,33 +103,47 @@ rift test-link LINK_ID`}</CodeBlock>
         <div className="gradient-line" />
 
         <section className="space-y-4">
-          <h2 className="text-2xl font-bold text-[#fafafa]">After the quick start</h2>
+          <h2 className="text-2xl font-bold text-[#fafafa]">Next steps</h2>
+          <p className="text-[15px] text-[#71717a]">
+            You now have a working setup on Rift&apos;s shared domain. Pick your next goal — most
+            developers start with custom domains or an SDK integration.
+          </p>
           <div className="grid gap-3">
             {[
               {
                 title: "Custom Domains",
-                desc: "Cloudflare worker setup, TXT verification, and branded hostnames.",
+                desc: "Set up branded links on your own domain.",
                 href: "/docs/domains",
               },
               {
-                title: "Manual Setup",
-                desc: "Prefer raw API calls and Cloudflare setup by hand? Start here.",
-                href: "/docs/manual-setup",
-              },
-              {
                 title: "Register Your App",
-                desc: "Configure iOS and Android association details for better app opens.",
+                desc: "Add iOS/Android for universal links and branded landing pages.",
                 href: "/docs/apps",
               },
               {
                 title: "Publishable Keys",
-                desc: "Create the client-safe keys used by the web and mobile SDKs.",
+                desc: "Create client-safe keys for the web and mobile SDKs.",
                 href: "/docs/publishable-keys",
               },
               {
                 title: "Create Links",
-                desc: "Create deep links with per-platform destinations and metadata.",
+                desc: "Create deep links with per-platform routing and metadata.",
                 href: "/docs/links",
+              },
+              {
+                title: "Web SDK",
+                desc: "Add click tracking and attribution to your website.",
+                href: "/docs/web-sdk",
+              },
+              {
+                title: "iOS SDK",
+                desc: "Integrate deep linking into your iOS app.",
+                href: "/docs/ios-sdk",
+              },
+              {
+                title: "Android SDK",
+                desc: "Integrate deep linking into your Android app.",
+                href: "/docs/android-sdk",
               },
             ].map((item) => (
               <a

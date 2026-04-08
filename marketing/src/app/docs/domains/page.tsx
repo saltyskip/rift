@@ -1,46 +1,13 @@
 import type { Metadata } from "next";
 import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 import { DocsSetupTabs } from "@/components/docs-setup-tabs";
+import { DocsStep as Step } from "@/components/docs-step";
+import { DocsCallout as Callout } from "@/components/docs-callout";
 
 export const metadata: Metadata = {
   title: "Custom Domains — Rift Docs",
   description: "Use your own brand domain for deep links with Rift custom domains.",
 };
-
-function Step({
-  n,
-  title,
-  id,
-  children,
-}: {
-  n: number;
-  title: string;
-  id?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div id={id} className="relative pl-10 scroll-mt-24">
-      <div className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full bg-[#2dd4bf]/10 text-[#2dd4bf] text-sm font-semibold border border-[#2dd4bf]/20">
-        {n}
-      </div>
-      <h3 className="text-lg font-semibold text-[#fafafa] mb-3">{title}</h3>
-      <div className="space-y-3 text-[15px] text-[#a1a1aa] leading-relaxed">{children}</div>
-    </div>
-  );
-}
-
-function Callout({ type, children }: { type: "info" | "warning"; children: React.ReactNode }) {
-  const styles = {
-    info: "border-[#60a5fa]/30 bg-[#60a5fa]/5 text-[#93bbfd]",
-    warning: "border-[#f59e0b]/30 bg-[#f59e0b]/5 text-[#fbbf24]",
-  };
-  const labels = { info: "Note", warning: "Important" };
-  return (
-    <div className={`rounded-lg border px-4 py-3 text-[13px] leading-relaxed ${styles[type]}`}>
-      <strong>{labels[type]}:</strong> {children}
-    </div>
-  );
-}
 
 export default function DomainsPage() {
   return (

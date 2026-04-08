@@ -6,11 +6,13 @@ import { useState } from "react";
 const NAV = [
   {
     group: "Getting Started",
+    items: [{ label: "Quick Start", href: "/docs" }],
+  },
+  {
+    group: "Setup",
     items: [
-      { label: "Quick Start", href: "/docs" },
-      { label: "Manual Setup", href: "/docs/manual-setup" },
-      { label: "Register Your App", href: "/docs/apps" },
       { label: "Custom Domains", href: "/docs/domains" },
+      { label: "Register Your App", href: "/docs/apps" },
       { label: "Publishable Keys", href: "/docs/publishable-keys" },
     ],
   },
@@ -31,10 +33,11 @@ const NAV = [
     ],
   },
   {
-    group: "Tracking",
+    group: "Advanced",
     items: [
       { label: "Attribution", href: "/docs/attribution" },
       { label: "Webhooks", href: "/docs/webhooks" },
+      { label: "Manual Setup", href: "/docs/manual-setup" },
     ],
   },
 ];
