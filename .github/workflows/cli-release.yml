@@ -165,6 +165,7 @@ jobs:
         with:
           tag_name: ${{ needs.meta.outputs.tag }}
           name: "Rift CLI ${{ needs.meta.outputs.version }}"
+          make_latest: false
           body: |
             ## Rift CLI
 
