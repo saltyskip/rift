@@ -14,6 +14,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 type LinkNodeData = { href: string; body: string };
+type ChannelNodeData = { title: string; items: string[] };
 type RouterNodeData = { title: string; body: string };
 type OutcomeNodeData = {
   eyebrow: string;
@@ -24,6 +25,7 @@ type OutcomeNodeData = {
 };
 
 type LinkFlowNode = FlowNode<LinkNodeData, "link">;
+type ChannelFlowNode = FlowNode<ChannelNodeData, "channel">;
 type RouterFlowNode = FlowNode<RouterNodeData, "router">;
 type OutcomeFlowNode = FlowNode<OutcomeNodeData, "outcome">;
 
@@ -45,6 +47,34 @@ function LinkNode({ data }: NodeProps<LinkFlowNode>) {
         <span className="rounded-full border border-[#2dd4bf]/20 bg-[#2dd4bf]/10 px-2.5 py-1">
           same URL
         </span>
+      </div>
+    </div>
+  );
+}
+
+function ChannelNode({ data }: NodeProps<ChannelFlowNode>) {
+  return (
+    <div className="w-[420px] rounded-[22px] border border-[#1b2430] bg-[linear-gradient(180deg,#10141b_0%,#0d1015_100%)] p-4 text-left shadow-[0_12px_30px_rgba(0,0,0,0.14)]">
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="!h-3 !w-3 !border-2 !border-[#0d1015] !bg-[#2dd4bf]"
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="!h-3 !w-3 !border-2 !border-[#0d1015] !bg-[#2dd4bf]"
+      />
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#94a3b8]">{data.title}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {data.items.map((item) => (
+          <span
+            key={item}
+            className="rounded-full border border-[#263244] bg-[#111723] px-3 py-1.5 text-[12px] text-[#dbe4ef]"
+          >
+            {item}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -89,6 +119,7 @@ function OutcomeNode({ data }: NodeProps<OutcomeFlowNode>) {
 
 const nodeTypes = {
   link: LinkNode,
+  channel: ChannelNode,
   router: RouterNode,
   outcome: OutcomeNode,
 };
@@ -106,9 +137,20 @@ const nodes: Node[] = [
     },
   },
   {
+    id: "channels",
+    type: "channel",
+    position: { x: 120, y: 185 },
+    draggable: false,
+    selectable: false,
+    data: {
+      title: "Shared in places like",
+      items: ["website", "email", "Facebook ads", "messages", "social", "QR codes"],
+    },
+  },
+  {
     id: "router",
     type: "router",
-    position: { x: 210, y: 205 },
+    position: { x: 210, y: 330 },
     draggable: false,
     selectable: false,
     data: {
@@ -119,7 +161,7 @@ const nodes: Node[] = [
   {
     id: "ios",
     type: "outcome",
-    position: { x: 24, y: 380 },
+    position: { x: 24, y: 500 },
     draggable: false,
     selectable: false,
     data: {
@@ -133,7 +175,7 @@ const nodes: Node[] = [
   {
     id: "android",
     type: "outcome",
-    position: { x: 264, y: 380 },
+    position: { x: 264, y: 500 },
     draggable: false,
     selectable: false,
     data: {
@@ -147,7 +189,7 @@ const nodes: Node[] = [
   {
     id: "web",
     type: "outcome",
-    position: { x: 504, y: 380 },
+    position: { x: 504, y: 500 },
     draggable: false,
     selectable: false,
     data: {
@@ -162,8 +204,15 @@ const nodes: Node[] = [
 
 const edges: Edge[] = [
   {
-    id: "link-router",
+    id: "link-channels",
     source: "link",
+    target: "channels",
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#2dd4bf" },
+    style: { stroke: "#2dd4bf", strokeWidth: 2.2 },
+  },
+  {
+    id: "channels-router",
+    source: "channels",
     target: "router",
     markerEnd: { type: MarkerType.ArrowClosed, color: "#2dd4bf" },
     style: { stroke: "#2dd4bf", strokeWidth: 2.2 },
@@ -223,7 +272,7 @@ export function QuickstartOutcomeDiagram() {
 
       <div className="rounded-[24px] border border-[#1e1e22] bg-[radial-gradient(circle_at_top,#12201f_0%,#0c0d10_42%,#0b0c0f_100%)] p-3 md:p-4">
         <div className="overflow-hidden rounded-[18px] border border-[#16191f] bg-[linear-gradient(180deg,#0f1318_0%,#0b0d11_100%)]">
-          <div className="h-[590px] w-full">
+          <div className="h-[710px] w-full">
             <ReactFlow
               nodes={nodes}
               edges={edges}
