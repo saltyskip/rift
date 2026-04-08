@@ -12,19 +12,19 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-type LinkNodeData = { href: string; body: string };
-type ChannelNodeData = { title: string; items: string[] };
-type RouterNodeData = { title: string; body: string };
+type LinkNodeData = { href: string };
+type PillNodeData = { label: string };
+type ClickNodeData = { label: string };
+type RouterNodeData = { title: string };
 type OutcomeNodeData = {
   eyebrow: string;
   title: string;
-  body: string;
-  accent: string;
   text: string;
 };
 
 type LinkFlowNode = FlowNode<LinkNodeData, "link">;
-type ChannelFlowNode = FlowNode<ChannelNodeData, "channel">;
+type PillFlowNode = FlowNode<PillNodeData, "pill">;
+type ClickFlowNode = FlowNode<ClickNodeData, "click">;
 type RouterFlowNode = FlowNode<RouterNodeData, "router">;
 type OutcomeFlowNode = FlowNode<OutcomeNodeData, "outcome">;
 
@@ -33,7 +33,7 @@ const HANDLE =
 
 function LinkNode({ data }: NodeProps<LinkFlowNode>) {
   return (
-    <div className="w-[300px] rounded-2xl border border-[#2dd4bf]/20 bg-gradient-to-b from-[#0f1d1b] to-[#0d1114] px-5 py-4 text-left shadow-[0_8px_30px_rgba(0,0,0,0.25)]">
+    <div className="w-[280px] rounded-2xl border border-[#2dd4bf]/20 bg-gradient-to-b from-[#0f1d1b] to-[#0d1114] px-5 py-4 text-left shadow-[0_8px_30px_rgba(0,0,0,0.25)]">
       <Handle type="source" position={Position.Bottom} className={HANDLE} />
       <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf]">
         Branded Link
@@ -41,38 +41,35 @@ function LinkNode({ data }: NodeProps<LinkFlowNode>) {
       <p className="mt-2.5 text-lg font-semibold leading-snug text-[#f0f0f0]">
         {data.href}
       </p>
-      <p className="mt-1.5 text-[13px] leading-relaxed text-[#8a9e98]">
-        {data.body}
-      </p>
     </div>
   );
 }
 
-function ChannelNode({ data }: NodeProps<ChannelFlowNode>) {
+function PillNode({ data }: NodeProps<PillFlowNode>) {
   return (
-    <div className="w-[300px] rounded-2xl border border-[#1a2030] bg-gradient-to-b from-[#0f1319] to-[#0c0e13] px-5 py-4 text-left shadow-[0_8px_24px_rgba(0,0,0,0.2)]">
+    <div className="rounded-full border border-[#1e293b] bg-gradient-to-b from-[#0f1520] to-[#0c0e13] px-4 py-2 text-center shadow-[0_4px_16px_rgba(0,0,0,0.2)]">
       <Handle type="target" position={Position.Top} className={HANDLE} />
       <Handle type="source" position={Position.Bottom} className={HANDLE} />
-      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#64748b]">
-        {data.title}
+      <p className="text-[12px] font-medium text-[#c8d2df]">{data.label}</p>
+    </div>
+  );
+}
+
+function ClickNode({ data }: NodeProps<ClickFlowNode>) {
+  return (
+    <div className="rounded-2xl border border-[#2dd4bf]/15 bg-gradient-to-b from-[#0f1d1b] to-[#0d1114] px-5 py-3 text-center shadow-[0_6px_20px_rgba(0,0,0,0.2)]">
+      <Handle type="target" position={Position.Top} className={HANDLE} />
+      <Handle type="source" position={Position.Bottom} className={HANDLE} />
+      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf]/70">
+        {data.label}
       </p>
-      <div className="mt-2.5 flex flex-wrap gap-1.5">
-        {data.items.map((item) => (
-          <span
-            key={item}
-            className="rounded-full border border-[#1e293b] bg-[#0f1520] px-2.5 py-1 text-[11px] text-[#c8d2df]"
-          >
-            {item}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }
 
 function RouterNode({ data }: NodeProps<RouterFlowNode>) {
   return (
-    <div className="w-[260px] rounded-2xl border border-[#1a2030] bg-gradient-to-b from-[#101420] to-[#0c0e14] px-5 py-4 text-center shadow-[0_8px_24px_rgba(0,0,0,0.2)]">
+    <div className="w-[220px] rounded-2xl border border-[#1a2030] bg-gradient-to-b from-[#101420] to-[#0c0e14] px-5 py-4 text-center shadow-[0_8px_24px_rgba(0,0,0,0.2)]">
       <Handle type="target" position={Position.Top} className={HANDLE} />
       <Handle type="source" position={Position.Bottom} className={HANDLE} />
       <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7dd3fc]">
@@ -81,27 +78,21 @@ function RouterNode({ data }: NodeProps<RouterFlowNode>) {
       <p className="mt-2 text-base font-semibold text-[#f0f0f0]">
         {data.title}
       </p>
-      <p className="mt-1.5 text-[12px] leading-relaxed text-[#8892a4]">
-        {data.body}
-      </p>
     </div>
   );
 }
 
 function OutcomeNode({ data }: NodeProps<OutcomeFlowNode>) {
   return (
-    <div className="w-[200px] rounded-2xl border border-[#1a2030] bg-gradient-to-b from-[#101218] to-[#0c0d12] px-4 py-4 text-left shadow-[0_8px_24px_rgba(0,0,0,0.2)]">
+    <div className="w-[160px] rounded-2xl border border-[#1a2030] bg-gradient-to-b from-[#101218] to-[#0c0d12] px-4 py-3.5 text-left shadow-[0_8px_24px_rgba(0,0,0,0.2)]">
       <Handle type="target" position={Position.Top} className={HANDLE} />
       <p
         className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${data.text}`}
       >
         {data.eyebrow}
       </p>
-      <p className="mt-2 text-[15px] font-semibold leading-snug text-[#f0f0f0]">
+      <p className="mt-1.5 text-[14px] font-semibold leading-snug text-[#f0f0f0]">
         {data.title}
-      </p>
-      <p className="mt-1.5 text-[12px] leading-relaxed text-[#8892a4]">
-        {data.body}
       </p>
     </div>
   );
@@ -109,93 +100,77 @@ function OutcomeNode({ data }: NodeProps<OutcomeFlowNode>) {
 
 const nodeTypes = {
   link: LinkNode,
-  channel: ChannelNode,
+  pill: PillNode,
+  click: ClickNode,
   router: RouterNode,
   outcome: OutcomeNode,
 };
 
 /* ---- layout constants ----
- *  Total canvas width ~680. All nodes centered horizontally.
- *  Vertical rows: link(0) → channels(155) → router(300) → outcomes(465)
+ *  Rows: link(0) → pills(140) → click(260) → router(370) → outcomes(520)
+ *  6 channel pills fan out, 4 outcome nodes fan out
  */
-const CX = 340; // canvas center-x
+const CX = 400;
+
+const CHANNELS = ["Ads", "Email", "Social", "SMS", "QR Code", "Website"];
+const PILL_W = 80;
+const PILL_GAP = 22;
+const PILL_TOTAL = CHANNELS.length * PILL_W + (CHANNELS.length - 1) * PILL_GAP;
+const PILL_START = CX - PILL_TOTAL / 2;
+
+const NODE_DEFAULTS = { draggable: false, selectable: false } as const;
+
+const pillNodes: Node[] = CHANNELS.map((label, i) => ({
+  id: `ch-${label.toLowerCase().replace(" ", "-")}`,
+  type: "pill" as const,
+  position: { x: PILL_START + i * (PILL_W + PILL_GAP), y: 140 },
+  ...NODE_DEFAULTS,
+  data: { label },
+}));
+
+const OUTCOME_W = 160;
+const OUTCOME_GAP = 28;
+const OUTCOMES = [
+  { id: "ios", eyebrow: "iPhone", title: "App or App Store", text: "text-[#7dd3fc]", accent: "#7dd3fc" },
+  { id: "android", eyebrow: "Android", title: "App or Play Store", text: "text-[#fbbf24]", accent: "#fbbf24" },
+  { id: "web", eyebrow: "Web", title: "Web URL", text: "text-[#f472b6]", accent: "#f472b6" },
+  { id: "agent", eyebrow: "Agent", title: "API or MCP", text: "text-[#a78bfa]", accent: "#a78bfa" },
+];
+const OUTCOME_TOTAL = OUTCOMES.length * OUTCOME_W + (OUTCOMES.length - 1) * OUTCOME_GAP;
+const OUTCOME_START = CX - OUTCOME_TOTAL / 2;
+
+const outcomeNodes: Node[] = OUTCOMES.map((o, i) => ({
+  id: o.id,
+  type: "outcome" as const,
+  position: { x: OUTCOME_START + i * (OUTCOME_W + OUTCOME_GAP), y: 520 },
+  ...NODE_DEFAULTS,
+  data: { eyebrow: o.eyebrow, title: o.title, text: o.text },
+}));
 
 const nodes: Node[] = [
   {
     id: "link",
     type: "link",
-    position: { x: CX - 150, y: 0 },
-    draggable: false,
-    selectable: false,
-    data: {
-      href: "go.yourcompany.com/summer-sale",
-      body: "Share one link in ads, email, social, or your website.",
-    },
+    position: { x: CX - 140, y: 0 },
+    ...NODE_DEFAULTS,
+    data: { href: "go.yourcompany.com/summer-sale" },
   },
+  ...pillNodes,
   {
-    id: "channels",
-    type: "channel",
-    position: { x: CX - 150, y: 155 },
-    draggable: false,
-    selectable: false,
-    data: {
-      title: "Shared in places like",
-      items: ["website", "email", "ads", "messages", "social", "QR codes"],
-    },
+    id: "click",
+    type: "click",
+    position: { x: CX - 50, y: 260 },
+    ...NODE_DEFAULTS,
+    data: { label: "Click" },
   },
   {
     id: "router",
     type: "router",
-    position: { x: CX - 130, y: 305 },
-    draggable: false,
-    selectable: false,
-    data: {
-      title: "Route by platform",
-      body: "Rift sends each click to the best destination for that device.",
-    },
+    position: { x: CX - 110, y: 370 },
+    ...NODE_DEFAULTS,
+    data: { title: "Route by platform" },
   },
-  {
-    id: "ios",
-    type: "outcome",
-    position: { x: CX - 330, y: 470 },
-    draggable: false,
-    selectable: false,
-    data: {
-      eyebrow: "iPhone",
-      title: "App or App Store",
-      body: "Open the app when possible, then fall back to the App Store.",
-      accent: "#7dd3fc",
-      text: "text-[#7dd3fc]",
-    },
-  },
-  {
-    id: "android",
-    type: "outcome",
-    position: { x: CX - 100, y: 470 },
-    draggable: false,
-    selectable: false,
-    data: {
-      eyebrow: "Android",
-      title: "App or Play Store",
-      body: "Open the app when possible, then fall back to Google Play.",
-      accent: "#fbbf24",
-      text: "text-[#fbbf24]",
-    },
-  },
-  {
-    id: "web",
-    type: "outcome",
-    position: { x: CX + 130, y: 470 },
-    draggable: false,
-    selectable: false,
-    data: {
-      eyebrow: "Web",
-      title: "Landing page or web URL",
-      body: "Send desktop traffic to the web experience without losing metadata.",
-      accent: "#f472b6",
-      text: "text-[#f472b6]",
-    },
-  },
+  ...outcomeNodes,
 ];
 
 const EDGE_DEFAULTS = {
@@ -203,45 +178,50 @@ const EDGE_DEFAULTS = {
   style: { strokeWidth: 1.5 },
 } as const;
 
-const edges: Edge[] = [
-  {
-    id: "link-channels",
+const pillEdgesIn: Edge[] = CHANNELS.map((label) => {
+  const id = `ch-${label.toLowerCase().replace(" ", "-")}`;
+  return {
+    id: `link-${id}`,
     source: "link",
-    target: "channels",
+    target: id,
+    type: "smoothstep",
     ...EDGE_DEFAULTS,
-    style: { ...EDGE_DEFAULTS.style, stroke: "#2dd4bf40" },
-  },
+    style: { ...EDGE_DEFAULTS.style, stroke: "#2dd4bf30" },
+  };
+});
+
+const pillEdgesOut: Edge[] = CHANNELS.map((label) => {
+  const id = `ch-${label.toLowerCase().replace(" ", "-")}`;
+  return {
+    id: `${id}-click`,
+    source: id,
+    target: "click",
+    type: "smoothstep",
+    ...EDGE_DEFAULTS,
+    style: { ...EDGE_DEFAULTS.style, stroke: "#2dd4bf30" },
+  };
+});
+
+const outcomeEdges: Edge[] = OUTCOMES.map((o) => ({
+  id: `router-${o.id}`,
+  source: "router",
+  target: o.id,
+  type: "smoothstep",
+  ...EDGE_DEFAULTS,
+  style: { ...EDGE_DEFAULTS.style, stroke: `${o.accent}50` },
+}));
+
+const edges: Edge[] = [
+  ...pillEdgesIn,
+  ...pillEdgesOut,
   {
-    id: "channels-router",
-    source: "channels",
+    id: "click-router",
+    source: "click",
     target: "router",
     ...EDGE_DEFAULTS,
     style: { ...EDGE_DEFAULTS.style, stroke: "#2dd4bf40" },
   },
-  {
-    id: "router-ios",
-    source: "router",
-    target: "ios",
-    type: "smoothstep",
-    ...EDGE_DEFAULTS,
-    style: { ...EDGE_DEFAULTS.style, stroke: "#7dd3fc50" },
-  },
-  {
-    id: "router-android",
-    source: "router",
-    target: "android",
-    type: "smoothstep",
-    ...EDGE_DEFAULTS,
-    style: { ...EDGE_DEFAULTS.style, stroke: "#fbbf2450" },
-  },
-  {
-    id: "router-web",
-    source: "router",
-    target: "web",
-    type: "smoothstep",
-    ...EDGE_DEFAULTS,
-    style: { ...EDGE_DEFAULTS.style, stroke: "#f472b650" },
-  },
+  ...outcomeEdges,
 ];
 
 export function QuickstartOutcomeDiagram() {
@@ -256,9 +236,8 @@ export function QuickstartOutcomeDiagram() {
             One branded link, routed everywhere
           </h2>
           <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-[#8f96a3]">
-            This is the payoff of the setup flow: one public URL for people to
-            click, with Rift routing it to the right place and preserving
-            tracking, attribution, and machine-readable context.
+            One public URL for people to click, with Rift routing each tap to
+            the right destination.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-[12px] text-[#d4d4d8]">
@@ -276,7 +255,7 @@ export function QuickstartOutcomeDiagram() {
 
       <div className="rounded-[22px] border border-[#1a1c21] bg-gradient-to-b from-[#0f1217] to-[#0b0d11] p-3 md:p-4">
         <div className="overflow-hidden rounded-2xl border border-[#141820] bg-[radial-gradient(ellipse_at_top,#0e181e_0%,#0c0f14_50%,#0b0d11_100%)]">
-          <div className="h-[640px] w-full">
+          <div className="h-[680px] w-full">
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -289,7 +268,7 @@ export function QuickstartOutcomeDiagram() {
               elementsSelectable={false}
               zoomOnScroll={false}
               panOnDrag={false}
-              zoomOnPinch={false}
+              zoomOnPinch
               zoomOnDoubleClick={false}
               preventScrolling={false}
             >
