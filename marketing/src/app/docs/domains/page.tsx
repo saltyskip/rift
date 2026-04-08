@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
+import { DocsSetupTabs } from "@/components/docs-setup-tabs";
 
 export const metadata: Metadata = {
   title: "Custom Domains — Rift Docs",
@@ -80,7 +81,68 @@ export default function DomainsPage() {
 
         <div className="gradient-line" />
 
+        <DocsSetupTabs
+          title="Set it up"
+          tabs={[
+            {
+              id: "cli",
+              label: "CLI (Recommended)",
+              children: (
+                <div className="space-y-4 text-[15px] leading-relaxed text-[#a1a1aa]">
+                  <p>
+                    The CLI is the fastest path. It creates or resumes the domain in Rift, gives
+                    you the exact TXT record to add, verifies it, then helps you test the Worker
+                    once Cloudflare is configured.
+                  </p>
+                  <CodeBlock lang="bash">{`rift setup domain`}</CodeBlock>
+                  <div className="rounded-xl border border-[#2dd4bf]/20 bg-[#2dd4bf]/5 p-4">
+                    <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf]">
+                      What the CLI handles
+                    </p>
+                    <div className="mt-3 space-y-2 text-[14px] text-[#d4d4d8]">
+                      <p>1. Recommends a primary domain like <code className="rounded bg-[#18181b] px-1.5 py-0.5 text-[13px]">go.yourcompany.com</code></p>
+                      <p>2. Creates or resumes the domain in Rift</p>
+                      <p>3. Verifies the TXT record once you add it in Cloudflare</p>
+                      <p>4. Tests your Worker after you finish the Cloudflare side</p>
+                      <p>5. Can continue into your alternate domain for stronger Open in App behavior</p>
+                    </div>
+                  </div>
+                  <p>
+                    You will still do the Cloudflare Worker setup yourself. The full manual details
+                    are below if you want to understand each step.
+                  </p>
+                </div>
+              ),
+            },
+            {
+              id: "manual",
+              label: "Manual",
+              children: (
+                <div className="space-y-4 text-[15px] leading-relaxed text-[#a1a1aa]">
+                  <p>
+                    The manual path gives you full control. You create the domain with the API,
+                    add the TXT verification record yourself, then wire up the Cloudflare Worker
+                    and route by hand.
+                  </p>
+                  <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/domains \\
+  -H "Authorization: Bearer rl_live_YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"domain": "go.yourcompany.com"}'`}</CodeBlock>
+                  <p>
+                    Keep reading for the full walkthrough, including the TXT record, Worker code,
+                    route pattern, verification call, and testing steps.
+                  </p>
+                </div>
+              ),
+            },
+          ]}
+        />
+
+        <div className="gradient-line" />
+
         <section className="space-y-6">
+          <h2 className="text-2xl font-bold text-[#fafafa]">Manual walkthrough</h2>
+
           <Step n={1} title="Add your domain to Cloudflare">
             <p>
               In the <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" className="text-[#2dd4bf] hover:underline">Cloudflare dashboard</a>,
