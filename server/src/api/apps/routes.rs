@@ -356,10 +356,11 @@ pub async fn serve_assetlinks(State(state): State<Arc<AppState>>, headers: Heade
 
 // ── Helpers ──
 
-/// Resolve tenant from X-Rift-Host header (custom header to avoid Cloudflare overwriting X-Forwarded-Host).
+/// Resolve tenant from X-Rift-Host or Host header for custom domain routing.
 async fn resolve_tenant_from_host(state: &Arc<AppState>, headers: &HeaderMap) -> Option<ObjectId> {
     let host = headers
         .get("x-rift-host")
+        .or_else(|| headers.get("host"))
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_lowercase())?;
 

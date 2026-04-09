@@ -1,6 +1,5 @@
 use console::style;
 use dialoguer::{Input, Select};
-use reqwest::StatusCode;
 use tokio::time::{sleep, Duration};
 
 use crate::context;
@@ -10,11 +9,7 @@ use rift_client_core::apps::ListAppsResponse;
 use rift_client_core::domains::{CreateDomainResponse, ListDomainsResponse};
 use rift_client_core::error::RiftClientError;
 
-const CLOUDFLARE_DASHBOARD_URL: &str = "https://dash.cloudflare.com/";
-const WORKER_DOCS_URL: &str = "https://riftl.ink/docs/domains#cloudflare-worker";
-const WORKER_SOURCE_URL: &str = "https://riftl.ink/docs/domains#worker-source";
-const ROUTE_DOCS_URL: &str = "https://riftl.ink/docs/domains#worker-route";
-const TEST_DOCS_URL: &str = "https://riftl.ink/docs/domains#test-custom-domain";
+const DOMAIN_DOCS_URL: &str = "https://riftl.ink/docs/domains";
 
 pub async fn run(
     domain: Option<String>,
@@ -22,14 +17,7 @@ pub async fn run(
     json: bool,
 ) -> Result<(), CliError> {
     let client = context::authenticated_client()?;
-
-    let provider = choose_provider(provider)?;
-    if provider != "cloudflare" {
-        return Err(
-            "Only Cloudflare is supported right now. Use the manual custom domain docs for anything else."
-                .into(),
-        );
-    }
+    let _ = provider; // Provider no longer gated — any DNS provider works.
 
     let setup_mode = choose_setup_mode()?;
     let root_domain = ask_root_domain(domain)?;
@@ -246,23 +234,9 @@ async fn run_domain_flow(
     )
     .await?;
 
-    manual_worker_setup_flow(&created_domain, mode).await?;
+    cname_setup_flow(&created, &created_domain, mode).await?;
 
     Ok(result)
-}
-
-fn choose_provider(provider: Option<String>) -> Result<String, CliError> {
-    Ok(match provider {
-        Some(provider) => provider,
-        None => {
-            let idx = Select::with_theme(&ui::theme())
-                .with_prompt("Choose your DNS provider")
-                .items(&["Cloudflare", "Other (coming soon)"])
-                .default(0)
-                .interact()?;
-            ["cloudflare", "other"][idx].to_string()
-        }
-    })
 }
 
 fn choose_setup_mode() -> Result<SetupMode, CliError> {
@@ -343,30 +317,27 @@ fn print_dns_step(
             println!(
                 "{}",
                 style(format!(
-                    "Step 1: add the {} TXT record in Cloudflare DNS",
+                    "Step 1: add these DNS records for your {} domain",
                     mode.label().to_lowercase()
                 ))
                 .bold()
                 .cyan()
             );
             println!();
-            ui::kv("Type", "TXT");
             ui::kv(
-                "Name",
-                display_record_name(&created.txt_record, root_domain),
+                "CNAME",
+                format!("{} → {}", &created.domain, &created.cname_target),
             );
-            ui::kv("Value", &created.verification_token);
+            ui::kv(
+                "TXT",
+                format!(
+                    "{} → {}",
+                    display_record_name(&created.txt_record, root_domain),
+                    &created.verification_token
+                ),
+            );
             ui::spacer();
             ui::note(mode.dns_note());
-
-            if ui::choose(
-                "Open Cloudflare DNS in your browser now?",
-                "Yes, open Cloudflare",
-                "No, I'll do it myself",
-                true,
-            )? {
-                let _ = webbrowser::open(CLOUDFLARE_DASHBOARD_URL);
-            }
         }
         DomainSetupState::Existing { domain } => {
             ui::spacer();
@@ -401,9 +372,9 @@ async fn verify_domain_loop(
                 .bold()
                 .cyan()
             );
-            ui::note("If you already added the Cloudflare TXT record earlier, Rift can pick up from there.");
+            ui::note("If you already added the TXT record, Rift can pick up from there.");
         } else if !ui::choose(
-            "Have you added the TXT record in Cloudflare?",
+            "Have you added the DNS records?",
             "Yes, verify it now",
             "No, I'll come back later",
             true,
@@ -418,12 +389,18 @@ async fn verify_domain_loop(
             Ok(response) if response.verified => {
                 ui::spacer();
                 ui::success("Domain verified with Rift.");
+
+                // Wait for TLS certificate if Fly is configured.
+                if !response.tls.is_empty() && response.tls != "none" {
+                    wait_for_tls(client, domain).await;
+                }
+
                 return Ok(());
             }
             _ => {
                 ui::spacer();
                 ui::warning("Rift could not verify the TXT record yet.");
-                ui::note("Cloudflare DNS may still be propagating.");
+                ui::note("DNS may still be propagating.");
                 if !ui::choose(
                     "Try verification again?",
                     "Yes, try again",
@@ -446,154 +423,99 @@ async fn verify_domain_loop(
     }
 }
 
-async fn manual_worker_setup_flow(domain: &str, mode: SetupMode) -> Result<(), CliError> {
-    println!();
-    println!(
-        "{}",
-        style(format!(
-            "Step 2: finish the {} Cloudflare Worker setup manually",
-            mode.label().to_lowercase()
-        ))
-        .bold()
-        .cyan()
-    );
-    println!();
-    println!(
-        "{} {}",
-        style("Open this docs section:").bold(),
-        style(WORKER_DOCS_URL).underlined().cyan()
-    );
-    println!();
-    println!("{}", style("Cloudflare checklist").bold());
-    println!(
-        "  1. Create or reuse a Worker like {}",
-        style("rift-proxy").cyan()
-    );
-    println!(
-        "  2. Paste the proxy code from {}",
-        style(WORKER_SOURCE_URL).underlined().cyan()
-    );
-    println!("  3. Add {} as a Custom Domain", style(domain).cyan());
-    println!(
-        "  4. Add {} as a Route",
-        style(format!("{domain}/*")).cyan()
-    );
-    println!();
-    ui::note(mode.worker_note());
-    println!();
-    println!("{}", style("Quick check").bold());
-    println!(
-        "  {}",
-        style(format!("curl https://{domain}/llms.txt")).green()
-    );
-    println!("  This should return Relay's llms.txt through your custom domain.");
-    println!();
-    println!(
-        "{} {}",
-        style("More docs:").bold(),
-        style(ROUTE_DOCS_URL).dim()
-    );
-    println!(
-        "{} {}",
-        style("Test commands:").bold(),
-        style(TEST_DOCS_URL).dim()
-    );
+async fn wait_for_tls(client: &rift_client_core::RiftClient, domain: &str) {
+    ui::note("Waiting for TLS certificate...");
+    let max_attempts = 12; // 60 seconds total
+    for _ in 0..max_attempts {
+        sleep(Duration::from_secs(5)).await;
+        match client.verify_domain(domain).await {
+            Ok(resp) if resp.tls == "active" => {
+                ui::success("TLS certificate is active.");
+                return;
+            }
+            Ok(resp) if resp.tls == "failed" => {
+                ui::warning("TLS certificate provisioning failed. Check that your CNAME is pointing correctly.");
+                return;
+            }
+            _ => {}
+        }
+    }
+    ui::warning("TLS certificate is still provisioning. It may take a few more minutes.");
+    ui::note("You can check later with: rift domains setup");
+}
 
-    if ui::choose(
-        "Open the Worker setup docs now?",
-        "Yes, open the docs",
-        "No, keep this in the terminal",
-        true,
-    )? {
-        let _ = webbrowser::open(WORKER_DOCS_URL);
+async fn cname_setup_flow(
+    created: &DomainSetupState,
+    domain: &str,
+    mode: SetupMode,
+) -> Result<(), CliError> {
+    // Show the CNAME target if we have it from the create response.
+    if let DomainSetupState::Created(resp) = created {
+        println!();
+        println!(
+            "{}",
+            style("Step 2: verify your custom domain is reachable")
+                .bold()
+                .cyan()
+        );
+        println!();
+        ui::note(&format!(
+            "Make sure your CNAME record is pointing {} → {}",
+            domain, resp.cname_target
+        ));
     }
 
-    ui::section("Finish Setup");
-    ui::note(
-        "Come back here after you have attached the Worker, Custom Domain, and wildcard Route.",
-    );
-
     if !ui::choose(
-        "Finished setting up the Worker in Cloudflare?",
-        "Yes, run the diagnostic",
+        "Have you added the CNAME record?",
+        "Yes, test connectivity",
         "No, I'll come back later",
         true,
     )? {
-        return Err("Finish the Worker setup in Cloudflare, then rerun `rift domains setup` when you're ready to test it.".into());
+        ui::note(&format!(
+            "Add the CNAME, then rerun `rift domains setup`. Docs: {}",
+            DOMAIN_DOCS_URL
+        ));
+        return Ok(());
     }
 
-    run_worker_diagnostic(domain, mode).await?;
-
-    Ok(())
+    run_connectivity_check(domain, mode).await
 }
 
-async fn run_worker_diagnostic(domain: &str, mode: SetupMode) -> Result<(), CliError> {
+async fn run_connectivity_check(domain: &str, mode: SetupMode) -> Result<(), CliError> {
     loop {
-        ui::section("Worker Diagnostic");
-        ui::note("Rift is checking whether your custom domain is proxying traffic correctly.");
-        ui::code_line(format!("curl https://{domain}/llms.txt"));
+        ui::note("Checking whether your custom domain is reachable...");
 
-        match wait_for_worker_probe(domain).await {
-            Ok(ProbeResult::Success) => {
-                ui::success("Your Worker is responding through the custom domain.");
+        match fetch_domain_probe(domain).await {
+            Ok(true) => {
+                ui::success("Your custom domain is responding correctly.");
                 if mode == SetupMode::Alternate {
                     ui::note("Your primary landing page can now use this alternate domain for the Open in App handoff.");
                 }
                 return Ok(());
             }
-            Ok(ProbeResult::BadStatus(status)) => {
-                ui::warning(&format!(
-                    "The custom domain responded, but with HTTP {} instead of a clean Rift response.",
-                    status.as_u16()
-                ));
-                ui::note("This usually means the Worker, Custom Domain, or Route is only partially configured.");
-            }
-            Ok(ProbeResult::UnexpectedBody) => {
-                ui::warning("The custom domain responded, but it does not look like the Rift Worker is proxying Relay yet.");
-                ui::note("Double-check the Worker code and the wildcard Route.");
+            Ok(false) => {
+                ui::warning(
+                    "The domain responded, but doesn't appear to be serving Rift content yet.",
+                );
+                ui::note("DNS and TLS provisioning can take a few minutes.");
             }
             Err(error) => {
-                ui::warning(&format!(
-                    "Rift could not reach https://{domain}/llms.txt yet."
-                ));
+                ui::warning(&format!("Could not reach https://{domain}/llms.txt yet."));
                 ui::note(&error);
             }
         }
 
-        if !ui::choose(
-            "Try the diagnostic again?",
-            "Yes, try again",
-            "No, stop here",
-            true,
-        )? {
-            return Err(
-                "The Worker diagnostic is still failing. Finish the Cloudflare setup and rerun `rift domains setup` to test again."
-                    .into(),
-            );
+        if !ui::choose("Try again?", "Yes, try again", "No, stop here", true)? {
+            ui::note("You can test later with:");
+            ui::code_line(format!("curl https://{domain}/llms.txt"));
+            return Ok(());
         }
+
+        sleep(Duration::from_secs(5)).await;
     }
 }
 
-async fn wait_for_worker_probe(domain: &str) -> Result<ProbeResult, String> {
-    let attempts = 4;
-    for attempt in 1..=attempts {
-        match fetch_worker_probe(domain).await {
-            Ok(ProbeResult::Success) => return Ok(ProbeResult::Success),
-            Ok(other) if attempt == attempts => return Ok(other),
-            Err(error) if attempt == attempts => return Err(error),
-            Ok(_) | Err(_) => {
-                ui::note(&format!(
-                    "Cloudflare may still be propagating. Checking again in 30 seconds ({attempt}/{attempts})..."
-                ));
-                sleep(Duration::from_secs(30)).await;
-            }
-        }
-    }
-
-    Err("Worker probe did not complete.".to_string())
-}
-
-async fn fetch_worker_probe(domain: &str) -> Result<ProbeResult, String> {
+async fn fetch_domain_probe(domain: &str) -> Result<bool, String> {
     let url = format!("https://{domain}/llms.txt");
     let response = reqwest::Client::new()
         .get(&url)
@@ -602,16 +524,12 @@ async fn fetch_worker_probe(domain: &str) -> Result<ProbeResult, String> {
         .await
         .map_err(|error| error.to_string())?;
 
-    if response.status() != StatusCode::OK {
-        return Ok(ProbeResult::BadStatus(response.status()));
+    if !response.status().is_success() {
+        return Ok(false);
     }
 
     let body = response.text().await.map_err(|error| error.to_string())?;
-    if body.contains("Deep links for humans and agents") || body.contains("Rift routes users") {
-        Ok(ProbeResult::Success)
-    } else {
-        Ok(ProbeResult::UnexpectedBody)
-    }
+    Ok(body.contains("Deep links for humans and agents") || body.contains("Rift routes users"))
 }
 
 fn has_verified_primary(domains: &ListDomainsResponse) -> bool {
@@ -629,19 +547,16 @@ fn json_payload(
     match created {
         DomainSetupState::Created(created) => serde_json::json!({
             "domain": created.domain,
-            "provider": "cloudflare",
             "role": mode.api_role(),
+            "cname_target": created.cname_target,
             "txt_record": display_record_name(&created.txt_record, root_domain),
             "verification_token": created.verification_token,
             "resume": false,
-            "manual_worker_setup": true,
         }),
         DomainSetupState::Existing { domain } => serde_json::json!({
             "domain": domain,
-            "provider": "cloudflare",
             "role": mode.api_role(),
             "resume": true,
-            "manual_worker_setup": true,
         }),
     }
 }
@@ -701,15 +616,6 @@ impl SetupMode {
             }
         }
     }
-
-    fn worker_note(self) -> &'static str {
-        match self {
-            Self::Primary => "This is your main branded landing-page domain.",
-            Self::Alternate => {
-                "This domain is only for the cross-domain Open in App handoff. It is not your main branded landing-page domain."
-            }
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -730,12 +636,6 @@ impl DomainSetupState {
             Self::Existing { domain } => domain,
         }
     }
-}
-
-enum ProbeResult {
-    Success,
-    BadStatus(StatusCode),
-    UnexpectedBody,
 }
 
 struct DomainFlowResult {

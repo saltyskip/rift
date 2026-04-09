@@ -32,6 +32,10 @@ pub struct Config {
 
     // ── Custom domains ──
     pub primary_domain: String,
+
+    // ── Fly.io (cert provisioning) ──
+    pub fly_api_token: String,
+    pub fly_app_name: String,
 }
 
 impl Config {
@@ -74,6 +78,9 @@ impl Config {
 
             primary_domain: std::env::var("PRIMARY_DOMAIN")
                 .unwrap_or_else(|_| "riftl.ink".to_string()),
+
+            fly_api_token: std::env::var("FLY_API_TOKEN").unwrap_or_default(),
+            fly_app_name: std::env::var("FLY_APP_NAME").unwrap_or_default(),
         }
     }
 
