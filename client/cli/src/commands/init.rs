@@ -15,7 +15,7 @@ const RIFT_WORDMARK: &str = r#"
 ╚═╝  ╚═╝╚═╝╚═╝        ╚═╝
 "#;
 
-fn looks_like_email(value: &str) -> bool {
+pub fn looks_like_email(value: &str) -> bool {
     let trimmed = value.trim();
     let Some((local, domain)) = trimmed.split_once('@') else {
         return false;
