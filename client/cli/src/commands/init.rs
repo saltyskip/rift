@@ -2,7 +2,9 @@ use console::style;
 use dialoguer::{Input, Password};
 
 use crate::config::StoredConfig;
+use crate::error::CliError;
 use crate::ui;
+use crate::util;
 
 const RIFT_WORDMARK: &str = r#"
 ██████╗ ██╗███████╗████████╗
@@ -12,15 +14,6 @@ const RIFT_WORDMARK: &str = r#"
 ██║  ██║██║██║        ██║
 ╚═╝  ╚═╝╚═╝╚═╝        ╚═╝
 "#;
-
-fn normalize_web_url(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.contains("://") {
-        trimmed.to_string()
-    } else {
-        format!("https://{trimmed}")
-    }
-}
 
 fn looks_like_email(value: &str) -> bool {
     let trimmed = value.trim();
@@ -40,7 +33,7 @@ pub async fn run(
     email: Option<String>,
     base_url: Option<String>,
     json: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), CliError> {
     let base_url = base_url.unwrap_or_else(|| "https://api.riftl.ink".to_string());
 
     if !json {
@@ -87,9 +80,6 @@ pub async fn run(
         ui::numbered(3, "Copy the `rl_live_...` key shown once on that page");
         ui::numbered(4, "Paste it here so this machine can keep using Rift");
         ui::spacer();
-        ui::note("Opening your inbox can help if you're already signed into Gmail.");
-        let _ = webbrowser::open("https://mail.google.com");
-        ui::spacer();
     }
 
     let secret_key = Password::with_theme(&ui::theme())
@@ -101,8 +91,8 @@ pub async fn run(
         secret_key: secret_key.clone(),
         base_url: base_url.clone(),
     };
-    stored.save()?;
-    let config_path = StoredConfig::path()?;
+    stored.save().map_err(CliError::General)?;
+    let config_path = StoredConfig::path().map_err(CliError::General)?;
 
     let create_starter = ui::choose(
         "Create a first test link on the shared Rift domain?",
@@ -132,7 +122,7 @@ pub async fn run(
                     .ok_or("Enter a destination like bitcoin.com or https://bitcoin.com")
             })
             .interact_text()?;
-        let web_url = normalize_web_url(&web_url);
+        let web_url = util::normalize_web_url(&web_url);
         let secret_client =
             rift_client_core::RiftClient::with_secret_key(secret_key, Some(base_url.clone()));
         let created = secret_client
@@ -167,16 +157,16 @@ pub async fn run(
             ui::kv("URL", &link.url);
             ui::section("Try It Now");
             ui::bullet("Open the URL above in a browser or on your phone");
-            ui::code_line(format!("rift test-link {}", link.link_id));
+            ui::code_line(format!("rift links test {}", link.link_id));
         }
         ui::section("What To Do Next");
         ui::code_line("rift doctor");
         ui::note("Check what is still missing for production.");
-        ui::code_line("rift create-link");
+        ui::code_line("rift links create");
         ui::note("Create another link with your own destinations.");
-        ui::code_line("rift setup app");
+        ui::code_line("rift apps add");
         ui::note("Connect iOS or Android app metadata.");
-        ui::code_line("rift setup domain");
+        ui::code_line("rift domains setup");
         ui::note("Add a branded custom domain.");
     }
 

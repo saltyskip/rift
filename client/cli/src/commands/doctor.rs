@@ -1,5 +1,7 @@
-use crate::config::StoredConfig;
+use crate::context;
+use crate::error::CliError;
 use crate::ui;
+use rift_client_core::error::RiftClientError;
 
 struct CheckRow<'a> {
     done: bool,
@@ -7,11 +9,18 @@ struct CheckRow<'a> {
     description: &'a str,
 }
 
-pub async fn run(json: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let config = StoredConfig::load()?;
-    let client =
-        rift_client_core::RiftClient::with_secret_key(config.secret_key, Some(config.base_url));
-    let domains = client.list_domains().await?;
+pub async fn run(json: bool) -> Result<(), CliError> {
+    let client = context::authenticated_client()?;
+
+    // Verify the key works before running diagnostics.
+    let domains = match client.list_domains().await {
+        Ok(d) => d,
+        Err(RiftClientError::Api { status: 401, .. }) => {
+            return Err(CliError::AuthFailed);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
     let apps = client.list_apps().await?;
     let publishable_keys = client.list_publishable_keys().await?;
 
@@ -48,7 +57,7 @@ pub async fn run(json: bool) -> Result<(), Box<dyn std::error::Error>> {
 
     if !has_verified_primary_domain {
         warnings.push("No verified primary domain is configured. Shared-domain links work, but custom slugs and branded links are unavailable.".to_string());
-        next_steps.push("Run `rift setup domain` to add a primary domain.".to_string());
+        next_steps.push("Run `rift domains setup` to add a primary domain.".to_string());
     }
 
     if has_ios_app && !has_verified_alternate_domain {
@@ -63,7 +72,7 @@ pub async fn run(json: bool) -> Result<(), Box<dyn std::error::Error>> {
             "No mobile apps are registered yet. Deep link association files cannot be served."
                 .to_string(),
         );
-        next_steps.push("Run `rift setup app` to register an iOS or Android app.".to_string());
+        next_steps.push("Run `rift apps add` to register an iOS or Android app.".to_string());
     }
 
     if android_missing_fingerprints {
@@ -182,8 +191,8 @@ pub async fn run(json: bool) -> Result<(), Box<dyn std::error::Error>> {
         } else {
             ui::section("What To Do Next");
             ui::note("You're in a good place.");
-            ui::code_line("rift create-link");
-            ui::code_line("rift test-link <id>");
+            ui::code_line("rift links create");
+            ui::code_line("rift links test <id>");
         }
 
         let mut notes = Vec::new();

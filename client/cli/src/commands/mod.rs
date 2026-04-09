@@ -1,6 +1,10 @@
+pub mod completions;
 pub mod create_link;
 pub mod doctor;
 pub mod init;
+pub mod login;
+pub mod logout;
 pub mod setup_app;
 pub mod setup_domain;
 pub mod test_link;
+pub mod whoami;
