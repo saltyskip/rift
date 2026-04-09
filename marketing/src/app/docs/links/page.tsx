@@ -32,16 +32,16 @@ export default function LinksPage() {
                   <div className="space-y-3 text-[15px] leading-relaxed text-[#a1a1aa]">
                     <p>The CLI walks you through link creation interactively, or you can pass flags directly:</p>
                     <CodeBlock lang="bash">{`# Interactive — prompts for each field
-rift create-link
+rift links create
 
 # Non-interactive — pass flags directly
-rift create-link \\
+rift links create \\
   --web-url https://example.com/promo/summer-sale \\
   --ios-deep-link myapp://promo/summer-sale \\
   --android-deep-link myapp://promo/summer-sale \\
   --custom-id summer-sale`}</CodeBlock>
-                    <p>The CLI outputs the link ID and URL, and suggests <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">rift test-link</code> to preview how it resolves across platforms:</p>
-                    <CodeBlock lang="bash">{`rift test-link summer-sale`}</CodeBlock>
+                    <p>The CLI outputs the link ID and URL, and suggests <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">rift links test</code> to preview how it resolves across platforms:</p>
+                    <CodeBlock lang="bash">{`rift links test summer-sale`}</CodeBlock>
                   </div>
                 </div>
               ),

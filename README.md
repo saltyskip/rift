@@ -45,7 +45,7 @@ Best if you want the guided onboarding flow.
 ```sh
 curl -fsSL https://raw.githubusercontent.com/saltyskip/rift/main/client/cli/install.sh | sh
 rift init
-rift setup domain
+rift domains setup
 rift doctor
 ```
 

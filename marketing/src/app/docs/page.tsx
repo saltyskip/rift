@@ -72,7 +72,7 @@ export default function QuickStartPage() {
               Rift then guides you through your primary branded domain, tests the Worker setup, and
               can continue straight into your alternate domain for stronger Open in App behavior.
             </p>
-            <CodeBlock lang="bash">{`rift setup domain`}</CodeBlock>
+            <CodeBlock lang="bash">{`rift domains setup`}</CodeBlock>
             <p>
               If you want the Cloudflare details behind this step, read{" "}
               <a href="/docs/domains" className="text-[#2dd4bf] hover:underline">
@@ -98,8 +98,8 @@ export default function QuickStartPage() {
               After onboarding, create a real link and test how it resolves across web, iOS, and
               Android.
             </p>
-            <CodeBlock lang="bash">{`rift create-link
-rift test-link LINK_ID`}</CodeBlock>
+            <CodeBlock lang="bash">{`rift links create
+rift links test LINK_ID`}</CodeBlock>
           </Step>
         </section>
 
