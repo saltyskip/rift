@@ -43,7 +43,7 @@ The server separates **domain logic** (`services/`) from **transport layers** (`
 Best if you want the guided onboarding flow.
 
 ```sh
-cargo install --path client/cli
+curl -fsSL https://raw.githubusercontent.com/saltyskip/rift/main/client/cli/install.sh | sh
 rift init
 rift setup domain
 rift doctor
