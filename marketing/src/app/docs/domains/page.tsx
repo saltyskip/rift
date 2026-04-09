@@ -98,7 +98,7 @@ export default function DomainsPage() {
                     The CLI handles domain registration, TXT verification, and testing. It
                     prompts you through both your primary and alternate domain in one flow.
                   </p>
-                  <CodeBlock lang="bash">{`rift setup domain`}</CodeBlock>
+                  <CodeBlock lang="bash">{`rift domains setup`}</CodeBlock>
                   <div className="rounded-xl border border-[#2dd4bf]/20 bg-[#2dd4bf]/5 p-4">
                     <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf]">
                       What the CLI handles

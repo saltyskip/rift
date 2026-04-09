@@ -45,7 +45,7 @@ Best if you want the guided onboarding flow.
 ```sh
 cargo install --path client/cli
 rift init
-rift setup domain
+rift domains setup
 rift doctor
 ```
 

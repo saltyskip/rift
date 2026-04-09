@@ -33,7 +33,7 @@ export default function AppsPage() {
                     The CLI walks you through platform selection, bundle ID / package name,
                     signing cert fingerprints, and branding in one interactive flow:
                   </p>
-                  <CodeBlock lang="bash">{`rift setup app`}</CodeBlock>
+                  <CodeBlock lang="bash">{`rift apps add`}</CodeBlock>
                   <p>
                     It prompts for <strong className="text-[#fafafa]">iOS</strong> (bundle ID + team ID) or{" "}
                     <strong className="text-[#fafafa]">Android</strong> (package name + SHA-256 fingerprints),
