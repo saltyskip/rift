@@ -646,7 +646,7 @@ fn json_payload(
     }
 }
 
-fn display_record_name(full_name: &str, root_domain: &str) -> String {
+pub fn display_record_name(full_name: &str, root_domain: &str) -> String {
     let suffix = format!(".{root_domain}");
     full_name
         .strip_suffix(&suffix)
@@ -654,7 +654,7 @@ fn display_record_name(full_name: &str, root_domain: &str) -> String {
         .to_string()
 }
 
-fn normalize_host(value: &str) -> String {
+pub fn normalize_host(value: &str) -> String {
     value
         .trim()
         .trim_start_matches("https://")
