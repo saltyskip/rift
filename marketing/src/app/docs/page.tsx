@@ -33,7 +33,10 @@ export default function QuickStartPage() {
             This is the best path if you want the smoothest setup. Rift guides you through signup,
             custom domains, diagnostics, and first success without making you remember the whole API.
           </p>
-          <CodeBlock lang="bash">{`cargo install --git https://github.com/saltyskip/rift.git rift-cli`}</CodeBlock>
+          <CodeBlock lang="bash">{`curl -fsSL https://raw.githubusercontent.com/saltyskip/rift/main/client/cli/install.sh | sh`}</CodeBlock>
+          <p className="mt-2 text-[13px] text-[#52525b]">
+            Or install from source: <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[12px]">cargo install --git https://github.com/saltyskip/rift.git rift-cli</code>
+          </p>
         </Callout>
 
         <Callout eyebrow="Advanced" title="Doing this manually?">

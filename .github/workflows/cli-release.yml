@@ -89,6 +89,11 @@ jobs:
             target: x86_64-unknown-linux-gnu
             archive: tar.gz
             binary: rift
+          - os: ubuntu-latest
+            label: linux-arm64
+            target: aarch64-unknown-linux-gnu
+            archive: tar.gz
+            binary: rift
           - os: macos-14
             label: macos-arm64
             target: aarch64-apple-darwin
@@ -112,6 +117,13 @@ jobs:
           workspaces: |
             client/core
             client/cli
+
+      - name: Install cross-compiler (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
       - name: Build release binary
         run: cargo build --manifest-path client/cli/Cargo.toml --release --target ${{ matrix.target }}
@@ -166,15 +178,21 @@ jobs:
           tag_name: ${{ needs.meta.outputs.tag }}
           name: "Rift CLI ${{ needs.meta.outputs.version }}"
           body: |
-            ## Rift CLI
+            ## Rift CLI ${{ needs.meta.outputs.version }}
 
-            Install from source:
+            ### Install
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/saltyskip/rift/main/client/cli/install.sh | sh
+            ```
+
+            Or install from source:
 
             ```bash
             cargo install --git https://github.com/saltyskip/rift.git rift-cli
             ```
 
-            Download a prebuilt binary for your platform below.
+            Or download a prebuilt binary for your platform below.
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
