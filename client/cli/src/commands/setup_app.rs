@@ -1,25 +1,25 @@
 use dialoguer::{Input, Select};
 
-use crate::config::StoredConfig;
+use crate::context;
+use crate::error::CliError;
 use crate::ui;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn run(
-    platform: Option<String>,
-    bundle_id: Option<String>,
-    team_id: Option<String>,
-    package_name: Option<String>,
-    sha256_fingerprints: Option<Vec<String>>,
-    app_name: Option<String>,
-    icon_url: Option<String>,
-    theme_color: Option<String>,
-    json: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let config = StoredConfig::load()?;
-    let client =
-        rift_client_core::RiftClient::with_secret_key(config.secret_key, Some(config.base_url));
+pub struct Args {
+    pub platform: Option<String>,
+    pub bundle_id: Option<String>,
+    pub team_id: Option<String>,
+    pub package_name: Option<String>,
+    pub sha256_fingerprints: Option<Vec<String>>,
+    pub app_name: Option<String>,
+    pub icon_url: Option<String>,
+    pub theme_color: Option<String>,
+    pub json: bool,
+}
 
-    let platform = match platform {
+pub async fn run(args: Args) -> Result<(), CliError> {
+    let client = context::authenticated_client()?;
+
+    let platform = match args.platform {
         Some(platform) => platform,
         None => {
             let idx = Select::with_theme(&ui::theme())
@@ -34,13 +34,13 @@ pub async fn run(
     let request = if platform == "ios" {
         rift_client_core::apps::CreateAppRequest {
             platform,
-            bundle_id: Some(match bundle_id {
+            bundle_id: Some(match args.bundle_id {
                 Some(value) => value,
                 None => Input::with_theme(&ui::theme())
                     .with_prompt("iOS bundle id")
                     .interact_text()?,
             }),
-            team_id: Some(match team_id {
+            team_id: Some(match args.team_id {
                 Some(value) => value,
                 None => Input::with_theme(&ui::theme())
                     .with_prompt("Apple team id")
@@ -48,12 +48,12 @@ pub async fn run(
             }),
             package_name: None,
             sha256_fingerprints: None,
-            app_name,
-            icon_url,
-            theme_color,
+            app_name: args.app_name,
+            icon_url: args.icon_url,
+            theme_color: args.theme_color,
         }
     } else {
-        let sha256_fingerprints = match sha256_fingerprints {
+        let sha256_fingerprints = match args.sha256_fingerprints {
             Some(values) if !values.is_empty() => Some(values),
             _ => Some(vec![Input::with_theme(&ui::theme())
                 .with_prompt("Android SHA-256 fingerprint")
@@ -63,21 +63,21 @@ pub async fn run(
             platform,
             bundle_id: None,
             team_id: None,
-            package_name: Some(match package_name {
+            package_name: Some(match args.package_name {
                 Some(value) => value,
                 None => Input::with_theme(&ui::theme())
                     .with_prompt("Android package name")
                     .interact_text()?,
             }),
             sha256_fingerprints,
-            app_name,
-            icon_url,
-            theme_color,
+            app_name: args.app_name,
+            icon_url: args.icon_url,
+            theme_color: args.theme_color,
         }
     };
 
     let app = client.create_app(&request).await?;
-    if json {
+    if args.json {
         println!("{}", serde_json::to_string_pretty(&app)?);
     } else {
         ui::heading(
@@ -89,7 +89,7 @@ pub async fn run(
         ui::kv("App ID", &app.id);
         ui::section("Try This Next");
         ui::code_line("rift doctor");
-        ui::code_line("rift create-link");
+        ui::code_line("rift links create");
     }
     Ok(())
 }

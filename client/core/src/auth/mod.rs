@@ -32,6 +32,20 @@ pub struct ListPublishableKeysResponse {
     pub keys: Vec<PublishableKeyDetail>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UserDetail {
+    pub id: String,
+    pub email: String,
+    pub verified: bool,
+    pub is_owner: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListUsersResponse {
+    pub users: Vec<UserDetail>,
+}
+
 impl RiftClient {
     pub async fn signup(
         &self,
@@ -51,5 +65,9 @@ impl RiftClient {
         &self,
     ) -> Result<ListPublishableKeysResponse, RiftClientError> {
         self.get("/v1/auth/publishable-keys").await
+    }
+
+    pub async fn list_users(&self) -> Result<ListUsersResponse, RiftClientError> {
+        self.get("/v1/auth/users").await
     }
 }

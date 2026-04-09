@@ -3,7 +3,8 @@ use dialoguer::{Input, Select};
 use reqwest::StatusCode;
 use tokio::time::{sleep, Duration};
 
-use crate::config::StoredConfig;
+use crate::context;
+use crate::error::CliError;
 use crate::ui;
 use rift_client_core::apps::ListAppsResponse;
 use rift_client_core::domains::{CreateDomainResponse, ListDomainsResponse};
@@ -11,18 +12,16 @@ use rift_client_core::error::RiftClientError;
 
 const CLOUDFLARE_DASHBOARD_URL: &str = "https://dash.cloudflare.com/";
 const WORKER_DOCS_URL: &str = "https://riftl.ink/docs/domains#cloudflare-worker";
+const WORKER_SOURCE_URL: &str = "https://riftl.ink/docs/domains#worker-source";
 const ROUTE_DOCS_URL: &str = "https://riftl.ink/docs/domains#worker-route";
 const TEST_DOCS_URL: &str = "https://riftl.ink/docs/domains#test-custom-domain";
-const WORKER_SOURCE_PATH: &str = "/Users/andreiterentiev/Developer/Relay/worker/src/index.js";
 
 pub async fn run(
     domain: Option<String>,
     provider: Option<String>,
     json: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let config = StoredConfig::load()?;
-    let client =
-        rift_client_core::RiftClient::with_secret_key(config.secret_key, Some(config.base_url));
+) -> Result<(), CliError> {
+    let client = context::authenticated_client()?;
 
     let provider = choose_provider(provider)?;
     if provider != "cloudflare" {
@@ -39,7 +38,7 @@ pub async fn run(
     if setup_mode == SetupMode::Alternate && !has_verified_primary(&domains) {
         ui::warning("Alternate domains require a verified primary domain first.");
         ui::note("Set up your main branded domain first, then come back to add the Open in App trampoline domain.");
-        ui::code_line("rift setup domain");
+        ui::code_line("rift domains setup");
         return Err("Alternate domains are blocked until a primary domain is verified.".into());
     }
 
@@ -76,7 +75,7 @@ pub async fn run(
 async fn maybe_continue_to_alternate(
     client: &rift_client_core::RiftClient,
     root_domain: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), CliError> {
     let domains = client.list_domains().await?;
     let primary = domains
         .domains
@@ -165,7 +164,7 @@ async fn run_domain_flow(
     existing_domains: &ListDomainsResponse,
     json: bool,
     entry: FlowEntry,
-) -> Result<DomainFlowResult, Box<dyn std::error::Error>> {
+) -> Result<DomainFlowResult, CliError> {
     let existing_alternate = existing_domains
         .domains
         .iter()
@@ -252,7 +251,7 @@ async fn run_domain_flow(
     Ok(result)
 }
 
-fn choose_provider(provider: Option<String>) -> Result<String, Box<dyn std::error::Error>> {
+fn choose_provider(provider: Option<String>) -> Result<String, CliError> {
     Ok(match provider {
         Some(provider) => provider,
         None => {
@@ -266,7 +265,7 @@ fn choose_provider(provider: Option<String>) -> Result<String, Box<dyn std::erro
     })
 }
 
-fn choose_setup_mode() -> Result<SetupMode, Box<dyn std::error::Error>> {
+fn choose_setup_mode() -> Result<SetupMode, CliError> {
     let options = [
         "Primary branded domain — your main public link domain",
         "Alternate domain — more reliable Open in App behavior",
@@ -282,7 +281,7 @@ fn choose_setup_mode() -> Result<SetupMode, Box<dyn std::error::Error>> {
     })
 }
 
-fn ask_root_domain(domain: Option<String>) -> Result<String, Box<dyn std::error::Error>> {
+fn ask_root_domain(domain: Option<String>) -> Result<String, CliError> {
     let main_site_input: String = Input::with_theme(&ui::theme())
         .with_prompt("What is your main website?")
         .default(domain.unwrap_or_default())
@@ -299,7 +298,7 @@ fn choose_target_domain(
     root_domain: &str,
     mode: SetupMode,
     current_domain: Option<&str>,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String, CliError> {
     let recommended = current_domain
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| format!("{}.{root_domain}", mode.default_subdomain()));
@@ -337,7 +336,7 @@ fn print_dns_step(
     root_domain: &str,
     mode: SetupMode,
     entry: FlowEntry,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), CliError> {
     match created {
         DomainSetupState::Created(created) => {
             println!();
@@ -389,7 +388,7 @@ async fn verify_domain_loop(
     domain: &str,
     is_resume: bool,
     mode: SetupMode,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), CliError> {
     loop {
         if is_resume {
             println!();
@@ -410,7 +409,7 @@ async fn verify_domain_loop(
             true,
         )? {
             return Err(
-                "Add the TXT record first, then rerun `rift setup domain` when you're ready."
+                "Add the TXT record first, then rerun `rift domains setup` when you're ready."
                     .into(),
             );
         }
@@ -433,12 +432,12 @@ async fn verify_domain_loop(
                 )? {
                     if is_resume {
                         return Err(
-                            "Verification is still pending. The domain already exists in Rift, so rerun `rift setup domain` after the TXT record is live."
+                            "Verification is still pending. The domain already exists in Rift, so rerun `rift domains setup` after the TXT record is live."
                                 .into(),
                         );
                     }
                     return Err(
-                        "Verification is still pending. Rerun `rift setup domain` in a minute."
+                        "Verification is still pending. Rerun `rift domains setup` in a minute."
                             .into(),
                     );
                 }
@@ -447,10 +446,7 @@ async fn verify_domain_loop(
     }
 }
 
-async fn manual_worker_setup_flow(
-    domain: &str,
-    mode: SetupMode,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn manual_worker_setup_flow(domain: &str, mode: SetupMode) -> Result<(), CliError> {
     println!();
     println!(
         "{}",
@@ -475,7 +471,7 @@ async fn manual_worker_setup_flow(
     );
     println!(
         "  2. Paste the proxy code from {}",
-        style(WORKER_SOURCE_PATH).dim()
+        style(WORKER_SOURCE_URL).underlined().cyan()
     );
     println!("  3. Add {} as a Custom Domain", style(domain).cyan());
     println!(
@@ -523,7 +519,7 @@ async fn manual_worker_setup_flow(
         "No, I'll come back later",
         true,
     )? {
-        return Err("Finish the Worker setup in Cloudflare, then rerun `rift setup domain` when you're ready to test it.".into());
+        return Err("Finish the Worker setup in Cloudflare, then rerun `rift domains setup` when you're ready to test it.".into());
     }
 
     run_worker_diagnostic(domain, mode).await?;
@@ -531,10 +527,7 @@ async fn manual_worker_setup_flow(
     Ok(())
 }
 
-async fn run_worker_diagnostic(
-    domain: &str,
-    mode: SetupMode,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_worker_diagnostic(domain: &str, mode: SetupMode) -> Result<(), CliError> {
     loop {
         ui::section("Worker Diagnostic");
         ui::note("Rift is checking whether your custom domain is proxying traffic correctly.");
@@ -574,7 +567,7 @@ async fn run_worker_diagnostic(
             true,
         )? {
             return Err(
-                "The Worker diagnostic is still failing. Finish the Cloudflare setup and rerun `rift setup domain` to test again."
+                "The Worker diagnostic is still failing. Finish the Cloudflare setup and rerun `rift domains setup` to test again."
                     .into(),
             );
         }

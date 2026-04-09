@@ -21,7 +21,10 @@ impl RiftClient {
     pub fn new(config: ClientConfig, credentials: Option<ClientCredentials>) -> Self {
         Self {
             base_url: config.base_url,
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default(),
             credentials,
         }
     }

@@ -1,31 +1,24 @@
 use dialoguer::Input;
 
-use crate::config::StoredConfig;
+use crate::context;
+use crate::error::CliError;
 use crate::ui;
+use crate::util;
 
-fn normalize_web_url(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.contains("://") {
-        trimmed.to_string()
-    } else {
-        format!("https://{trimmed}")
-    }
+pub struct Args {
+    pub web_url: Option<String>,
+    pub ios_deep_link: Option<String>,
+    pub android_deep_link: Option<String>,
+    pub ios_store_url: Option<String>,
+    pub android_store_url: Option<String>,
+    pub custom_id: Option<String>,
+    pub json: bool,
 }
 
-pub async fn run(
-    web_url: Option<String>,
-    ios_deep_link: Option<String>,
-    android_deep_link: Option<String>,
-    ios_store_url: Option<String>,
-    android_store_url: Option<String>,
-    custom_id: Option<String>,
-    json: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let config = StoredConfig::load()?;
-    let client =
-        rift_client_core::RiftClient::with_secret_key(config.secret_key, Some(config.base_url));
-    let web_url = match web_url {
-        Some(url) => normalize_web_url(&url),
+pub async fn run(args: Args) -> Result<(), CliError> {
+    let client = context::authenticated_client()?;
+    let web_url = match args.web_url {
+        Some(url) => util::normalize_web_url(&url),
         None => {
             let url: String = Input::with_theme(&ui::theme())
                 .with_prompt("Web URL")
@@ -35,24 +28,24 @@ pub async fn run(
                         .ok_or("Enter a URL like bitcoin.com or https://bitcoin.com")
                 })
                 .interact_text()?;
-            normalize_web_url(&url)
+            util::normalize_web_url(&url)
         }
     };
 
     let created = client
         .create_link(&rift_client_core::links::CreateLinkRequest {
-            custom_id,
-            ios_deep_link,
-            android_deep_link,
+            custom_id: args.custom_id,
+            ios_deep_link: args.ios_deep_link,
+            android_deep_link: args.android_deep_link,
             web_url: Some(web_url),
-            ios_store_url,
-            android_store_url,
+            ios_store_url: args.ios_store_url,
+            android_store_url: args.android_store_url,
             metadata: None,
             agent_context: None,
         })
         .await?;
 
-    if json {
+    if args.json {
         println!("{}", serde_json::to_string_pretty(&created)?);
     } else {
         ui::heading("Link Created", "Your new Rift link is ready to test.");
@@ -63,7 +56,7 @@ pub async fn run(
             ui::kv("Expires", expires_at);
         }
         ui::section("Try This Next");
-        ui::code_line(format!("rift test-link {}", created.link_id));
+        ui::code_line(format!("rift links test {}", created.link_id));
         ui::code_line(&created.url);
     }
 

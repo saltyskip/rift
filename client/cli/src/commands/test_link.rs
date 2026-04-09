@@ -1,7 +1,8 @@
 use crate::config::StoredConfig;
+use crate::error::CliError;
 use crate::ui;
 
-pub async fn run(target: String, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(target: String, json: bool) -> Result<(), CliError> {
     let link_id = target.rsplit('/').next().unwrap_or(&target).to_string();
     let config = StoredConfig::load().ok();
     let client = match config {
