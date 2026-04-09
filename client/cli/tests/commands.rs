@@ -387,8 +387,11 @@ async fn commands_fail_when_not_logged_in() {
         ],
     ] {
         let mut cmd = assert_cmd::Command::cargo_bin("rift").unwrap();
-        cmd.env("HOME", home.path())
-            .args(&args)
+        cmd.env("HOME", home.path());
+        if cfg!(not(target_os = "macos")) {
+            cmd.env("XDG_CONFIG_HOME", home.path().join(".config"));
+        }
+        cmd.args(&args)
             .assert()
             .failure()
             .code(2)

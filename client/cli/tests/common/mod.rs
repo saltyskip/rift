@@ -30,9 +30,14 @@ impl TestHarness {
     }
 
     /// Build a `Command` for the `rift` binary with HOME pointed at the temp dir.
+    /// Also sets XDG_CONFIG_HOME on Linux so dirs::config_dir() resolves correctly
+    /// even when CI has its own XDG_CONFIG_HOME set.
     pub fn cmd(&self) -> Command {
         let mut cmd = Command::cargo_bin("rift").unwrap();
         cmd.env("HOME", self.home.path());
+        if cfg!(not(target_os = "macos")) {
+            cmd.env("XDG_CONFIG_HOME", self.home.path().join(".config"));
+        }
         cmd
     }
 }

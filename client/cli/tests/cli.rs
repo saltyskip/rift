@@ -108,12 +108,12 @@ fn completions_fish() {
 #[test]
 fn logout_json_when_not_logged_in() {
     let dir = tempfile::tempdir().unwrap();
-    rift()
-        .args(["logout", "--json"])
-        // Override HOME so dirs::config_dir() resolves to an empty location.
-        // macOS: ~/Library/Application Support, Linux: $XDG_CONFIG_HOME or ~/.config
-        .env("HOME", dir.path())
-        .assert()
+    let mut cmd = rift();
+    cmd.args(["logout", "--json"]).env("HOME", dir.path());
+    if cfg!(not(target_os = "macos")) {
+        cmd.env("XDG_CONFIG_HOME", dir.path().join(".config"));
+    }
+    cmd.assert()
         .success()
         .stdout(predicate::str::contains("not_logged_in"));
 }
