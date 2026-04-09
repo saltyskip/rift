@@ -73,6 +73,8 @@ pub async fn spawn_app() -> TestApp {
         cdp_api_key_secret: String::new(),
         x402_description: String::new(),
         primary_domain: "riftl.ink".to_string(),
+        fly_api_token: String::new(),
+        fly_app_name: String::new(),
     };
 
     let threat_feed = rift::core::threat_feed::ThreatFeed::new();

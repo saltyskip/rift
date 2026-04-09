@@ -101,13 +101,45 @@ pub async fn create_domain(
         }
     };
 
+    // Provision TLS certificate on Fly.io (if configured).
+    if !state.config.fly_api_token.is_empty() {
+        let url = format!(
+            "https://api.machines.dev/v1/apps/{}/certificates/acme",
+            state.config.fly_app_name
+        );
+        let res = reqwest::Client::new()
+            .post(&url)
+            .bearer_auth(&state.config.fly_api_token)
+            .json(&serde_json::json!({ "hostname": &domain }))
+            .send()
+            .await;
+
+        match res {
+            Ok(r) if r.status().is_success() => {
+                tracing::info!(domain = %domain, "Fly certificate provisioned");
+            }
+            Ok(r) => {
+                tracing::warn!(domain = %domain, status = %r.status(), "Fly certificate request failed");
+            }
+            Err(e) => {
+                tracing::warn!(domain = %domain, error = %e, "Failed to provision Fly certificate");
+            }
+        }
+    }
+
+    let cname_target = if !state.config.fly_app_name.is_empty() {
+        format!("{}.fly.dev", state.config.fly_app_name)
+    } else {
+        state.config.primary_domain.clone()
+    };
+
     let txt_record = format!("_rift-verify.{domain}");
     let resp = CreateDomainResponse {
         domain: created.domain,
         verified: created.verified,
         verification_token: token,
         txt_record,
-        cname_target: state.config.primary_domain.clone(),
+        cname_target,
     };
 
     (
@@ -196,7 +228,24 @@ pub async fn delete_domain(
     };
 
     match repo.delete_domain(&tenant.0, &domain).await {
-        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(true) => {
+            // Remove TLS certificate from Fly.io (if configured).
+            if !state.config.fly_api_token.is_empty() {
+                let url = format!(
+                    "https://api.machines.dev/v1/apps/{}/certificates/{}",
+                    state.config.fly_app_name, domain
+                );
+                if let Err(e) = reqwest::Client::new()
+                    .delete(&url)
+                    .bearer_auth(&state.config.fly_api_token)
+                    .send()
+                    .await
+                {
+                    tracing::warn!(domain = %domain, error = %e, "Failed to delete Fly certificate");
+                }
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
         Ok(false) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Domain not found", "code": "not_found" })),
