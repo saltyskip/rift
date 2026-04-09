@@ -229,19 +229,28 @@ pub async fn delete_domain(
 
     match repo.delete_domain(&tenant.0, &domain).await {
         Ok(true) => {
-            // Remove TLS certificate from Fly.io (if configured).
+            // Remove TLS certificate from Fly.io (best-effort).
+            // DB is authoritative — orphaned certs are harmless and can be cleaned up later.
             if !state.config.fly_api_token.is_empty() {
                 let url = format!(
                     "https://api.machines.dev/v1/apps/{}/certificates/{}",
                     state.config.fly_app_name, domain
                 );
-                if let Err(e) = reqwest::Client::new()
+                match reqwest::Client::new()
                     .delete(&url)
                     .bearer_auth(&state.config.fly_api_token)
                     .send()
                     .await
                 {
-                    tracing::warn!(domain = %domain, error = %e, "Failed to delete Fly certificate");
+                    Ok(r) if r.status().is_success() => {
+                        tracing::info!(domain = %domain, "Fly certificate deleted");
+                    }
+                    Ok(r) => {
+                        tracing::warn!(domain = %domain, status = %r.status(), "Fly certificate delete failed");
+                    }
+                    Err(e) => {
+                        tracing::warn!(domain = %domain, error = %e, "Failed to delete Fly certificate");
+                    }
                 }
             }
             StatusCode::NO_CONTENT.into_response()
@@ -305,41 +314,95 @@ pub async fn verify_domain(
             .into_response();
     }
 
-    if existing.verified {
-        return Json(json!({ "domain": domain, "verified": true })).into_response();
-    }
+    let verified = if existing.verified {
+        true
+    } else {
+        // Query DNS TXT record via dig.
+        let txt_host = format!("_rift-verify.{domain}");
+        let dns_ok = match tokio::process::Command::new("dig")
+            .args(["+short", "TXT", &txt_host])
+            .output()
+            .await
+        {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                stdout
+                    .lines()
+                    .any(|line| line.trim().trim_matches('"') == existing.verification_token)
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to run dig for DNS verification");
+                false
+            }
+        };
 
-    // Query DNS TXT record via dig.
-    let txt_host = format!("_rift-verify.{domain}");
-    let verified = match tokio::process::Command::new("dig")
-        .args(["+short", "TXT", &txt_host])
-        .output()
-        .await
-    {
-        Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            stdout
-                .lines()
-                .any(|line| line.trim().trim_matches('"') == existing.verification_token)
+        if dns_ok {
+            if let Err(e) = repo.mark_verified(&domain).await {
+                tracing::error!("Failed to mark domain verified: {e}");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": "Internal error", "code": "db_error" })),
+                )
+                    .into_response();
+            }
         }
-        Err(e) => {
-            tracing::warn!(error = %e, "Failed to run dig for DNS verification");
-            false
+
+        dns_ok
+    };
+
+    // Ensure Fly certificate exists and check its status.
+    let tls = if state.config.fly_api_token.is_empty() {
+        "none".to_string()
+    } else {
+        // Ensure cert is requested (idempotent — Fly ignores if already exists).
+        if verified {
+            let create_url = format!(
+                "https://api.machines.dev/v1/apps/{}/certificates/acme",
+                state.config.fly_app_name
+            );
+            if let Err(e) = reqwest::Client::new()
+                .post(&create_url)
+                .bearer_auth(&state.config.fly_api_token)
+                .json(&serde_json::json!({ "hostname": &domain }))
+                .timeout(std::time::Duration::from_secs(5))
+                .send()
+                .await
+            {
+                tracing::warn!(domain = %domain, error = %e, "Failed to ensure Fly certificate");
+            }
+        }
+
+        // Check cert status.
+        let check_url = format!(
+            "https://api.machines.dev/v1/apps/{}/certificates/{}/check",
+            state.config.fly_app_name, domain
+        );
+        match reqwest::Client::new()
+            .post(&check_url)
+            .bearer_auth(&state.config.fly_api_token)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => {
+                let body: serde_json::Value = r.json().await.unwrap_or_default();
+                match body.get("acme_status").and_then(|v| v.as_str()) {
+                    Some("cert issued") => "active".to_string(),
+                    Some(status) if status.contains("error") => "failed".to_string(),
+                    Some(_) => "provisioning".to_string(),
+                    None => "provisioning".to_string(),
+                }
+            }
+            Ok(r) if r.status().as_u16() == 404 => "none".to_string(),
+            Ok(_) => "unknown".to_string(),
+            Err(e) => {
+                tracing::warn!(domain = %domain, error = %e, "Failed to check Fly certificate status");
+                "unknown".to_string()
+            }
         }
     };
 
-    if verified {
-        if let Err(e) = repo.mark_verified(&domain).await {
-            tracing::error!("Failed to mark domain verified: {e}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Internal error", "code": "db_error" })),
-            )
-                .into_response();
-        }
-    }
-
-    Json(json!({ "domain": domain, "verified": verified })).into_response()
+    Json(json!({ "domain": domain, "verified": verified, "tls": tls })).into_response()
 }
 
 // ── Helpers ──

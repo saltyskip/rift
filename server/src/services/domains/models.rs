@@ -77,4 +77,7 @@ pub struct VerifyDomainResponse {
     pub domain: String,
     #[schema(example = true)]
     pub verified: bool,
+    /// TLS certificate status: "none", "provisioning", "active", "failed", or "unknown".
+    #[schema(example = "active")]
+    pub tls: String,
 }

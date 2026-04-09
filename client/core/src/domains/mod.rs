@@ -35,6 +35,8 @@ pub struct ListDomainsResponse {
 pub struct VerifyDomainResponse {
     pub domain: String,
     pub verified: bool,
+    #[serde(default)]
+    pub tls: String,
 }
 
 impl RiftClient {

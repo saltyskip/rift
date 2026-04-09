@@ -389,6 +389,12 @@ async fn verify_domain_loop(
             Ok(response) if response.verified => {
                 ui::spacer();
                 ui::success("Domain verified with Rift.");
+
+                // Wait for TLS certificate if Fly is configured.
+                if !response.tls.is_empty() && response.tls != "none" {
+                    wait_for_tls(client, domain).await;
+                }
+
                 return Ok(());
             }
             _ => {
@@ -415,6 +421,27 @@ async fn verify_domain_loop(
             }
         }
     }
+}
+
+async fn wait_for_tls(client: &rift_client_core::RiftClient, domain: &str) {
+    ui::note("Waiting for TLS certificate...");
+    let max_attempts = 12; // 60 seconds total
+    for _ in 0..max_attempts {
+        sleep(Duration::from_secs(5)).await;
+        match client.verify_domain(domain).await {
+            Ok(resp) if resp.tls == "active" => {
+                ui::success("TLS certificate is active.");
+                return;
+            }
+            Ok(resp) if resp.tls == "failed" => {
+                ui::warning("TLS certificate provisioning failed. Check that your CNAME is pointing correctly.");
+                return;
+            }
+            _ => {}
+        }
+    }
+    ui::warning("TLS certificate is still provisioning. It may take a few more minutes.");
+    ui::note("You can check later with: rift domains setup");
 }
 
 async fn cname_setup_flow(
