@@ -11,7 +11,12 @@ IOS_SIM_ARM=aarch64-apple-ios-sim
 MAC_ARM=aarch64-apple-darwin
 
 # Clean previous build artifacts.
-rm -rf dist/ios/headers dist/ios/Sources/RiftSDK dist/ios/rift_ffiFFI.xcframework dist/ios/RiftSDK.xcframework
+#
+# NOTE: dist/ios/Sources/RiftSDK/ contains both UniFFI-generated bindings
+# (rift_ffi.swift) and hand-written wrappers (e.g. KeychainStorage.swift).
+# We only delete the generated file(s), preserving anything else.
+rm -rf dist/ios/headers dist/ios/rift_ffiFFI.xcframework dist/ios/RiftSDK.xcframework
+rm -f dist/ios/Sources/RiftSDK/rift_ffi.swift
 mkdir -p dist/ios/Sources/RiftSDK dist/ios/headers/rift_ffiFFI
 
 # 1. Build for all Apple targets.

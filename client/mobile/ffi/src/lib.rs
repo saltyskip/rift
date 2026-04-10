@@ -1,6 +1,6 @@
 use rift_sdk_core::client::RiftClient;
 use rift_sdk_core::error::RiftError as CoreError;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -59,6 +59,45 @@ impl From<CoreError> for RiftError {
     }
 }
 
+// ── Storage (foreign trait) ──
+
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum StorageError {
+    #[error("Storage operation failed: {message}")]
+    IoError { message: String },
+}
+
+/// Storage backend for the Rift SDK. Implemented natively on each platform:
+/// - iOS: Keychain-backed (`KeychainStorage`) — persists across app reinstalls
+/// - Android: SharedPreferences-backed (`SharedPrefsStorage`) — persists across launches
+///
+/// Rust core owns all logic (UUID generation, retry, HTTP); this trait is the
+/// thin seam for platform-specific storage primitives. Methods are synchronous
+/// by design — Keychain and SharedPreferences are fast in-memory lookups that
+/// don't block the tokio runtime when called from async Rust code.
+#[uniffi::export(with_foreign)]
+pub trait RiftStorage: Send + Sync + std::fmt::Debug {
+    /// Read a value by key. Returns `None` if the key is not present.
+    fn get(&self, key: String) -> Result<Option<String>, StorageError>;
+    /// Write a value. Overwrites any existing value for the key.
+    fn set(&self, key: String, value: String) -> Result<(), StorageError>;
+    /// Delete a key. Must succeed silently if the key is not present.
+    fn remove(&self, key: String) -> Result<(), StorageError>;
+}
+
+fn storage_err_to_rift(e: StorageError) -> RiftError {
+    let StorageError::IoError { message } = e;
+    RiftError::Network {
+        message: format!("storage: {message}"),
+    }
+}
+
+// ── Storage keys ──
+
+const STORAGE_KEY_INSTALL_ID: &str = "rift.install_id";
+const STORAGE_KEY_USER_ID: &str = "rift.user_id";
+const STORAGE_KEY_USER_ID_SYNCED: &str = "rift.user_id_synced";
+
 // ── Config ──
 
 #[derive(uniffi::Record)]
@@ -100,12 +139,19 @@ pub struct GetLinkResult {
 #[derive(uniffi::Object)]
 pub struct RiftSdk {
     client: RiftClient,
+    storage: Arc<dyn RiftStorage>,
 }
 
 #[uniffi::export]
 impl RiftSdk {
+    /// Construct a new SDK instance.
+    ///
+    /// `storage` is a platform-provided implementation of `RiftStorage` that
+    /// persists `install_id`, `user_id`, and sync flags. The SDK spawns a
+    /// background task on construction to retry any pending user binding
+    /// left over from a previous session.
     #[uniffi::constructor]
-    pub fn new(config: RiftConfig) -> Self {
+    pub fn new(config: RiftConfig, storage: Arc<dyn RiftStorage>) -> Arc<Self> {
         let level = config.log_level.as_deref().unwrap_or("info");
         init_logging(level);
 
@@ -115,14 +161,164 @@ impl RiftSdk {
             "Tokio runtime check at construction"
         );
 
-        Self {
+        let sdk = Arc::new(Self {
             client: RiftClient::new(config.publishable_key, config.base_url),
+            storage,
+        });
+
+        // Retry any pending user binding from a previous session.
+        //
+        // Critically, we check storage synchronously *before* deciding to spawn
+        // so that a fresh tenant (no stored user_id) doesn't race with a
+        // subsequent `set_user_id` call. Only spawn the retry when we actually
+        // find a stored user_id with `synced != "true"`.
+        let needs_retry = matches!(
+            (
+                sdk.storage.get(STORAGE_KEY_USER_ID.to_string()).ok().flatten(),
+                sdk.storage
+                    .get(STORAGE_KEY_USER_ID_SYNCED.to_string())
+                    .ok()
+                    .flatten(),
+            ),
+            (Some(_), synced) if synced.as_deref() != Some("true")
+        );
+
+        if needs_retry && tokio::runtime::Handle::try_current().is_ok() {
+            let sdk_bg = sdk.clone();
+            tokio::spawn(async move {
+                if let Err(e) = sdk_bg.retry_pending_binding().await {
+                    tracing::debug!(error = ?e, "pending binding retry failed");
+                }
+            });
         }
+
+        sdk
+    }
+}
+
+impl RiftSdk {
+    /// Internal: read-or-generate the persistent install_id.
+    fn get_or_create_install_id(&self) -> Result<String, RiftError> {
+        if let Some(existing) = self
+            .storage
+            .get(STORAGE_KEY_INSTALL_ID.to_string())
+            .map_err(storage_err_to_rift)?
+        {
+            return Ok(existing);
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        self.storage
+            .set(STORAGE_KEY_INSTALL_ID.to_string(), id.clone())
+            .map_err(storage_err_to_rift)?;
+        Ok(id)
+    }
+
+    /// Internal: if there's a stored user_id that hasn't been synced to the
+    /// server, attempt the binding. Called on SDK construction.
+    async fn retry_pending_binding(&self) -> Result<(), RiftError> {
+        let user_id = self
+            .storage
+            .get(STORAGE_KEY_USER_ID.to_string())
+            .map_err(storage_err_to_rift)?;
+        let synced = self
+            .storage
+            .get(STORAGE_KEY_USER_ID_SYNCED.to_string())
+            .map_err(storage_err_to_rift)?;
+
+        let (Some(user_id), Some(s)) = (user_id, synced.as_deref()) else {
+            return Ok(());
+        };
+        if s == "true" {
+            return Ok(());
+        }
+
+        let install_id = self.get_or_create_install_id()?;
+        self.client.link_attribution(install_id, user_id).await?;
+        self.storage
+            .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
+            .map_err(storage_err_to_rift)?;
+        Ok(())
+    }
+}
+
+#[uniffi::export]
+impl RiftSdk {
+    /// Return the persistent install ID, generating and storing a new UUID
+    /// on first access. Stable across app launches, and (on iOS with Keychain)
+    /// stable across app reinstalls.
+    pub fn install_id(&self) -> Result<String, RiftError> {
+        self.get_or_create_install_id()
+    }
+
+    /// Clear the bound user ID. Call on user logout. The install_id itself is
+    /// preserved — only the user binding is cleared.
+    pub fn clear_user_id(&self) -> Result<(), RiftError> {
+        self.storage
+            .remove(STORAGE_KEY_USER_ID.to_string())
+            .map_err(storage_err_to_rift)?;
+        self.storage
+            .remove(STORAGE_KEY_USER_ID_SYNCED.to_string())
+            .map_err(storage_err_to_rift)?;
+        Ok(())
     }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
 impl RiftSdk {
+    /// Bind the current install to a user ID. Persists locally first, then
+    /// fires the server call. If the server call fails, the binding is kept
+    /// as "pending" and retried on the next SDK init. Idempotent — safe to
+    /// call on every app launch with the same user_id; a no-op if the user
+    /// is already bound and synced.
+    pub async fn set_user_id(&self, user_id: String) -> Result<(), RiftError> {
+        if user_id.trim().is_empty() {
+            return Err(RiftError::Api {
+                status: 400,
+                message: "user_id must not be empty".to_string(),
+            });
+        }
+
+        // If this user_id is already stored AND already synced, no-op.
+        let existing = self
+            .storage
+            .get(STORAGE_KEY_USER_ID.to_string())
+            .map_err(storage_err_to_rift)?;
+        let synced = self
+            .storage
+            .get(STORAGE_KEY_USER_ID_SYNCED.to_string())
+            .map_err(storage_err_to_rift)?;
+        if existing.as_deref() == Some(user_id.as_str()) && synced.as_deref() == Some("true") {
+            return Ok(());
+        }
+
+        // Persist the new user_id and mark unsynced so retry-on-launch will
+        // pick it up if the server call below fails.
+        self.storage
+            .set(STORAGE_KEY_USER_ID.to_string(), user_id.clone())
+            .map_err(storage_err_to_rift)?;
+        self.storage
+            .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "false".to_string())
+            .map_err(storage_err_to_rift)?;
+
+        // Resolve install_id (generate on first call).
+        let install_id = self.get_or_create_install_id()?;
+
+        // Fire the server call. On success, mark synced. On failure, leave
+        // the unsynced flag so the next SDK init retries.
+        match self.client.link_attribution(install_id, user_id).await {
+            Ok(_) => {
+                self.storage
+                    .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
+                    .map_err(storage_err_to_rift)?;
+                Ok(())
+            }
+            Err(e) => {
+                tracing::warn!(error = ?e, "link_attribution failed; will retry on next launch");
+                Err(e.into())
+            }
+        }
+    }
+
     pub async fn click(&self, link_id: String) -> Result<ClickResult, RiftError> {
         tracing::debug!(
             has_tokio_runtime = tokio::runtime::Handle::try_current().is_ok(),
@@ -181,4 +377,299 @@ pub fn parse_clipboard_link(text: String) -> Option<String> {
 #[uniffi::export]
 pub fn parse_referrer_link(referrer: String) -> Option<String> {
     rift_sdk_core::parser::parse_referrer_link(&referrer)
+}
+
+// ── Tests ──
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// In-memory test double for `RiftStorage`.
+    #[derive(Debug, Default)]
+    struct InMemoryStorage {
+        data: Mutex<HashMap<String, String>>,
+    }
+
+    impl RiftStorage for InMemoryStorage {
+        fn get(&self, key: String) -> Result<Option<String>, StorageError> {
+            Ok(self.data.lock().unwrap().get(&key).cloned())
+        }
+
+        fn set(&self, key: String, value: String) -> Result<(), StorageError> {
+            self.data.lock().unwrap().insert(key, value);
+            Ok(())
+        }
+
+        fn remove(&self, key: String) -> Result<(), StorageError> {
+            self.data.lock().unwrap().remove(&key);
+            Ok(())
+        }
+    }
+
+    /// Build a RiftSdk pointed at a wiremock server with an in-memory storage
+    /// and a shared handle to the storage so tests can inspect state.
+    fn make_sdk(base_url: String) -> (Arc<RiftSdk>, Arc<InMemoryStorage>) {
+        let storage: Arc<InMemoryStorage> = Arc::new(InMemoryStorage::default());
+        let storage_for_sdk: Arc<dyn RiftStorage> = storage.clone();
+        let sdk = RiftSdk::new(
+            RiftConfig {
+                publishable_key: "pk_live_test".to_string(),
+                base_url: Some(base_url),
+                log_level: Some("error".to_string()),
+            },
+            storage_for_sdk,
+        );
+        (sdk, storage)
+    }
+
+    // ── install_id ──
+
+    #[tokio::test]
+    async fn install_id_is_stable_across_calls() {
+        let server = MockServer::start().await;
+        let (sdk, _storage) = make_sdk(server.uri());
+
+        let id1 = sdk.install_id().unwrap();
+        let id2 = sdk.install_id().unwrap();
+        assert_eq!(id1, id2);
+    }
+
+    #[tokio::test]
+    async fn install_id_generates_valid_uuid() {
+        let server = MockServer::start().await;
+        let (sdk, _storage) = make_sdk(server.uri());
+
+        let id = sdk.install_id().unwrap();
+        assert!(uuid::Uuid::parse_str(&id).is_ok(), "expected a valid UUID");
+    }
+
+    #[tokio::test]
+    async fn install_id_persists_via_storage() {
+        let server = MockServer::start().await;
+        let (sdk, storage) = make_sdk(server.uri());
+
+        let id = sdk.install_id().unwrap();
+        assert_eq!(
+            storage.get(STORAGE_KEY_INSTALL_ID.to_string()).unwrap(),
+            Some(id)
+        );
+    }
+
+    // ── set_user_id ──
+
+    #[tokio::test]
+    async fn set_user_id_happy_path_marks_synced() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/v1/attribution/link"))
+            .and(header("Authorization", "Bearer pk_live_test"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
+            )
+            .mount(&server)
+            .await;
+
+        let (sdk, storage) = make_sdk(server.uri());
+
+        sdk.set_user_id("usr_abc".to_string()).await.unwrap();
+
+        assert_eq!(
+            storage.get(STORAGE_KEY_USER_ID.to_string()).unwrap(),
+            Some("usr_abc".to_string())
+        );
+        assert_eq!(
+            storage.get(STORAGE_KEY_USER_ID_SYNCED.to_string()).unwrap(),
+            Some("true".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn set_user_id_server_error_marks_unsynced() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/v1/attribution/link"))
+            .respond_with(
+                ResponseTemplate::new(500)
+                    .set_body_json(serde_json::json!({ "error": "db error" })),
+            )
+            .mount(&server)
+            .await;
+
+        let (sdk, storage) = make_sdk(server.uri());
+
+        let err = sdk.set_user_id("usr_xyz".to_string()).await;
+        assert!(err.is_err());
+
+        // user_id is still stored (so we can retry later), but synced flag is "false".
+        assert_eq!(
+            storage.get(STORAGE_KEY_USER_ID.to_string()).unwrap(),
+            Some("usr_xyz".to_string())
+        );
+        assert_eq!(
+            storage.get(STORAGE_KEY_USER_ID_SYNCED.to_string()).unwrap(),
+            Some("false".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn set_user_id_rejects_empty() {
+        let server = MockServer::start().await;
+        let (sdk, _storage) = make_sdk(server.uri());
+
+        let err = sdk.set_user_id("".to_string()).await;
+        assert!(err.is_err());
+    }
+
+    #[tokio::test]
+    async fn set_user_id_idempotent_noop_when_already_synced() {
+        let server = MockServer::start().await;
+        // Only one call should ever hit the server.
+        Mock::given(method("PUT"))
+            .and(path("/v1/attribution/link"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let (sdk, _storage) = make_sdk(server.uri());
+
+        sdk.set_user_id("usr_same".to_string()).await.unwrap();
+        sdk.set_user_id("usr_same".to_string()).await.unwrap();
+        // If the second call hit the server, wiremock's `expect(1)` would fail on drop.
+    }
+
+    #[tokio::test]
+    async fn clear_user_id_removes_both_keys() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/v1/attribution/link"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
+            )
+            .mount(&server)
+            .await;
+
+        let (sdk, storage) = make_sdk(server.uri());
+
+        sdk.set_user_id("usr_logout".to_string()).await.unwrap();
+        sdk.clear_user_id().unwrap();
+
+        assert_eq!(storage.get(STORAGE_KEY_USER_ID.to_string()).unwrap(), None);
+        assert_eq!(
+            storage.get(STORAGE_KEY_USER_ID_SYNCED.to_string()).unwrap(),
+            None
+        );
+        // install_id is preserved.
+        assert!(storage
+            .get(STORAGE_KEY_INSTALL_ID.to_string())
+            .unwrap()
+            .is_some());
+    }
+
+    // ── retry_pending_binding ──
+
+    #[tokio::test]
+    async fn retry_pending_binding_fires_when_unsynced() {
+        // Pre-seed storage with an unbound user_id, then construct the SDK.
+        // The constructor spots the unsynced state and spawns a retry task
+        // in the background. We poll storage briefly to confirm it lands.
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/v1/attribution/link"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let storage: Arc<InMemoryStorage> = Arc::new(InMemoryStorage::default());
+        storage
+            .set(
+                STORAGE_KEY_INSTALL_ID.to_string(),
+                "preseed-install".to_string(),
+            )
+            .unwrap();
+        storage
+            .set(STORAGE_KEY_USER_ID.to_string(), "usr_retry".to_string())
+            .unwrap();
+        storage
+            .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "false".to_string())
+            .unwrap();
+
+        let storage_for_sdk: Arc<dyn RiftStorage> = storage.clone();
+        let _sdk = RiftSdk::new(
+            RiftConfig {
+                publishable_key: "pk_live_test".to_string(),
+                base_url: Some(server.uri()),
+                log_level: Some("error".to_string()),
+            },
+            storage_for_sdk,
+        );
+
+        // Wait for the background retry task to complete. 500ms is plenty for
+        // a local wiremock roundtrip.
+        for _ in 0..50 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            if storage.get(STORAGE_KEY_USER_ID_SYNCED.to_string()).unwrap()
+                == Some("true".to_string())
+            {
+                return;
+            }
+        }
+        panic!("retry_pending_binding never marked synced=true within 500ms");
+    }
+
+    #[tokio::test]
+    async fn retry_pending_binding_noop_when_already_synced() {
+        // Server must never be called if the synced flag is true.
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/v1/attribution/link"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let storage: Arc<InMemoryStorage> = Arc::new(InMemoryStorage::default());
+        storage
+            .set(STORAGE_KEY_USER_ID.to_string(), "usr_ok".to_string())
+            .unwrap();
+        storage
+            .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
+            .unwrap();
+
+        let storage_for_sdk: Arc<dyn RiftStorage> = storage.clone();
+        let sdk = RiftSdk::new(
+            RiftConfig {
+                publishable_key: "pk_live_test".to_string(),
+                base_url: Some(server.uri()),
+                log_level: Some("error".to_string()),
+            },
+            storage_for_sdk,
+        );
+
+        sdk.retry_pending_binding().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn retry_pending_binding_noop_when_no_user_id() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/v1/attribution/link"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let (sdk, _storage) = make_sdk(server.uri());
+        sdk.retry_pending_binding().await.unwrap();
+    }
 }

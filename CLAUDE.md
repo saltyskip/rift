@@ -154,6 +154,22 @@ Rust library compiled to Swift/Kotlin via UniFFI. Three-crate workspace:
 - SDK owns its own models — no shared types with the server
 - All errors go through `RiftError` enum
 
+### User binding & persistence
+
+The SDK persists `install_id` and the current user binding across app launches via a `RiftStorage` foreign trait (`#[uniffi::export(with_foreign)]`). Platform-specific implementations:
+
+- **iOS** — `KeychainStorage.swift` uses Keychain with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. Persists across app reinstalls.
+- **Android** — `SharedPrefsStorage.kt` uses standard `SharedPreferences` (MODE_PRIVATE, no encryption — the values aren't secrets and the OS already sandboxes per-app). Wiped on uninstall.
+
+Hand-written wrapper files live alongside the generated UniFFI bindings:
+
+- iOS: `client/mobile/dist/ios/Sources/RiftSDK/KeychainStorage.swift` (committed; the build script only wipes the generated `rift_ffi.swift`, leaving hand-written files intact)
+- Android: `client/mobile/android-wrappers/ink/riftl/sdk/SharedPrefsStorage.kt` (committed; `build_android.sh` copies this into `dist/android/kotlin/src/` after generating bindings — because `dist/android/` is gitignored)
+
+The SDK's `set_user_id(user_id)` method persists the binding locally, calls `PUT /v1/attribution/link` on the server, and marks the row "synced" on success. If the network call fails, the row stays "unsynced" and is retried by a background task spawned on the next `RiftSdk::new` call. `clear_user_id()` removes the stored user (typically called on logout); the install_id is preserved.
+
+`PUT /v1/attribution/link` lives on the **SDK auth path** (`sdk_auth_gate`, pk_live_ bearer). The secret-key auth for this endpoint was vestigial — no shipped flow produces the `install_id` input from a customer backend.
+
 ### Building
 ```sh
 cd client/mobile

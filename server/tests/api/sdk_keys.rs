@@ -248,3 +248,233 @@ async fn attribution_report_without_key_returns_401() {
 
     assert_eq!(resp.status(), 401);
 }
+
+// ── Attribution Link Tests ──
+//
+// PUT /v1/attribution/link lives on the SDK-auth path (pk_live_) because
+// install_id is opaque and only lives in the mobile SDK. These tests verify
+// the auth move and preserve the existing behavior of the handler.
+
+async fn report_attribution_for_test(
+    app: &common::TestApp,
+    sdk_key: &str,
+    link_id: &str,
+    install_id: &str,
+) {
+    let resp = app
+        .client
+        .post(app.url("/v1/attribution/report"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "link_id": link_id,
+            "install_id": install_id,
+            "app_version": "1.0.0"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+}
+
+#[tokio::test]
+async fn attribution_link_binds_user_with_sdk_key() {
+    let app = common::spawn_app().await;
+    let (api_key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    // Create a link and report an attribution we can later bind.
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&serde_json::json!({
+            "custom_id": "bind-me",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+    report_attribution_for_test(&app, &sdk_key, "bind-me", "install-abc").await;
+
+    // Bind the install to a user with the SDK key.
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/link"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "install-abc",
+            "user_id": "usr_123"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["success"], true);
+}
+
+#[tokio::test]
+async fn attribution_link_is_idempotent_with_sdk_key() {
+    let app = common::spawn_app().await;
+    let (api_key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&serde_json::json!({
+            "custom_id": "idem",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+    report_attribution_for_test(&app, &sdk_key, "idem", "install-idem").await;
+
+    // First bind.
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/link"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "install-idem",
+            "user_id": "usr_same"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Second bind with the same pair — still succeeds.
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/link"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "install-idem",
+            "user_id": "usr_same"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["success"], true);
+}
+
+#[tokio::test]
+async fn attribution_link_rejects_rebind_to_different_user() {
+    let app = common::spawn_app().await;
+    let (api_key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&serde_json::json!({
+            "custom_id": "rebind",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+    report_attribution_for_test(&app, &sdk_key, "rebind", "install-rebind").await;
+
+    // First bind to user A.
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/link"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "install-rebind",
+            "user_id": "usr_a"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Attempt to rebind to user B — rejected as not found (the underlying
+    // repo update filter doesn't match because user_id is already set).
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/link"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "install-rebind",
+            "user_id": "usr_b"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn attribution_link_returns_404_for_missing_install() {
+    let app = common::spawn_app().await;
+    let (_api_key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/link"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "does-not-exist",
+            "user_id": "usr_whatever"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn attribution_link_rejects_secret_key() {
+    // The route moved from auth_gate to sdk_auth_gate. Calling with a
+    // secret key should now return 401 — sdk_auth_gate only accepts pk_live_.
+    let app = common::spawn_app().await;
+    let (api_key, _tenant_id) = common::seed_api_key(&app).await;
+
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/link"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&serde_json::json!({
+            "install_id": "any",
+            "user_id": "usr_any"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 401);
+}
+
+#[tokio::test]
+async fn attribution_link_rejects_no_auth() {
+    let app = common::spawn_app().await;
+
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/link"))
+        .json(&serde_json::json!({
+            "install_id": "any",
+            "user_id": "usr_any"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 401);
+}
