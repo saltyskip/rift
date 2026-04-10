@@ -21,7 +21,7 @@ server/          Rust + Axum API server (MongoDB, Sentry)
 client/mobile/   Swift/Kotlin mobile SDK via UniFFI
 sdk/web/         TypeScript web SDK (ESM/CJS/IIFE)
 marketing/       Next.js documentation and marketing site
-worker/          Cloudflare Worker for custom domain routing
+worker/          Cloudflare Worker for custom domain routing (legacy, optional)
 worker-slack/    Cloudflare Worker for Slack webhook proxy
 ```
 
@@ -34,7 +34,7 @@ The server separates **domain logic** (`services/`) from **transport layers** (`
 - Rust 1.75+
 - Node.js 20+ (for web SDK builds)
 - MongoDB (local or Atlas)
-- Optional: Cloudflare account (for custom domains)
+- Optional: Custom domain with DNS access (any provider)
 
 ### Pick a setup path
 
@@ -50,11 +50,11 @@ rift doctor
 ```
 
 The CLI handles account setup, stores your secret key locally, helps you verify your primary
-and alternate domains, and tests your Worker setup.
+and alternate domains, and tests connectivity.
 
 #### Manual path
 
-Best if you want to drive the API and Cloudflare steps yourself.
+Best if you want to drive the API and DNS steps yourself.
 
 ### Setup
 
@@ -89,8 +89,8 @@ Follow the custom domain guide in `marketing/src/app/docs/domains/page.tsx` or t
 `https://riftl.ink/docs/domains`. You will:
 
 - create a primary branded domain
+- add a CNAME pointing to the Rift server
 - verify ownership with a TXT record
-- add the Cloudflare Worker
 - optionally add an alternate domain for more reliable Open in App behavior
 
 ### Create a publishable key

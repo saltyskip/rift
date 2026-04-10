@@ -121,12 +121,10 @@ enum AppsCommand {
 
 #[derive(Subcommand)]
 enum DomainsCommand {
-    /// Add and verify a custom domain with guided Cloudflare setup
+    /// Add and verify a custom domain with guided DNS setup
     Setup {
         #[arg(long)]
         domain: Option<String>,
-        #[arg(long)]
-        provider: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -194,11 +192,9 @@ pub async fn run() -> Result<(), CliError> {
             }
         },
         Command::Domains(cmd) => match cmd {
-            DomainsCommand::Setup {
-                domain,
-                provider,
-                json,
-            } => commands::setup_domain::run(domain, provider, json).await,
+            DomainsCommand::Setup { domain, json } => {
+                commands::setup_domain::run(domain, json).await
+            }
         },
         Command::Completions { shell } => commands::completions::run(shell),
     }

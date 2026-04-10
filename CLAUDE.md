@@ -44,7 +44,7 @@ Each tenant registers two custom domains: a **primary** domain for landing pages
 - **Primary** (`go.example.com`) — serves landing pages, resolves links, records clicks
 - **Alternate** (`open.example.com`) — ONLY handles the "Open in App" tap. No landing pages, no click recording, no analytics. If the app is installed, iOS intercepts the tap. If not, Rift redirects to the store.
 
-Both domains go through the same Cloudflare worker, same AASA serving, same verification flow.
+Both domains use the same AASA serving and verification flow. Users point a CNAME (or A+AAAA records) at the Fly app, and TLS certificates are auto-provisioned via Let's Encrypt.
 
 ## Adding a New Domain
 

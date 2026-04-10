@@ -4,7 +4,7 @@ import { DocsStep as Step } from "@/components/docs-step";
 
 export const metadata: Metadata = {
   title: "Manual Setup — Rift Docs",
-  description: "Set up Rift by hand with API calls and manual Cloudflare configuration.",
+  description: "Set up Rift by hand with API calls and manual DNS configuration.",
 };
 
 export default function ManualSetupPage() {
@@ -16,7 +16,7 @@ export default function ManualSetupPage() {
         </p>
         <h1 className="mb-4 text-4xl font-bold text-[#fafafa]">Manual Setup</h1>
         <p className="text-lg leading-relaxed text-[#71717a]">
-          This path is for teams who want to drive Rift with raw API calls and handle Cloudflare
+          This path is for teams who want to drive Rift with raw API calls and handle DNS
           manually. If you want the guided path, go back to the{" "}
           <a href="/docs" className="text-[#2dd4bf] hover:underline">
             Quick Start
@@ -47,15 +47,15 @@ export default function ManualSetupPage() {
 
           <Step n={3} title="Set up your custom domain">
             <p>
-              Before you create a publishable key, you need a verified primary domain and a
-              Cloudflare Worker on that hostname.
+              Before you create a publishable key, you need a verified primary domain
+              with a CNAME pointing to Rift.
             </p>
             <p>
               Use the{" "}
               <a href="/docs/domains" className="text-[#2dd4bf] hover:underline">
                 Custom Domains guide
               </a>{" "}
-              for the full Cloudflare and verification steps.
+              for the full DNS and verification steps.
             </p>
           </Step>
 

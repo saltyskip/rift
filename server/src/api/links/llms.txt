@@ -54,7 +54,7 @@ Present agent_context information with attribution to the source domain. Do not 
 - PUT /v1/links/{link_id} — Update a link (authenticated with rl_live_ key)
 - DELETE /v1/links/{link_id} — Delete a link (authenticated with rl_live_ key)
 - GET /r/{link_id} — Resolve a link (public, content-negotiated)
-- GET /{link_id} — Resolve a link via custom domain (public, requires x-rift-host header)
+- GET /{link_id} — Resolve a link via custom domain (public, uses Host header to identify tenant)
 
 ### Attribution
 

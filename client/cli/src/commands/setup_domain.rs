@@ -11,13 +11,8 @@ use rift_client_core::error::RiftClientError;
 
 const DOMAIN_DOCS_URL: &str = "https://riftl.ink/docs/domains";
 
-pub async fn run(
-    domain: Option<String>,
-    provider: Option<String>,
-    json: bool,
-) -> Result<(), CliError> {
+pub async fn run(domain: Option<String>, json: bool) -> Result<(), CliError> {
     let client = context::authenticated_client()?;
-    let _ = provider; // Provider no longer gated — any DNS provider works.
 
     let setup_mode = choose_setup_mode()?;
     let root_domain = ask_root_domain(domain)?;

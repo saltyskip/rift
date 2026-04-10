@@ -41,7 +41,7 @@ export default function QuickStartPage() {
 
         <Callout eyebrow="Advanced" title="Doing this manually?">
           <p>
-            If you prefer raw API calls and manual Cloudflare setup, use the{" "}
+            If you prefer raw API calls and manual DNS setup, use the{" "}
             <a href="/docs/manual-setup" className="text-[#2dd4bf] hover:underline">
               manual setup guide
             </a>
@@ -69,12 +69,12 @@ export default function QuickStartPage() {
 
           <Step n={2} title="Set up your branded domain">
             <p>
-              Rift then guides you through your primary branded domain, tests the Worker setup, and
+              Rift guides you through your primary branded domain, verifies DNS, and
               can continue straight into your alternate domain for stronger Open in App behavior.
             </p>
             <CodeBlock lang="bash">{`rift domains setup`}</CodeBlock>
             <p>
-              If you want the Cloudflare details behind this step, read{" "}
+              If you want the DNS details behind this step, read{" "}
               <a href="/docs/domains" className="text-[#2dd4bf] hover:underline">
                 Custom Domains
               </a>
