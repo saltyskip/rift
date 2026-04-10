@@ -148,6 +148,11 @@ rift links test LINK_ID`}</CodeBlock>
                 desc: "Integrate deep linking into your Android app.",
                 href: "/docs/android-sdk",
               },
+              {
+                title: "Track Conversions",
+                desc: "Measure signups, purchases, and deposits with backend webhooks.",
+                href: "/docs/conversions",
+              },
             ].map((item) => (
               <a
                 key={item.title}

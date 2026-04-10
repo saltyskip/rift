@@ -5,7 +5,8 @@ import { DocsCallout as Callout } from "@/components/docs-callout";
 
 export const metadata: Metadata = {
   title: "Webhooks — Rift Docs",
-  description: "Receive real-time notifications for click and attribution events via HTTPS webhooks.",
+  description:
+    "Receive real-time notifications for click, attribution, and conversion events via HTTPS webhooks.",
 };
 
 export default function WebhooksPage() {
@@ -15,8 +16,8 @@ export default function WebhooksPage() {
         <p className="text-[13px] font-medium text-[#2dd4bf] uppercase tracking-widest mb-3">Tracking</p>
         <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Webhooks</h1>
         <p className="text-lg text-[#71717a] leading-relaxed">
-          Receive real-time notifications when users click your links or when installs are attributed.
-          Push events to Slack, your CRM, or any analytics pipeline.
+          Receive real-time notifications when users click your links, when installs are attributed,
+          and when conversions fire. Push events to Slack, your CRM, or any analytics pipeline.
         </p>
       </div>
 
@@ -25,19 +26,24 @@ export default function WebhooksPage() {
           <h2 className="text-2xl font-bold text-[#fafafa]">Setup</h2>
 
           <Step n={1} title="Register a webhook">
-            <p>Provide an HTTPS URL and the event types you want to receive:</p>
+            <p>
+              Provide an HTTPS URL and the event types you want to receive.
+              Supported events: <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">click</code>,{" "}
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">attribution</code>, and{" "}
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">conversion</code>.
+            </p>
             <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/webhooks \\
   -H "Authorization: Bearer rl_live_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "url": "https://yourserver.com/rift-webhook",
-    "events": ["click", "attribution"]
+    "events": ["click", "attribution", "conversion"]
   }'`}</CodeBlock>
             <p>Response:</p>
             <CodeBlock lang="json">{`{
   "id": "6650a1b2c3d4e5f6a7b8c9d0",
   "url": "https://yourserver.com/rift-webhook",
-  "events": ["click", "attribution"],
+  "events": ["click", "attribution", "conversion"],
   "secret": "a1b2c3d4...64-char-hex-string",
   "created_at": "2026-03-24T12:00:00Z"
 }`}</CodeBlock>
@@ -97,6 +103,41 @@ export default function WebhooksPage() {
   }
 }`}</CodeBlock>
           </Step>
+
+          <Step n={6} title="Conversion event">
+            <p>
+              Sent when a conversion event is ingested via a{" "}
+              <a href="/docs/conversions" className="text-[#2dd4bf] hover:underline">
+                source
+              </a>
+              . Includes a stable{" "}
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">
+                event_id
+              </code>{" "}
+              for customer-side dedup on retry — use it as the idempotency key in your handler.
+            </p>
+            <CodeBlock lang="json">{`{
+  "event": "conversion",
+  "timestamp": "2026-03-24T15:10:00Z",
+  "data": {
+    "event_id": "66a1b2c3d4e5f6a7b8c9d0e1",
+    "tenant_id": "6650a1b2c3d4e5f6a7b8c9d0",
+    "source_id": "66a1b2c3d4e5f6a7b8c9d0e2",
+    "link_id": "summer-sale",
+    "conversion_type": "deposit",
+    "user_id": "usr_abc123",
+    "amount_cents": 10000,
+    "currency": "usd",
+    "metadata": { "tx_hash": "0xabc..." },
+    "timestamp": "2026-03-24T15:10:00Z"
+  }
+}`}</CodeBlock>
+            <Callout type="info">
+              <code>amount_cents</code> and <code>currency</code> are only present for
+              revenue-bearing conversion types. Non-revenue events (e.g.{" "}
+              <code>signup</code>, <code>tutorial_complete</code>) omit them.
+            </Callout>
+          </Step>
         </section>
 
         <div className="gradient-line" />
@@ -104,7 +145,7 @@ export default function WebhooksPage() {
         <section className="space-y-6">
           <h2 className="text-2xl font-bold text-[#fafafa]">Verifying signatures</h2>
 
-          <Step n={6} title="Validate the HMAC signature">
+          <Step n={7} title="Validate the HMAC signature">
             <p>
               Every webhook request includes an{" "}
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">X-Rift-Signature</code>{" "}
@@ -148,6 +189,12 @@ function verifyWebhook(body, signature, secret) {
             <li>Delivery timeout is <strong className="text-[#fafafa]">10 seconds</strong> per attempt.</li>
             <li>Delivery is fire-and-forget — it does not block the API response to the original request.</li>
           </ul>
+          <Callout type="info">
+            Webhook delivery is best-effort. For zero-loss reconciliation, pull from{" "}
+            <code>GET /v1/links/{"{link_id}"}/stats</code> on a schedule — events are the durable
+            source of truth inside Rift&apos;s store. The webhook is a push notification for
+            convenience, not the canonical data path.
+          </Callout>
         </section>
       </div>
     </div>

@@ -271,10 +271,7 @@ impl LinksRepository for MockLinksRepo {
         let attrs = self.attributions.lock().unwrap();
         Ok(attrs
             .iter()
-            .find(|a| {
-                &a.tenant_id == tenant_id
-                    && a.user_id.as_deref() == Some(user_id)
-            })
+            .find(|a| &a.tenant_id == tenant_id && a.user_id.as_deref() == Some(user_id))
             .map(|a| RealAttribution {
                 id: ObjectId::new(),
                 tenant_id: a.tenant_id,

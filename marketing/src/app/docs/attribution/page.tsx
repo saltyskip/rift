@@ -391,14 +391,22 @@ if (linkId != null) {
           <h2 className="text-2xl font-bold text-[#fafafa]">Analytics</h2>
 
           <Step n={1} title="Link stats">
-            <p>Get aggregate click and install counts for a link:</p>
+            <p>
+              Get aggregate click and install counts for a link. The response also
+              includes a <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">conversions</code>{" "}
+              array populated by <a href="/docs/conversions" className="text-[#2dd4bf] hover:underline">conversion tracking</a>:
+            </p>
             <CodeBlock>{`curl https://api.riftl.ink/v1/links/summer-sale/stats \\
   -H "Authorization: Bearer rl_live_YOUR_KEY"`}</CodeBlock>
             <CodeBlock lang="json">{`{
   "link_id": "summer-sale",
   "click_count": 1234,
   "install_count": 89,
-  "conversion_rate": 0.072
+  "conversion_rate": 0.072,
+  "conversions": [
+    { "type": "deposit", "count": 19, "sum_cents": 247000, "currency": "usd" },
+    { "type": "signup", "count": 42 }
+  ]
 }`}</CodeBlock>
           </Step>
 
@@ -415,6 +423,22 @@ if (linkId != null) {
   ]
 }`}</CodeBlock>
           </Step>
+        </section>
+
+        <div className="gradient-line" />
+
+        {/* Next step */}
+        <section className="space-y-4">
+          <h2 className="text-2xl font-bold text-[#fafafa]">Next: track conversions</h2>
+          <p className="text-[15px] leading-relaxed text-[#a1a1aa]">
+            Click and install attribution tell you who came from which link. To measure what they
+            do next — signups, purchases, deposits — use{" "}
+            <a href="/docs/conversions" className="text-[#2dd4bf] hover:underline">
+              Conversions
+            </a>
+            . Your backend POSTs events to a webhook source and Rift attributes each one back to
+            the originating link, with revenue rolled up in the link stats endpoint.
+          </p>
         </section>
       </div>
     </div>
