@@ -79,6 +79,15 @@ pub trait LinksRepository: Send + Sync {
     ) -> Result<bool, String>;
 
     async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
+
+    /// Find the Attribution record for a given `user_id` within a tenant. Used
+    /// by the conversion ingestion path to resolve `user_id → link_id` so events
+    /// can be attributed back to the link that drove the install.
+    async fn find_attribution_by_user(
+        &self,
+        tenant_id: &ObjectId,
+        user_id: &str,
+    ) -> Result<Option<Attribution>, String>;
 }
 
 // ── Repository ──
@@ -140,6 +149,11 @@ impl LinksRepo {
             attributions,
             doc! { "tenant_id": 1, "link_id": 1 },
             "attr_tenant_link"
+        );
+        ensure_index!(
+            attributions,
+            doc! { "tenant_id": 1, "user_id": 1 },
+            "attr_tenant_user"
         );
 
         LinksRepo {
@@ -455,6 +469,17 @@ impl LinksRepository for LinksRepo {
     async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
         self.attributions
             .count_documents(doc! { "tenant_id": tenant_id, "link_id": link_id })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn find_attribution_by_user(
+        &self,
+        tenant_id: &ObjectId,
+        user_id: &str,
+    ) -> Result<Option<Attribution>, String> {
+        self.attributions
+            .find_one(doc! { "tenant_id": tenant_id, "user_id": user_id })
             .await
             .map_err(|e| e.to_string())
     }

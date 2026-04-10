@@ -36,6 +36,7 @@ const NAV = [
     group: "Tracking",
     items: [
       { label: "Attribution", href: "/docs/attribution" },
+      { label: "Conversions", href: "/docs/conversions" },
       { label: "Webhooks", href: "/docs/webhooks" },
     ],
   },

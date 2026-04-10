@@ -9,6 +9,8 @@ use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::SecretKeysService;
 use crate::services::auth::usage::repo::UsageRepository;
 use crate::services::auth::users::service::UsersService;
+use crate::services::conversions::repo::ConversionsRepository;
+use crate::services::conversions::service::ConversionsService;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::repo::LinksRepository;
 use crate::services::links::service::LinksService;
@@ -29,7 +31,9 @@ pub struct AppState {
     pub webhooks_repo: Option<Arc<dyn WebhooksRepository>>,
     pub webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
     pub sdk_keys_repo: Option<Arc<dyn SdkKeysRepository>>,
+    pub conversions_repo: Option<Arc<dyn ConversionsRepository>>,
     pub links_service: Option<Arc<LinksService>>,
     pub users_service: Option<Arc<UsersService>>,
     pub secret_keys_service: Option<Arc<SecretKeysService>>,
+    pub conversions_service: Option<Arc<ConversionsService>>,
 }

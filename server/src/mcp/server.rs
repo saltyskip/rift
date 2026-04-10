@@ -31,12 +31,16 @@ async fn extract_api_key_header(mut req: Request, next: Next) -> Response {
 use super::tools::*;
 use crate::services::auth::keys;
 use crate::services::auth::secret_keys::repo::SecretKeysRepository;
+use crate::services::conversions::models::SourceType;
+use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::links::models::{AgentContext, CreateLinkRequest, UpdateLinkRequest};
 use crate::services::links::service::LinksService;
 
 pub struct RiftMcp {
     service: Arc<LinksService>,
     secret_keys_repo: Arc<dyn SecretKeysRepository>,
+    conversions_repo: Option<Arc<dyn ConversionsRepository>>,
+    public_url: String,
     tenant_id: OnceLock<ObjectId>,
     tool_router: ToolRouter<Self>,
 }
@@ -45,10 +49,14 @@ impl RiftMcp {
     pub fn new(
         service: Arc<LinksService>,
         secret_keys_repo: Arc<dyn SecretKeysRepository>,
+        conversions_repo: Option<Arc<dyn ConversionsRepository>>,
+        public_url: String,
     ) -> Self {
         Self {
             service,
             secret_keys_repo,
+            conversions_repo,
+            public_url,
             tenant_id: OnceLock::new(),
             tool_router: Self::tool_router(),
         }
@@ -59,6 +67,10 @@ impl RiftMcp {
             .get()
             .copied()
             .ok_or_else(|| "Not authenticated".to_string())
+    }
+
+    fn webhook_url_for(&self, url_token: &str) -> String {
+        format!("{}/w/{}", self.public_url.trim_end_matches('/'), url_token)
     }
 }
 
@@ -176,6 +188,86 @@ impl RiftMcp {
 
         Ok(format!("Deleted link: {}", input.link_id))
     }
+
+    #[tool(
+        description = "Create a new conversion tracking source. Returns a webhook URL that your backend POSTs conversion events to. v1 supports source_type \"custom\" only — point your own backend at the returned URL. Conversions are attributed to links via the user_id field in the event payload."
+    )]
+    async fn create_source(
+        &self,
+        Parameters(input): Parameters<CreateSourceInput>,
+    ) -> Result<String, String> {
+        let tenant_id = self.tenant_id()?;
+        let repo = self
+            .conversions_repo
+            .as_ref()
+            .ok_or_else(|| "Conversions not configured".to_string())?;
+
+        let name = input.name.trim().to_string();
+        if name.is_empty() || name.len() > 64 {
+            return Err("Name must be 1-64 characters".to_string());
+        }
+
+        let source_type = match input.source_type.to_lowercase().as_str() {
+            "custom" => SourceType::Custom,
+            other => return Err(format!("Unsupported source_type: {other}")),
+        };
+
+        let source = repo
+            .create_source(tenant_id, name, source_type)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let webhook_url = self.webhook_url_for(&source.url_token);
+        Ok(format!(
+            "Created source: {}\nID: {}\nWebhook URL: {}",
+            source.name,
+            source.id.to_hex(),
+            webhook_url
+        ))
+    }
+
+    #[tool(
+        description = "List all conversion tracking sources for your tenant. Auto-creates a 'default' custom source if none exist, so the first call always returns at least one usable webhook URL."
+    )]
+    async fn list_sources(
+        &self,
+        Parameters(_input): Parameters<ListSourcesInput>,
+    ) -> Result<String, String> {
+        let tenant_id = self.tenant_id()?;
+        let repo = self
+            .conversions_repo
+            .as_ref()
+            .ok_or_else(|| "Conversions not configured".to_string())?;
+
+        let mut sources = repo
+            .list_sources(&tenant_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if sources.is_empty() {
+            let default = repo
+                .get_or_create_default_custom_source(tenant_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            sources.push(default);
+        }
+
+        let summary: Vec<_> = sources
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "id": s.id.to_hex(),
+                    "name": s.name,
+                    "source_type": s.source_type,
+                    "webhook_url": self.webhook_url_for(&s.url_token),
+                    "created_at": s.created_at.try_to_rfc3339_string().unwrap_or_default(),
+                })
+            })
+            .collect();
+
+        serde_json::to_string_pretty(&serde_json::json!({ "sources": summary }))
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[tool_handler]
@@ -244,12 +336,16 @@ impl ServerHandler for RiftMcp {
 pub fn mcp_router(
     links_service: Arc<LinksService>,
     secret_keys_repo: Arc<dyn SecretKeysRepository>,
+    conversions_repo: Option<Arc<dyn ConversionsRepository>>,
+    public_url: String,
 ) -> axum::Router {
     let service = StreamableHttpService::new(
         move || {
             Ok(RiftMcp::new(
                 links_service.clone(),
                 secret_keys_repo.clone(),
+                conversions_repo.clone(),
+                public_url.clone(),
             ))
         },
         Arc::new(LocalSessionManager::default()),

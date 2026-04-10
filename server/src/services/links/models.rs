@@ -334,6 +334,10 @@ pub struct LinkStatsResponse {
     pub install_count: u64,
     #[schema(example = 21.97)]
     pub conversion_rate: f64,
+    /// Aggregated conversion counts and sums per type. Empty when conversion
+    /// tracking is not configured or no events have been recorded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conversions: Vec<crate::services::conversions::models::ConversionDetail>,
 }
 
 /// Trust envelope included in every resolved link response.

@@ -27,6 +27,8 @@ use crate::services::auth::secret_keys::repo::SecretKeysRepo;
 use crate::services::auth::tenants::repo::TenantsRepo;
 use crate::services::auth::usage::repo::UsageRepo;
 use crate::services::auth::users::repo::UsersRepo;
+use crate::services::conversions::repo::ConversionsRepo;
+use crate::services::conversions::service::ConversionsService;
 use crate::services::domains::repo::DomainsRepo;
 use crate::services::links::repo::LinksRepo;
 use crate::services::webhooks::dispatcher::RiftWebhookDispatcher;
@@ -158,11 +160,12 @@ async fn run_server(cfg: Config) {
         apps_repo,
         webhooks_repo,
         sdk_keys_repo,
+        conversions_repo,
     ) = if cfg.mongo_uri.is_empty() {
         tracing::warn!(
-            "MONGO_URI not set — auth, links, domains, apps, webhooks, and sdk_keys disabled"
+            "MONGO_URI not set — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
         );
-        (None, None, None, None, None, None, None, None, None)
+        (None, None, None, None, None, None, None, None, None, None)
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
             Some(database) => {
@@ -187,6 +190,9 @@ async fn run_server(cfg: Config) {
                 let sdk_keys: Arc<
                     dyn crate::services::auth::publishable_keys::repo::SdkKeysRepository,
                 > = Arc::new(SdkKeysRepo::new(&database).await);
+                let conversions: Arc<
+                    dyn crate::services::conversions::repo::ConversionsRepository,
+                > = Arc::new(ConversionsRepo::new(&database).await);
                 (
                     Some(tenants),
                     Some(users),
@@ -197,13 +203,14 @@ async fn run_server(cfg: Config) {
                     Some(apps),
                     Some(webhooks),
                     Some(sdk_keys),
+                    Some(conversions),
                 )
             }
             None => {
                 tracing::warn!(
-                    "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, and sdk_keys disabled"
+                    "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
                 );
-                (None, None, None, None, None, None, None, None, None)
+                (None, None, None, None, None, None, None, None, None, None)
             }
         }
     };
@@ -276,6 +283,15 @@ async fn run_server(cfg: Config) {
         _ => None,
     };
 
+    let conversions_service = match (&conversions_repo, &links_repo) {
+        (Some(c), Some(l)) => Some(Arc::new(ConversionsService::new(
+            c.clone(),
+            l.clone(),
+            webhook_dispatcher.clone(),
+        ))),
+        _ => None,
+    };
+
     let state = Arc::new(AppState {
         secret_keys_repo,
         usage_repo,
@@ -288,9 +304,11 @@ async fn run_server(cfg: Config) {
         webhooks_repo,
         webhook_dispatcher,
         sdk_keys_repo,
+        conversions_repo,
         links_service,
         users_service,
         secret_keys_service,
+        conversions_service,
     });
 
     // ── Build app: API + optional MCP on same port ──
@@ -307,7 +325,12 @@ async fn run_server(cfg: Config) {
     {
         if let (Some(links_svc), Some(sk_repo)) = (&state.links_service, &state.secret_keys_repo) {
             tracing::info!("MCP enabled at /mcp");
-            app = app.merge(mcp::mcp_router(links_svc.clone(), sk_repo.clone()));
+            app = app.merge(mcp::mcp_router(
+                links_svc.clone(),
+                sk_repo.clone(),
+                state.conversions_repo.clone(),
+                state.config.public_url.clone(),
+            ));
         }
     }
 
