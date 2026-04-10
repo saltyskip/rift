@@ -1,5 +1,6 @@
 pub mod apps;
 pub mod auth;
+pub mod conversions;
 pub mod domains;
 pub mod health;
 pub mod links;
@@ -64,6 +65,12 @@ use crate::app::AppState;
         webhooks::routes::list_webhooks,
         webhooks::routes::delete_webhook,
         webhooks::routes::patch_webhook,
+        // Conversions — sources and webhook ingestion
+        // (receive_webhook is intentionally excluded — opaque parser-specific body)
+        conversions::routes::create_source,
+        conversions::routes::list_sources,
+        conversions::routes::get_source,
+        conversions::routes::delete_source,
         // System
         health::routes::health,
     ),
@@ -112,6 +119,12 @@ use crate::app::AppState;
         crate::services::webhooks::models::ListWebhooksResponse,
         crate::services::webhooks::models::UpdateWebhookRequest,
         crate::services::webhooks::models::WebhookEventType,
+        crate::services::conversions::models::SourceType,
+        crate::services::conversions::models::CreateSourceRequest,
+        crate::services::conversions::models::CreateSourceResponse,
+        crate::services::conversions::models::SourceDetail,
+        crate::services::conversions::models::ListSourcesResponse,
+        crate::services::conversions::models::ConversionDetail,
     )),
     security(
         ("api_key" = []),
@@ -126,7 +139,8 @@ use crate::app::AppState;
         (name = "Apps", description = "App configuration and association files (AASA / Asset Links)"),
         (name = "Links", description = "Create, list, update, delete, and resolve deep links"),
         (name = "Attribution", description = "Click tracking, install reporting, and timeseries analytics"),
-        (name = "Webhooks", description = "Real-time event notifications for clicks and attributions"),
+        (name = "Webhooks", description = "Real-time event notifications for clicks, attributions, and conversions"),
+        (name = "Conversions", description = "Backend-only conversion tracking via webhook sources"),
         (name = "System", description = "Health checks and operational endpoints"),
     )
 )]
@@ -158,7 +172,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                     { "name": "Authentication", "tags": ["Signup", "Secret Keys", "Publishable Keys", "Team Members"] },
                     { "name": "Configuration", "tags": ["Domains", "Apps"] },
                     { "name": "Links", "tags": ["Links", "Attribution"] },
-                    { "name": "Integrations", "tags": ["Webhooks"] },
+                    { "name": "Integrations", "tags": ["Webhooks", "Conversions"] },
                     { "name": "System", "tags": ["System"] },
                 ]),
             )
@@ -178,6 +192,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(domains::router(state.clone()))
         .merge(apps::router(state.clone()))
         .merge(webhooks::router(state.clone()))
+        .merge(conversions::router(state.clone()))
         .merge(openapi_json)
         .merge(sdk)
 }

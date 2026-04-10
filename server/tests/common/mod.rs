@@ -119,6 +119,8 @@ pub async fn spawn_app() -> TestApp {
                 users_repo.clone() as Arc<dyn UsersRepository>,
             ),
         )),
+        conversions_repo: None,
+        conversions_service: None,
     });
 
     let app = rift::api::router(state.clone())

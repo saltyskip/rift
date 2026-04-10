@@ -9,6 +9,9 @@ pub enum WebhookEventType {
     Click,
     /// Fired when a mobile SDK reports a post-install attribution.
     Attribution,
+    /// Fired when a conversion event is ingested via a source webhook.
+    /// Carries a stable `event_id` so customer handlers can dedup on retries.
+    Conversion,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

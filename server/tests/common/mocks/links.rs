@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use rift::services::links::models::{
-    ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus, TimeseriesDataPoint,
+    Attribution as RealAttribution, ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus,
+    TimeseriesDataPoint,
 };
 use rift::services::links::repo::LinksRepository;
 
@@ -260,5 +261,28 @@ impl LinksRepository for MockLinksRepo {
             .iter()
             .filter(|a| &a.tenant_id == tenant_id && a.link_id == link_id)
             .count() as u64)
+    }
+
+    async fn find_attribution_by_user(
+        &self,
+        tenant_id: &ObjectId,
+        user_id: &str,
+    ) -> Result<Option<RealAttribution>, String> {
+        let attrs = self.attributions.lock().unwrap();
+        Ok(attrs
+            .iter()
+            .find(|a| {
+                &a.tenant_id == tenant_id
+                    && a.user_id.as_deref() == Some(user_id)
+            })
+            .map(|a| RealAttribution {
+                id: ObjectId::new(),
+                tenant_id: a.tenant_id,
+                link_id: a.link_id.clone(),
+                install_id: a.install_id.clone(),
+                user_id: a.user_id.clone(),
+                app_version: "test".to_string(),
+                attributed_at: DateTime::now(),
+            }))
     }
 }

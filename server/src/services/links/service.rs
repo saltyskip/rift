@@ -685,6 +685,14 @@ mod tests {
         ) -> Result<u64, String> {
             Ok(0)
         }
+
+        async fn find_attribution_by_user(
+            &self,
+            _tenant_id: &ObjectId,
+            _user_id: &str,
+        ) -> Result<Option<Attribution>, String> {
+            Ok(None)
+        }
     }
 
     // ── Mock DomainsRepository ──

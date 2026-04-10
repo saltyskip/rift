@@ -298,11 +298,25 @@ pub async fn get_link_stats(
         0.0
     };
 
+    // Conversions are optional — if the repo isn't configured (no DB) or the
+    // aggregation fails, return an empty list rather than failing the whole
+    // stats response. The click/install counters above are the load-bearing
+    // fields; conversions are additive.
+    let conversions = if let Some(conv_repo) = &state.conversions_repo {
+        conv_repo
+            .get_conversion_counts_for_link(&tenant.0, &link_id)
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     Json(json!({
         "link_id": link_id,
         "click_count": click_count,
         "install_count": install_count,
         "conversion_rate": conversion_rate,
+        "conversions": conversions,
     }))
     .into_response()
 }

@@ -4,10 +4,11 @@ use hmac::{Hmac, Mac};
 use serde::Serialize;
 use sha2::Sha256;
 
-use super::models::WebhookEventType;
+use super::models::{Webhook, WebhookEventType};
 use super::repo::WebhooksRepository;
 use crate::core::webhook_dispatcher::{
-    AttributionEventPayload, ClickEventPayload, WebhookDispatcher, WebhookPayload,
+    AttributionEventPayload, ClickEventPayload, ConversionEventPayload, WebhookDispatcher,
+    WebhookPayload,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -43,13 +44,18 @@ impl RiftWebhookDispatcher {
                 Err(_) => return,
             };
 
-            let webhooks = match repo.find_active_for_event(&tenant_oid, &event_type).await {
-                Ok(w) => w,
-                Err(e) => {
-                    tracing::warn!(error = %e, event = event_name, "Failed to find webhooks");
-                    return;
-                }
-            };
+            // Short-TTL cache on webhook lookups — kills the per-event DB query
+            // hot path when a tenant fires many conversions back-to-back.
+            let webhooks =
+                match cached_find_active_for_event(repo.clone(), tenant_oid, event_type.clone())
+                    .await
+                {
+                    Ok(w) => w,
+                    Err(e) => {
+                        tracing::warn!(error = %e, event = event_name, "Failed to find webhooks");
+                        return;
+                    }
+                };
 
             let data = match serde_json::to_value(&payload) {
                 Ok(v) => v,
@@ -109,6 +115,46 @@ impl WebhookDispatcher for RiftWebhookDispatcher {
             payload,
         );
     }
+
+    fn dispatch_conversion(&self, payload: ConversionEventPayload) {
+        let tenant_id = payload.tenant_id.clone();
+        let timestamp = payload.timestamp.clone();
+        self.dispatch_event(
+            WebhookEventType::Conversion,
+            "conversion",
+            tenant_id,
+            timestamp,
+            payload,
+        );
+    }
+}
+
+// ── Cached webhook lookup ──
+//
+// Short-TTL cache keyed on (tenant_id_hex, event_type). Invalidation is purely
+// time-based — 60 seconds of staleness is an acceptable trade for killing the
+// per-event DB query hot path. A webhook newly created or toggled off will
+// start or stop receiving events within 60 seconds.
+//
+// The cache is in-process and per-instance; multiple server instances each have
+// their own cache, which is fine because the underlying query is cheap and the
+// cache is purely an optimization.
+//
+// `Err` results are NOT cached (via `result = true`) so transient DB errors are
+// retried on the next event rather than stuck for a minute.
+
+#[cached::proc_macro::cached(
+    ty = "cached::TimedCache<(String, String), Vec<Webhook>>",
+    create = "{ cached::TimedCache::with_lifespan(60) }",
+    convert = r#"{ (tenant_oid.to_hex(), format!("{:?}", event_type)) }"#,
+    result = true
+)]
+async fn cached_find_active_for_event(
+    repo: Arc<dyn WebhooksRepository>,
+    tenant_oid: mongodb::bson::oid::ObjectId,
+    event_type: WebhookEventType,
+) -> Result<Vec<Webhook>, String> {
+    repo.find_active_for_event(&tenant_oid, &event_type).await
 }
 
 pub(crate) fn compute_hmac(secret: &str, body: &str) -> String {

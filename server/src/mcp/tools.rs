@@ -82,3 +82,17 @@ pub struct AgentContextInput {
     /// Human/agent-readable description of the link's purpose.
     pub description: Option<String>,
 }
+
+/// Input for the `create_source` MCP tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateSourceInput {
+    /// Human-readable name, unique per tenant (1-64 chars).
+    pub name: String,
+    /// Source type — currently only "custom" is supported. Future integrations
+    /// (RevenueCat, Stripe, etc.) will add more variants.
+    pub source_type: String,
+}
+
+/// Input for the `list_sources` MCP tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListSourcesInput {}
