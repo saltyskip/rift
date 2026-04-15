@@ -22,9 +22,9 @@ const routes = [
   "/tools/audit",
 ];
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  const lastModified = new Date();
+const lastModified = new Date();
 
+export default function sitemap(): MetadataRoute.Sitemap {
   return routes.map((route) => ({
     url: `${siteUrl}${route}`,
     lastModified,
