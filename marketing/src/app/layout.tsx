@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
-import { GoogleAnalytics } from "@/components/google-analytics";
 
 const inter = Inter({
   variable: "--font-outfit",
@@ -46,11 +46,11 @@ export default function RootLayout({
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
         style={{ fontFamily: "var(--font-outfit), system-ui, sans-serif" }}
       >
-        {gaMeasurementId ? <GoogleAnalytics measurementId={gaMeasurementId} /> : null}
         <Navbar />
         <main>{children}</main>
         <Footer />
       </body>
+      {gaMeasurementId ? <GoogleAnalytics gaId={gaMeasurementId} /> : null}
     </html>
   );
 }
