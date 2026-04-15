@@ -2,6 +2,23 @@
 
 import { useEffect, useRef } from "react";
 
+declare global {
+  interface Window {
+    Scalar?: {
+      createApiReference: (
+        element: HTMLDivElement,
+        config: {
+          url: string;
+          theme: string;
+          darkMode: boolean;
+          hideDarkModeToggle: boolean;
+          customCss: string;
+        }
+      ) => void;
+    };
+  }
+}
+
 const API_SPEC_URL =
   process.env.NEXT_PUBLIC_API_URL
     ? `${process.env.NEXT_PUBLIC_API_URL}/openapi.json`
@@ -18,9 +35,7 @@ export function ScalarDocs() {
     const script = document.createElement("script");
     script.src = "https://cdn.jsdelivr.net/npm/@scalar/api-reference";
     script.onload = () => {
-      // @ts-expect-error - Scalar is loaded from CDN
       if (window.Scalar && containerRef.current) {
-        // @ts-expect-error - Scalar is loaded from CDN
         window.Scalar.createApiReference(containerRef.current, {
           url: API_SPEC_URL,
           theme: "none",
