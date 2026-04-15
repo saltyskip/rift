@@ -18,10 +18,9 @@ export function ScalarDocs() {
     const script = document.createElement("script");
     script.src = "https://cdn.jsdelivr.net/npm/@scalar/api-reference";
     script.onload = () => {
-      // @ts-expect-error - Scalar is loaded from CDN
-      if (window.Scalar && containerRef.current) {
-        // @ts-expect-error - Scalar is loaded from CDN
-        window.Scalar.createApiReference(containerRef.current, {
+      const scalar = (window as unknown as { Scalar?: { createApiReference: (el: HTMLDivElement, cfg: Record<string, unknown>) => void } }).Scalar;
+      if (scalar && containerRef.current) {
+        scalar.createApiReference(containerRef.current, {
           url: API_SPEC_URL,
           theme: "none",
           darkMode: true,
