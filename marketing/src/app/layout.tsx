@@ -21,10 +21,29 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://riftl.ink";
 const googleSiteVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION;
 const gaMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 
+const title = "Rift — Deep links for humans and agents";
+const description =
+  "One link, two audiences. Humans click and get redirected. Agents resolve and get structured JSON. Track every click, install, and conversion.";
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: "Rift — Deep links for humans and agents",
-  description: "One link, two audiences. Humans click and get redirected. Agents resolve and get structured JSON. Track every click, install, and conversion.",
+  title,
+  description,
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    url: siteUrl,
+    siteName: "Rift",
+    title,
+    description,
+  },
+  twitter: {
+    card: "summary",
+    title,
+    description,
+  },
   icons: {
     icon: "/logo.svg",
   },
@@ -33,6 +52,42 @@ export const metadata: Metadata = {
         google: googleSiteVerification,
       }
     : undefined,
+};
+
+const organizationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Rift",
+  url: siteUrl,
+  logo: `${siteUrl}/logo.svg`,
+  description,
+  sameAs: ["https://github.com/saltyskip/rift"],
+};
+
+const softwareJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Rift",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Web, iOS, Android",
+  url: siteUrl,
+  description,
+  offers: [
+    {
+      "@type": "Offer",
+      name: "Free",
+      price: "0",
+      priceCurrency: "USD",
+      description: "100 links, 1,000 clicks/month",
+    },
+    {
+      "@type": "Offer",
+      name: "Pay per request",
+      price: "0.01",
+      priceCurrency: "USD",
+      description: "Per request, unlimited links and clicks",
+    },
+  ],
 };
 
 export default function RootLayout({
@@ -46,6 +101,14 @@ export default function RootLayout({
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
         style={{ fontFamily: "var(--font-outfit), system-ui, sans-serif" }}
       >
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }}
+        />
         <Navbar />
         <main>{children}</main>
         <Footer />
