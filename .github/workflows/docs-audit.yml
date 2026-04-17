@@ -32,7 +32,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: true
-          claude_args: '{"allowedTools": ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]}'
+          claude_args: '{"allowedTools": ["Read", "Grep", "Glob", "Edit", "Write", "Bash"], "permissionMode": "bypassPermissions"}'
           prompt: |
             You are auditing the Rift documentation for drift against the actual
             source code. Output is a pull request — no issues, no comments.
@@ -40,8 +40,15 @@ jobs:
             ## Scope (you may EDIT only these paths)
 
             - `marketing/src/app/docs/**` — 13 product docs pages (TSX)
-            - `marketing/src/app/llms.txt` — AI-facing summary
+            - `marketing/src/app/llms.txt/route.ts` — AI-facing summary (Next.js
+              dynamic route returning text/plain; this path is a DIRECTORY
+              containing `route.ts`, not a literal `.txt` file)
             - `README.md` — top-level quick start
+
+            Do not attempt to modify Claude Code settings, the `.claude`
+            directory, or invoke the `update-config` skill. If a tool call
+            is blocked, skip that step and move on — do not try to reconfigure
+            yourself.
 
             You may READ anywhere in the repo. You MUST NOT edit any file
             outside the three paths above. In particular: do not edit source
@@ -67,6 +74,7 @@ jobs:
             - `docs/ios-sdk/`, `docs/android-sdk/` ↔ `client/mobile/core/src/`
             - `docs/web-sdk/`        ↔ `sdk/web/src/`
             - `docs/manual-setup/`   ↔ `README.md`, `server/src/` broadly
+            - `llms.txt/route.ts`    ↔ full `server/src/api/` surface (endpoint list)
 
             ## Procedure
 
