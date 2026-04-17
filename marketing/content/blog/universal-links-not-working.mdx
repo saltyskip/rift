@@ -1,0 +1,254 @@
+---
+title: "Why Your Universal Links Aren't Working: 12 Things to Check"
+description: "A complete debugging checklist for iOS Universal Links — AASA file mistakes, same-domain traps, entitlement typos, iOS 17/18 quirks, and every other reason taps fail to open your app."
+slug: "universal-links-not-working"
+publishedAt: "2026-04-18"
+updatedAt: "2026-04-18"
+author:
+  name: "Andrei Terentiev"
+  url: "https://github.com/drei"
+  github: "https://github.com/drei"
+  bio: "Builds Rift — the deep-linking and attribution API for humans and AI agents. Formerly built infrastructure in Rust and distributed systems."
+targetKeyword: "universal links not working"
+secondaryKeywords:
+  - "universal links ios 17 not working"
+  - "universal links ios 18 not opening app"
+  - "apple app site association 404"
+  - "aasa file not working"
+  - "universal link debug ios"
+category: "Troubleshooting"
+---
+
+If your Universal Links aren't opening your iOS app, the problem is almost always in one of twelve places. This post walks through each, in order of how often we've seen them break in production. Work the list top to bottom — by the bottom you'll either have Universal Links opening the app on tap, or you'll have a very precise bug report to hand Apple.
+
+Rift hosts [Apple App Site Association files](/docs/universal-links) for every registered custom domain, so several of these checks are automated when you use Rift. The fixes apply whether you're self-hosting AASA or using a service.
+
+## The symptom vs. the cause
+
+"Universal Links aren't working" is actually three different bugs glued together, and the fix depends on which one you're hitting:
+
+- **Tap never opens the app at all** — AASA problem (items 1–5)
+- **Tap opens Safari instead of the app** — association or path problem (items 6–8)
+- **App opens but lands on the wrong screen** — routing problem (items 9–12)
+
+Know which bucket you're in before you start. The fastest way is to install the app via Xcode on a device, then tap a Universal Link from a different origin (an email to yourself, a note in Notes, a message from another phone). If it opens Safari, you're in bucket one or two. If it opens the app but goes to the home screen, you're in bucket three.
+
+## 1. AASA returns the wrong Content-Type
+
+Apple fetches `https://yourdomain/.well-known/apple-app-site-association` (AASA) and requires the response to have `Content-Type: application/json` **or no Content-Type header at all**. A surprising number of servers return `text/html` because AASA has no extension.
+
+Check it:
+
+```bash
+curl -I https://yourdomain/.well-known/apple-app-site-association
+```
+
+You want `HTTP/2 200` and either `content-type: application/json` or no `content-type` line. If you see `text/html`, fix your server to set `application/json` for this specific path. On Next.js, serve it through a route handler; on a static host, configure per-file headers.
+
+## 2. AASA file returns 404
+
+Run the same `curl` as above and confirm a 200, not a 404. Apple never retries aggressively on 404 — if your AASA was missing when Apple first fetched it after your app installed, it may take a full device reboot to retry.
+
+Common causes:
+
+- File is at `/apple-app-site-association` without the `.well-known/` prefix (Apple checks both but prefers `.well-known/` since iOS 10 and requires it in some configurations)
+- Static hosting ignores dot-directories (`.well-known/` starts with a dot — check your CDN and SSG config)
+- Authentication middleware protects everything including `/.well-known/*`
+
+If you're using Rift, the primary and alternate domains both serve AASA at `.well-known/apple-app-site-association` automatically once DNS resolves.
+
+## 3. AASA redirects before it gets served
+
+Apple refuses to follow redirects when fetching AASA. A 301/302/307 to anywhere — even to HTTPS from HTTP — kills Universal Links.
+
+The bug most people hit: requests to `https://yourdomain` 307-redirect to `https://www.yourdomain`. Fine for browsers; fatal for AASA. You need the AASA file served at the final canonical host, and ideally at both hosts.
+
+Test both:
+
+```bash
+curl -I https://yourdomain/.well-known/apple-app-site-association
+curl -I https://www.yourdomain/.well-known/apple-app-site-association
+```
+
+Both should 200 directly, no `Location:` header. If the apex redirects to www, serve AASA on both hosts or change your app's `applinks` entitlement to only use the final host.
+
+## 4. AASA JSON is malformed or wrong schema
+
+The file must be valid JSON and must use the `applinks` object shape. Common mistakes:
+
+```json
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "AB1234CDEF.com.yourapp.ios",
+        "paths": ["*"]
+      }
+    ]
+  }
+}
+```
+
+- `appID` must be `TEAMID.BUNDLEID` with a period in between — get the team ID from App Store Connect, not from Xcode's target settings
+- `appID` capitalization matters; the team ID is upper-case, the bundle ID matches what ships on the App Store
+- `"apps": []` is required even though it's always empty (legacy)
+- If you use `"components"` (the newer AASA schema), don't also use `"paths"` in the same details entry — pick one
+
+Validate with Apple's own tester:
+
+```
+https://app-site-association.cdn-apple.com/a/v1/yourdomain
+```
+
+If this endpoint returns your AASA, Apple's CDN has cached it and will serve it to devices. If it returns a 404 or empty response, Apple can't read your file — re-check items 1–3.
+
+## 5. Your Apple Team ID or Bundle ID is wrong
+
+Double-check these in three places and make sure they match:
+
+- **AASA** `appID` field
+- **Xcode** target → Signing & Capabilities → Associated Domains entitlement: `applinks:yourdomain`
+- **App Store Connect** for the bundle ID and team ID
+
+If the team ID changes (most often when you migrate between a personal and an organization Apple Developer account), every AASA file referencing the old team ID stops working silently. Apple doesn't tell you; Universal Links just go to Safari.
+
+## 6. Associated Domains entitlement missing or misspelled
+
+Open Xcode, select the target, Signing & Capabilities, and confirm Associated Domains is present and contains `applinks:yourdomain.com`. Common typos:
+
+- `applink:yourdomain.com` (missing `s`)
+- `applinks:https://yourdomain.com` (no protocol — just the bare domain)
+- `applinks:yourdomain.com/*` (no path — bare domain only)
+- Domain typo — `yourdomian` vs `yourdomain`
+
+After fixing, rebuild and re-sign. Universal Links honor the entitlement bundled into the signed `.app` — changes in Xcode without a rebuild don't take effect.
+
+## 7. Same-domain tap (the trampoline problem)
+
+If a user is already on a page on `yourdomain` and taps a link to another URL on `yourdomain`, iOS treats the tap as in-site navigation and does not fire Universal Links — even when the entitlement and AASA are correct. This bites people who build a "smart banner" landing page.
+
+There's no way around this in pure iOS behavior. The standard fix is to serve the "Open in App" button on a **different domain** than the landing page. Rift registers two domains per tenant — a primary (`go.yourapp.com`) for the landing page and an **alternate** (`open.yourapp.com`) whose only job is to host the trampoline URL. The button on the primary points at the alternate; Apple sees the cross-domain tap and fires Universal Links.
+
+If you don't want to run two domains, push the "Open in App" into a tel-style custom URL scheme instead, or route it through a known-bounce host like `ol.reddit.com` — both have tradeoffs.
+
+## 8. Path rules in AASA don't match the link you're tapping
+
+AASA `paths` (legacy) or `components` (modern) control which URLs fire Universal Links. A common mistake is `"paths": ["/app/*"]` when your actual short URLs are `/s/xyz`.
+
+- `"paths": ["*"]` is the nuclear option — matches everything. Most short-link providers use this.
+- `"paths": ["NOT /not-this/*", "*"]` excludes specific routes (note: the `NOT ` prefix needs a trailing space).
+- Modern `components` rules use JSON objects: `{"/" : "/s/*"}`. If you mix `components` and `paths` in the same details entry, Apple ignores one of them (undocumented which).
+
+Test with a specific URL: if tapping `/foo/bar` in Safari doesn't open the app but tapping `/s/xyz` does, your path rules are too narrow.
+
+## 9. `continueUserActivity` never fires
+
+You've set up AASA, the entitlement, and paths correctly. The app opens on tap — but your `SceneDelegate` or `AppDelegate` method for handling the URL never fires. The bug is almost always that the wrong lifecycle method is implemented.
+
+For SwiftUI apps with scenes:
+
+```swift
+.onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+  if let url = activity.webpageURL {
+    Router.route(to: url)
+  }
+}
+```
+
+For UIKit with scenes:
+
+```swift
+func scene(_ scene: UIScene,
+           continue userActivity: NSUserActivity) {
+  guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+        let url = userActivity.webpageURL else { return }
+  Router.route(to: url)
+}
+```
+
+For legacy UIKit without scenes:
+
+```swift
+func application(_ application: UIApplication,
+                 continue userActivity: NSUserActivity,
+                 restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+  guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+        let url = userActivity.webpageURL else { return false }
+  Router.route(to: url)
+  return true
+}
+```
+
+If you implemented both scene and non-scene handlers and your app uses scenes, only the scene version fires. Remove the app-delegate one to avoid confusion.
+
+## 10. Cold start vs. warm start behavior differs
+
+Universal Links tapped when the app is **not running** deliver the activity through a different code path than when it's already backgrounded. In cold start, the URL arrives in `UIApplicationLaunchOptionsKey.userActivityDictionary` (legacy) or through scene connection options (modern). If you only handle warm-start paths, cold-start taps land on the home screen.
+
+For scenes, implement:
+
+```swift
+func scene(_ scene: UIScene,
+           willConnectTo session: UISceneSession,
+           options connectionOptions: UIScene.ConnectionOptions) {
+  if let activity = connectionOptions.userActivities.first,
+     activity.activityType == NSUserActivityTypeBrowsingWeb,
+     let url = activity.webpageURL {
+    Router.route(to: url)
+  }
+}
+```
+
+Test by force-quitting the app, then tapping a Universal Link — not the simulator, a real device.
+
+## 11. iOS 17 and 18 background-fetch changes
+
+iOS 17 changed how Universal Links interact with background URL sessions, and iOS 18 tightened the path-matching implementation. Two things to check:
+
+- **iOS 17+**: AASA is fetched fresh on install but cached for 7 days. If you pushed an AASA change and expected devices to pick it up, they won't until the next AASA-cache expiry. Uninstall + reinstall the app on the test device to force a fresh fetch.
+- **iOS 18+**: Path components are compared case-sensitively. `"/Promo/*"` in AASA no longer matches `/promo/abc`. If your URLs are mixed-case, normalize them in your AASA paths or use `?` wildcards.
+
+There are also rare failures on iOS 18 when the device has a VPN active during AASA fetch — Apple's CDN timeouts are tighter. If users report intermittent failures, ask whether they're on a VPN.
+
+## 12. Testing tools are giving you false signals
+
+- **Branch's validator and `applinks-testing`** sometimes mark AASA as valid when Apple's CDN has a stale copy. Cross-check with the `app-site-association.cdn-apple.com` URL above.
+- **Simulator doesn't always match device behavior.** Universal Links should work in Simulator but have historically had edge-case bugs. If Simulator says no but device says yes, trust the device.
+- **Safari is the wrong way to test.** Tapping a Universal Link typed into Safari's address bar doesn't fire Universal Links in most iOS versions — you have to tap from an external origin (Messages, Mail, Notes from another device).
+- **Swiping to open from banner** is a different codepath than tapping a link. If the smart banner "Open" works but real links don't, your entitlement is fine but your link origin is same-domain (see item 7).
+
+The one reliable test: send the URL from a different device via iMessage, then tap it on the test device.
+
+<FAQ items={[
+  {
+    q: "How long does it take Apple to pick up a new AASA file?",
+    a: "Apple's CDN caches AASA for up to 24 hours. On the device, AASA is fetched when the app is installed or updated and then cached for 7 days (since iOS 17). If you need to force a refresh during debugging, uninstall and reinstall the app — that re-triggers the AASA fetch immediately."
+  },
+  {
+    q: "Can I use a localhost domain to test Universal Links?",
+    a: "No. Universal Links require a TLS-enabled public HTTPS URL that Apple's CDN can reach. The closest alternative for local development is an ngrok or Cloudflare Tunnel mapping to your local server, which gives you a real HTTPS hostname that passes Apple's checks. Make sure AASA is served without redirects over that tunnel."
+  },
+  {
+    q: "Why does my Universal Link work on iOS 16 but not iOS 18?",
+    a: "iOS 18 tightened path matching to be case-sensitive and changed AASA fetch timeouts. Check your AASA path rules for case-sensitivity issues first — if your URLs have uppercase letters and your AASA paths don't, iOS 18 stops matching. Run a fresh curl on app-site-association.cdn-apple.com to verify Apple's CDN has your latest file."
+  },
+  {
+    q: "Do Universal Links work when the app is not installed?",
+    a: "No — Universal Links only fire on devices that have the app installed. When the app isn't installed, iOS falls back to opening the URL in Safari. This is why you need a landing page at the destination URL that either prompts the user to install the app or handles the content natively in the browser."
+  },
+  {
+    q: "How do I test Universal Links without publishing a new app version?",
+    a: "Install the development build on a real device via Xcode with the correct entitlement, then send yourself the link via iMessage from a different device or account. Tap the link in Messages, not in Safari, because Safari same-page navigation doesn't always fire Universal Links. This tests the full cold-start path without needing TestFlight or the App Store."
+  }
+]} />
+
+## When in doubt, use a service
+
+Every item above is something you can hit even with a correctly-configured app — the surface area for Universal Links is wide, and Apple's error reporting is minimal. If you're building from scratch, a service like [Rift](/) that hosts AASA, handles the same-domain trampoline, and surfaces click events in a webhook will save you debugging time on all 12 of these issues.
+
+- [iOS SDK docs](/docs/ios-sdk) — full Universal Links setup including AASA, entitlements, cold-start handling
+- [Custom domain setup](/docs/domains) — DNS + TLS + primary/alternate domains in one guide
+- [Blog: migrating from Firebase Dynamic Links](/blog/firebase-dynamic-links-migration) — if FDL was hosting your AASA before August 2025
+
+Universal Links were designed to be invisible when they work. When they don't, the invisibility becomes the bug. Run the twelve-item checklist in order — the fix is always somewhere on it.

@@ -1,0 +1,167 @@
+---
+title: "Rift vs Branch vs Bitly: An Honest Comparison for Developers"
+description: "Three deep-linking and short-link services compared by developers for developers — pricing, SDKs, attribution, custom domains, AI-agent support, and when each one is actually the right choice."
+slug: "rift-vs-branch-vs-bitly"
+publishedAt: "2026-04-18"
+updatedAt: "2026-04-18"
+author:
+  name: "Andrei Terentiev"
+  url: "https://github.com/drei"
+  github: "https://github.com/drei"
+  bio: "Builds Rift — the deep-linking and attribution API for humans and AI agents. Formerly built infrastructure in Rust and distributed systems."
+targetKeyword: "branch.io alternative"
+secondaryKeywords:
+  - "bitly alternative developer"
+  - "branch vs bitly"
+  - "rift vs branch"
+  - "mobile deep linking comparison"
+category: "Comparison"
+---
+
+If you're evaluating Rift, Branch, and Bitly for a new project, the short answer is: they solve three partially-overlapping problems and you should pick based on which overlap matches your use case. Branch is a full mobile-measurement platform. Bitly is a URL shortener with tracking. Rift is a developer-first deep linking and attribution API that also speaks MCP for AI agents. Below is a full side-by-side, an honest "when to pick each" matrix, and the migration notes you'd want before committing.
+
+Disclosure: this post is written by the Rift team. We've tried to be fair — where Branch or Bitly is clearly the better pick for a given use case, we say so.
+
+## Head-to-head comparison
+
+| | **Rift** | **Branch** | **Bitly** |
+|---|---|---|---|
+| **Primary category** | Deep linking + attribution API | Mobile measurement platform (MMP) | URL shortener |
+| **Universal Links / App Links** | ✅ Auto-hosted AASA + `assetlinks.json` | ✅ | ❌ (shortener only) |
+| **Deferred deep linking** | ✅ SDK-based, no clipboard | ✅ | ❌ |
+| **Custom short domain** | ✅ Free on all plans | ✅ Paid plans | ✅ Paid plans |
+| **Click attribution** | ✅ Per-click + install + user | ✅ Full funnel | ✅ Clicks only |
+| **Conversion webhooks** | ✅ Signed HMAC | ✅ | Paid tier |
+| **Mobile SDKs** | ✅ iOS, Android, Web | ✅ iOS, Android, Web, React Native, Flutter, Unity | ❌ |
+| **MCP server for AI agents** | ✅ Native at `/mcp` | ❌ | ❌ |
+| **Pay-per-request pricing** | ✅ x402, $0.01/req | ❌ Enterprise-only | ❌ |
+| **Self-hostable** | ✅ (Rust + MongoDB) | ❌ | ❌ |
+| **Free tier** | 100 links, 1k clicks/mo | Free under 10k MAUs | 10 links/mo |
+| **Developer-first API** | ✅ REST + MCP | Partial (MMP-focused) | ✅ For shortening |
+| **Enterprise features** | Growing | Extensive (fraud, SKAN, CRM) | Extensive (SSO, SCIM) |
+| **Pricing transparency** | On pricing page | "Contact sales" above free | Published tiers |
+
+## Use-case matrix: when each is the right pick
+
+| You need... | Best pick | Second-best |
+|---|---|---|
+| To replace Firebase Dynamic Links with minimal code change | **Rift** | Branch |
+| Short links in a blog post or email signature | **Bitly** | Rift |
+| Fraud detection and SKAN postbacks at iOS scale | **Branch** | — |
+| An MCP server so AI agents can create and resolve links | **Rift** | — (nothing else has this) |
+| Links that open the iOS app and attribute installs | **Rift** | Branch |
+| Enterprise MMP with 30+ integrations into ad networks | **Branch** | — |
+| Self-hosted short-link service | **Rift** | YOURLS / Kutt (OSS) |
+| Cheapest per-click at 1M clicks/month | **Bitly** | Rift |
+| Custom domains without upgrading to enterprise | **Rift** | — |
+| Full attribution funnel: click → install → signup → purchase | **Rift or Branch** | — |
+| Per-request billing for agentic workloads | **Rift** | — |
+
+## Where each one is genuinely better
+
+### Branch is better when
+
+- You need SKAdNetwork (SKAN) postbacks and iOS attribution at ad-network scale. Branch has years of infrastructure and integrations into AppsFlyer-adjacent problems that Rift does not replicate.
+- You're running paid UA campaigns and need fraud detection, re-install filtering, and probabilistic attribution tuned by a dedicated team.
+- Your mobile team is not the one shipping links — a marketing or growth team needs a dashboard, templates, and approval workflows.
+- You're already integrated with Branch and the migration cost outweighs any per-month savings.
+
+Branch is the mature option for mobile measurement. If "MMP" is in your job description, it's likely the right pick.
+
+### Bitly is better when
+
+- You need short links for non-mobile contexts: email newsletters, QR codes, printed material, social media.
+- You don't care about opening a native app on tap — you just need the link to resolve to a web URL.
+- You want a published, predictable per-link pricing model and don't need custom app-open logic.
+
+Bitly is a URL shortener. If you try to use it for mobile deep linking, you'll notice it doesn't do the things Rift and Branch do — no AASA hosting, no Universal Links, no install attribution.
+
+### Rift is better when
+
+- You're a developer and want REST + MCP instead of a dashboard-first product. Rift's API is the product; the dashboard is thin.
+- You want deep linking + attribution + custom domains on the free tier, without "contact sales" steps.
+- You're building something for AI agents. Rift is the only one of the three that exposes its link API as an MCP server — your Claude or ChatGPT integration can call `create_link` directly.
+- You want to self-host. Rift is open-source (Rust + MongoDB) and self-hostable; Branch and Bitly are not.
+- You're migrating from [Firebase Dynamic Links](/blog/firebase-dynamic-links-migration) and want a direct feature-parity replacement.
+- You want per-request pricing for bursty agent workloads instead of a monthly commit.
+
+## Pricing at three scales
+
+Numbers are as of April 2026 and public where available. Branch's paid-plan numbers come from public case studies; they do not publish a per-install rate card.
+
+### Small app (50k MAUs, 200k link clicks/month)
+
+- **Rift:** Free tier covers 1k clicks; overflow at $0.01/request ≈ $199 overage. Or flat paid plan at $49/mo.
+- **Branch:** Free tier (under 10k MAUs only) doesn't apply — paid plan, estimated $300–500/mo based on typical "Grow" quotes.
+- **Bitly:** Premium plan at $199/mo for 10k links and 50k/mo tracked clicks. Would need a custom plan for this volume.
+
+### Mid-size (500k MAUs, 2M clicks/month)
+
+- **Rift:** $200 subscription + 2M × $0.01 ≈ $20k at per-request pricing, or a volume deal. Most teams this size get a volume contract.
+- **Branch:** Typical "Scale" pricing lands in the $2k–5k/mo range for this volume.
+- **Bitly:** Enterprise contract, typically $10k+/yr depending on features.
+
+### Agentic (100k API calls/day via MCP)
+
+- **Rift:** x402 per-request pays 0.01 USDC per call ≈ $30k/mo, or a volume contract.
+- **Branch:** No native MCP support; cost structure doesn't fit agent traffic profile.
+- **Bitly:** Not designed for this workload.
+
+The honest read: Bitly wins at pure volume short-linking for humans. Branch wins on mid-scale mobile MMP. Rift wins on developer ergonomics, MCP-native access, and when you need the full deep-linking stack without a sales call.
+
+## Migration notes
+
+**Coming from Branch to Rift:**
+- Map Branch's `link_click_id` to Rift's `link_id` for attribution continuity
+- Branch's `deferred_deep_link` payload maps to Rift's deferred-attribution endpoint response
+- You'll lose Branch's built-in integrations with AppsFlyer-style ad networks — if you rely on these, plan a parallel run
+- Custom domain AASA files will need to re-provision; Rift handles this automatically once DNS cuts over
+- Webhook payload shape is different; write an adapter if you don't want to update downstream consumers
+
+**Coming from Bitly to Rift:**
+- Bitly short URLs can be bulk-exported via API; import via `POST /v1/links` with `custom_slug` field to preserve URLs
+- Bitly doesn't track install-attribution, so there's no migration there — you're gaining functionality
+- Bitly's branded-domain feature maps directly to Rift's [custom domain](/docs/domains) flow — same CNAME pattern
+
+**Coming from FDL to Rift:**
+- The full migration is documented separately at [our FDL → Rift guide](/blog/firebase-dynamic-links-migration). Short version: change the domain, swap the SDK, Rift's feature set is a superset of FDL.
+
+## What about AppsFlyer, Adjust, Kochava?
+
+These are full attribution platforms, more comparable to Branch than to Rift or Bitly. If you need an MMP with ad-network integrations, they're in the conversation with Branch. Rift does not try to be an MMP — we're a deep linking and attribution API that's particularly strong for agent workloads. If you need SKAN + ad-network fraud detection + cohort analysis, you probably need an MMP. You can still use Rift for the link layer and AppsFlyer for the measurement layer — the two compose.
+
+<FAQ items={[
+  {
+    q: "Is Rift a direct Branch.io replacement?",
+    a: "Partially. Rift replaces the deep-linking, custom-domain, AASA-hosting, click-attribution, and conversion-webhook surface of Branch. It does not replace Branch's ad-network integrations, SKAN postback infrastructure, or fraud-detection layer. If you use Branch for mobile attribution and deep linking, and don't need the MMP integrations, Rift is a direct drop-in. If you use Branch as your full MMP, you'd keep Branch (or move to AppsFlyer/Adjust) and use Rift only for the link layer."
+  },
+  {
+    q: "Can I use Rift as a Bitly alternative for non-mobile short links?",
+    a: "Yes. Rift's short URLs work identically to Bitly's for web, email, and QR-code use cases — custom domain, analytics, link management. The difference is that Rift's links can also trigger iOS and Android app opens when the user is on a mobile device with your app installed, which Bitly does not do. If you don't care about the mobile side, either tool works; pick based on pricing and dashboard preference."
+  },
+  {
+    q: "Which one has the best free tier for indie developers?",
+    a: "Rift: 100 links and 1,000 clicks per month, with no card required, and free access to custom domains, iOS/Android SDKs, and conversion webhooks. Branch's free tier caps at 10k MAUs but requires a full MMP integration. Bitly's free tier gives you 10 branded links per month, which is too tight for most developer use cases. For solo or small-team mobile projects, Rift's free tier goes the furthest."
+  },
+  {
+    q: "Can AI agents use Rift, Branch, or Bitly programmatically?",
+    a: "Technically all three have REST APIs, so any agent can call them with an API key. But only Rift exposes its API as an MCP server — meaning a Claude, ChatGPT, or Gemini agent can discover and call tools like create_link and get_link natively, without writing custom integration code. For agent-first workloads, this makes Rift the only direct pick. For Branch or Bitly, you'd write your own MCP wrapper around their REST APIs."
+  },
+  {
+    q: "Is Rift self-hostable?",
+    a: "Yes. Rift's server is open-source (Rust + Axum + MongoDB) and runs as a single binary plus a database. You can self-host for internal use or on your own cloud. Branch and Bitly are SaaS-only and cannot be self-hosted. If regulatory or data-residency requirements keep you from using a SaaS, Rift is the only option of the three."
+  }
+]} />
+
+## Bottom line
+
+- If you need a mobile MMP and have the budget, **Branch** is battle-tested.
+- If you only need human-readable short links with tracking, **Bitly** is the shortest path.
+- If you need a deep linking and attribution API that feels like infrastructure — REST, MCP, self-hostable, per-request pricing — **Rift** is built for that.
+
+Most teams migrating away from Firebase Dynamic Links pick Rift because the feature parity is exact and the ergonomics are developer-first. Most teams running large UA campaigns pick Branch. Most marketing teams pick Bitly. Those categories don't overlap as much as the marketing copy suggests.
+
+- [Read the full docs](/docs)
+- [iOS SDK setup](/docs/ios-sdk) and [Android SDK setup](/docs/android-sdk)
+- [FDL → Rift migration guide](/blog/firebase-dynamic-links-migration)
+- [Why agents are a new user class for deep links](/blog/deep-linking-for-ai-agents)
