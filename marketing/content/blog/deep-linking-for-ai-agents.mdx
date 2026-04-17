@@ -19,8 +19,6 @@ secondaryKeywords:
 category: "Engineering"
 ---
 
-# Deep Linking for AI Agents: The MCP Pattern
-
 **Deep linking for AI agents** means exposing the link creation, resolution, and attribution surface as an MCP server, so a Claude, ChatGPT, or Gemini agent can call tools like `create_link` or `get_link` directly. The link is still a normal HTTP URL — a human taps it and lands on an app screen — but the agent never has to scrape or parse HTML. It calls the tool, gets structured JSON, and moves on. That is the pattern: one link, two resolvers, one consistent attribution trail.
 
 ## Why this matters now
