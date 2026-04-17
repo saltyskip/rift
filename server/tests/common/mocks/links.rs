@@ -144,7 +144,7 @@ impl LinksRepository for MockLinksRepo {
             .cloned()
             .collect();
         // Sort by _id descending (ObjectIds are monotonically increasing).
-        filtered.sort_by(|a, b| b.id.cmp(&a.id));
+        filtered.sort_by_key(|l| std::cmp::Reverse(l.id));
         filtered.truncate(limit as usize);
         Ok(filtered)
     }
