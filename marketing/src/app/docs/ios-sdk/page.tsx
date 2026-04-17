@@ -98,7 +98,7 @@ let rift = RiftSdk(publishableKey: "pk_live_YOUR_KEY", baseUrl: "https://api.you
     }
 
     // Fetch link data to navigate.
-    if let link = try? await Rift.getLink(linkId) {
+    if let link = try? await rift.getLink(linkId: linkId) {
         if let deepLink = link.iosDeepLink {
             handleDeepLink(deepLink)
         }

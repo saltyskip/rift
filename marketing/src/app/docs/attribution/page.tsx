@@ -404,8 +404,8 @@ if (linkId != null) {
   "install_count": 89,
   "conversion_rate": 0.072,
   "conversions": [
-    { "type": "deposit", "count": 19, "sum_cents": 247000, "currency": "usd" },
-    { "type": "signup", "count": 42 }
+    { "conversion_type": "deposit", "count": 19, "sum_cents": 247000, "currency": "usd" },
+    { "conversion_type": "signup", "count": 42 }
   ]
 }`}</CodeBlock>
           </Step>
