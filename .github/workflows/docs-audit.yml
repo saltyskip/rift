@@ -1,0 +1,148 @@
+# Weekly docs drift audit.
+#
+# Auth: uses Claude Max subscription via OAuth token, not an Anthropic API key.
+# Setup: run `claude setup-token` locally, then add the token as repo secret
+# CLAUDE_CODE_OAUTH_TOKEN. OAuth tokens don't auto-refresh in headless CI —
+# regenerate roughly quarterly or whenever this workflow starts failing auth.
+
+name: docs-audit
+
+on:
+  schedule:
+    - cron: '0 14 * * MON'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude docs audit
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: '{"allowedTools": ["Read", "Grep", "Glob", "Bash(git log:*)", "Bash(git diff:*)", "Bash(git status)", "Bash(git checkout:*)", "Bash(git add:*)", "Bash(git commit:*)", "Bash(git push:*)", "Bash(git branch:*)", "Bash(gh pr:*)", "Bash(gh label:*)", "Edit", "Write"]}'
+          prompt: |
+            You are auditing the Rift documentation for drift against the actual
+            source code. Output is a pull request — no issues, no comments.
+
+            ## Scope (you may EDIT only these paths)
+
+            - `marketing/src/app/docs/**` — 13 product docs pages (TSX)
+            - `marketing/src/app/llms.txt` — AI-facing summary
+            - `README.md` — top-level quick start
+
+            You may READ anywhere in the repo. You MUST NOT edit any file
+            outside the three paths above. In particular: do not edit source
+            code, tests, CI config, package files, or `marketing/src/app/api-reference/`
+            (that page is auto-rendered from the OpenAPI spec — if its content is
+            wrong, the fix is in the Rust `utoipa` derives, which is out of scope
+            for this audit; surface those as findings in the PR description instead).
+
+            ## Docs → source pairings
+
+            Use these when cross-referencing. Grep the source dir before claiming a
+            doc is stale.
+
+            - `docs/links/`          ↔ `server/src/services/links/`, `server/src/api/links/`
+            - `docs/webhooks/`       ↔ `server/src/services/webhooks/`, `server/src/api/webhooks/`
+            - `docs/conversions/`    ↔ `server/src/services/conversions/`, `server/src/api/conversions/`
+            - `docs/domains/`        ↔ `server/src/services/domains/`, `server/src/api/domains/`
+            - `docs/apps/`           ↔ `server/src/services/apps/`, `server/src/api/apps/`
+            - `docs/publishable-keys/` ↔ `server/src/services/auth/publishable_keys/`
+            - `docs/attribution/`    ↔ `server/src/services/links/` (find_attribution_by_user) + `services/conversions/`
+            - `docs/deferred/`       ↔ `server/src/services/links/`, `services/apps/`
+            - `docs/universal-links/` ↔ `server/src/services/domains/` (AASA flow)
+            - `docs/ios-sdk/`, `docs/android-sdk/` ↔ `client/mobile/core/src/`
+            - `docs/web-sdk/`        ↔ `sdk/web/src/`
+            - `docs/manual-setup/`   ↔ `README.md`, `server/src/` broadly
+
+            ## Procedure
+
+            1. **Dedup check.** First run:
+               `gh pr list --state open --label automated --search "docs: weekly drift audit"`
+               If an open unreviewed audit PR exists, STOP — do not open a duplicate.
+               Exit cleanly without changes.
+
+            2. **Drift signal.** For each docs page above, run
+               `git log --since="60 days ago" --oneline -- <paired source path>`.
+               A non-empty result means the source moved recently — prioritize
+               auditing that page.
+
+            3. **Cross-reference.** For each page, verify:
+               - Every endpoint path and HTTP method matches an actual route in `server/src/api/`.
+               - Every request/response field matches the Rust struct fields (check `models.rs`).
+               - Every code snippet still compiles conceptually (imports exist, function names match).
+               - Every SDK method name exists in `sdk/web/src/` or `client/mobile/core/src/`.
+               - `llms.txt`: every listed endpoint/concept still exists in source.
+
+            4. **Findings classification.**
+               - **High-confidence fixes** (commit directly): typos, factually wrong
+                 endpoint paths, wrong field names, broken code snippets, dead links,
+                 references to removed features.
+               - **Judgment calls** (surface in PR body, don't edit): tone/wording
+                 rewrites, reorganization suggestions, "should we document X"
+                 questions, gaps in Rust `utoipa` annotations.
+
+            5. **Output.**
+               - If zero high-confidence fixes AND zero judgment calls: exit 0,
+                 no PR. Do not open empty PRs.
+               - Otherwise:
+                 - `git checkout -b docs/audit-$(date -u +%Y-%m-%d)`
+                 - Apply high-confidence edits (use Edit/Write).
+                 - `git add` the edited files only, `git commit -m "docs: weekly drift audit"`.
+                 - `git push -u origin HEAD`.
+                 - Ensure labels exist: `gh label create docs --force` / `gh label create automated --force`.
+                 - `gh pr create --title "docs: weekly drift audit ($(date -u +%Y-%m-%d))" --label docs --label automated --body "<see below>"`
+
+            ## PR body template
+
+            ```
+            Automated weekly docs audit. See workflow: `.github/workflows/docs-audit.yml`.
+
+            ## Fixes committed in this PR
+
+            For each edit, list: `path/to/file.tsx` — one-line reason, with source
+            citation `server/src/path.rs:LINE` that proved the doc was wrong.
+
+            ## Judgment calls for human review (NOT committed)
+
+            For each: the docs location, the concern, and the source evidence.
+            These are things I'd change if I were confident — but they involve
+            tone/marketing voice or gaps that may be intentional.
+
+            ## Out of scope (flagged, not fixed)
+
+            Issues in `marketing/src/app/api-reference/` or Rust `utoipa` attributes
+            that would need a source-code change.
+            ```
+
+            ## Evidence rule (strict)
+
+            Every committed edit AND every PR-body finding MUST cite the source
+            file:line that proves the doc was wrong. If you can't produce that
+            citation, drop the finding. This is the main guard against
+            hallucinated "improvements" — follow it literally.
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh issue list --state open --search "docs-audit: workflow failing in:title" --json number --jq '.[0].number' || echo "")
+          if [ -z "$existing" ]; then
+            gh issue create \
+              --title "docs-audit: workflow failing" \
+              --body "The weekly docs-audit workflow failed. Most common cause: \`CLAUDE_CODE_OAUTH_TOKEN\` expired. Regenerate with \`claude setup-token\` locally and update the repo secret. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              --label automated
+          fi
