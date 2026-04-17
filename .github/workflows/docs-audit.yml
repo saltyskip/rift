@@ -32,8 +32,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: true
-          settings: '{"permissions":{"defaultMode":"bypassPermissions"}}'
-          claude_args: '{"allowedTools": ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]}'
+          claude_args: --permission-mode bypassPermissions
           prompt: |
             You are auditing the Rift documentation for drift against the actual
             source code. Output is a pull request — no issues, no comments.
