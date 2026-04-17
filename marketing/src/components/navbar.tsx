@@ -45,6 +45,7 @@ export function Navbar() {
             ["Pricing", "#pricing"],
             ["Docs", "/docs"],
             ["Blog", "/blog"],
+            ["Alternatives", "/alternatives"],
             ["API Reference", "/api-reference"],
           ].map(([label, href]) => (
             <a

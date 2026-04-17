@@ -32,6 +32,7 @@ export function Footer() {
               ],
               Resources: [
                 ["Blog", "/blog"],
+                ["Alternatives", "/alternatives"],
                 ["OpenAPI Spec", "/api-reference"],
                 ["Status", "#"],
               ],

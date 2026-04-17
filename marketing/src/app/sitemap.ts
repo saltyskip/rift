@@ -1,10 +1,12 @@
 import type { MetadataRoute } from "next";
 import { getAllPosts } from "@/lib/blog";
+import { getAllCompetitorSlugs } from "@/lib/competitors";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://riftl.ink";
 
 const staticRoutes = [
   "",
+  "/alternatives",
   "/api-reference",
   "/blog",
   "/docs",
@@ -39,5 +41,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ),
   }));
 
-  return [...staticEntries, ...posts];
+  const alternatives = getAllCompetitorSlugs().map((slug) => ({
+    url: `${siteUrl}/alternatives/${slug}`,
+    lastModified: now,
+  }));
+
+  return [...staticEntries, ...posts, ...alternatives];
 }

@@ -9,16 +9,18 @@ author:
   url: "https://github.com/drei"
   github: "https://github.com/drei"
   bio: "Builds Rift — the deep-linking and attribution API for humans and AI agents. Formerly built infrastructure in Rust and distributed systems."
-targetKeyword: "branch.io alternative"
+targetKeyword: "deep linking platforms comparison"
 secondaryKeywords:
-  - "bitly alternative developer"
   - "branch vs bitly"
-  - "rift vs branch"
+  - "rift vs branch vs bitly"
   - "mobile deep linking comparison"
+  - "url shortener vs deep linking"
 category: "Comparison"
 ---
 
-If you're evaluating Rift, Branch, and Bitly for a new project, the short answer is: they solve three partially-overlapping problems and you should pick based on which overlap matches your use case. Branch is a full mobile-measurement platform. Bitly is a URL shortener with tracking. Rift is a developer-first deep linking and attribution API that also speaks MCP for AI agents. Below is a full side-by-side, an honest "when to pick each" matrix, and the migration notes you'd want before committing.
+If you're evaluating Rift, Branch, and Bitly for a new project, the short answer is: they solve three partially-overlapping problems and you should pick based on which overlap matches your use case.
+
+> **Looking for a specific head-to-head?** See the dedicated [Branch alternative](/alternatives/branch) and [Bitly alternative](/alternatives/bitly) pages — same honest format, more depth on pricing and migration for each. Branch is a full mobile-measurement platform. Bitly is a URL shortener with tracking. Rift is a developer-first deep linking and attribution API that also speaks MCP for AI agents. Below is a full side-by-side, an honest "when to pick each" matrix, and the migration notes you'd want before committing.
 
 Disclosure: this post is written by the Rift team. We've tried to be fair — where Branch or Bitly is clearly the better pick for a given use case, we say so.
 
@@ -155,8 +157,8 @@ These are full attribution platforms, more comparable to Branch than to Rift or 
 
 ## Bottom line
 
-- If you need a mobile MMP and have the budget, **Branch** is battle-tested.
-- If you only need human-readable short links with tracking, **Bitly** is the shortest path.
+- If you need a mobile MMP and have the budget, **Branch** is battle-tested. Deeper head-to-head: [Rift vs Branch alternative page](/alternatives/branch).
+- If you only need human-readable short links with tracking, **Bitly** is the shortest path. Deeper head-to-head: [Rift vs Bitly alternative page](/alternatives/bitly).
 - If you need a deep linking and attribution API that feels like infrastructure — REST, MCP, self-hostable, per-request pricing — **Rift** is built for that.
 
 Most teams migrating away from Firebase Dynamic Links pick Rift because the feature parity is exact and the ergonomics are developer-first. Most teams running large UA campaigns pick Branch. Most marketing teams pick Bitly. Those categories don't overlap as much as the marketing copy suggests.
@@ -165,3 +167,4 @@ Most teams migrating away from Firebase Dynamic Links pick Rift because the feat
 - [iOS SDK setup](/docs/ios-sdk) and [Android SDK setup](/docs/android-sdk)
 - [FDL → Rift migration guide](/blog/firebase-dynamic-links-migration)
 - [Why agents are a new user class for deep links](/blog/deep-linking-for-ai-agents)
+- [All alternatives](/alternatives) — comparisons with other platforms
