@@ -1,0 +1,258 @@
+---
+title: "Migrating from Firebase Dynamic Links to Rift: A Complete Guide"
+description: "Firebase Dynamic Links shut down in August 2025. Here is a direct, code-first migration path to Rift — covering Universal Links, deferred deep linking, attribution, and custom domains."
+slug: "firebase-dynamic-links-migration"
+publishedAt: "2026-04-17"
+updatedAt: "2026-04-17"
+author:
+  name: "Andrei Terentiev"
+  url: "https://github.com/drei"
+  github: "https://github.com/drei"
+  bio: "Builds Rift — the deep-linking and attribution API for humans and AI agents. Formerly built infrastructure in Rust and distributed systems."
+targetKeyword: "firebase dynamic links alternative"
+secondaryKeywords:
+  - "firebase dynamic links replacement"
+  - "firebase dynamic links migration"
+  - "firebase dynamic links shutdown"
+  - "deep link migration"
+category: "Migration"
+---
+
+# Migrating from Firebase Dynamic Links to Rift: A Complete Guide
+
+If you are looking for a **Firebase Dynamic Links alternative**, Rift is a drop-in replacement that ships every capability FDL offered — Universal Links, App Links, deferred deep linking, install attribution, click tracking, and custom short domains — plus a few that Firebase never did (MCP-native agent access, pay-per-request billing, conversion webhooks). This guide walks through a concrete migration: what changes, what stays the same, and the exact code you paste into your iOS, Android, and web codebases.
+
+## Why Firebase Dynamic Links was sunset
+
+Google announced the Firebase Dynamic Links shutdown on the FDL deprecation page and pulled the service offline in August 2025. The stated reasons were industry shifts — App Links and Universal Links are now well-supported at the OS level — and the growing mismatch between FDL's original architecture and modern iOS/Android privacy constraints (IDFA, App Tracking Transparency, Play Integrity).
+
+The result: any app that depended on FDL's clipboard-based deferred deep linking, its `page.link` domains, or its install attribution stopped working. New links fail, old links 404, and the attribution webhook stopped firing. If you still have `page.link` references in your code, treat them as dead strings.
+
+## What Rift is
+
+Rift is a deep linking and attribution API built for two audiences at once: humans, who tap a link and get routed to a native app or a browser, and AI agents, who resolve the same link and get back structured JSON about the destination. Under the hood it is a Rust service with MongoDB for storage and official SDKs for Swift, Kotlin, and TypeScript.
+
+Feature set:
+
+- Deep links with short URLs on a default domain (`riftl.ink`) or your own [custom domain](/docs/domains)
+- [Universal Links](/docs/universal-links) for iOS and App Links for Android, served with a correct AASA and `assetlinks.json`
+- Landing pages for when the app is not installed, with an "Open in App" trampoline
+- Click [attribution](/docs/attribution) — platform, referrer, user agent, and deferred link recovery after install
+- Post-install deferred deep linking — users who installed from a link still land on the right screen
+- Conversion tracking via signed webhooks (signups, purchases, deposits)
+- An MCP server at `/mcp` that lets AI agents create, read, and resolve links programmatically
+- x402 pay-per-request pricing for high-volume or agent workloads
+- SDKs for [iOS](/docs/ios-sdk), [Android](/docs/android-sdk), and [Web](/docs/web-sdk)
+
+## Feature parity: Firebase Dynamic Links → Rift
+
+| Firebase Dynamic Links | Rift equivalent |
+|---|---|
+| `page.link` short URL | Default `riftl.ink/{slug}` or your own CNAME'd domain |
+| `DynamicLinkComponents` builder | `POST /v1/links` with `url`, `ios`, `android`, `web` payload |
+| `handleUniversalLink(_:)` on iOS | `Rift.shared.handle(continuedActivity:)` in the iOS SDK |
+| `FirebaseDynamicLinks.getDynamicLink()` on Android | `Rift.getInstance().handleIntent(intent)` in the Android SDK |
+| Deferred deep linking via clipboard | Deferred lookup via SDK on first app open — no clipboard access needed |
+| Install attribution (per-install) | `POST /v1/attribution/install` from the SDK, plus webhook fan-out |
+| Conversion events (manual) | Conversions API with signed webhooks and a `custom` source type |
+| AASA / `assetlinks.json` hosted automatically | Same — Rift serves both files for every registered domain |
+| Social meta tags on preview pages | Landing page auto-fills OG/Twitter cards from link metadata |
+| `page.link/?link=&apn=&ibi=` fallback | Rift landing page with platform detection + store fallback |
+
+## Step-by-step migration
+
+### Step 1: Create a Rift account and register your app
+
+Sign up, grab a secret key (`rl_live_…`), and register your iOS bundle ID and Android package.
+
+```bash
+curl -X POST https://api.riftl.ink/v1/apps \
+  -H "x-api-key: rl_live_YOUR_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "ios": { "bundle_id": "com.yourapp.ios", "team_id": "AB1234CDEF" },
+    "android": { "package": "com.yourapp.android", "sha256_cert_fingerprints": ["AA:BB:..."] }
+  }'
+```
+
+This registration is what makes Rift able to generate a valid Apple App Site Association file and Android `assetlinks.json` for your bundle.
+
+### Step 2: Add a custom domain (optional but recommended)
+
+Point a CNAME at Rift and you get Universal Links on your own domain rather than `riftl.ink`. Full walkthrough: [Custom Domains](/docs/domains).
+
+```bash
+curl -X POST https://api.riftl.ink/v1/domains \
+  -H "x-api-key: rl_live_YOUR_KEY" \
+  -H "content-type: application/json" \
+  -d '{ "hostname": "go.yourapp.com", "type": "primary" }'
+```
+
+TLS certificates provision via Let's Encrypt once DNS resolves.
+
+### Step 3: Create a link (replacing your FDL builder calls)
+
+Where you used to do this:
+
+```swift
+let components = DynamicLinkComponents(link: URL(string: "https://yourapp.com/promo/42")!,
+                                       domainURIPrefix: "https://yourapp.page.link")
+```
+
+You now do this:
+
+```typescript
+const link = await fetch("https://api.riftl.ink/v1/links", {
+  method: "POST",
+  headers: {
+    "x-api-key": "rl_live_YOUR_KEY",
+    "content-type": "application/json",
+  },
+  body: JSON.stringify({
+    url: "https://yourapp.com/promo/42",
+    title: "Spring promo",
+    ios: { fallback_url: "https://apps.apple.com/app/id123456" },
+    android: { fallback_url: "https://play.google.com/store/apps/details?id=com.yourapp.android" },
+  }),
+}).then((r) => r.json());
+// link.short_url → https://go.yourapp.com/xK2pQ
+```
+
+Server-side link creation in any language — Rift is transport-agnostic as long as you send the `x-api-key` header.
+
+### Step 4: Update iOS — handle Universal Links
+
+Replace your Firebase handler in `SceneDelegate.swift` or `AppDelegate.swift`:
+
+```swift
+import Rift
+
+// AppDelegate
+func application(_ app: UIApplication,
+                 continue userActivity: NSUserActivity,
+                 restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+  Rift.shared.handle(continuedActivity: userActivity) { resolved in
+    guard let url = resolved?.destination else { return }
+    Router.route(to: url)
+  }
+  return true
+}
+```
+
+The SDK calls the Rift resolve endpoint, gets back the canonical destination URL, and hands it to your router. Full setup: [iOS SDK docs](/docs/ios-sdk).
+
+### Step 5: Update Android — handle App Links
+
+```kotlin
+import ink.riftl.Rift
+
+class MainActivity : AppCompatActivity() {
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    Rift.getInstance().handleIntent(intent) { resolved ->
+      resolved?.destination?.let { Router.route(this, it) }
+    }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    Rift.getInstance().handleIntent(intent) { resolved ->
+      resolved?.destination?.let { Router.route(this, it) }
+    }
+  }
+}
+```
+
+The first call also runs the deferred-deep-link lookup on cold start — if the user installed from a Rift link, the SDK recovers it and reports the attribution back.
+
+### Step 6: Migrate attribution webhooks
+
+FDL fired `dynamic_link_app_open` and `dynamic_link_first_open` analytics events. Rift sends signed HTTP webhooks instead:
+
+```bash
+curl -X POST https://api.riftl.ink/v1/webhooks \
+  -H "x-api-key: rl_live_YOUR_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "url": "https://yourapp.com/hooks/rift",
+    "events": ["click", "install", "conversion"]
+  }'
+```
+
+Every delivery includes a `Rift-Signature` header (HMAC SHA-256 of the body) and a stable `event_id` for dedup across retries.
+
+## Platform-specific notes
+
+### iOS — Apple App Site Association
+
+Universal Links require Apple to fetch `https://yourdomain/.well-known/apple-app-site-association` (AASA) with a `content-type: application/json` response and no redirects. Rift serves this automatically for every registered domain:
+
+```json
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "AB1234CDEF.com.yourapp.ios",
+        "paths": ["*"]
+      }
+    ]
+  }
+}
+```
+
+Run `curl -v https://go.yourapp.com/.well-known/apple-app-site-association` to verify after DNS points at Rift — a 200 with the right `appID` is what Apple needs.
+
+### Android — assetlinks.json
+
+Android expects `https://yourdomain/.well-known/assetlinks.json`:
+
+```json
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.yourapp.android",
+    "sha256_cert_fingerprints": ["AA:BB:CC:..."]
+  }
+}]
+```
+
+Rift generates this from the `sha256_cert_fingerprints` you registered in step 1. Every release keystore must be registered — if you ship from both a debug and release key, register both.
+
+### The same-domain trampoline
+
+iOS does not trigger Universal Links when the user taps a link on the domain that is currently loaded. If a user is reading your landing page at `https://go.yourapp.com/xK2pQ` and taps "Open in App," iOS sees a same-domain tap and treats it as a normal navigation. Rift solves this by giving every tenant two domains: a **primary** for landing pages (`go.yourapp.com`) and an **alternate** for the trampoline (`open.yourapp.com`). The "Open in App" button points at the alternate domain, which Apple then recognizes as a fresh tap and fires Universal Links. If you built a workaround for this in FDL, you can delete it.
+
+<FAQ items={[
+  {
+    q: "Is Rift free?",
+    a: "Yes, for small volume. The free tier gives you 100 links and 1,000 clicks per month with no credit card. Above that, there is a flat $0.01 per request pay-per-request plan with no monthly minimum — you only pay for what you use."
+  },
+  {
+    q: "Can I keep my existing FDL links working during migration?",
+    a: "Firebase Dynamic Links is fully offline as of August 2025, so existing FDL URLs no longer resolve. The cleanest approach is to set up server-side 301 redirects from any known FDL pattern you control to the equivalent Rift short URL, so crawlers and bookmarks still land on the right page."
+  },
+  {
+    q: "Does Rift support deferred deep linking like FDL did?",
+    a: "Yes. On cold start, the Rift iOS and Android SDKs check the install attribution endpoint to see whether this install came from a Rift link. If it did, the SDK returns the original destination URL so you can route the user to the right screen, even though they did not have the app when they tapped the link. No clipboard access required."
+  },
+  {
+    q: "How is attribution data migrated?",
+    a: "Historical FDL attribution cannot be migrated — Firebase Analytics stopped sending new FDL events when the service went offline. For new installs, Rift captures the same data (platform, referrer, link ID, timestamp, user ID once your backend sets it) and sends it via the Conversion webhook, so you can replay events into your warehouse."
+  },
+  {
+    q: "What about short domains?",
+    a: "Every Rift tenant can register one or more custom domains. Point a CNAME or A+AAAA records at Rift, and TLS certificates auto-provision via Let's Encrypt. The same domain works for the /{slug} short URL, the Universal Links AASA, and the Android assetlinks.json — one DNS record, three purposes."
+  }
+]} />
+
+## Get started
+
+If you were relying on Firebase Dynamic Links, the migration is mechanical: change the domain, swap the SDK, re-register AASA and assetlinks, point webhooks at your new endpoint. Most teams finish in a day.
+
+- Read the full [docs](/docs) and the [iOS](/docs/ios-sdk) and [Android](/docs/android-sdk) setup guides
+- Create a key at [riftl.ink](https://riftl.ink) and point your first CNAME
+- Open an issue on GitHub if anything in the migration is worse than the FDL path — we treat parity as a must-have, not a nice-to-have
+
+Every Rift link also resolves over MCP, which means the same deep link that routes a human into your iOS app can route an AI agent into a structured JSON response about the destination. That part is new. Most teams replace FDL first and find the agent capabilities later, when a customer asks whether their workflow can call your app through Claude or ChatGPT. The answer, with Rift, is yes.
