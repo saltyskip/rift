@@ -177,8 +177,8 @@ export default function ConversionsPage() {
   "install_count": 340,
   "conversion_rate": 0.239,
   "conversions": [
-    { "type": "deposit", "count": 19, "sum_cents": 24700000, "currency": "usd" },
-    { "type": "signup", "count": 91 }
+    { "conversion_type": "deposit", "count": 19, "sum_cents": 24700000, "currency": "usd" },
+    { "conversion_type": "signup", "count": 91 }
   ]
 }`}</CodeBlock>
           </Step>
