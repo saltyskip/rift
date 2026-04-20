@@ -114,7 +114,7 @@ export default function ConversionsPage() {
               doc for details.
             </p>
             <CodeBlock>{`curl -X PUT https://api.riftl.ink/v1/attribution/link \\
-  -H "Authorization: Bearer pk_live_YOUR_KEY" \\
+  -H "Authorization: Bearer rl_live_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "install_id": "device-uuid-here",

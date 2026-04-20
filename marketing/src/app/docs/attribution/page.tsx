@@ -296,15 +296,18 @@ Rift.click("summer-sale");`}</CodeBlock>
                       report attribution:
                     </p>
                     <CodeBlock lang="swift">{`// On first app launch
-if let linkId = rift.parseClipboardLink() {
+if let clipboard = UIPasteboard.general.string,
+   let linkId = parseClipboardLink(text: clipboard) {
+    UIPasteboard.general.string = ""  // Clear after reading
     try await rift.reportAttribution(
         linkId: linkId,
         installId: UIDevice.current.identifierForVendor?.uuidString ?? "",
         appVersion: "1.0.0"
     )
     // Navigate to deep link content
-    let link = try await rift.getLink(linkId)
-    handleDeepLink(link.iosDeepLink)
+    if let link = try? await rift.getLink(linkId: linkId) {
+        handleDeepLink(link.iosDeepLink)
+    }
 }`}</CodeBlock>
                   </div>
                 ),

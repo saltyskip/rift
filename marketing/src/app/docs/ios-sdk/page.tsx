@@ -42,10 +42,10 @@ export default function IosSdkPage() {
             <CodeBlock lang="swift">{`import RiftSDK
 
 // Initialize once at app launch (e.g., in AppDelegate or @main).
-let rift = RiftSdk(publishableKey: "pk_live_YOUR_KEY")
+let rift = RiftSdk(config: RiftConfig(publishableKey: "pk_live_YOUR_KEY", baseUrl: nil, logLevel: nil))
 
 // Or point to a self-hosted instance:
-let rift = RiftSdk(publishableKey: "pk_live_YOUR_KEY", baseUrl: "https://api.yourcompany.com")`}</CodeBlock>
+let rift = RiftSdk(config: RiftConfig(publishableKey: "pk_live_YOUR_KEY", baseUrl: "https://api.yourcompany.com", logLevel: nil))`}</CodeBlock>
           </Step>
         </section>
 
@@ -118,11 +118,11 @@ let rift = RiftSdk(publishableKey: "pk_live_YOUR_KEY", baseUrl: "https://api.you
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">
-              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">RiftSdk(publishableKey:, baseUrl:)</code>
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">RiftSdk(config: RiftConfig)</code>
             </h3>
             <p className="text-[15px] text-[#a1a1aa]">
-              Constructor. The <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">publishableKey</code> parameter is required.
-              The <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">baseUrl</code> is optional (defaults to <code className="text-[#71717a]">https://api.riftl.ink</code>).
+              Constructor. Pass a <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">RiftConfig</code> with the required <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">publishableKey</code> field.
+              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">baseUrl</code> and <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">logLevel</code> are optional (<code className="text-[#71717a]">baseUrl</code> defaults to <code className="text-[#71717a]">https://api.riftl.ink</code>).
             </p>
           </div>
 
