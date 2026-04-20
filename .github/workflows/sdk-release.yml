@@ -146,18 +146,35 @@ jobs:
           echo "version=$SDK_VERSION" >> "$GITHUB_OUTPUT"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
+            RELEASE_EXISTS=true
             echo "release_exists=true" >> "$GITHUB_OUTPUT"
-            echo "Release $TAG already exists — skipping artifact upload."
           else
+            RELEASE_EXISTS=false
             echo "release_exists=false" >> "$GITHUB_OUTPUT"
-            echo "Will release as $TAG"
           fi
 
           if git ls-remote --tags origin "refs/tags/$SDK_VERSION" | grep -q "$SDK_VERSION"; then
+            SEMVER_EXISTS=true
             echo "semver_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            SEMVER_EXISTS=false
+            echo "semver_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ "$RELEASE_EXISTS" = "true" ] && [ "$SEMVER_EXISTS" = "true" ]; then
+            echo "::error::SDK version ${SDK_VERSION} is already released. Bump client/mobile/core/Cargo.toml before merging SDK changes."
+            exit 1
+          fi
+
+          if [ "$RELEASE_EXISTS" = "true" ]; then
+            echo "Release $TAG already exists — skipping artifact upload."
+          else
+            echo "Will release as $TAG"
+          fi
+
+          if [ "$SEMVER_EXISTS" = "true" ]; then
             echo "SPM tag $SDK_VERSION already exists."
           else
-            echo "semver_exists=false" >> "$GITHUB_OUTPUT"
             echo "Will create SPM tag $SDK_VERSION"
           fi
         env:
