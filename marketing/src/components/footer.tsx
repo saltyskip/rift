@@ -31,6 +31,8 @@ export function Footer() {
                 ["Pricing", "/#pricing"],
               ],
               Resources: [
+                ["Blog", "/blog"],
+                ["Alternatives", "/alternatives"],
                 ["OpenAPI Spec", "/api-reference"],
                 ["Status", "#"],
               ],

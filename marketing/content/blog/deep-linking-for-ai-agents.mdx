@@ -1,0 +1,189 @@
+---
+title: "Deep Linking for AI Agents: The MCP Pattern"
+description: "AI agents are becoming a new class of users that tap, resolve, and act on links. Here is how MCP-native deep linking works, why it matters, and how to build it with Rift."
+slug: "deep-linking-for-ai-agents"
+publishedAt: "2026-04-17"
+updatedAt: "2026-04-17"
+author:
+  name: "Andrei Terentiev"
+  url: "https://github.com/drei"
+  github: "https://github.com/drei"
+  bio: "Builds Rift — the deep-linking and attribution API for humans and AI agents. Formerly built infrastructure in Rust and distributed systems."
+targetKeyword: "deep linking for ai agents"
+secondaryKeywords:
+  - "mcp deep links"
+  - "mcp server for short links"
+  - "ai agent attribution"
+  - "agentic web"
+  - "programmatic deep link creation"
+category: "Engineering"
+---
+
+**Deep linking for AI agents** means exposing the link creation, resolution, and attribution surface as an MCP server, so a Claude, ChatGPT, or Gemini agent can call tools like `create_link` or `get_link` directly. The link is still a normal HTTP URL — a human taps it and lands on an app screen — but the agent never has to scrape or parse HTML. It calls the tool, gets structured JSON, and moves on. That is the pattern: one link, two resolvers, one consistent attribution trail.
+
+## Why this matters now
+
+Agents are no longer a speculative category. Claude Desktop, ChatGPT with tools, Cursor, Windsurf, and a dozen other clients all speak MCP. They read, write, and take actions in the real world on behalf of users. When an agent needs to share a destination — a product page, a support thread, a signup flow — it has two bad options and one good one:
+
+- **Bad**: generate a raw URL and trust that the receiver opens it in the right context (breaks on mobile, breaks for apps)
+- **Bad**: ask the user to manually copy something (breaks the agent UX)
+- **Good**: call a tool that returns a short link that works on web, on iOS, on Android, and inside other agents
+
+Rift implements the third option. The server exposes a streamable HTTP MCP endpoint at `/mcp`, authenticated with the same `rl_live_` API key you use for REST. Any MCP client can drop it in.
+
+## What "agent-shaped" means for a link
+
+A link used by humans needs: a short URL, a landing page, platform detection, a store fallback, and click tracking. A link used by an agent needs: structured metadata (what is at this URL?), a deterministic resolve step (what do I call to navigate?), a way to create new links under quota, and a stable attribution ID that survives retries.
+
+Rift links carry both sets at once. The URL `https://go.yourapp.com/xK2pQ` resolves differently depending on who is asking:
+
+- A human on iPhone: iOS catches the Universal Link, opens the app, SDK reports `click → install → user`
+- A human without the app: landing page renders, "Open in App" trampoline fires, or store fallback triggers
+- An agent over MCP: `resolve_link(slug="xK2pQ")` returns `{ destination, metadata, created_at, attribution_id }` as JSON
+
+Same link, three resolvers, one data model. Full [attribution](/docs/attribution) docs cover how the IDs flow through.
+
+## Setting up the MCP server with Rift
+
+The endpoint is live on every tenant. Add it to any MCP client by registering an entry in the client's config. For Claude Code, create `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "rift": {
+      "type": "http",
+      "url": "https://api.riftl.ink/mcp",
+      "headers": {
+        "x-api-key": "rl_live_YOUR_KEY"
+      }
+    }
+  }
+}
+```
+
+Claude Code picks it up on next start. The same config shape works for any MCP client that supports streamable HTTP transport.
+
+## What the agent can do
+
+The MCP server exposes five tools at launch:
+
+- `create_link` — mint a new short URL with iOS, Android, and web fallbacks
+- `get_link` — fetch one link's metadata and click stats
+- `list_links` — page through links for the authenticated tenant
+- `update_link` — change destination or fallbacks without rotating the short URL
+- `delete_link` — soft-delete (clicks still attribute to the original `link_id`)
+
+A Claude Code session, for example, can now do this without the user ever leaving the terminal:
+
+```
+> create a link to https://yourapp.com/checkout/promo-42 that falls back to the app store on mobile
+Claude: Using rift:create_link...
+  → https://go.yourapp.com/Pm0qZ
+```
+
+The returned URL is indistinguishable from a link a human created through a dashboard. It has a landing page, it fires Universal Links, it tracks attribution. The agent just happens to have made it.
+
+## Why MCP, not a REST API
+
+Rift also ships a REST API — the two surfaces map to the same [service layer](/docs) internally. The reason MCP matters on top of REST is discoverability. Agents that know how to call tools do not know how to read your OpenAPI spec and generate code from it. They want a tool name, a JSON schema, and a description sentence. MCP is exactly that shape. Three seconds of config and the agent has `create_link` in its toolbox.
+
+This is the same argument for "why a language-specific SDK" — reduce the zero-to-first-call distance. MCP does that for agents.
+
+## A concrete example: support deflection
+
+A customer-support agent built on Claude needs to send users to the right page inside a mobile app. The classic setup breaks in two ways:
+
+1. The agent has no way to create a link — it has to ask a human
+2. The agent cannot tell whether the customer's tap resulted in an open or a fallback
+
+With Rift's MCP server wired up, the agent does this autonomously:
+
+```typescript
+// Inside the agent's tool-use loop:
+const link = await mcp.rift.create_link({
+  url: "yourapp://support/ticket/4821",
+  title: "Support ticket #4821",
+  ios: { fallback_url: "https://apps.apple.com/app/id123456" },
+  android: { fallback_url: "https://play.google.com/store/apps/details?id=com.yourapp" },
+});
+
+await slack.sendMessage(conversationId, `Tap to open ticket: ${link.short_url}`);
+```
+
+Then, 30 seconds later, a Conversion webhook fires because the SDK reported the post-install event. The agent sees the update in its context window (via a webhook → Slack bridge, or via a `get_link` poll) and can say "I see you just opened the ticket — what else do you need?"
+
+That loop was not possible with Firebase Dynamic Links, with Branch, or with Bitly. It is not possible with any short-link API that does not expose itself as an agent tool. MCP is the unlock.
+
+## Attribution for agent-originated clicks
+
+Every link carries a `source` field. When the agent creates a link, Rift sets `source="mcp"` automatically (you can override it). Click and install events then carry that source through to the webhook payload:
+
+```json
+{
+  "event": "install",
+  "event_id": "evt_01JBR9X...",
+  "link_id": "lnk_01JBR8Y...",
+  "source": "mcp",
+  "platform": "ios",
+  "user_id": "user_123",
+  "timestamp": "2026-04-17T18:04:22Z"
+}
+```
+
+You can now answer a question FDL and Branch were never built to answer: how many installs did my ChatGPT integration drive last month? Filter by `source="mcp"` in the Conversions endpoint and you have it.
+
+## Pay-per-request: why x402 matters for agent workloads
+
+Human link-shortener traffic is bursty but bounded. Agent traffic is different: a single conversation might generate 40 links, most of which are never clicked. Pricing that by monthly subscriptions feels wrong on both sides.
+
+Rift supports x402 — an HTTP 402 Payment Required protocol that lets a client pay USDC per request against the API. The flow is:
+
+1. Agent calls `POST /v1/links` without a subscription
+2. Rift returns `402 Payment Required` with an x402 challenge
+3. Agent's wallet pays 0.01 USDC to the recipient address in the challenge
+4. Agent retries the request with the payment receipt; Rift processes the link
+
+No monthly commit, no card on file, no rate-limit surprises. Full docs on x402 are in the [custom domains](/docs/domains) guide, which has the relevant environment-variable section.
+
+## Platform notes
+
+### For humans: same AASA, same assetlinks.json
+
+Agent-created links are ordinary Rift links. iOS Universal Links and Android App Links work the same way — Rift serves [`apple-app-site-association`](/docs/universal-links) and `assetlinks.json` for every registered domain. Nothing changes for the mobile experience.
+
+### For agents: resolve vs. redirect
+
+If an agent wants the destination URL without triggering a click (for example, to preview a link in a chat), it should call `get_link`, not fetch the short URL. Fetching the short URL is a user action — it records a click, increments counters, and fires attribution. `get_link` is a metadata read. Both exist for a reason.
+
+<FAQ items={[
+  {
+    q: "What is MCP?",
+    a: "Model Context Protocol is an open standard for letting AI agents call tools and read resources on external servers. Anthropic published it in late 2024; it is now supported by Claude, ChatGPT, Cursor, Windsurf, and dozens of other clients. An MCP server exposes a small JSON-RPC surface over stdio, SSE, or streamable HTTP, and the agent discovers tools at connect time."
+  },
+  {
+    q: "Do I need to write MCP plumbing myself to use Rift with agents?",
+    a: "No. Rift already hosts an MCP server at /mcp using streamable HTTP transport. You drop the URL and your API key into any MCP client's config and the agent gets five tools: create_link, get_link, list_links, update_link, delete_link."
+  },
+  {
+    q: "Are agent-created links different from human-created links?",
+    a: "No — they are the same data model. The only difference is that links created through MCP get source=mcp set automatically, so you can filter your attribution data by origin. The short URL, landing page, Universal Link behavior, and webhook events all work identically."
+  },
+  {
+    q: "How do I track whether an agent-created link actually drove a conversion?",
+    a: "Rift sends a Conversion webhook when your backend posts a conversion event (signup, purchase, deposit) tied to a user_id that was attributed to the link. Filter on source=mcp in the webhook payload to see agent-driven conversions specifically."
+  },
+  {
+    q: "Can agents pay per request instead of subscribing?",
+    a: "Yes. Rift supports x402, an HTTP 402 protocol for per-request USDC payments. An agent with a wallet can call the API without a subscription — the first call returns a 402 challenge, the wallet pays, the agent retries, and the request processes. No monthly commit required."
+  }
+]} />
+
+## Get started
+
+If you are building an agent that needs to route users, Rift is the direct path. Five tools, one config entry, and your agent can create links that work on web, iOS, and Android without knowing anything about AASA files or Universal Link quirks.
+
+- Read the [docs](/docs) for full REST + MCP reference
+- Register your domain at [riftl.ink](https://riftl.ink) and point a CNAME
+- Open your agent's config, paste the MCP block, and the `create_link` tool appears
+
+The agent era is going to generate orders of magnitude more links than the social-share era did, and most of them will never be seen by a human. Build for that from the start: treat the link API as a tool, not just an endpoint.

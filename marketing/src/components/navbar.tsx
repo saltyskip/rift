@@ -44,6 +44,8 @@ export function Navbar() {
             ["How it works", "#how-it-works"],
             ["Pricing", "#pricing"],
             ["Docs", "/docs"],
+            ["Blog", "/blog"],
+            ["Alternatives", "/alternatives"],
             ["API Reference", "/api-reference"],
           ].map(([label, href]) => (
             <a
