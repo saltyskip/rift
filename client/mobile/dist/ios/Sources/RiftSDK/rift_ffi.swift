@@ -395,7 +395,13 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
 
 
 // Public interface members begin here.
-
+// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+private let IDX_CALLBACK_FREE: Int32 = 0
+// Callback return codes
+private let UNIFFI_CALLBACK_SUCCESS: Int32 = 0
+private let UNIFFI_CALLBACK_ERROR: Int32 = 1
+private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -483,9 +489,33 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 public protocol RiftSdkProtocol: AnyObject, Sendable {
     
+    /**
+     * Clear the bound user ID. Call on user logout. The install_id itself is
+     * preserved — only the user binding is cleared.
+     */
+    func clearUserId() throws 
+    
     func click(linkId: String) async throws  -> ClickResult
     
+    func getLink(linkId: String) async throws  -> GetLinkResult
+    
+    /**
+     * Return the persistent install ID, generating and storing a new UUID
+     * on first access. Stable across app launches, and (on iOS with Keychain)
+     * stable across app reinstalls.
+     */
+    func installId() throws  -> String
+    
     func reportAttribution(linkId: String, installId: String, appVersion: String) async throws  -> Bool
+    
+    /**
+     * Bind the current install to a user ID. Persists locally first, then
+     * fires the server call. If the server call fails, the binding is kept
+     * as "pending" and retried on the next SDK init. Idempotent — safe to
+     * call on every app launch with the same user_id; a no-op if the user
+     * is already bound and synced.
+     */
+    func setUserId(userId: String) async throws 
     
 }
 open class RiftSdk: RiftSdkProtocol, @unchecked Sendable {
@@ -527,11 +557,20 @@ open class RiftSdk: RiftSdkProtocol, @unchecked Sendable {
     public func uniffiClonePointer() -> UnsafeMutableRawPointer {
         return try! rustCall { uniffi_rift_ffi_fn_clone_riftsdk(self.pointer, $0) }
     }
-public convenience init(config: RiftConfig) {
+    /**
+     * Construct a new SDK instance.
+     *
+     * `storage` is a platform-provided implementation of `RiftStorage` that
+     * persists `install_id`, `user_id`, and sync flags. The SDK spawns a
+     * background task on construction to retry any pending user binding
+     * left over from a previous session.
+     */
+public convenience init(config: RiftConfig, storage: RiftStorage) {
     let pointer =
         try! rustCall() {
     uniffi_rift_ffi_fn_constructor_riftsdk_new(
-        FfiConverterTypeRiftConfig_lower(config),$0
+        FfiConverterTypeRiftConfig_lower(config),
+        FfiConverterTypeRiftStorage_lower(storage),$0
     )
 }
     self.init(unsafeFromRawPointer: pointer)
@@ -547,6 +586,16 @@ public convenience init(config: RiftConfig) {
 
     
 
+    
+    /**
+     * Clear the bound user ID. Call on user logout. The install_id itself is
+     * preserved — only the user binding is cleared.
+     */
+open func clearUserId()throws   {try rustCallWithError(FfiConverterTypeRiftError_lift) {
+    uniffi_rift_ffi_fn_method_riftsdk_clear_user_id(self.uniffiClonePointer(),$0
+    )
+}
+}
     
 open func click(linkId: String)async throws  -> ClickResult  {
     return
@@ -565,6 +614,35 @@ open func click(linkId: String)async throws  -> ClickResult  {
         )
 }
     
+open func getLink(linkId: String)async throws  -> GetLinkResult  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_rift_ffi_fn_method_riftsdk_get_link(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(linkId)
+                )
+            },
+            pollFunc: ffi_rift_ffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_rift_ffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_rift_ffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeGetLinkResult_lift,
+            errorHandler: FfiConverterTypeRiftError_lift
+        )
+}
+    
+    /**
+     * Return the persistent install ID, generating and storing a new UUID
+     * on first access. Stable across app launches, and (on iOS with Keychain)
+     * stable across app reinstalls.
+     */
+open func installId()throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeRiftError_lift) {
+    uniffi_rift_ffi_fn_method_riftsdk_install_id(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
 open func reportAttribution(linkId: String, installId: String, appVersion: String)async throws  -> Bool  {
     return
         try  await uniffiRustCallAsync(
@@ -578,6 +656,30 @@ open func reportAttribution(linkId: String, installId: String, appVersion: Strin
             completeFunc: ffi_rift_ffi_rust_future_complete_i8,
             freeFunc: ffi_rift_ffi_rust_future_free_i8,
             liftFunc: FfiConverterBool.lift,
+            errorHandler: FfiConverterTypeRiftError_lift
+        )
+}
+    
+    /**
+     * Bind the current install to a user ID. Persists locally first, then
+     * fires the server call. If the server call fails, the binding is kept
+     * as "pending" and retried on the next SDK init. Idempotent — safe to
+     * call on every app launch with the same user_id; a no-op if the user
+     * is already bound and synced.
+     */
+open func setUserId(userId: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_rift_ffi_fn_method_riftsdk_set_user_id(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(userId)
+                )
+            },
+            pollFunc: ffi_rift_ffi_rust_future_poll_void,
+            completeFunc: ffi_rift_ffi_rust_future_complete_void,
+            freeFunc: ffi_rift_ffi_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeRiftError_lift
         )
 }
@@ -633,6 +735,290 @@ public func FfiConverterTypeRiftSdk_lift(_ pointer: UnsafeMutableRawPointer) thr
 #endif
 public func FfiConverterTypeRiftSdk_lower(_ value: RiftSdk) -> UnsafeMutableRawPointer {
     return FfiConverterTypeRiftSdk.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Storage backend for the Rift SDK. Implemented natively on each platform:
+ * - iOS: Keychain-backed (`KeychainStorage`) — persists across app reinstalls
+ * - Android: SharedPreferences-backed (`SharedPrefsStorage`) — persists across launches
+ *
+ * Rust core owns all logic (UUID generation, retry, HTTP); this trait is the
+ * thin seam for platform-specific storage primitives. Methods are synchronous
+ * by design — Keychain and SharedPreferences are fast in-memory lookups that
+ * don't block the tokio runtime when called from async Rust code.
+ */
+public protocol RiftStorage: AnyObject, Sendable {
+    
+    /**
+     * Read a value by key. Returns `None` if the key is not present.
+     */
+    func get(key: String) throws  -> String?
+    
+    /**
+     * Write a value. Overwrites any existing value for the key.
+     */
+    func set(key: String, value: String) throws 
+    
+    /**
+     * Delete a key. Must succeed silently if the key is not present.
+     */
+    func remove(key: String) throws 
+    
+}
+/**
+ * Storage backend for the Rift SDK. Implemented natively on each platform:
+ * - iOS: Keychain-backed (`KeychainStorage`) — persists across app reinstalls
+ * - Android: SharedPreferences-backed (`SharedPrefsStorage`) — persists across launches
+ *
+ * Rust core owns all logic (UUID generation, retry, HTTP); this trait is the
+ * thin seam for platform-specific storage primitives. Methods are synchronous
+ * by design — Keychain and SharedPreferences are fast in-memory lookups that
+ * don't block the tokio runtime when called from async Rust code.
+ */
+open class RiftStorageImpl: RiftStorage, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_rift_ffi_fn_clone_riftstorage(self.pointer, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_rift_ffi_fn_free_riftstorage(pointer, $0) }
+    }
+
+    
+
+    
+    /**
+     * Read a value by key. Returns `None` if the key is not present.
+     */
+open func get(key: String)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeStorageError_lift) {
+    uniffi_rift_ffi_fn_method_riftstorage_get(self.uniffiClonePointer(),
+        FfiConverterString.lower(key),$0
+    )
+})
+}
+    
+    /**
+     * Write a value. Overwrites any existing value for the key.
+     */
+open func set(key: String, value: String)throws   {try rustCallWithError(FfiConverterTypeStorageError_lift) {
+    uniffi_rift_ffi_fn_method_riftstorage_set(self.uniffiClonePointer(),
+        FfiConverterString.lower(key),
+        FfiConverterString.lower(value),$0
+    )
+}
+}
+    
+    /**
+     * Delete a key. Must succeed silently if the key is not present.
+     */
+open func remove(key: String)throws   {try rustCallWithError(FfiConverterTypeStorageError_lift) {
+    uniffi_rift_ffi_fn_method_riftstorage_remove(self.uniffiClonePointer(),
+        FfiConverterString.lower(key),$0
+    )
+}
+}
+    
+
+}
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceRiftStorage {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // This creates 1-element array, since this seems to be the only way to construct a const
+    // pointer that we can pass to the Rust code.
+    static let vtable: [UniffiVTableCallbackInterfaceRiftStorage] = [UniffiVTableCallbackInterfaceRiftStorage(
+        get: { (
+            uniffiHandle: UInt64,
+            key: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> String? in
+                guard let uniffiObj = try? FfiConverterTypeRiftStorage.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.get(
+                     key: try FfiConverterString.lift(key)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterOptionString.lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeStorageError_lower
+            )
+        },
+        set: { (
+            uniffiHandle: UInt64,
+            key: RustBuffer,
+            value: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeRiftStorage.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.set(
+                     key: try FfiConverterString.lift(key),
+                     value: try FfiConverterString.lift(value)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeStorageError_lower
+            )
+        },
+        remove: { (
+            uniffiHandle: UInt64,
+            key: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeRiftStorage.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.remove(
+                     key: try FfiConverterString.lift(key)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeStorageError_lower
+            )
+        },
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            let result = try? FfiConverterTypeRiftStorage.handleMap.remove(handle: uniffiHandle)
+            if result == nil {
+                print("Uniffi callback interface RiftStorage: handle missing in uniffiFree")
+            }
+        }
+    )]
+}
+
+private func uniffiCallbackInitRiftStorage() {
+    uniffi_rift_ffi_fn_init_callback_vtable_riftstorage(UniffiCallbackInterfaceRiftStorage.vtable)
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRiftStorage: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<RiftStorage>()
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = RiftStorage
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> RiftStorage {
+        return RiftStorageImpl(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: RiftStorage) -> UnsafeMutableRawPointer {
+        guard let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: handleMap.insert(obj: value))) else {
+            fatalError("Cast to UnsafeMutableRawPointer failed")
+        }
+        return ptr
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RiftStorage {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: RiftStorage, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRiftStorage_lift(_ pointer: UnsafeMutableRawPointer) throws -> RiftStorage {
+    return try FfiConverterTypeRiftStorage.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRiftStorage_lower(_ value: RiftStorage) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeRiftStorage.lower(value)
 }
 
 
@@ -759,6 +1145,116 @@ public func FfiConverterTypeClickResult_lift(_ buf: RustBuffer) throws -> ClickR
 #endif
 public func FfiConverterTypeClickResult_lower(_ value: ClickResult) -> RustBuffer {
     return FfiConverterTypeClickResult.lower(value)
+}
+
+
+public struct GetLinkResult {
+    public var linkId: String
+    public var iosDeepLink: String?
+    public var androidDeepLink: String?
+    public var webUrl: String?
+    public var iosStoreUrl: String?
+    public var androidStoreUrl: String?
+    public var metadata: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(linkId: String, iosDeepLink: String?, androidDeepLink: String?, webUrl: String?, iosStoreUrl: String?, androidStoreUrl: String?, metadata: String?) {
+        self.linkId = linkId
+        self.iosDeepLink = iosDeepLink
+        self.androidDeepLink = androidDeepLink
+        self.webUrl = webUrl
+        self.iosStoreUrl = iosStoreUrl
+        self.androidStoreUrl = androidStoreUrl
+        self.metadata = metadata
+    }
+}
+
+#if compiler(>=6)
+extension GetLinkResult: Sendable {}
+#endif
+
+
+extension GetLinkResult: Equatable, Hashable {
+    public static func ==(lhs: GetLinkResult, rhs: GetLinkResult) -> Bool {
+        if lhs.linkId != rhs.linkId {
+            return false
+        }
+        if lhs.iosDeepLink != rhs.iosDeepLink {
+            return false
+        }
+        if lhs.androidDeepLink != rhs.androidDeepLink {
+            return false
+        }
+        if lhs.webUrl != rhs.webUrl {
+            return false
+        }
+        if lhs.iosStoreUrl != rhs.iosStoreUrl {
+            return false
+        }
+        if lhs.androidStoreUrl != rhs.androidStoreUrl {
+            return false
+        }
+        if lhs.metadata != rhs.metadata {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(linkId)
+        hasher.combine(iosDeepLink)
+        hasher.combine(androidDeepLink)
+        hasher.combine(webUrl)
+        hasher.combine(iosStoreUrl)
+        hasher.combine(androidStoreUrl)
+        hasher.combine(metadata)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGetLinkResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GetLinkResult {
+        return
+            try GetLinkResult(
+                linkId: FfiConverterString.read(from: &buf), 
+                iosDeepLink: FfiConverterOptionString.read(from: &buf), 
+                androidDeepLink: FfiConverterOptionString.read(from: &buf), 
+                webUrl: FfiConverterOptionString.read(from: &buf), 
+                iosStoreUrl: FfiConverterOptionString.read(from: &buf), 
+                androidStoreUrl: FfiConverterOptionString.read(from: &buf), 
+                metadata: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GetLinkResult, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.linkId, into: &buf)
+        FfiConverterOptionString.write(value.iosDeepLink, into: &buf)
+        FfiConverterOptionString.write(value.androidDeepLink, into: &buf)
+        FfiConverterOptionString.write(value.webUrl, into: &buf)
+        FfiConverterOptionString.write(value.iosStoreUrl, into: &buf)
+        FfiConverterOptionString.write(value.androidStoreUrl, into: &buf)
+        FfiConverterOptionString.write(value.metadata, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGetLinkResult_lift(_ buf: RustBuffer) throws -> GetLinkResult {
+    return try FfiConverterTypeGetLinkResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGetLinkResult_lower(_ value: GetLinkResult) -> RustBuffer {
+    return FfiConverterTypeGetLinkResult.lower(value)
 }
 
 
@@ -943,6 +1439,82 @@ extension RiftError: Foundation.LocalizedError {
 
 
 
+
+public enum StorageError: Swift.Error {
+
+    
+    
+    case IoError(message: String
+    )
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStorageError: FfiConverterRustBuffer {
+    typealias SwiftType = StorageError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StorageError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .IoError(
+            message: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: StorageError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case let .IoError(message):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(message, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStorageError_lift(_ buf: RustBuffer) throws -> StorageError {
+    return try FfiConverterTypeStorageError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStorageError_lower(_ value: StorageError) -> RustBuffer {
+    return FfiConverterTypeStorageError.lower(value)
+}
+
+
+extension StorageError: Equatable, Hashable {}
+
+
+
+
+extension StorageError: Foundation.LocalizedError {
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+}
+
+
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -1048,16 +1620,38 @@ private let initializationResult: InitializationResult = {
     if (uniffi_rift_ffi_checksum_func_parse_referrer_link() != 54616) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_rift_ffi_checksum_method_riftsdk_clear_user_id() != 63721) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_rift_ffi_checksum_method_riftsdk_click() != 11951) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_rift_ffi_checksum_method_riftsdk_get_link() != 38789) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_rift_ffi_checksum_method_riftsdk_install_id() != 33647) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_rift_ffi_checksum_method_riftsdk_report_attribution() != 16163) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rift_ffi_checksum_constructor_riftsdk_new() != 3525) {
+    if (uniffi_rift_ffi_checksum_method_riftsdk_set_user_id() != 19064) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_rift_ffi_checksum_method_riftstorage_get() != 22749) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_rift_ffi_checksum_method_riftstorage_set() != 25585) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_rift_ffi_checksum_method_riftstorage_remove() != 41106) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_rift_ffi_checksum_constructor_riftsdk_new() != 32128) {
         return InitializationResult.apiChecksumMismatch
     }
 
+    uniffiCallbackInitRiftStorage()
     return InitializationResult.ok
 }()
 
