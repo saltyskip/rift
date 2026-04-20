@@ -20,9 +20,12 @@ package ink.riftl.sdk
 
 import android.content.Context
 
-public class SharedPrefsStorage(context: Context) : RiftStorage {
+public class SharedPrefsStorage(
+    context: Context,
+    prefsName: String = "rift_sdk_prefs"
+) : RiftStorage {
     private val prefs = context.applicationContext
-        .getSharedPreferences("rift_sdk_prefs", Context.MODE_PRIVATE)
+        .getSharedPreferences(prefsName, Context.MODE_PRIVATE)
 
     override fun `get`(key: String): String? {
         return try {
@@ -73,6 +76,9 @@ fun RiftSdk.Companion.create(
     } catch (e: Exception) {
         "unknown"
     }
+    // Scope SharedPreferences by publishable key prefix so multiple apps
+    // using different Rift tenants on the same device don't share state.
+    val keyPrefix = publishableKey.take(16)
     return RiftSdk(
         config = RiftConfig(
             publishableKey = publishableKey,
@@ -81,6 +87,6 @@ fun RiftSdk.Companion.create(
             conversionSourceUrl = conversionSourceUrl,
             appVersion = version
         ),
-        storage = SharedPrefsStorage(context)
+        storage = SharedPrefsStorage(context, prefsName = "rift_sdk_$keyPrefix")
     )
 }

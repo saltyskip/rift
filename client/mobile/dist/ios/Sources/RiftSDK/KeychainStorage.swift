@@ -118,6 +118,9 @@ extension RiftSdk {
         conversionSourceUrl: String? = nil
     ) -> RiftSdk {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        // Scope Keychain entries by publishable key prefix so multiple apps
+        // using different Rift tenants on the same device don't share state.
+        let keyPrefix = String(publishableKey.prefix(16))
         return RiftSdk(
             config: RiftConfig(
                 publishableKey: publishableKey,
@@ -126,7 +129,7 @@ extension RiftSdk {
                 conversionSourceUrl: conversionSourceUrl,
                 appVersion: version
             ),
-            storage: KeychainStorage()
+            storage: KeychainStorage(service: "ink.riftl.sdk.\(keyPrefix)")
         )
     }
 }
