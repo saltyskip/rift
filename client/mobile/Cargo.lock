@@ -1120,7 +1120,7 @@ dependencies = [
 
 [[package]]
 name = "rift_ffi"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "reqwest",
  "rift_sdk_core",
@@ -1136,14 +1136,14 @@ dependencies = [
 
 [[package]]
 name = "rift_mobile"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rift_ffi",
 ]
 
 [[package]]
 name = "rift_sdk_core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "rift_client_core",
  "serde",
@@ -1697,7 +1697,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "uniffi",
 ]
