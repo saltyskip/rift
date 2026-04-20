@@ -124,6 +124,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -143,24 +145,33 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$SDK_VERSION" >> "$GITHUB_OUTPUT"
 
-          # Check if this version was already released.
-          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Tag $TAG already exists — skipping release."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists — skipping artifact upload."
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
             echo "Will release as $TAG"
           fi
 
+          if git ls-remote --tags origin "refs/tags/$SDK_VERSION" | grep -q "$SDK_VERSION"; then
+            echo "semver_exists=true" >> "$GITHUB_OUTPUT"
+            echo "SPM tag $SDK_VERSION already exists."
+          else
+            echo "semver_exists=false" >> "$GITHUB_OUTPUT"
+            echo "Will create SPM tag $SDK_VERSION"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Rename artifacts
-        if: steps.version.outputs.skip != 'true'
+        if: steps.version.outputs.release_exists != 'true'
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           mv artifacts/ios-sdk.tar.gz "artifacts/rift-ios-sdk-${TAG}.tar.gz"
           mv artifacts/android-sdk.tar.gz "artifacts/rift-android-sdk-${TAG}.tar.gz"
 
       - name: Create GitHub Release
-        if: steps.version.outputs.skip != 'true'
+        if: steps.version.outputs.release_exists != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
@@ -186,17 +197,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create semver tag for SPM
-        if: steps.version.outputs.skip != 'true'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          git tag "${VERSION}" "${{ steps.version.outputs.tag }}" || true
-          git push origin "${VERSION}" || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Update Package.swift and Swift sources
-        if: steps.version.outputs.skip != 'true'
+        id: package
+        if: steps.version.outputs.release_exists != 'true'
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           CHECKSUM="${{ needs.build-ios.outputs.checksum }}"
@@ -218,5 +221,20 @@ jobs:
           git add Package.swift client/mobile/dist/ios/Sources/RiftSDK/
           git commit -m "Update Package.swift and Swift sources for ${TAG}" || echo "No changes"
           git push
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create semver tag for SPM
+        if: steps.version.outputs.semver_exists != 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TARGET="${{ steps.package.outputs.sha }}"
+          if [ -z "$TARGET" ]; then
+            TARGET=$(git rev-parse HEAD)
+          fi
+
+          git tag "$VERSION" "$TARGET"
+          git push origin "$VERSION"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
