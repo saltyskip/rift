@@ -490,6 +490,18 @@ fileprivate struct FfiConverterString: FfiConverter {
 public protocol RiftSdkProtocol: AnyObject, Sendable {
     
     /**
+     * One-call deferred deep linking. Parses the clipboard text for a Rift
+     * link, reports attribution if found, and returns the link data for
+     * navigation. Returns `None` if no Rift link is found.
+     *
+     * The caller must read the clipboard and pass the text in — the SDK
+     * deliberately does NOT read the clipboard itself because iOS 16+
+     * shows a paste permission dialog, and the app should control when
+     * that dialog appears.
+     */
+    func checkDeferredDeepLink(clipboardText: String?) async throws  -> DeferredDeepLinkResult?
+    
+    /**
      * Clear the bound user ID. Call on user logout. The install_id itself is
      * preserved — only the user binding is cleared.
      */
@@ -509,6 +521,12 @@ public protocol RiftSdkProtocol: AnyObject, Sendable {
     func reportAttribution(linkId: String, installId: String, appVersion: String) async throws  -> Bool
     
     /**
+     * Simplified attribution reporting — uses the SDK's internal install_id
+     * and the `app_version` from config. One argument instead of three.
+     */
+    func reportAttributionForLink(linkId: String) async throws  -> Bool
+    
+    /**
      * Bind the current install to a user ID. Persists locally first, then
      * fires the server call. If the server call fails, the binding is kept
      * as "pending" and retried on the next SDK init. Idempotent — safe to
@@ -516,6 +534,18 @@ public protocol RiftSdkProtocol: AnyObject, Sendable {
      * is already bound and synced.
      */
     func setUserId(userId: String) async throws 
+    
+    /**
+     * Fire a conversion event. Reads the bound `user_id` from storage and
+     * POSTs to the `conversion_source_url` configured at init. Fire-and-forget:
+     * the method returns immediately and the HTTP call runs in the background.
+     * The server dedupes via `idempotency_key`.
+     *
+     * If no `conversion_source_url` was configured, logs a warning and returns.
+     * If no `user_id` is bound, logs a warning and returns (the event won't
+     * attribute without a user binding).
+     */
+    func trackConversion(conversionType: String, idempotencyKey: String, metadata: [String: String]?) throws 
     
 }
 open class RiftSdk: RiftSdkProtocol, @unchecked Sendable {
@@ -586,6 +616,33 @@ public convenience init(config: RiftConfig, storage: RiftStorage) {
 
     
 
+    
+    /**
+     * One-call deferred deep linking. Parses the clipboard text for a Rift
+     * link, reports attribution if found, and returns the link data for
+     * navigation. Returns `None` if no Rift link is found.
+     *
+     * The caller must read the clipboard and pass the text in — the SDK
+     * deliberately does NOT read the clipboard itself because iOS 16+
+     * shows a paste permission dialog, and the app should control when
+     * that dialog appears.
+     */
+open func checkDeferredDeepLink(clipboardText: String?)async throws  -> DeferredDeepLinkResult?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_rift_ffi_fn_method_riftsdk_check_deferred_deep_link(
+                    self.uniffiClonePointer(),
+                    FfiConverterOptionString.lower(clipboardText)
+                )
+            },
+            pollFunc: ffi_rift_ffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_rift_ffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_rift_ffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeDeferredDeepLinkResult.lift,
+            errorHandler: FfiConverterTypeRiftError_lift
+        )
+}
     
     /**
      * Clear the bound user ID. Call on user logout. The install_id itself is
@@ -661,6 +718,27 @@ open func reportAttribution(linkId: String, installId: String, appVersion: Strin
 }
     
     /**
+     * Simplified attribution reporting — uses the SDK's internal install_id
+     * and the `app_version` from config. One argument instead of three.
+     */
+open func reportAttributionForLink(linkId: String)async throws  -> Bool  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_rift_ffi_fn_method_riftsdk_report_attribution_for_link(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(linkId)
+                )
+            },
+            pollFunc: ffi_rift_ffi_rust_future_poll_i8,
+            completeFunc: ffi_rift_ffi_rust_future_complete_i8,
+            freeFunc: ffi_rift_ffi_rust_future_free_i8,
+            liftFunc: FfiConverterBool.lift,
+            errorHandler: FfiConverterTypeRiftError_lift
+        )
+}
+    
+    /**
      * Bind the current install to a user ID. Persists locally first, then
      * fires the server call. If the server call fails, the binding is kept
      * as "pending" and retried on the next SDK init. Idempotent — safe to
@@ -682,6 +760,25 @@ open func setUserId(userId: String)async throws   {
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeRiftError_lift
         )
+}
+    
+    /**
+     * Fire a conversion event. Reads the bound `user_id` from storage and
+     * POSTs to the `conversion_source_url` configured at init. Fire-and-forget:
+     * the method returns immediately and the HTTP call runs in the background.
+     * The server dedupes via `idempotency_key`.
+     *
+     * If no `conversion_source_url` was configured, logs a warning and returns.
+     * If no `user_id` is bound, logs a warning and returns (the event won't
+     * attribute without a user binding).
+     */
+open func trackConversion(conversionType: String, idempotencyKey: String, metadata: [String: String]?)throws   {try rustCallWithError(FfiConverterTypeRiftError_lift) {
+    uniffi_rift_ffi_fn_method_riftsdk_track_conversion(self.uniffiClonePointer(),
+        FfiConverterString.lower(conversionType),
+        FfiConverterString.lower(idempotencyKey),
+        FfiConverterOptionDictionaryStringString.lower(metadata),$0
+    )
+}
 }
     
 
@@ -1148,6 +1245,110 @@ public func FfiConverterTypeClickResult_lower(_ value: ClickResult) -> RustBuffe
 }
 
 
+/**
+ * Result from `check_deferred_deep_link` — contains the link data if a
+ * deferred deep link was found in the clipboard text.
+ */
+public struct DeferredDeepLinkResult {
+    public var linkId: String
+    public var iosDeepLink: String?
+    public var androidDeepLink: String?
+    public var webUrl: String?
+    /**
+     * JSON string of arbitrary metadata, or None.
+     */
+    public var metadata: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(linkId: String, iosDeepLink: String?, androidDeepLink: String?, webUrl: String?, 
+        /**
+         * JSON string of arbitrary metadata, or None.
+         */metadata: String?) {
+        self.linkId = linkId
+        self.iosDeepLink = iosDeepLink
+        self.androidDeepLink = androidDeepLink
+        self.webUrl = webUrl
+        self.metadata = metadata
+    }
+}
+
+#if compiler(>=6)
+extension DeferredDeepLinkResult: Sendable {}
+#endif
+
+
+extension DeferredDeepLinkResult: Equatable, Hashable {
+    public static func ==(lhs: DeferredDeepLinkResult, rhs: DeferredDeepLinkResult) -> Bool {
+        if lhs.linkId != rhs.linkId {
+            return false
+        }
+        if lhs.iosDeepLink != rhs.iosDeepLink {
+            return false
+        }
+        if lhs.androidDeepLink != rhs.androidDeepLink {
+            return false
+        }
+        if lhs.webUrl != rhs.webUrl {
+            return false
+        }
+        if lhs.metadata != rhs.metadata {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(linkId)
+        hasher.combine(iosDeepLink)
+        hasher.combine(androidDeepLink)
+        hasher.combine(webUrl)
+        hasher.combine(metadata)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDeferredDeepLinkResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DeferredDeepLinkResult {
+        return
+            try DeferredDeepLinkResult(
+                linkId: FfiConverterString.read(from: &buf), 
+                iosDeepLink: FfiConverterOptionString.read(from: &buf), 
+                androidDeepLink: FfiConverterOptionString.read(from: &buf), 
+                webUrl: FfiConverterOptionString.read(from: &buf), 
+                metadata: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DeferredDeepLinkResult, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.linkId, into: &buf)
+        FfiConverterOptionString.write(value.iosDeepLink, into: &buf)
+        FfiConverterOptionString.write(value.androidDeepLink, into: &buf)
+        FfiConverterOptionString.write(value.webUrl, into: &buf)
+        FfiConverterOptionString.write(value.metadata, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeferredDeepLinkResult_lift(_ buf: RustBuffer) throws -> DeferredDeepLinkResult {
+    return try FfiConverterTypeDeferredDeepLinkResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeferredDeepLinkResult_lower(_ value: DeferredDeepLinkResult) -> RustBuffer {
+    return FfiConverterTypeDeferredDeepLinkResult.lower(value)
+}
+
+
 public struct GetLinkResult {
     public var linkId: String
     public var iosDeepLink: String?
@@ -1265,16 +1466,40 @@ public struct RiftConfig {
      * Log level: "trace", "debug", "info", "warn", "error". Default: "info".
      */
     public var logLevel: String?
+    /**
+     * Webhook URL for conversion tracking (from `GET /v1/sources`). If set,
+     * `track_conversion()` POSTs events to this URL. If None, `track_conversion()`
+     * logs a warning and returns.
+     */
+    public var conversionSourceUrl: String?
+    /**
+     * App version string (e.g. "1.2.3"). Used by `report_attribution_for_link()`.
+     * If None, defaults to "unknown". The native convenience constructors
+     * auto-populate this from `Bundle.main` (iOS) or `PackageManager` (Android).
+     */
+    public var appVersion: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(publishableKey: String, baseUrl: String?, 
         /**
          * Log level: "trace", "debug", "info", "warn", "error". Default: "info".
-         */logLevel: String?) {
+         */logLevel: String?, 
+        /**
+         * Webhook URL for conversion tracking (from `GET /v1/sources`). If set,
+         * `track_conversion()` POSTs events to this URL. If None, `track_conversion()`
+         * logs a warning and returns.
+         */conversionSourceUrl: String?, 
+        /**
+         * App version string (e.g. "1.2.3"). Used by `report_attribution_for_link()`.
+         * If None, defaults to "unknown". The native convenience constructors
+         * auto-populate this from `Bundle.main` (iOS) or `PackageManager` (Android).
+         */appVersion: String?) {
         self.publishableKey = publishableKey
         self.baseUrl = baseUrl
         self.logLevel = logLevel
+        self.conversionSourceUrl = conversionSourceUrl
+        self.appVersion = appVersion
     }
 }
 
@@ -1294,6 +1519,12 @@ extension RiftConfig: Equatable, Hashable {
         if lhs.logLevel != rhs.logLevel {
             return false
         }
+        if lhs.conversionSourceUrl != rhs.conversionSourceUrl {
+            return false
+        }
+        if lhs.appVersion != rhs.appVersion {
+            return false
+        }
         return true
     }
 
@@ -1301,6 +1532,8 @@ extension RiftConfig: Equatable, Hashable {
         hasher.combine(publishableKey)
         hasher.combine(baseUrl)
         hasher.combine(logLevel)
+        hasher.combine(conversionSourceUrl)
+        hasher.combine(appVersion)
     }
 }
 
@@ -1315,7 +1548,9 @@ public struct FfiConverterTypeRiftConfig: FfiConverterRustBuffer {
             try RiftConfig(
                 publishableKey: FfiConverterString.read(from: &buf), 
                 baseUrl: FfiConverterOptionString.read(from: &buf), 
-                logLevel: FfiConverterOptionString.read(from: &buf)
+                logLevel: FfiConverterOptionString.read(from: &buf), 
+                conversionSourceUrl: FfiConverterOptionString.read(from: &buf), 
+                appVersion: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -1323,6 +1558,8 @@ public struct FfiConverterTypeRiftConfig: FfiConverterRustBuffer {
         FfiConverterString.write(value.publishableKey, into: &buf)
         FfiConverterOptionString.write(value.baseUrl, into: &buf)
         FfiConverterOptionString.write(value.logLevel, into: &buf)
+        FfiConverterOptionString.write(value.conversionSourceUrl, into: &buf)
+        FfiConverterOptionString.write(value.appVersion, into: &buf)
     }
 }
 
@@ -1538,6 +1775,80 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
         }
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeDeferredDeepLinkResult: FfiConverterRustBuffer {
+    typealias SwiftType = DeferredDeepLinkResult?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeDeferredDeepLinkResult.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeDeferredDeepLinkResult.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionDictionaryStringString: FfiConverterRustBuffer {
+    typealias SwiftType = [String: String]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterDictionaryStringString.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterDictionaryStringString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
+    public static func write(_ value: [String: String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for (key, value) in value {
+            FfiConverterString.write(key, into: &buf)
+            FfiConverterString.write(value, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: String] {
+        let len: Int32 = try readInt(&buf)
+        var dict = [String: String]()
+        dict.reserveCapacity(Int(len))
+        for _ in 0..<len {
+            let key = try FfiConverterString.read(from: &buf)
+            let value = try FfiConverterString.read(from: &buf)
+            dict[key] = value
+        }
+        return dict
+    }
+}
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
 private let UNIFFI_RUST_FUTURE_POLL_MAYBE_READY: Int8 = 1
 
@@ -1620,6 +1931,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_rift_ffi_checksum_func_parse_referrer_link() != 54616) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_rift_ffi_checksum_method_riftsdk_check_deferred_deep_link() != 6149) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_rift_ffi_checksum_method_riftsdk_clear_user_id() != 63721) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1635,7 +1949,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_rift_ffi_checksum_method_riftsdk_report_attribution() != 16163) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_rift_ffi_checksum_method_riftsdk_report_attribution_for_link() != 47552) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_rift_ffi_checksum_method_riftsdk_set_user_id() != 19064) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_rift_ffi_checksum_method_riftsdk_track_conversion() != 30661) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_rift_ffi_checksum_method_riftstorage_get() != 22749) {
