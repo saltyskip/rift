@@ -302,16 +302,18 @@ impl RiftSdk {
             .map_err(storage_err_to_rift)?;
         Ok(())
     }
+}
 
+#[uniffi::export(async_runtime = "tokio")]
+impl RiftSdk {
     /// Fire a conversion event. Reads the bound `user_id` from storage and
-    /// POSTs to the `conversion_source_url` configured at init. Fire-and-forget:
-    /// the method returns immediately and the HTTP call runs in the background.
+    /// POSTs to the `conversion_source_url` configured at init.
     /// The server dedupes via `idempotency_key`.
     ///
     /// If no `conversion_source_url` was configured, logs a warning and returns.
     /// If no `user_id` is bound, logs a warning and returns (the event won't
     /// attribute without a user binding).
-    pub fn track_conversion(
+    pub async fn track_conversion(
         &self,
         conversion_type: String,
         idempotency_key: String,
@@ -340,30 +342,20 @@ impl RiftSdk {
             payload["metadata"] = serde_json::json!(meta);
         }
 
-        let url = source_url.clone();
-
-        if tokio::runtime::Handle::try_current().is_ok() {
-            tokio::spawn(async move {
-                let http = reqwest::Client::new();
-                match http
-                    .post(&url)
-                    .header("Content-Type", "application/json")
-                    .json(&payload)
-                    .send()
-                    .await
-                {
-                    Ok(r) => tracing::debug!(status = %r.status(), "conversion event sent"),
-                    Err(e) => tracing::warn!(error = %e, "conversion event failed"),
-                }
-            });
+        let http = reqwest::Client::new();
+        match http
+            .post(source_url)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(r) => tracing::debug!(status = %r.status(), "conversion event sent"),
+            Err(e) => tracing::warn!(error = %e, "conversion event failed"),
         }
 
         Ok(())
     }
-}
-
-#[uniffi::export(async_runtime = "tokio")]
-impl RiftSdk {
     /// Bind the current install to a user ID. Persists locally first, then
     /// fires the server call. If the server call fails, the binding is kept
     /// as "pending" and retried on the next SDK init. Idempotent — safe to
