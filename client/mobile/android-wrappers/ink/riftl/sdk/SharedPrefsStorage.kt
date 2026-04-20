@@ -28,7 +28,7 @@ public class SharedPrefsStorage(context: Context) : RiftStorage {
         return try {
             prefs.getString(key, null)
         } catch (e: Exception) {
-            throw StorageException.IoError(
+            throw StorageError.IoError(
                 message = "shared prefs read failed: ${e.message}"
             )
         }
@@ -38,7 +38,7 @@ public class SharedPrefsStorage(context: Context) : RiftStorage {
         try {
             prefs.edit().putString(key, value).apply()
         } catch (e: Exception) {
-            throw StorageException.IoError(
+            throw StorageError.IoError(
                 message = "shared prefs write failed: ${e.message}"
             )
         }
@@ -48,7 +48,7 @@ public class SharedPrefsStorage(context: Context) : RiftStorage {
         try {
             prefs.edit().remove(key).apply()
         } catch (e: Exception) {
-            throw StorageException.IoError(
+            throw StorageError.IoError(
                 message = "shared prefs delete failed: ${e.message}"
             )
         }

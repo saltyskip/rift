@@ -213,17 +213,17 @@ fun checkDeferredDeepLink() {
                 <tbody className="text-[#a1a1aa]">
                   <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">installId()</td>
-                    <td className="px-4 py-2.5 font-mono">String</td>
+                    <td className="px-4 py-2.5 font-mono">String (@Throws)</td>
                     <td className="px-4 py-2.5">Returns the persistent install UUID, generating on first call.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">setUserId(userId)</td>
-                    <td className="px-4 py-2.5 font-mono">Unit</td>
-                    <td className="px-4 py-2.5">Suspend. Binds the install to a user. Persists + syncs + retries.</td>
+                    <td className="px-4 py-2.5 font-mono">Unit (suspend @Throws)</td>
+                    <td className="px-4 py-2.5">Binds the install to a user. Persists + syncs + retries on next launch.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">clearUserId()</td>
-                    <td className="px-4 py-2.5 font-mono">Unit</td>
+                    <td className="px-4 py-2.5 font-mono">Unit (@Throws)</td>
                     <td className="px-4 py-2.5">Removes stored user binding. Call on logout.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">

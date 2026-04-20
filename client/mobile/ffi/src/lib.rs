@@ -215,6 +215,10 @@ impl RiftSdk {
 
     /// Internal: if there's a stored user_id that hasn't been synced to the
     /// server, attempt the binding. Called on SDK construction.
+    ///
+    /// Handles both `synced == Some("false")` (normal pending state) and
+    /// `synced == None` (crash between writing user_id and writing the synced
+    /// flag). Both mean "needs retry."
     async fn retry_pending_binding(&self) -> Result<(), RiftError> {
         let user_id = self
             .storage
@@ -225,18 +229,31 @@ impl RiftSdk {
             .get(STORAGE_KEY_USER_ID_SYNCED.to_string())
             .map_err(storage_err_to_rift)?;
 
-        let (Some(user_id), Some(s)) = (user_id, synced.as_deref()) else {
+        let Some(user_id) = user_id else {
             return Ok(());
         };
-        if s == "true" {
+        if synced.as_deref() == Some("true") {
             return Ok(());
         }
 
         let install_id = self.get_or_create_install_id()?;
-        self.client.link_attribution(install_id, user_id).await?;
-        self.storage
-            .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
+        self.client
+            .link_attribution(install_id, user_id.clone())
+            .await?;
+
+        // Re-read user_id to guard against a race where set_user_id("usr_new")
+        // overwrote storage while this background retry for "usr_old" was
+        // in-flight. Only mark synced if the stored user still matches what
+        // we just sent to the server.
+        let current = self
+            .storage
+            .get(STORAGE_KEY_USER_ID.to_string())
             .map_err(storage_err_to_rift)?;
+        if current.as_deref() == Some(user_id.as_str()) {
+            self.storage
+                .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
+                .map_err(storage_err_to_rift)?;
+        }
         Ok(())
     }
 }
@@ -303,14 +320,35 @@ impl RiftSdk {
         // Resolve install_id (generate on first call).
         let install_id = self.get_or_create_install_id()?;
 
-        // Fire the server call. On success, mark synced. On failure, leave
-        // the unsynced flag so the next SDK init retries.
+        // Fire the server call. On success, mark synced. On transient failure
+        // (network), leave unsynced so the next launch retries. On permanent
+        // failure (404 = re-bind protection, 400 = bad request), clear the
+        // unsynced state to prevent infinite retry loops.
         match self.client.link_attribution(install_id, user_id).await {
             Ok(_) => {
                 self.storage
                     .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
                     .map_err(storage_err_to_rift)?;
                 Ok(())
+            }
+            Err(CoreError::Api { status, .. }) if status == 400 || status == 404 => {
+                // Server rejected the binding permanently (e.g. install already
+                // bound to a different user, or invalid request). Clear the
+                // pending state so we don't retry on every launch.
+                tracing::warn!(
+                    status,
+                    "link_attribution permanently rejected; clearing pending state"
+                );
+                self.storage
+                    .remove(STORAGE_KEY_USER_ID.to_string())
+                    .map_err(storage_err_to_rift)?;
+                self.storage
+                    .remove(STORAGE_KEY_USER_ID_SYNCED.to_string())
+                    .map_err(storage_err_to_rift)?;
+                Err(RiftError::Api {
+                    status,
+                    message: "User binding rejected by server".to_string(),
+                })
             }
             Err(e) => {
                 tracing::warn!(error = ?e, "link_attribution failed; will retry on next launch");
