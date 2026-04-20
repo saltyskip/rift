@@ -103,3 +103,30 @@ public final class KeychainStorage: RiftStorage {
         }
     }
 }
+
+// MARK: - Convenience constructor
+
+extension RiftSdk {
+    /// Create a RiftSdk with sensible iOS defaults: Keychain-backed storage,
+    /// app version auto-read from `Bundle.main`, and no custom base URL.
+    ///
+    /// ```swift
+    /// let rift = RiftSdk.create(publishableKey: "pk_live_...")
+    /// ```
+    public static func create(
+        publishableKey: String,
+        conversionSourceUrl: String? = nil
+    ) -> RiftSdk {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        return RiftSdk(
+            config: RiftConfig(
+                publishableKey: publishableKey,
+                baseUrl: nil,
+                logLevel: nil,
+                conversionSourceUrl: conversionSourceUrl,
+                appVersion: version
+            ),
+            storage: KeychainStorage()
+        )
+    }
+}
