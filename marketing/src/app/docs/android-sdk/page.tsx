@@ -15,7 +15,7 @@ export default function AndroidSdkPage() {
         <p className="text-[13px] font-medium text-[#2dd4bf] uppercase tracking-widest mb-3">Mobile SDK</p>
         <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Android SDK</h1>
         <p className="text-lg text-[#71717a] leading-relaxed">
-          Native Kotlin SDK for click tracking and attribution.
+          Native Kotlin SDK for click tracking, attribution, and user binding.
           Built with Rust and compiled to a Kotlin library via UniFFI.
         </p>
       </div>
@@ -42,15 +42,62 @@ dependencies {
 
           <Step n={2} title="Initialize">
             <p>
-              You need a <a href="/docs/publishable-keys" className="text-[#2dd4bf] hover:underline">publishable key</a> to initialize the SDK.
+              You need a <a href="/docs/publishable-keys" className="text-[#2dd4bf] hover:underline">publishable key</a> and
+              a storage backend. The SDK ships with{" "}
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">SharedPrefsStorage</code>{" "}
+              which persists data via Android&apos;s <code>SharedPreferences</code>.
             </p>
             <CodeBlock lang="kotlin">{`import ink.riftl.sdk.*
 
 // Initialize once (e.g., in Application.onCreate).
-val rift = RiftSdk(publishableKey = "pk_live_YOUR_KEY")
+val rift = RiftSdk(
+    config = RiftConfig(
+        publishableKey = "pk_live_YOUR_KEY",
+        baseUrl = null,
+        logLevel = null
+    ),
+    storage = SharedPrefsStorage(applicationContext)
+)`}</CodeBlock>
+            <Callout type="info">
+              The SDK generates a persistent <code>install_id</code> (UUID) on first launch
+              and stores it in SharedPreferences. On Android, app data is wiped on uninstall
+              by design, so the install ID does not survive reinstallation. For fresh-install
+              attribution, use the{" "}
+              <a href="https://developer.android.com/google/play/installreferrer" target="_blank" rel="noopener noreferrer" className="text-[#2dd4bf] hover:underline">
+                Google Play Install Referrer
+              </a>{" "}
+              (see below).
+            </Callout>
+          </Step>
+        </section>
 
-// Or point to a self-hosted instance:
-val rift = RiftSdk(publishableKey = "pk_live_YOUR_KEY", baseUrl = "https://api.yourcompany.com")`}</CodeBlock>
+        <div className="gradient-line" />
+
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold text-[#fafafa]">User Binding</h2>
+
+          <Step n={3} title="Bind the user after signup or login">
+            <p>
+              Call <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">setUserId</code>{" "}
+              wherever you already handle your user session. The SDK persists the binding
+              locally, syncs it to the server, and retries automatically on the next app
+              launch if the network call fails.
+            </p>
+            <CodeBlock lang="kotlin">{`// Wherever you know the user is signed in:
+lifecycleScope.launch {
+    runCatching { rift.setUserId(userId = currentUser.id) }
+}`}</CodeBlock>
+            <p className="text-[13px] text-[#71717a]">
+              Idempotent — safe to call on every launch with the same user ID. A no-op if
+              the binding is already synced.
+            </p>
+          </Step>
+
+          <Step n={4} title="Clear on logout">
+            <p>
+              Remove the user binding when the user signs out. The install ID is preserved.
+            </p>
+            <CodeBlock lang="kotlin">{`rift.clearUserId()`}</CodeBlock>
           </Step>
         </section>
 
@@ -59,7 +106,7 @@ val rift = RiftSdk(publishableKey = "pk_live_YOUR_KEY", baseUrl = "https://api.y
         <section className="space-y-6">
           <h2 className="text-2xl font-bold text-[#fafafa]">Click Tracking</h2>
 
-          <Step n={3} title="Record a click">
+          <Step n={5} title="Record a click">
             <p>If your app opens Rift links internally, record the click:</p>
             <CodeBlock lang="kotlin">{`suspend fun trackClick(linkId: String) {
     try {
@@ -78,7 +125,7 @@ val rift = RiftSdk(publishableKey = "pk_live_YOUR_KEY", baseUrl = "https://api.y
         <section className="space-y-6">
           <h2 className="text-2xl font-bold text-[#fafafa]">Post-Install Attribution</h2>
 
-          <Step n={4} title="Read link ID from install referrer">
+          <Step n={6} title="Read link ID from install referrer">
             <p>
               When a user clicks a Rift link on Android, the link ID is appended to the Play Store URL
               as <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">rift_link=&lt;link_id&gt;</code> in the install referrer.
@@ -104,32 +151,32 @@ fun checkDeferredDeepLink() {
 }`}</CodeBlock>
           </Step>
 
-          <Step n={5} title="Resolve and report attribution">
+          <Step n={7} title="Resolve and report attribution">
             <CodeBlock lang="kotlin">{`suspend fun resolveAndAttribute(linkId: String) {
-    // Report attribution
+    // Report attribution — use the SDK's persistent install ID.
     try {
         val success = rift.reportAttribution(
             linkId = linkId,
-            installId = getInstallId(),
+            installId = rift.installId(),
             appVersion = BuildConfig.VERSION_NAME
         )
-        Log.d("Rift", "Attribution reported: $success")
+        Log.d("Rift", "Attribution reported: \$success")
     } catch (e: RiftError) {
         Log.e("Rift", "Attribution error", e)
     }
 
-    // Fetch link data for navigation (public endpoint, no auth needed)
-    val url = URL("https://api.riftl.ink/r/$linkId")
-    val conn = url.openConnection() as HttpURLConnection
-    conn.setRequestProperty("Accept", "application/json")
-    val link = JSONObject(conn.inputStream.bufferedReader().readText())
-
-    link.optString("android_deep_link")?.let { deepLink ->
-        handleDeepLink(deepLink)
+    // Fetch link data for navigation.
+    try {
+        val link = rift.getLink(linkId = linkId)
+        link.androidDeepLink?.let { handleDeepLink(it) }
+    } catch (e: RiftError) {
+        Log.e("Rift", "Link fetch error", e)
     }
 }`}</CodeBlock>
             <Callout type="info">
-              The SDK methods are <code>suspend</code> functions — call them from a coroutine scope.
+              Use <code>rift.installId()</code> to get the SDK&apos;s persistent install ID
+              instead of generating your own. The same UUID is used by <code>setUserId</code>
+              for user binding.
             </Callout>
           </Step>
         </section>
@@ -141,11 +188,14 @@ fun checkDeferredDeepLink() {
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-[#fafafa]">
-              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">RiftSdk(publishableKey, baseUrl?)</code>
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">RiftSdk(config, storage)</code>
             </h3>
             <p className="text-[15px] text-[#a1a1aa]">
-              Constructor. The <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">publishableKey</code> parameter is required.
-              The <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">baseUrl</code> is optional (defaults to <code className="text-[#71717a]">https://api.riftl.ink</code>).
+              Constructor. Takes a <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">RiftConfig</code> (publishable
+              key + optional base URL and log level) and a storage backend implementing the{" "}
+              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">RiftStorage</code> interface.
+              Use the bundled <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">SharedPrefsStorage(context)</code> for
+              production.
             </p>
           </div>
 
@@ -162,14 +212,34 @@ fun checkDeferredDeepLink() {
                 </thead>
                 <tbody className="text-[#a1a1aa]">
                   <tr className="border-b border-[#1e1e22]">
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">installId()</td>
+                    <td className="px-4 py-2.5 font-mono">String</td>
+                    <td className="px-4 py-2.5">Returns the persistent install UUID, generating on first call.</td>
+                  </tr>
+                  <tr className="border-b border-[#1e1e22]">
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">setUserId(userId)</td>
+                    <td className="px-4 py-2.5 font-mono">Unit</td>
+                    <td className="px-4 py-2.5">Suspend. Binds the install to a user. Persists + syncs + retries.</td>
+                  </tr>
+                  <tr className="border-b border-[#1e1e22]">
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">clearUserId()</td>
+                    <td className="px-4 py-2.5 font-mono">Unit</td>
+                    <td className="px-4 py-2.5">Removes stored user binding. Call on logout.</td>
+                  </tr>
+                  <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">click(linkId)</td>
                     <td className="px-4 py-2.5 font-mono">ClickResult</td>
-                    <td className="px-4 py-2.5">Records a click and returns link data.</td>
+                    <td className="px-4 py-2.5">Suspend. Records a click and returns link data.</td>
                   </tr>
-                  <tr>
+                  <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">reportAttribution(linkId, installId, appVersion)</td>
                     <td className="px-4 py-2.5 font-mono">Boolean</td>
-                    <td className="px-4 py-2.5">Reports an install attribution.</td>
+                    <td className="px-4 py-2.5">Suspend. Reports an install attribution to Rift.</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">getLink(linkId)</td>
+                    <td className="px-4 py-2.5 font-mono">GetLinkResult</td>
+                    <td className="px-4 py-2.5">Suspend. Fetches link data without recording a click.</td>
                   </tr>
                 </tbody>
               </table>
