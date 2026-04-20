@@ -537,15 +537,14 @@ public protocol RiftSdkProtocol: AnyObject, Sendable {
     
     /**
      * Fire a conversion event. Reads the bound `user_id` from storage and
-     * POSTs to the `conversion_source_url` configured at init. Fire-and-forget:
-     * the method returns immediately and the HTTP call runs in the background.
+     * POSTs to the `conversion_source_url` configured at init.
      * The server dedupes via `idempotency_key`.
      *
      * If no `conversion_source_url` was configured, logs a warning and returns.
      * If no `user_id` is bound, logs a warning and returns (the event won't
      * attribute without a user binding).
      */
-    func trackConversion(conversionType: String, idempotencyKey: String, metadata: [String: String]?) throws 
+    func trackConversion(conversionType: String, idempotencyKey: String, metadata: [String: String]?) async throws 
     
 }
 open class RiftSdk: RiftSdkProtocol, @unchecked Sendable {
@@ -764,21 +763,28 @@ open func setUserId(userId: String)async throws   {
     
     /**
      * Fire a conversion event. Reads the bound `user_id` from storage and
-     * POSTs to the `conversion_source_url` configured at init. Fire-and-forget:
-     * the method returns immediately and the HTTP call runs in the background.
+     * POSTs to the `conversion_source_url` configured at init.
      * The server dedupes via `idempotency_key`.
      *
      * If no `conversion_source_url` was configured, logs a warning and returns.
      * If no `user_id` is bound, logs a warning and returns (the event won't
      * attribute without a user binding).
      */
-open func trackConversion(conversionType: String, idempotencyKey: String, metadata: [String: String]?)throws   {try rustCallWithError(FfiConverterTypeRiftError_lift) {
-    uniffi_rift_ffi_fn_method_riftsdk_track_conversion(self.uniffiClonePointer(),
-        FfiConverterString.lower(conversionType),
-        FfiConverterString.lower(idempotencyKey),
-        FfiConverterOptionDictionaryStringString.lower(metadata),$0
-    )
-}
+open func trackConversion(conversionType: String, idempotencyKey: String, metadata: [String: String]?)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_rift_ffi_fn_method_riftsdk_track_conversion(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(conversionType),FfiConverterString.lower(idempotencyKey),FfiConverterOptionDictionaryStringString.lower(metadata)
+                )
+            },
+            pollFunc: ffi_rift_ffi_rust_future_poll_void,
+            completeFunc: ffi_rift_ffi_rust_future_complete_void,
+            freeFunc: ffi_rift_ffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeRiftError_lift
+        )
 }
     
 
@@ -1955,7 +1961,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_rift_ffi_checksum_method_riftsdk_set_user_id() != 19064) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rift_ffi_checksum_method_riftsdk_track_conversion() != 30661) {
+    if (uniffi_rift_ffi_checksum_method_riftsdk_track_conversion() != 41172) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_rift_ffi_checksum_method_riftstorage_get() != 22749) {
