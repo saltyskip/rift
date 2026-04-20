@@ -1122,6 +1122,7 @@ dependencies = [
 name = "rift_ffi"
 version = "0.1.0"
 dependencies = [
+ "reqwest",
  "rift_sdk_core",
  "serde_json",
  "thiserror",

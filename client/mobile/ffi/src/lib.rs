@@ -106,6 +106,14 @@ pub struct RiftConfig {
     pub base_url: Option<String>,
     /// Log level: "trace", "debug", "info", "warn", "error". Default: "info".
     pub log_level: Option<String>,
+    /// Webhook URL for conversion tracking (from `GET /v1/sources`). If set,
+    /// `track_conversion()` POSTs events to this URL. If None, `track_conversion()`
+    /// logs a warning and returns.
+    pub conversion_source_url: Option<String>,
+    /// App version string (e.g. "1.2.3"). Used by `report_attribution_for_link()`.
+    /// If None, defaults to "unknown". The native convenience constructors
+    /// auto-populate this from `Bundle.main` (iOS) or `PackageManager` (Android).
+    pub app_version: Option<String>,
 }
 
 // ── Response Records ──
@@ -134,12 +142,26 @@ pub struct GetLinkResult {
     pub metadata: Option<String>,
 }
 
+/// Result from `check_deferred_deep_link` — contains the link data if a
+/// deferred deep link was found in the clipboard text.
+#[derive(uniffi::Record)]
+pub struct DeferredDeepLinkResult {
+    pub link_id: String,
+    pub ios_deep_link: Option<String>,
+    pub android_deep_link: Option<String>,
+    pub web_url: Option<String>,
+    /// JSON string of arbitrary metadata, or None.
+    pub metadata: Option<String>,
+}
+
 // ── SDK Object ──
 
 #[derive(uniffi::Object)]
 pub struct RiftSdk {
     client: RiftClient,
     storage: Arc<dyn RiftStorage>,
+    conversion_source_url: Option<String>,
+    app_version: String,
 }
 
 #[uniffi::export]
@@ -164,6 +186,8 @@ impl RiftSdk {
         let sdk = Arc::new(Self {
             client: RiftClient::new(config.publishable_key, config.base_url),
             storage,
+            conversion_source_url: config.conversion_source_url,
+            app_version: config.app_version.unwrap_or_else(|| "unknown".to_string()),
         });
 
         // Retry any pending user binding from a previous session.
@@ -276,6 +300,64 @@ impl RiftSdk {
         self.storage
             .remove(STORAGE_KEY_USER_ID_SYNCED.to_string())
             .map_err(storage_err_to_rift)?;
+        Ok(())
+    }
+
+    /// Fire a conversion event. Reads the bound `user_id` from storage and
+    /// POSTs to the `conversion_source_url` configured at init. Fire-and-forget:
+    /// the method returns immediately and the HTTP call runs in the background.
+    /// The server dedupes via `idempotency_key`.
+    ///
+    /// If no `conversion_source_url` was configured, logs a warning and returns.
+    /// If no `user_id` is bound, logs a warning and returns (the event won't
+    /// attribute without a user binding).
+    pub fn track_conversion(
+        &self,
+        conversion_type: String,
+        idempotency_key: String,
+        metadata: Option<std::collections::HashMap<String, String>>,
+    ) -> Result<(), RiftError> {
+        let Some(source_url) = &self.conversion_source_url else {
+            tracing::warn!("track_conversion called but no conversion_source_url configured");
+            return Ok(());
+        };
+
+        let user_id = self
+            .storage
+            .get(STORAGE_KEY_USER_ID.to_string())
+            .map_err(storage_err_to_rift)?;
+        let Some(user_id) = user_id else {
+            tracing::warn!("track_conversion called but no user_id bound — call setUserId first");
+            return Ok(());
+        };
+
+        let mut payload = serde_json::json!({
+            "user_id": user_id,
+            "type": conversion_type,
+            "idempotency_key": idempotency_key,
+        });
+        if let Some(meta) = metadata {
+            payload["metadata"] = serde_json::json!(meta);
+        }
+
+        let url = source_url.clone();
+
+        if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::spawn(async move {
+                let http = reqwest::Client::new();
+                match http
+                    .post(&url)
+                    .header("Content-Type", "application/json")
+                    .json(&payload)
+                    .send()
+                    .await
+                {
+                    Ok(r) => tracing::debug!(status = %r.status(), "conversion event sent"),
+                    Err(e) => tracing::warn!(error = %e, "conversion event failed"),
+                }
+            });
+        }
+
         Ok(())
     }
 }
@@ -403,6 +485,57 @@ impl RiftSdk {
             metadata: resp.metadata.map(|v| v.to_string()),
         })
     }
+
+    /// Simplified attribution reporting — uses the SDK's internal install_id
+    /// and the `app_version` from config. One argument instead of three.
+    pub async fn report_attribution_for_link(&self, link_id: String) -> Result<bool, RiftError> {
+        let install_id = self.get_or_create_install_id()?;
+        Ok(self
+            .client
+            .report_attribution(link_id, install_id, self.app_version.clone())
+            .await?)
+    }
+
+    /// One-call deferred deep linking. Parses the clipboard text for a Rift
+    /// link, reports attribution if found, and returns the link data for
+    /// navigation. Returns `None` if no Rift link is found.
+    ///
+    /// The caller must read the clipboard and pass the text in — the SDK
+    /// deliberately does NOT read the clipboard itself because iOS 16+
+    /// shows a paste permission dialog, and the app should control when
+    /// that dialog appears.
+    pub async fn check_deferred_deep_link(
+        &self,
+        clipboard_text: Option<String>,
+    ) -> Result<Option<DeferredDeepLinkResult>, RiftError> {
+        let Some(text) = clipboard_text else {
+            return Ok(None);
+        };
+
+        let Some(link_id) = rift_sdk_core::parser::parse_clipboard_link(&text) else {
+            return Ok(None);
+        };
+
+        // Report attribution (fire-and-forget on failure — don't block navigation).
+        if let Err(e) = self.report_attribution_for_link(link_id.clone()).await {
+            tracing::warn!(error = ?e, "deferred deep link attribution failed");
+        }
+
+        // Fetch link data for navigation.
+        match self.client.get_link(link_id.clone()).await {
+            Ok(resp) => Ok(Some(DeferredDeepLinkResult {
+                link_id,
+                ios_deep_link: resp.ios_deep_link,
+                android_deep_link: resp.android_deep_link,
+                web_url: resp.web_url,
+                metadata: resp.metadata.map(|v| v.to_string()),
+            })),
+            Err(e) => {
+                tracing::warn!(error = ?e, "deferred deep link fetch failed");
+                Err(e.into())
+            }
+        }
+    }
 }
 
 // ── Free functions ──
@@ -459,6 +592,8 @@ mod tests {
                 publishable_key: "pk_live_test".to_string(),
                 base_url: Some(base_url),
                 log_level: Some("error".to_string()),
+                conversion_source_url: None,
+                app_version: Some("1.0.0-test".to_string()),
             },
             storage_for_sdk,
         );
@@ -648,6 +783,8 @@ mod tests {
                 publishable_key: "pk_live_test".to_string(),
                 base_url: Some(server.uri()),
                 log_level: Some("error".to_string()),
+                conversion_source_url: None,
+                app_version: Some("1.0.0-test".to_string()),
             },
             storage_for_sdk,
         );
@@ -690,6 +827,8 @@ mod tests {
                 publishable_key: "pk_live_test".to_string(),
                 base_url: Some(server.uri()),
                 log_level: Some("error".to_string()),
+                conversion_source_url: None,
+                app_version: Some("1.0.0-test".to_string()),
             },
             storage_for_sdk,
         );

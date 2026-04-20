@@ -54,3 +54,33 @@ public class SharedPrefsStorage(context: Context) : RiftStorage {
         }
     }
 }
+
+/**
+ * Create a RiftSdk with sensible Android defaults: SharedPreferences-backed
+ * storage, app version auto-read from PackageManager, and no custom base URL.
+ *
+ * ```kotlin
+ * val rift = RiftSdk.create("pk_live_...", applicationContext)
+ * ```
+ */
+fun RiftSdk.Companion.create(
+    publishableKey: String,
+    context: Context,
+    conversionSourceUrl: String? = null
+): RiftSdk {
+    val version = try {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    } catch (e: Exception) {
+        "unknown"
+    }
+    return RiftSdk(
+        config = RiftConfig(
+            publishableKey = publishableKey,
+            baseUrl = null,
+            logLevel = null,
+            conversionSourceUrl = conversionSourceUrl,
+            appVersion = version
+        ),
+        storage = SharedPrefsStorage(context)
+    )
+}
