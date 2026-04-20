@@ -1134,7 +1134,11 @@ pub async fn get_link_timeseries(
     }
 }
 
-// ── PUT /v1/attribution/link — Link attribution to user (authenticated) ──
+// ── PUT /v1/attribution/link — Link attribution to user (SDK-authenticated) ──
+//
+// SDK-authenticated (pk_live_) because the install_id is opaque and only
+// lives in the mobile SDK; no flow produces the inputs a backend would need
+// to call this endpoint with a secret key.
 
 #[utoipa::path(
     put,
@@ -1144,8 +1148,10 @@ pub async fn get_link_timeseries(
     responses(
         (status = 200, description = "Attribution linked", body = AttributionResponse),
         (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::error::ErrorResponse),
+        (status = 404, description = "No attribution found for this install_id", body = crate::error::ErrorResponse),
     ),
-    security(("api_key" = []), ("x402" = [])),
+    security(("api_key" = [])),
 )]
 #[tracing::instrument(skip(state))]
 pub async fn link_attribution(

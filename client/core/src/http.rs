@@ -85,7 +85,6 @@ impl RiftClient {
         self.send(request).await
     }
 
-    #[allow(dead_code)]
     pub(crate) async fn put<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,

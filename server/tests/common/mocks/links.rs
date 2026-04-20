@@ -241,13 +241,22 @@ impl LinksRepository for MockLinksRepo {
         install_id: &str,
         user_id: &str,
     ) -> Result<bool, String> {
+        // Mirrors the real repo's re-bind protection: only update when user_id
+        // is None or already matches the new value. Never overwrite a different
+        // user_id with this method.
         let mut attrs = self.attributions.lock().unwrap();
         if let Some(attr) = attrs
             .iter_mut()
             .find(|a| &a.tenant_id == tenant_id && a.install_id == install_id)
         {
-            attr.user_id = Some(user_id.to_string());
-            Ok(true)
+            match attr.user_id.as_deref() {
+                None => {
+                    attr.user_id = Some(user_id.to_string());
+                    Ok(true)
+                }
+                Some(existing) if existing == user_id => Ok(true),
+                Some(_) => Ok(false),
+            }
         } else {
             Ok(false)
         }

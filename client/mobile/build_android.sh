@@ -49,6 +49,13 @@ mkdir -p "$DIST/kotlin/src"
 cp -r "$KOTLIN_GEN_DIR"/ink "$DIST/kotlin/src/" 2>/dev/null || \
   cp "$KOTLIN_GEN_DIR"/*.kt "$DIST/kotlin/src/"
 
+# Copy hand-written wrappers alongside the generated bindings. These
+# implement the UniFFI foreign traits with platform-specific primitives
+# (e.g. SharedPreferences-backed storage). They live in a committed
+# source directory and are merged into the generated tree at build time.
+echo "Copying hand-written Kotlin wrappers..."
+cp -r "$SCRIPT_DIR/android-wrappers/"* "$DIST/kotlin/src/"
+
 # Copy native libraries.
 copy_lib() {
     local target=$1 abi=$2

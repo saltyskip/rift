@@ -364,24 +364,95 @@ if (linkId != null) {
         {/* User Linking */}
         <section className="space-y-6">
           <h2 className="text-2xl font-bold text-[#fafafa]">
-            Link attribution to a user
+            Bind users to installs
           </h2>
           <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
-            After the user signs up or logs in, connect the attribution to their
-            account. This closes the loop from click to registered user. This
-            call uses your secret key (
-            <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">
-              rl_live_
-            </code>
-            ) — make it from your backend, not the client.
+            After a user signs up or logs in, tell Rift who they are. The mobile
+            SDK persists this binding locally, sends it to the server, and
+            silently retries on the next app launch if the network call fails.
+            One line, wherever you already handle your user session:
           </p>
-          <CodeBlock>{`curl -X PUT https://api.riftl.ink/v1/attribution/link \\
-  -H "Authorization: Bearer rl_live_YOUR_KEY" \\
+
+          <DocsSetupTabs
+            title="Bind the user"
+            tabs={[
+              {
+                id: "ios",
+                label: "iOS",
+                children: (
+                  <div className="space-y-3">
+                    <CodeBlock lang="swift">{`// Wherever you know the user is signed in
+Task {
+    try? await rift.setUserId("usr_abc123")
+}`}</CodeBlock>
+                    <p className="text-[13px] text-[#71717a] leading-relaxed">
+                      <code className="text-[#71717a] bg-[#18181b] px-1 py-0.5 rounded text-[12px]">
+                        setUserId
+                      </code>{" "}
+                      is idempotent — safe to call on every launch with the
+                      same <code>user_id</code>. On iOS, the SDK persists the
+                      binding in the Keychain, so the{" "}
+                      <code>install_id</code> survives app reinstalls.
+                    </p>
+                  </div>
+                ),
+              },
+              {
+                id: "android",
+                label: "Android",
+                children: (
+                  <div className="space-y-3">
+                    <CodeBlock lang="kotlin">{`// Wherever you know the user is signed in
+lifecycleScope.launch {
+    runCatching { rift.setUserId("usr_abc123") }
+}`}</CodeBlock>
+                    <p className="text-[13px] text-[#71717a] leading-relaxed">
+                      On Android, the SDK persists the binding in
+                      <code className="text-[#71717a] bg-[#18181b] px-1 py-0.5 rounded text-[12px]">
+                        SharedPreferences
+                      </code>
+                      . Android wipes app data on uninstall, so the{" "}
+                      <code>install_id</code> does not survive reinstallation —
+                      that's the OS contract, not a Rift limitation.
+                    </p>
+                  </div>
+                ),
+              },
+              {
+                id: "http",
+                label: "HTTP (advanced)",
+                children: (
+                  <div className="space-y-3">
+                    <p className="text-[13px] text-[#a1a1aa] leading-relaxed">
+                      If you already have the <code>install_id</code> somewhere
+                      (e.g. your backend received it from the mobile app at
+                      signup time), you can also call the endpoint directly
+                      with your publishable key:
+                    </p>
+                    <CodeBlock>{`curl -X PUT https://api.riftl.ink/v1/attribution/link \\
+  -H "Authorization: Bearer pk_live_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "install_id": "device-uuid-here",
-    "user_id": "user-123"
+    "user_id": "usr_abc123"
   }'`}</CodeBlock>
+                    <p className="text-[13px] text-[#71717a] leading-relaxed">
+                      Idempotent for the same{" "}
+                      <code>(install_id, user_id)</code> pair. Rift refuses
+                      to overwrite a previously-bound install with a different
+                      user — the first binding wins.
+                    </p>
+                  </div>
+                ),
+              },
+            ]}
+          />
+
+          <Callout type="info">
+            <strong className="text-[#fafafa]">On logout:</strong> call{" "}
+            <code>rift.clearUserId()</code> to remove the stored user binding.
+            The install_id is preserved — only the user link is cleared.
+          </Callout>
         </section>
 
         <div className="gradient-line" />

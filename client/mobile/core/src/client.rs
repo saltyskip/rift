@@ -41,6 +41,19 @@ impl RiftClient {
         Ok(result.success)
     }
 
+    pub async fn link_attribution(
+        &self,
+        install_id: String,
+        user_id: String,
+    ) -> Result<bool, RiftError> {
+        let result = self
+            .inner
+            .link_attribution(install_id, user_id)
+            .await
+            .map_err(map_error)?;
+        Ok(result.success)
+    }
+
     pub async fn get_link(&self, link_id: String) -> Result<GetLinkResponse, RiftError> {
         let link: ResolvedLink = self.inner.resolve_link(&link_id).await.map_err(map_error)?;
         Ok(GetLinkResponse {

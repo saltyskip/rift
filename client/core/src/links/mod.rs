@@ -113,6 +113,12 @@ pub struct AttributionResponse {
     pub success: bool,
 }
 
+#[derive(Debug, Serialize)]
+pub struct LinkAttributionRequest {
+    pub install_id: String,
+    pub user_id: String,
+}
+
 impl RiftClient {
     pub async fn create_link(
         &self,
@@ -198,6 +204,26 @@ impl RiftClient {
                 app_version: app_version.into(),
             },
             false,
+        )
+        .await
+    }
+
+    /// Bind an install_id to a user_id on the server.
+    ///
+    /// Requires a publishable key (`pk_live_`). The endpoint is idempotent for
+    /// identical `(install_id, user_id)` pairs and refuses to overwrite a
+    /// previously-bound user. Used by the mobile SDK's `set_user_id` flow.
+    pub async fn link_attribution(
+        &self,
+        install_id: impl Into<String>,
+        user_id: impl Into<String>,
+    ) -> Result<AttributionResponse, RiftClientError> {
+        self.put(
+            "/v1/attribution/link",
+            &LinkAttributionRequest {
+                install_id: install_id.into(),
+                user_id: user_id.into(),
+            },
         )
         .await
     }

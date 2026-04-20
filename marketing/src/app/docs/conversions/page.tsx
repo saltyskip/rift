@@ -104,26 +104,27 @@ export default function ConversionsPage() {
 
           <Step n={2} title="Bind a user to a link (prerequisite)">
             <p>
-              Before you can attribute conversions, each user needs an attribution record linking
-              them back to the install. If you already have the mobile SDK wired up, this happens
-              via <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">PUT /v1/attribution/link</code>{" "}
-              after signup — see the{" "}
+              Before you can attribute conversions, each user needs an attribution record
+              linking them back to the install that originally drove them. The mobile SDK
+              handles this in one line — see the{" "}
               <a href="/docs/attribution" className="text-[#2dd4bf] hover:underline">
                 Attribution
               </a>{" "}
-              doc for details.
+              doc for the full pattern:
             </p>
-            <CodeBlock>{`curl -X PUT https://api.riftl.ink/v1/attribution/link \\
-  -H "Authorization: Bearer pk_live_YOUR_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "install_id": "device-uuid-here",
-    "user_id": "usr_abc123"
-  }'`}</CodeBlock>
+            <CodeBlock lang="swift">{`// iOS
+try? await rift.setUserId("usr_abc123")`}</CodeBlock>
+            <CodeBlock lang="kotlin">{`// Android
+rift.setUserId("usr_abc123")`}</CodeBlock>
+            <p>
+              The SDK persists the binding locally and syncs it to the server, retrying
+              automatically on the next app launch if the network call fails.
+            </p>
             <Callout type="info">
-              Conversions with a <code>user_id</code> that has no matching attribution are
-              silently dropped (the request still returns 200, but the event is not counted).
-              Make sure your signup flow calls this endpoint before you start firing conversions.
+              Conversions fired with a <code>user_id</code> that has no matching attribution
+              record are silently dropped (the webhook still returns 200, but the event is
+              not counted toward your link stats). Make sure your app calls{" "}
+              <code>setUserId</code> before you start firing conversions for that user.
             </Callout>
           </Step>
 

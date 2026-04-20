@@ -24,13 +24,16 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/v1/links/{link_id}",
             put(routes::update_link).delete(routes::delete_link),
         )
-        .route("/v1/attribution/link", put(routes::link_attribution))
         .layer(middleware::from_fn_with_state(state.clone(), auth_gate));
 
-    // SDK-authenticated routes (attribution) — pk_live_ sdk_auth_gate
+    // SDK-authenticated routes (attribution) — pk_live_ sdk_auth_gate.
+    // PUT /v1/attribution/link lives here because the install_id argument is
+    // opaque and only lives in the mobile SDK — no shipped flow produces the
+    // inputs a secret-key backend would need to call this endpoint.
     let sdk = Router::new()
         .route("/v1/attribution/click", post(routes::attribution_click))
         .route("/v1/attribution/report", post(routes::attribution_report))
+        .route("/v1/attribution/link", put(routes::link_attribution))
         .layer(middleware::from_fn_with_state(state, sdk_auth_gate));
 
     // Rate limiter for public endpoints: 120 req/min sustained, burst of 30.
