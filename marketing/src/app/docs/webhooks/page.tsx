@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   title: "Webhooks — Rift Docs",
   description:
     "Receive real-time notifications for click, attribution, and conversion events via HTTPS webhooks.",
+  alternates: { canonical: "/docs/webhooks" },
 };
 
 export default function WebhooksPage() {

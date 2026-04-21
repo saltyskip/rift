@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: "API Reference — Rift",
   description:
     "Interactive API documentation for Rift.",
+  alternates: { canonical: "/api-reference" },
 };
 
 export default function ApiReferencePage() {

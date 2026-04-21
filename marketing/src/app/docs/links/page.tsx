@@ -7,6 +7,7 @@ import { DocsCallout as Callout } from "@/components/docs-callout";
 export const metadata: Metadata = {
   title: "Create Links — Rift Docs",
   description: "Create deep links with per-platform destinations, metadata, and smart resolution.",
+  alternates: { canonical: "/docs/links" },
 };
 
 export default function LinksPage() {

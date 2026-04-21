@@ -6,6 +6,7 @@ import { DocsCallout as Callout } from "@/components/docs-callout";
 export const metadata: Metadata = {
   title: "Publishable Keys — Rift Docs",
   description: "Client-safe keys for SDK click tracking and attribution endpoints.",
+  alternates: { canonical: "/docs/publishable-keys" },
 };
 
 export default function PublishableKeysPage() {

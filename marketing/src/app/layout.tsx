@@ -29,9 +29,9 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title,
   description,
-  alternates: {
-    canonical: "/",
-  },
+  // Do NOT set alternates.canonical here — it would cascade to every page
+  // and tell Google they are all duplicates of the homepage.  Each page sets
+  // its own canonical in its metadata export instead.
   openGraph: {
     type: "website",
     url: siteUrl,

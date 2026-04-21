@@ -6,6 +6,7 @@ import { DocsStep as Step } from "@/components/docs-step";
 export const metadata: Metadata = {
   title: "Register Your App — Rift Docs",
   description: "Register iOS and Android apps for branding, association files, and smart landing pages.",
+  alternates: { canonical: "/docs/apps" },
 };
 
 export default function AppsPage() {

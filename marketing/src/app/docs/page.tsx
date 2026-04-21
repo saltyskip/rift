@@ -7,6 +7,7 @@ import { QuickstartOutcomeDiagram } from "@/components/quickstart-outcome-diagra
 export const metadata: Metadata = {
   title: "Quick Start — Rift Docs",
   description: "Get your first Rift link live with the CLI in a few minutes.",
+  alternates: { canonical: "/docs" },
 };
 
 export default function QuickStartPage() {
