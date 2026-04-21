@@ -197,7 +197,7 @@ impl RiftClient {
         app_version: impl Into<String>,
     ) -> Result<AttributionResponse, RiftClientError> {
         self.post(
-            "/v1/attribution/report",
+            "/v1/attribution/install",
             &AttributionReportRequest {
                 link_id: link_id.into(),
                 install_id: install_id.into(),
@@ -219,7 +219,7 @@ impl RiftClient {
         user_id: impl Into<String>,
     ) -> Result<AttributionResponse, RiftClientError> {
         self.put(
-            "/v1/attribution/link",
+            "/v1/attribution/identify",
             &LinkAttributionRequest {
                 install_id: install_id.into(),
                 user_id: user_id.into(),

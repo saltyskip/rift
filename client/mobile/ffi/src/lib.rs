@@ -637,7 +637,7 @@ mod tests {
     async fn set_user_id_happy_path_marks_synced() {
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .and(header("Authorization", "Bearer pk_live_test"))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
@@ -663,7 +663,7 @@ mod tests {
     async fn set_user_id_server_error_marks_unsynced() {
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(
                 ResponseTemplate::new(500)
                     .set_body_json(serde_json::json!({ "error": "db error" })),
@@ -701,7 +701,7 @@ mod tests {
         let server = MockServer::start().await;
         // Only one call should ever hit the server.
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
             )
@@ -720,7 +720,7 @@ mod tests {
     async fn clear_user_id_removes_both_keys() {
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
             )
@@ -753,7 +753,7 @@ mod tests {
         // in the background. We poll storage briefly to confirm it lands.
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
             )
@@ -804,7 +804,7 @@ mod tests {
         // Server must never be called if the synced flag is true.
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(ResponseTemplate::new(500))
             .expect(0)
             .mount(&server)
@@ -836,7 +836,7 @@ mod tests {
     async fn retry_pending_binding_noop_when_no_user_id() {
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(ResponseTemplate::new(500))
             .expect(0)
             .mount(&server)

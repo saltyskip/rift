@@ -36,7 +36,7 @@ export default function DeferredPage() {
               <li>User installs the app and opens it</li>
               <li>App reads the clipboard (iOS) or install referrer (Android) to get the link URL/ID</li>
               <li>App extracts the link ID and calls <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">GET /r/&#123;link_id&#125;</code> with <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">Accept: application/json</code> to get link data</li>
-              <li>App calls <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/report</code> to record the attribution</li>
+              <li>App calls <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/install</code> to record the attribution</li>
               <li>App routes user to the deep link destination</li>
             </ol>
           </Step>

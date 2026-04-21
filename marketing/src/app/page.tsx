@@ -364,7 +364,7 @@ export default function Home() {
               { method: "POST", path: "/v1/auth/signup", desc: "Sign up and get an API key", auth: false },
               { method: "POST", path: "/v1/links", desc: "Create a deep link with metadata", auth: true },
               { method: "GET", path: "/r/{id}", desc: "Resolve — redirect or JSON", auth: false },
-              { method: "POST", path: "/v1/attribution/report", desc: "Report an install from the SDK", auth: true },
+              { method: "POST", path: "/v1/attribution/install", desc: "Report an install from the SDK", auth: true },
               { method: "GET", path: "/v1/links/{id}/stats", desc: "Click, install & conversion stats", auth: true },
             ].map((ep, i) => (
               <motion.div

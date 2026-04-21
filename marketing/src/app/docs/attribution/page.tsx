@@ -339,7 +339,7 @@ if (linkId != null) {
                 children: (
                   <div className="space-y-3 text-[15px] leading-relaxed text-[#a1a1aa]">
                     <p>Report an install attribution directly:</p>
-                    <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/attribution/report \\
+                    <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/attribution/install \\
   -H "Authorization: Bearer pk_live_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -429,7 +429,7 @@ lifecycleScope.launch {
                       signup time), you can also call the endpoint directly
                       with your publishable key:
                     </p>
-                    <CodeBlock>{`curl -X PUT https://api.riftl.ink/v1/attribution/link \\
+                    <CodeBlock>{`curl -X PUT https://api.riftl.ink/v1/attribution/identify \\
   -H "Authorization: Bearer pk_live_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{

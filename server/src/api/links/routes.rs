@@ -932,11 +932,11 @@ pub async fn attribution_click(
     .into_response()
 }
 
-// ── POST /v1/attribution/report — SDK-authenticated attribution report ──
+// ── POST /v1/attribution/install — SDK-authenticated attribution report ──
 
 #[utoipa::path(
     post,
-    path = "/v1/attribution/report",
+    path = "/v1/attribution/install",
     tag = "Attribution",
     request_body = AttributionReportRequest,
     responses(
@@ -1134,7 +1134,7 @@ pub async fn get_link_timeseries(
     }
 }
 
-// ── PUT /v1/attribution/link — Link attribution to user (SDK-authenticated) ──
+// ── PUT /v1/attribution/identify — Link attribution to user (SDK-authenticated) ──
 //
 // SDK-authenticated (pk_live_) because the install_id is opaque and only
 // lives in the mobile SDK; no flow produces the inputs a backend would need
@@ -1142,7 +1142,7 @@ pub async fn get_link_timeseries(
 
 #[utoipa::path(
     put,
-    path = "/v1/attribution/link",
+    path = "/v1/attribution/identify",
     tag = "Attribution",
     request_body = LinkAttributionRequest,
     responses(

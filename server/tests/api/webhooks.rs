@@ -278,7 +278,7 @@ async fn attribution_dispatches_webhook() {
 
     // Report attribution via SDK-authenticated endpoint.
     app.client
-        .post(app.url("/v1/attribution/report"))
+        .post(app.url("/v1/attribution/install"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "link_id": "webhook-attr",
