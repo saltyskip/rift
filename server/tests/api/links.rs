@@ -342,6 +342,78 @@ async fn qr_png_and_svg_endpoints_return_images() {
 }
 
 #[tokio::test]
+async fn qr_accepts_eye_and_dot_style_params() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "qr-styled",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url(
+            "/v1/links/qr-styled/qr.svg?\
+             dotType=classy-rounded&cornerSquareType=square&cornerDotType=square&\
+             shape=circle&dotColor=%23ff0000&cornerSquareColor=%2300ff00&cornerDotColor=%230000ff",
+        ))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let svg = resp.text().await.unwrap();
+    assert!(svg.trim_start().contains("<svg"));
+    // qr-code-styling emits hex colors uppercase; check case-insensitive.
+    let lower = svg.to_lowercase();
+    assert!(lower.contains("#ff0000"), "expected dotColor in SVG");
+    assert!(
+        lower.contains("#00ff00"),
+        "expected cornerSquareColor in SVG"
+    );
+    assert!(lower.contains("#0000ff"), "expected cornerDotColor in SVG");
+}
+
+#[tokio::test]
+async fn qr_rejects_unknown_dot_type() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "qr-bad-dot",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links/qr-bad-dot/qr.png?dotType=wavy"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_qr_options");
+}
+
+#[tokio::test]
 async fn invalid_qr_params_return_400() {
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;
