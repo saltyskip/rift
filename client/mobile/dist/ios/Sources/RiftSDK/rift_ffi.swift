@@ -537,10 +537,9 @@ public protocol RiftSdkProtocol: AnyObject, Sendable {
     
     /**
      * Fire a conversion event. Reads the bound `user_id` from storage and
-     * POSTs to the `conversion_source_url` configured at init.
+     * POSTs to the Rift API at `/v1/attribution/convert` using the publishable key.
      * The server dedupes via `idempotency_key`.
      *
-     * If no `conversion_source_url` was configured, logs a warning and returns.
      * If no `user_id` is bound, logs a warning and returns (the event won't
      * attribute without a user binding).
      */
@@ -763,10 +762,9 @@ open func setUserId(userId: String)async throws   {
     
     /**
      * Fire a conversion event. Reads the bound `user_id` from storage and
-     * POSTs to the `conversion_source_url` configured at init.
+     * POSTs to the Rift API at `/v1/attribution/convert` using the publishable key.
      * The server dedupes via `idempotency_key`.
      *
-     * If no `conversion_source_url` was configured, logs a warning and returns.
      * If no `user_id` is bound, logs a warning and returns (the event won't
      * attribute without a user binding).
      */
@@ -1473,12 +1471,6 @@ public struct RiftConfig {
      */
     public var logLevel: String?
     /**
-     * Webhook URL for conversion tracking (from `GET /v1/sources`). If set,
-     * `track_conversion()` POSTs events to this URL. If None, `track_conversion()`
-     * logs a warning and returns.
-     */
-    public var conversionSourceUrl: String?
-    /**
      * App version string (e.g. "1.2.3"). Used by `report_attribution_for_link()`.
      * If None, defaults to "unknown". The native convenience constructors
      * auto-populate this from `Bundle.main` (iOS) or `PackageManager` (Android).
@@ -1492,11 +1484,6 @@ public struct RiftConfig {
          * Log level: "trace", "debug", "info", "warn", "error". Default: "info".
          */logLevel: String?, 
         /**
-         * Webhook URL for conversion tracking (from `GET /v1/sources`). If set,
-         * `track_conversion()` POSTs events to this URL. If None, `track_conversion()`
-         * logs a warning and returns.
-         */conversionSourceUrl: String?, 
-        /**
          * App version string (e.g. "1.2.3"). Used by `report_attribution_for_link()`.
          * If None, defaults to "unknown". The native convenience constructors
          * auto-populate this from `Bundle.main` (iOS) or `PackageManager` (Android).
@@ -1504,7 +1491,6 @@ public struct RiftConfig {
         self.publishableKey = publishableKey
         self.baseUrl = baseUrl
         self.logLevel = logLevel
-        self.conversionSourceUrl = conversionSourceUrl
         self.appVersion = appVersion
     }
 }
@@ -1525,9 +1511,6 @@ extension RiftConfig: Equatable, Hashable {
         if lhs.logLevel != rhs.logLevel {
             return false
         }
-        if lhs.conversionSourceUrl != rhs.conversionSourceUrl {
-            return false
-        }
         if lhs.appVersion != rhs.appVersion {
             return false
         }
@@ -1538,7 +1521,6 @@ extension RiftConfig: Equatable, Hashable {
         hasher.combine(publishableKey)
         hasher.combine(baseUrl)
         hasher.combine(logLevel)
-        hasher.combine(conversionSourceUrl)
         hasher.combine(appVersion)
     }
 }
@@ -1555,7 +1537,6 @@ public struct FfiConverterTypeRiftConfig: FfiConverterRustBuffer {
                 publishableKey: FfiConverterString.read(from: &buf), 
                 baseUrl: FfiConverterOptionString.read(from: &buf), 
                 logLevel: FfiConverterOptionString.read(from: &buf), 
-                conversionSourceUrl: FfiConverterOptionString.read(from: &buf), 
                 appVersion: FfiConverterOptionString.read(from: &buf)
         )
     }
@@ -1564,7 +1545,6 @@ public struct FfiConverterTypeRiftConfig: FfiConverterRustBuffer {
         FfiConverterString.write(value.publishableKey, into: &buf)
         FfiConverterOptionString.write(value.baseUrl, into: &buf)
         FfiConverterOptionString.write(value.logLevel, into: &buf)
-        FfiConverterOptionString.write(value.conversionSourceUrl, into: &buf)
         FfiConverterOptionString.write(value.appVersion, into: &buf)
     }
 }
@@ -1961,7 +1941,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_rift_ffi_checksum_method_riftsdk_set_user_id() != 19064) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rift_ffi_checksum_method_riftsdk_track_conversion() != 41172) {
+    if (uniffi_rift_ffi_checksum_method_riftsdk_track_conversion() != 52068) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_rift_ffi_checksum_method_riftstorage_get() != 22749) {

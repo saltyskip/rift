@@ -16,8 +16,9 @@ use rift::services::auth::users::repo::UsersRepository;
 use rift::services::domains::repo::DomainsRepository;
 
 use mocks::{
-    MockAppsRepo, MockDomainsRepo, MockLinksRepo, MockSdkKeysRepo, MockSecretKeysRepo,
-    MockTenantsRepo, MockUsageRepo, MockUsersRepo, MockWebhookDispatcher, MockWebhooksRepo,
+    MockAppsRepo, MockConversionsRepo, MockDomainsRepo, MockLinksRepo, MockSdkKeysRepo,
+    MockSecretKeysRepo, MockTenantsRepo, MockUsageRepo, MockUsersRepo, MockWebhookDispatcher,
+    MockWebhooksRepo,
 };
 
 #[allow(dead_code)]
@@ -86,6 +87,16 @@ pub async fn spawn_app() -> TestApp {
         config.public_url.clone(),
     )));
 
+    let conversions_repo: Arc<dyn rift::services::conversions::repo::ConversionsRepository> =
+        Arc::new(MockConversionsRepo::default());
+    let conversions_service = Some(Arc::new(
+        rift::services::conversions::service::ConversionsService::new(
+            conversions_repo.clone(),
+            links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>,
+            Some(webhook_dispatcher.clone() as Arc<dyn WebhookDispatcher>),
+        ),
+    ));
+
     let state = Arc::new(AppState {
         secret_keys_repo: Some(secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>),
         usage_repo: Some(usage_repo.clone() as Arc<dyn UsageRepository>),
@@ -119,8 +130,8 @@ pub async fn spawn_app() -> TestApp {
                 users_repo.clone() as Arc<dyn UsersRepository>,
             ),
         )),
-        conversions_repo: None,
-        conversions_service: None,
+        conversions_repo: Some(conversions_repo),
+        conversions_service,
     });
 
     let app = rift::api::router(state.clone())
