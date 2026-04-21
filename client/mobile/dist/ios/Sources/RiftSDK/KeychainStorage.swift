@@ -113,17 +113,13 @@ extension RiftSdk {
     /// ```swift
     /// let rift = RiftSdk.create(publishableKey: "pk_live_...")
     /// ```
-    public static func create(
-        publishableKey: String,
-        conversionSourceUrl: String? = nil
-    ) -> RiftSdk {
+    public static func create(publishableKey: String) -> RiftSdk {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
         return RiftSdk(
             config: RiftConfig(
                 publishableKey: publishableKey,
                 baseUrl: nil,
                 logLevel: nil,
-                conversionSourceUrl: conversionSourceUrl,
                 appVersion: version
             ),
             storage: KeychainStorage()

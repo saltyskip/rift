@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mongodb::bson::DateTime;
+use mongodb::bson::{oid::ObjectId, DateTime};
 
 use super::models::{ConversionEvent, ConversionMeta, IngestResult, Source};
 use super::parsers::ParsedConversion;
@@ -30,11 +30,34 @@ impl ConversionsService {
         }
     }
 
-    /// Process a batch of parsed conversions: dedup, attribute, store, fan out.
-    /// Failures on individual events are logged and counted; the batch continues.
+    /// Ingest events from a webhook source. Resolves tenant from the source.
     pub async fn ingest_parsed(
         &self,
         source: &Source,
+        parsed: Vec<ParsedConversion>,
+    ) -> IngestResult {
+        self.ingest(source.tenant_id, source.id, parsed).await
+    }
+
+    /// Ingest events from the SDK endpoint. Tenant comes from the auth middleware,
+    /// source_id is synthetic (the SDK is not a source — it's a direct channel).
+    pub async fn ingest_sdk_event(
+        &self,
+        tenant_id: ObjectId,
+        parsed: Vec<ParsedConversion>,
+    ) -> IngestResult {
+        // Use a zero ObjectId as a sentinel for "came from SDK, not a source."
+        // This is stored in meta.source_id on the conversion event for provenance
+        // but is not looked up as a real source document.
+        let sdk_source_id = ObjectId::from_bytes([0u8; 12]);
+        self.ingest(tenant_id, sdk_source_id, parsed).await
+    }
+
+    /// Core ingestion: dedup, attribute, store, fan out.
+    async fn ingest(
+        &self,
+        tenant_id: ObjectId,
+        source_id: ObjectId,
         parsed: Vec<ParsedConversion>,
     ) -> IngestResult {
         let mut result = IngestResult::default();
@@ -44,7 +67,7 @@ impl ConversionsService {
             if let Some(key) = &event.idempotency_key {
                 match self
                     .conversions_repo
-                    .check_and_insert_dedup(&source.tenant_id, key)
+                    .check_and_insert_dedup(&tenant_id, key)
                     .await
                 {
                     Ok(false) => {
@@ -54,7 +77,7 @@ impl ConversionsService {
                     Ok(true) => {}
                     Err(e) => {
                         tracing::error!(
-                            source_id = %source.id,
+                            source_id = %source_id,
                             key = %key,
                             error = %e,
                             "dedup insert failed; dropping event",
@@ -71,7 +94,7 @@ impl ConversionsService {
             let link_id = match &event.user_id {
                 Some(uid) => self
                     .links_repo
-                    .find_attribution_by_user(&source.tenant_id, uid)
+                    .find_attribution_by_user(&tenant_id, uid)
                     .await
                     .ok()
                     .flatten()
@@ -80,7 +103,7 @@ impl ConversionsService {
             };
             let Some(link_id) = link_id else {
                 tracing::debug!(
-                    source_id = %source.id,
+                    source_id = %source_id,
                     user_id = ?event.user_id,
                     "conversion has no matching attribution; skipping",
                 );
@@ -91,9 +114,9 @@ impl ConversionsService {
             // 3. Insert event.
             let record = ConversionEvent {
                 meta: ConversionMeta {
-                    tenant_id: source.tenant_id,
+                    tenant_id,
                     link_id: link_id.clone(),
-                    source_id: source.id,
+                    source_id,
                     conversion_type: event.conversion_type.clone(),
                 },
                 occurred_at: event.occurred_at.unwrap_or_else(DateTime::now),
@@ -107,7 +130,7 @@ impl ConversionsService {
                 Ok(id) => id,
                 Err(e) => {
                     tracing::error!(
-                        source_id = %source.id,
+                        source_id = %source_id,
                         error = %e,
                         "conversion event insert failed",
                     );
@@ -125,8 +148,8 @@ impl ConversionsService {
 
                 dispatcher.dispatch_conversion(ConversionEventPayload {
                     event_id: event_id.to_hex(),
-                    tenant_id: source.tenant_id.to_hex(),
-                    source_id: source.id.to_hex(),
+                    tenant_id: tenant_id.to_hex(),
+                    source_id: source_id.to_hex(),
                     link_id: link_id.clone(),
                     conversion_type: event.conversion_type.clone(),
                     user_id: event.user_id.clone(),

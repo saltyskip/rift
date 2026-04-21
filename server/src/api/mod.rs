@@ -65,12 +65,13 @@ use crate::app::AppState;
         webhooks::routes::list_webhooks,
         webhooks::routes::delete_webhook,
         webhooks::routes::patch_webhook,
-        // Conversions — sources and webhook ingestion
+        // Conversions — sources, webhook ingestion, and SDK tracking
         // (receive_webhook is intentionally excluded — opaque parser-specific body)
         conversions::routes::create_source,
         conversions::routes::list_sources,
         conversions::routes::get_source,
         conversions::routes::delete_source,
+        conversions::routes::sdk_track_conversion,
         // System
         health::routes::health,
     ),
@@ -123,6 +124,7 @@ use crate::app::AppState;
         crate::services::conversions::models::CreateSourceRequest,
         crate::services::conversions::models::CreateSourceResponse,
         crate::services::conversions::models::SourceDetail,
+        crate::api::conversions::routes::SdkConversionRequest,
         crate::services::conversions::models::ListSourcesResponse,
         crate::services::conversions::models::ConversionDetail,
     )),
