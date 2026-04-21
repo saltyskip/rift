@@ -19,12 +19,13 @@ pub struct Args {
 }
 
 pub async fn run(args: Args) -> Result<(), CliError> {
-    let link_id = args
-        .target
-        .rsplit('/')
-        .next()
-        .unwrap_or(&args.target)
-        .to_string();
+    let trimmed = args.target.trim_end_matches('/');
+    let link_id = trimmed.rsplit('/').next().unwrap_or(trimmed).to_string();
+    if link_id.is_empty() {
+        return Err(CliError::General(
+            "target must be a link ID or URL".to_string(),
+        ));
+    }
     let config = StoredConfig::load().map_err(|_| CliError::AuthFailed)?;
     let client =
         rift_client_core::RiftClient::with_secret_key(config.secret_key, Some(config.base_url));

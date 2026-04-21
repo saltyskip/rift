@@ -245,7 +245,12 @@ impl LinksService {
             None
         };
 
-        let details = futures::future::join_all(page.iter().map(|l| self.link_to_detail(l))).await;
+        let primary_domain =
+            resolve_verified_primary_domain(self.domains_repo.as_deref(), tenant_id).await;
+        let details: Vec<LinkDetail> = page
+            .iter()
+            .map(|l| self.link_to_detail_with_domain(l, primary_domain.as_deref()))
+            .collect();
 
         Ok(ListLinksResponse {
             links: details,
@@ -404,9 +409,19 @@ impl LinksService {
     }
 
     async fn link_to_detail(&self, link: &Link) -> LinkDetail {
+        let domain =
+            resolve_verified_primary_domain(self.domains_repo.as_deref(), &link.tenant_id).await;
+        self.link_to_detail_with_domain(link, domain.as_deref())
+    }
+
+    fn link_to_detail_with_domain(
+        &self,
+        link: &Link,
+        verified_primary_domain: Option<&str>,
+    ) -> LinkDetail {
         LinkDetail {
             link_id: link.link_id.clone(),
-            url: self.canonical_url(&link.tenant_id, &link.link_id).await,
+            url: build_canonical_link_url(&self.public_url, &link.link_id, verified_primary_domain),
             ios_deep_link: link.ios_deep_link.clone(),
             android_deep_link: link.android_deep_link.clone(),
             web_url: link.web_url.clone(),
@@ -429,22 +444,34 @@ impl LinksService {
             .unwrap_or(false)
     }
 
-    async fn canonical_url(&self, tenant_id: &ObjectId, link_id: &str) -> String {
-        match self.verified_primary_domain(tenant_id).await {
-            Some(domain) => format!("https://{domain}/{link_id}"),
-            None => format!("{}/r/{link_id}", self.public_url.trim_end_matches('/')),
-        }
+    pub async fn canonical_url(&self, tenant_id: &ObjectId, link_id: &str) -> String {
+        let domain = resolve_verified_primary_domain(self.domains_repo.as_deref(), tenant_id).await;
+        build_canonical_link_url(&self.public_url, link_id, domain.as_deref())
     }
+}
 
-    async fn verified_primary_domain(&self, tenant_id: &ObjectId) -> Option<String> {
-        let repo = self.domains_repo.as_ref()?;
-        repo.list_by_tenant(tenant_id)
-            .await
-            .ok()?
-            .into_iter()
-            .find(|d| d.verified && d.role == DomainRole::Primary)
-            .map(|d| d.domain)
+pub fn build_canonical_link_url(
+    public_url: &str,
+    link_id: &str,
+    verified_primary_domain: Option<&str>,
+) -> String {
+    match verified_primary_domain {
+        Some(domain) => format!("https://{domain}/{link_id}"),
+        None => format!("{}/r/{link_id}", public_url.trim_end_matches('/')),
     }
+}
+
+pub async fn resolve_verified_primary_domain(
+    domains_repo: Option<&dyn DomainsRepository>,
+    tenant_id: &ObjectId,
+) -> Option<String> {
+    let repo = domains_repo?;
+    repo.list_by_tenant(tenant_id)
+        .await
+        .ok()?
+        .into_iter()
+        .find(|d| d.verified && d.role == DomainRole::Primary)
+        .map(|d| d.domain)
 }
 
 // ── Shared Validators ──
@@ -579,6 +606,26 @@ mod tests {
     use async_trait::async_trait;
     use mongodb::bson::{oid::ObjectId, DateTime, Document};
     use std::sync::Mutex;
+
+    #[test]
+    fn canonical_link_url_prefers_verified_primary_domain() {
+        assert_eq!(
+            build_canonical_link_url(
+                "https://api.riftl.ink",
+                "summer-sale",
+                Some("go.example.com")
+            ),
+            "https://go.example.com/summer-sale"
+        );
+    }
+
+    #[test]
+    fn canonical_link_url_falls_back_to_public_resolve_path() {
+        assert_eq!(
+            build_canonical_link_url("https://api.riftl.ink/", "summer-sale", None),
+            "https://api.riftl.ink/r/summer-sale"
+        );
+    }
 
     // ── Mock LinksRepository ──
 

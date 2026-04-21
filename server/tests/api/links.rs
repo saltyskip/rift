@@ -179,7 +179,10 @@ async fn landing_page_uses_social_preview_for_open_graph() {
 }
 
 #[tokio::test]
-async fn metadata_preview_fields_do_not_render_open_graph() {
+async fn metadata_preview_fields_fall_back_to_open_graph() {
+    // Backwards-compat: links created before `social_preview` existed stored OG fields under
+    // `metadata.{title,description,image}`. When `social_preview` is absent we read them so
+    // existing links don't lose rich previews on deploy.
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;
     common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
@@ -209,9 +212,53 @@ async fn metadata_preview_fields_do_not_render_open_graph() {
         .unwrap();
     assert_eq!(resp.status(), 200);
     let html = resp.text().await.unwrap();
-    assert!(!html.contains("Metadata Title"));
-    assert!(!html.contains("Metadata description"));
-    assert!(!html.contains("metadata.png"));
+    assert!(html.contains(r#"<meta property="og:title" content="Metadata Title" />"#));
+    assert!(html.contains(r#"<meta property="og:description" content="Metadata description" />"#));
+    assert!(
+        html.contains(r#"<meta property="og:image" content="https://example.com/metadata.png" />"#)
+    );
+}
+
+#[tokio::test]
+async fn social_preview_overrides_metadata_fallback() {
+    // When both are present, `social_preview` wins.
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "preview-wins",
+            "web_url": "https://example.com/product/123",
+            "ios_deep_link": "myapp://product/123",
+            "metadata": {
+                "title": "Old Metadata Title",
+                "description": "Old metadata description",
+                "image": "https://example.com/old.png"
+            },
+            "social_preview": {
+                "title": "New Preview Title",
+                "description": "New preview description",
+                "image_url": "https://example.com/new.png"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url("/r/preview-wins"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let html = resp.text().await.unwrap();
+    assert!(html.contains("New Preview Title"));
+    assert!(!html.contains("Old Metadata Title"));
+    assert!(!html.contains("old.png"));
 }
 
 #[tokio::test]

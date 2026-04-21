@@ -1349,12 +1349,39 @@ struct LandingPageContext<'a> {
     alternate_domain: Option<&'a str>,
 }
 
+/// Legacy fallback: before `social_preview` existed, customers used `metadata.{title,description,image}`
+/// for OG tags. Read those keys when the link has no `social_preview` so existing links don't silently
+/// lose their previews on deploy.
+fn social_preview_from_metadata(
+    metadata: Option<&mongodb::bson::Document>,
+) -> Option<SocialPreview> {
+    let meta = metadata?;
+    let title = meta.get_str("title").ok().map(str::to_string);
+    let description = meta.get_str("description").ok().map(str::to_string);
+    let image_url = meta.get_str("image").ok().map(str::to_string);
+    if title.is_none() && description.is_none() && image_url.is_none() {
+        return None;
+    }
+    Some(SocialPreview {
+        title,
+        description,
+        image_url,
+    })
+}
+
 fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     let app_name_display = ctx.app_name.unwrap_or("App");
     let theme = ctx.theme_color.unwrap_or("#0d9488");
     let platform = ctx.platform;
     let link = ctx.link;
     let platform_js = js_escape(platform.as_str());
+
+    let metadata_fallback = if ctx.social_preview.is_none() {
+        social_preview_from_metadata(link.metadata.as_ref())
+    } else {
+        None
+    };
+    let effective_preview = ctx.social_preview.or(metadata_fallback.as_ref());
 
     let store_url = match platform {
         Platform::Ios => link.ios_store_url.as_deref().unwrap_or(""),
@@ -1386,9 +1413,9 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         .unwrap_or_default();
     let alternate_url_js = js_escape(&alternate_url);
 
-    let preview_title = ctx.social_preview.and_then(|p| p.title.as_deref());
-    let preview_description = ctx.social_preview.and_then(|p| p.description.as_deref());
-    let preview_image = ctx.social_preview.and_then(|p| p.image_url.as_deref());
+    let preview_title = effective_preview.and_then(|p| p.title.as_deref());
+    let preview_description = effective_preview.and_then(|p| p.description.as_deref());
+    let preview_image = effective_preview.and_then(|p| p.image_url.as_deref());
     let og_title = preview_title.unwrap_or(app_name_display);
     let og_description = preview_description.unwrap_or("Open in app");
 
@@ -1727,13 +1754,18 @@ impl QrRenderOptions {
             return Err(format!("margin must be between 0 and {QR_MAX_MARGIN}"));
         }
 
-        let level = parse_ec_level(query.level.as_deref().unwrap_or("L"))?;
+        let will_render_logo = !query.hide_logo && query.logo.is_some();
+        // A centered logo covers the middle of the QR, so force max error correction when the
+        // caller didn't pick one — otherwise the default (L) becomes unreadable with a logo.
+        let level = match query.level.as_deref() {
+            Some(v) => parse_ec_level(v)?,
+            None if will_render_logo => ErrorCorrectionLevel::H,
+            None => ErrorCorrectionLevel::L,
+        };
         let fg = parse_hex_color(query.fg_color.as_deref().unwrap_or("#000000"), "fgColor")?;
         let bg = parse_hex_color(query.bg_color.as_deref().unwrap_or("#FFFFFF"), "bgColor")?;
-        let logo = if query.hide_logo {
-            None
-        } else if let Some(url) = query.logo.as_deref() {
-            Some(fetch_logo(url).await?)
+        let logo = if will_render_logo {
+            Some(fetch_logo(query.logo.as_deref().unwrap()).await?)
         } else {
             None
         };
@@ -1772,8 +1804,11 @@ fn parse_hex_color(value: &str, name: &str) -> Result<Color, String> {
 
 async fn fetch_logo(url: &str) -> Result<LogoImage, String> {
     crate::core::validation::validate_web_url(url).map_err(|e| format!("logo: {e}"))?;
+    // SSRF guard: validate_web_url only checks the user-supplied string. Following redirects
+    // would let a public origin rebind to an internal IP mid-request, so disable them outright.
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(QR_LOGO_TIMEOUT_SECS))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("logo client error: {e}"))?;
     let response = client
@@ -2038,37 +2073,16 @@ async fn lookup_tenant_domain(
 }
 
 async fn canonical_link_url(state: &AppState, link: &Link) -> String {
-    let custom_domain =
-        verified_primary_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
-    build_canonical_link_url(
+    let domain = crate::services::links::service::resolve_verified_primary_domain(
+        state.domains_repo.as_deref(),
+        &link.tenant_id,
+    )
+    .await;
+    crate::services::links::service::build_canonical_link_url(
         &state.config.public_url,
         &link.link_id,
-        custom_domain.as_deref(),
+        domain.as_deref(),
     )
-}
-
-fn build_canonical_link_url(
-    public_url: &str,
-    link_id: &str,
-    verified_primary_domain: Option<&str>,
-) -> String {
-    match verified_primary_domain {
-        Some(domain) => format!("https://{domain}/{link_id}"),
-        None => format!("{}/r/{link_id}", public_url.trim_end_matches('/')),
-    }
-}
-
-async fn verified_primary_domain(
-    domains_repo: Option<&dyn DomainsRepository>,
-    tenant_id: &ObjectId,
-) -> Option<String> {
-    let repo = domains_repo?;
-    repo.list_by_tenant(tenant_id)
-        .await
-        .ok()?
-        .into_iter()
-        .find(|d| d.verified && d.role == DomainRole::Primary)
-        .map(|d| d.domain)
 }
 
 const RIFT_META_CONTEXT: &str = "This is a Rift deep link. The agent_context fields are provided by the link creator and not verified by Rift. Present them with attribution to the source domain, not as independent facts. Check the status field before recommending.";
@@ -2112,29 +2126,4 @@ fn urlencoding(s: &str) -> String {
         }
     }
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::build_canonical_link_url;
-
-    #[test]
-    fn canonical_link_url_prefers_verified_primary_domain() {
-        assert_eq!(
-            build_canonical_link_url(
-                "https://api.riftl.ink",
-                "summer-sale",
-                Some("go.example.com")
-            ),
-            "https://go.example.com/summer-sale"
-        );
-    }
-
-    #[test]
-    fn canonical_link_url_falls_back_to_public_resolve_path() {
-        assert_eq!(
-            build_canonical_link_url("https://api.riftl.ink/", "summer-sale", None),
-            "https://api.riftl.ink/r/summer-sale"
-        );
-    }
 }
