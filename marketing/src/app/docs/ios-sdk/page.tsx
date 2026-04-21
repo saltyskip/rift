@@ -45,13 +45,7 @@ export default function IosSdkPage() {
             <CodeBlock lang="swift">{`import RiftSDK
 
 // One line — Keychain storage, app version, all defaults.
-let rift = RiftSdk.create(publishableKey: "pk_live_YOUR_KEY")
-
-// If you're tracking conversions, pass the source URL too:
-let rift = RiftSdk.create(
-    publishableKey: "pk_live_YOUR_KEY",
-    conversionSourceUrl: "https://api.riftl.ink/w/YOUR_SOURCE_TOKEN"
-)`}</CodeBlock>
+let rift = RiftSdk.create(publishableKey: "pk_live_YOUR_KEY")`}</CodeBlock>
             <Callout type="info">
               The SDK generates a persistent <code>install_id</code> (UUID) on first launch
               and stores it in the Keychain. It survives app deletion and reinstallation.
@@ -74,17 +68,17 @@ Task {
           <Step n={4} title="Track conversions (one line)">
             <p>
               Fire a conversion event whenever a user does something worth counting.
-              The SDK reads the bound <code>user_id</code> and POSTs to your conversion source.
+              The SDK reads the bound <code>user_id</code> and POSTs to the Rift API
+              using your publishable key.
             </p>
             <CodeBlock lang="swift">{`// On trade completion, purchase, signup — whatever you're measuring:
-try rift.trackConversion(
+try await rift.trackConversion(
     conversionType: "trade",
     idempotencyKey: orderId,
     metadata: ["asset": "ETH", "side": "buy"]
 )`}</CodeBlock>
             <p className="text-[13px] text-[#71717a]">
-              Fire-and-forget — the method returns immediately. The server dedupes via{" "}
-              <code>idempotencyKey</code>.
+              The server dedupes via <code>idempotencyKey</code>, so retries are safe.
             </p>
           </Step>
         </section>
@@ -157,7 +151,7 @@ print("Deep link: \\(result.iosDeepLink ?? "none")")`}</CodeBlock>
                 </thead>
                 <tbody className="text-[#a1a1aa]">
                   <tr className="border-b border-[#1e1e22]">
-                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">RiftSdk.create(publishableKey:, conversionSourceUrl:?)</td>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">RiftSdk.create(publishableKey:)</td>
                     <td className="px-4 py-2.5">Convenience. Auto-wires Keychain storage + app version. Recommended.</td>
                   </tr>
                   <tr>
@@ -188,8 +182,8 @@ print("Deep link: \\(result.iosDeepLink ?? "none")")`}</CodeBlock>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">trackConversion(type:, idempotencyKey:, metadata:?)</td>
-                    <td className="px-4 py-2.5 font-mono">Void (throws)</td>
-                    <td className="px-4 py-2.5">Fire a conversion event. Fire-and-forget POST to the source URL.</td>
+                    <td className="px-4 py-2.5 font-mono">Void (async throws)</td>
+                    <td className="px-4 py-2.5">Fire a conversion event. POSTs to the Rift API via publishable key.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">checkDeferredDeepLink(clipboardText:)</td>

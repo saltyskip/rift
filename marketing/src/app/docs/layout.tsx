@@ -14,27 +14,25 @@ const NAV = [
       { label: "Custom Domains", href: "/docs/domains" },
       { label: "Register Your App", href: "/docs/apps" },
       { label: "Publishable Keys", href: "/docs/publishable-keys" },
+      { label: "Universal Links", href: "/docs/universal-links" },
     ],
   },
   {
-    group: "Deep Linking",
+    group: "Create Links",
+    items: [{ label: "Links API", href: "/docs/links" }],
+  },
+  {
+    group: "Acquire Users",
     items: [
-      { label: "Create Links", href: "/docs/links" },
-      { label: "Universal Links", href: "/docs/universal-links" },
+      { label: "Web SDK (rift.js)", href: "/docs/web-sdk" },
       { label: "Deferred Deep Linking", href: "/docs/deferred" },
     ],
   },
   {
-    group: "SDKs",
+    group: "Identify & Convert",
     items: [
-      { label: "Web (rift.js)", href: "/docs/web-sdk" },
-      { label: "iOS (Swift)", href: "/docs/ios-sdk" },
-      { label: "Android (Kotlin)", href: "/docs/android-sdk" },
-    ],
-  },
-  {
-    group: "Tracking",
-    items: [
+      { label: "iOS SDK", href: "/docs/ios-sdk" },
+      { label: "Android SDK", href: "/docs/android-sdk" },
       { label: "Attribution", href: "/docs/attribution" },
       { label: "Conversions", href: "/docs/conversions" },
       { label: "Webhooks", href: "/docs/webhooks" },

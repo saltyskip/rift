@@ -19,7 +19,7 @@ export default function AttributionPage() {
         </p>
         <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Attribution</h1>
         <p className="text-lg text-[#71717a] leading-relaxed">
-          Rift tracks the full funnel: click → install → user. The SDKs handle
+          Rift tracks the full funnel: click → install → identify → convert. The SDKs handle
           most of this automatically. Attribution endpoints use a{" "}
           <a
             href="/docs/publishable-keys"
@@ -42,14 +42,14 @@ export default function AttributionPage() {
           <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
             Every Rift link goes through a three-stage funnel:
           </p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
               <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf]">
                 1. Click
               </p>
               <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
                 A user taps a link. Rift records the click with platform, user
-                agent, and referrer. The SDK or landing page also stages the link
+                agent, and referrer. The SDK or landing page stages the link
                 ID for post-install pickup.
               </p>
             </div>
@@ -58,17 +58,27 @@ export default function AttributionPage() {
                 2. Install
               </p>
               <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
-                After the app is installed and opened for the first time, the SDK
-                recovers the link ID and reports the attribution back to Rift.
+                After the app is installed and opened, the SDK recovers the link ID
+                and reports the attribution back to Rift.
               </p>
             </div>
             <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
               <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#a78bfa]">
-                3. User
+                3. Identify
               </p>
               <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
-                After signup or login, your backend links the attribution to a
-                user ID — closing the loop from ad click to registered user.
+                After signup or login, the SDK binds the install to a user ID —
+                closing the loop from ad click to registered user.
+              </p>
+            </div>
+            <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#f472b6]">
+                4. Convert
+              </p>
+              <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
+                When the user completes a valuable action (purchase, trade, deposit),
+                the SDK or your backend fires a conversion event attributed to the
+                originating link.
               </p>
             </div>
           </div>
@@ -292,20 +302,23 @@ Rift.click("summer-sale");`}</CodeBlock>
                 children: (
                   <div className="space-y-3 text-[15px] leading-relaxed text-[#a1a1aa]">
                     <p>
-                      On first launch, check the clipboard for a Rift link and
-                      report attribution:
+                      The simplest path is{" "}
+                      <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">checkDeferredDeepLink</code> —
+                      it parses the clipboard, reports attribution, and returns the link data in one call:
                     </p>
                     <CodeBlock lang="swift">{`// On first app launch
-if let linkId = rift.parseClipboardLink() {
-    try await rift.reportAttribution(
-        linkId: linkId,
-        installId: UIDevice.current.identifierForVendor?.uuidString ?? "",
-        appVersion: "1.0.0"
-    )
-    // Navigate to deep link content
-    let link = try await rift.getLink(linkId)
-    handleDeepLink(link.iosDeepLink)
+if let result = try await rift.checkDeferredDeepLink(
+    clipboardText: UIPasteboard.general.string
+) {
+    UIPasteboard.general.string = ""
+    if let deepLink = result.iosDeepLink {
+        handleDeepLink(deepLink)
+    }
 }`}</CodeBlock>
+                    <p>
+                      Or use the lower-level method if you need more control:
+                    </p>
+                    <CodeBlock lang="swift">{`let reported = try await rift.reportAttributionForLink(linkId: "summer-sale")`}</CodeBlock>
                   </div>
                 ),
               },
@@ -318,16 +331,11 @@ if let linkId = rift.parseClipboardLink() {
                       On first launch, read the install referrer and report
                       attribution:
                     </p>
-                    <CodeBlock lang="kotlin">{`// On first app launch
-val linkId = rift.parseReferrerLink(referrerString)
+                    <CodeBlock lang="kotlin">{`// Using the install referrer
+val linkId = parseReferrerLink(referrerString)
 if (linkId != null) {
-    rift.reportAttribution(
-        linkId = linkId,
-        installId = getInstallId(),
-        appVersion = BuildConfig.VERSION_NAME
-    )
-    // Navigate to deep link content
-    val link = rift.getLink(linkId)
+    rift.reportAttributionForLink(linkId = linkId)
+    val link = rift.getLink(linkId = linkId)
     link.androidDeepLink?.let { handleDeepLink(it) }
 }`}</CodeBlock>
                   </div>
@@ -507,8 +515,8 @@ lifecycleScope.launch {
             <a href="/docs/conversions" className="text-[#2dd4bf] hover:underline">
               Conversions
             </a>
-            . Your backend POSTs events to a webhook source and Rift attributes each one back to
-            the originating link, with revenue rolled up in the link stats endpoint.
+            . Track events from the mobile SDK with one line, or POST from your backend via webhooks.
+            Either way, Rift attributes each conversion back to the originating link.
           </p>
         </section>
       </div>

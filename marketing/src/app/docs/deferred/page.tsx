@@ -41,60 +41,31 @@ export default function DeferredPage() {
             </ol>
           </Step>
 
-          <Step n={2} title="Using the native SDKs (recommended)">
+          <Step n={2} title="iOS — SDK (recommended)">
             <p>
-              The <a href="/docs/ios-sdk" className="text-[#2dd4bf] hover:underline">iOS SDK</a> and{" "}
-              <a href="/docs/android-sdk" className="text-[#2dd4bf] hover:underline">Android SDK</a> provide{" "}
-              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">parseClipboardLink()</code> and{" "}
-              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">parseReferrerLink()</code> helpers
-              that handle URL parsing for you. See those pages for full integration guides.
+              The SDK does everything in one call: parses the clipboard, reports attribution,
+              and returns the link data for navigation.
             </p>
-          </Step>
-
-          <Step n={3} title="iOS — Manual integration">
-            <p>
-              The landing page copies the full link URL to the clipboard. On first launch after install,
-              read the clipboard, extract the link ID from the URL path, and resolve:
-            </p>
-            <CodeBlock lang="swift">{`func checkDeferredDeepLink() async {
-    guard let clipboard = UIPasteboard.general.string,
-          let linkId = parseClipboardLink(text: clipboard) else { return }
-
-    UIPasteboard.general.string = ""  // Clear after reading
-
-    // Fetch link data
-    let url = URL(string: "https://api.riftl.ink/r/\\(linkId)")!
-    var request = URLRequest(url: url)
-    request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-    guard let (data, _) = try? await URLSession.shared.data(for: request),
-          let link = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-        return
-    }
-
-    // Report attribution
-    let installId = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-    let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-
-    let rift = RiftSdk(publishableKey: "pk_live_YOUR_KEY")
-    let _ = try? await rift.reportAttribution(
-        linkId: linkId,
-        installId: installId,
-        appVersion: appVersion
-    )
-
-    // Navigate to the deep link
-    if let deepLink = link["ios_deep_link"] as? String {
+            <CodeBlock lang="swift">{`// On first launch
+if let result = try await rift.checkDeferredDeepLink(
+    clipboardText: UIPasteboard.general.string
+) {
+    UIPasteboard.general.string = ""  // clear after reading
+    if let deepLink = result.iosDeepLink {
         handleDeepLink(deepLink)
     }
 }`}</CodeBlock>
             <Callout type="info">
-              The <code>parseClipboardLink()</code> function handles both the URL format
-              (<code>https://go.example.com/summer-sale</code>) and the legacy <code>rift:&lt;link_id&gt;</code> format.
+              The caller reads the clipboard explicitly because iOS 16+ shows a paste
+              permission dialog. The SDK does NOT read the clipboard itself — your app
+              controls when that dialog appears.
             </Callout>
           </Step>
 
-          <Step n={4} title="Android — Manual integration">
+          <Step n={3} title="Android — SDK (recommended)">
+            <p>
+              On Android, use the install referrer to get the link ID, then resolve and attribute:
+            </p>
             <CodeBlock lang="kotlin">{`import com.android.installreferrer.api.*
 
 fun checkDeferredDeepLink() {
@@ -105,36 +76,21 @@ fun checkDeferredDeepLink() {
                 val referrer = client.installReferrer.installReferrer
                 val linkId = parseReferrerLink(referrer)
                 if (linkId != null) {
-                    resolveAndAttribute(linkId)
+                    lifecycleScope.launch {
+                        rift.reportAttributionForLink(linkId = linkId)
+                        val link = rift.getLink(linkId = linkId)
+                        link.androidDeepLink?.let { handleDeepLink(it) }
+                    }
                 }
             }
             client.endConnection()
         }
         override fun onInstallReferrerServiceDisconnected() {}
     })
-}
-
-suspend fun resolveAndAttribute(linkId: String) {
-    // Fetch link data
-    val url = URL("https://api.riftl.ink/r/$linkId")
-    val conn = url.openConnection() as HttpURLConnection
-    conn.setRequestProperty("Accept", "application/json")
-    val link = JSONObject(conn.inputStream.bufferedReader().readText())
-
-    // Report attribution
-    val rift = RiftSdk(publishableKey = "pk_live_YOUR_KEY")
-    rift.reportAttribution(
-        linkId = linkId,
-        installId = getInstallId(),
-        appVersion = BuildConfig.VERSION_NAME
-    )
-
-    // Navigate to the deep link
-    link.optString("android_deep_link")?.let { handleDeepLink(it) }
 }`}</CodeBlock>
           </Step>
 
-          <Step n={5} title="Resolve a link (API)">
+          <Step n={4} title="Resolve a link (API)">
             <p>To get the link data for routing, send a JSON request to the public resolve endpoint:</p>
             <CodeBlock>{`curl https://api.riftl.ink/r/summer-sale \\
   -H "Accept: application/json"`}</CodeBlock>
