@@ -106,10 +106,6 @@ pub struct RiftConfig {
     pub base_url: Option<String>,
     /// Log level: "trace", "debug", "info", "warn", "error". Default: "info".
     pub log_level: Option<String>,
-    /// Webhook URL for conversion tracking (from `GET /v1/sources`). If set,
-    /// `track_conversion()` POSTs events to this URL. If None, `track_conversion()`
-    /// logs a warning and returns.
-    pub conversion_source_url: Option<String>,
     /// App version string (e.g. "1.2.3"). Used by `report_attribution_for_link()`.
     /// If None, defaults to "unknown". The native convenience constructors
     /// auto-populate this from `Bundle.main` (iOS) or `PackageManager` (Android).
@@ -160,8 +156,13 @@ pub struct DeferredDeepLinkResult {
 pub struct RiftSdk {
     client: RiftClient,
     storage: Arc<dyn RiftStorage>,
-    conversion_source_url: Option<String>,
     app_version: String,
+    /// Base URL for the Rift API (e.g. "https://api.riftl.ink"). Used to build
+    /// the SDK conversion endpoint URL. Stored separately because `RiftClient`
+    /// doesn't expose its base_url.
+    api_base_url: String,
+    /// Publishable key for SDK-authenticated endpoints.
+    publishable_key: String,
 }
 
 #[uniffi::export]
@@ -183,11 +184,18 @@ impl RiftSdk {
             "Tokio runtime check at construction"
         );
 
+        let api_base_url = config
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "https://api.riftl.ink".to_string());
+        let publishable_key = config.publishable_key.clone();
+
         let sdk = Arc::new(Self {
             client: RiftClient::new(config.publishable_key, config.base_url),
             storage,
-            conversion_source_url: config.conversion_source_url,
             app_version: config.app_version.unwrap_or_else(|| "unknown".to_string()),
+            api_base_url,
+            publishable_key,
         });
 
         // Retry any pending user binding from a previous session.
@@ -307,10 +315,9 @@ impl RiftSdk {
 #[uniffi::export(async_runtime = "tokio")]
 impl RiftSdk {
     /// Fire a conversion event. Reads the bound `user_id` from storage and
-    /// POSTs to the `conversion_source_url` configured at init.
+    /// POSTs to the Rift API at `/v1/attribution/convert` using the publishable key.
     /// The server dedupes via `idempotency_key`.
     ///
-    /// If no `conversion_source_url` was configured, logs a warning and returns.
     /// If no `user_id` is bound, logs a warning and returns (the event won't
     /// attribute without a user binding).
     pub async fn track_conversion(
@@ -319,11 +326,6 @@ impl RiftSdk {
         idempotency_key: String,
         metadata: Option<std::collections::HashMap<String, String>>,
     ) -> Result<(), RiftError> {
-        let Some(source_url) = &self.conversion_source_url else {
-            tracing::warn!("track_conversion called but no conversion_source_url configured");
-            return Ok(());
-        };
-
         let user_id = self
             .storage
             .get(STORAGE_KEY_USER_ID.to_string())
@@ -342,9 +344,14 @@ impl RiftSdk {
             payload["metadata"] = serde_json::json!(meta);
         }
 
+        let url = format!(
+            "{}/v1/attribution/convert",
+            self.api_base_url.trim_end_matches('/')
+        );
         let http = reqwest::Client::new();
         match http
-            .post(source_url)
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.publishable_key))
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()
@@ -584,7 +591,6 @@ mod tests {
                 publishable_key: "pk_live_test".to_string(),
                 base_url: Some(base_url),
                 log_level: Some("error".to_string()),
-                conversion_source_url: None,
                 app_version: Some("1.0.0-test".to_string()),
             },
             storage_for_sdk,
@@ -631,7 +637,7 @@ mod tests {
     async fn set_user_id_happy_path_marks_synced() {
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .and(header("Authorization", "Bearer pk_live_test"))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
@@ -657,7 +663,7 @@ mod tests {
     async fn set_user_id_server_error_marks_unsynced() {
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(
                 ResponseTemplate::new(500)
                     .set_body_json(serde_json::json!({ "error": "db error" })),
@@ -695,7 +701,7 @@ mod tests {
         let server = MockServer::start().await;
         // Only one call should ever hit the server.
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
             )
@@ -714,7 +720,7 @@ mod tests {
     async fn clear_user_id_removes_both_keys() {
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
             )
@@ -747,7 +753,7 @@ mod tests {
         // in the background. We poll storage briefly to confirm it lands.
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
             )
@@ -775,7 +781,6 @@ mod tests {
                 publishable_key: "pk_live_test".to_string(),
                 base_url: Some(server.uri()),
                 log_level: Some("error".to_string()),
-                conversion_source_url: None,
                 app_version: Some("1.0.0-test".to_string()),
             },
             storage_for_sdk,
@@ -799,7 +804,7 @@ mod tests {
         // Server must never be called if the synced flag is true.
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(ResponseTemplate::new(500))
             .expect(0)
             .mount(&server)
@@ -819,7 +824,6 @@ mod tests {
                 publishable_key: "pk_live_test".to_string(),
                 base_url: Some(server.uri()),
                 log_level: Some("error".to_string()),
-                conversion_source_url: None,
                 app_version: Some("1.0.0-test".to_string()),
             },
             storage_for_sdk,
@@ -832,7 +836,7 @@ mod tests {
     async fn retry_pending_binding_noop_when_no_user_id() {
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .and(path("/v1/attribution/link"))
+            .and(path("/v1/attribution/identify"))
             .respond_with(ResponseTemplate::new(500))
             .expect(0)
             .mount(&server)

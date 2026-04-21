@@ -214,7 +214,7 @@ async fn attribution_report_with_valid_key() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/report"))
+        .post(app.url("/v1/attribution/install"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "link_id": "attr-report",
@@ -236,7 +236,7 @@ async fn attribution_report_without_key_returns_401() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/report"))
+        .post(app.url("/v1/attribution/install"))
         .json(&serde_json::json!({
             "link_id": "any",
             "install_id": "test",
@@ -251,7 +251,7 @@ async fn attribution_report_without_key_returns_401() {
 
 // ── Attribution Link Tests ──
 //
-// PUT /v1/attribution/link lives on the SDK-auth path (pk_live_) because
+// PUT /v1/attribution/identify lives on the SDK-auth path (pk_live_) because
 // install_id is opaque and only lives in the mobile SDK. These tests verify
 // the auth move and preserve the existing behavior of the handler.
 
@@ -263,7 +263,7 @@ async fn report_attribution_for_test(
 ) {
     let resp = app
         .client
-        .post(app.url("/v1/attribution/report"))
+        .post(app.url("/v1/attribution/install"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "link_id": link_id,
@@ -300,7 +300,7 @@ async fn attribution_link_binds_user_with_sdk_key() {
     // Bind the install to a user with the SDK key.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/link"))
+        .put(app.url("/v1/attribution/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-abc",
@@ -338,7 +338,7 @@ async fn attribution_link_is_idempotent_with_sdk_key() {
     // First bind.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/link"))
+        .put(app.url("/v1/attribution/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-idem",
@@ -352,7 +352,7 @@ async fn attribution_link_is_idempotent_with_sdk_key() {
     // Second bind with the same pair — still succeeds.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/link"))
+        .put(app.url("/v1/attribution/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-idem",
@@ -389,7 +389,7 @@ async fn attribution_link_rejects_rebind_to_different_user() {
     // First bind to user A.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/link"))
+        .put(app.url("/v1/attribution/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-rebind",
@@ -404,7 +404,7 @@ async fn attribution_link_rejects_rebind_to_different_user() {
     // repo update filter doesn't match because user_id is already set).
     let resp = app
         .client
-        .put(app.url("/v1/attribution/link"))
+        .put(app.url("/v1/attribution/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-rebind",
@@ -426,7 +426,7 @@ async fn attribution_link_returns_404_for_missing_install() {
 
     let resp = app
         .client
-        .put(app.url("/v1/attribution/link"))
+        .put(app.url("/v1/attribution/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "does-not-exist",
@@ -448,7 +448,7 @@ async fn attribution_link_rejects_secret_key() {
 
     let resp = app
         .client
-        .put(app.url("/v1/attribution/link"))
+        .put(app.url("/v1/attribution/identify"))
         .header("Authorization", format!("Bearer {api_key}"))
         .json(&serde_json::json!({
             "install_id": "any",
@@ -467,10 +467,248 @@ async fn attribution_link_rejects_no_auth() {
 
     let resp = app
         .client
-        .put(app.url("/v1/attribution/link"))
+        .put(app.url("/v1/attribution/identify"))
         .json(&serde_json::json!({
             "install_id": "any",
             "user_id": "usr_any"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 401);
+}
+
+// ── SDK Conversion Endpoint Tests ──
+
+/// Helper: set up a full attribution chain so conversion events can be attributed.
+async fn setup_attribution_chain(
+    app: &common::TestApp,
+    api_key: &str,
+    sdk_key: &str,
+    link_id: &str,
+    install_id: &str,
+    user_id: &str,
+) {
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&serde_json::json!({
+            "custom_id": link_id,
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    app.client
+        .post(app.url("/v1/attribution/install"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "link_id": link_id,
+            "install_id": install_id,
+            "app_version": "1.0.0"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    app.client
+        .put(app.url("/v1/attribution/identify"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": install_id,
+            "user_id": user_id
+        }))
+        .send()
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn sdk_convert_happy_path() {
+    let app = common::spawn_app().await;
+    let (api_key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    setup_attribution_chain(
+        &app,
+        &api_key,
+        &sdk_key,
+        "conv-test",
+        "inst-conv",
+        "usr-conv",
+    )
+    .await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/attribution/convert"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "user_id": "usr-conv",
+            "type": "spot_trade",
+            "idempotency_key": "order-001"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["accepted"], 1);
+    assert_eq!(body["deduped"], 0);
+    assert_eq!(body["unattributed"], 0);
+}
+
+#[tokio::test]
+async fn sdk_convert_dedupes_by_idempotency_key() {
+    let app = common::spawn_app().await;
+    let (api_key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    setup_attribution_chain(
+        &app,
+        &api_key,
+        &sdk_key,
+        "dedup-test",
+        "inst-dedup",
+        "usr-dedup",
+    )
+    .await;
+
+    let payload = serde_json::json!({
+        "user_id": "usr-dedup",
+        "type": "swap",
+        "idempotency_key": "tx-same"
+    });
+
+    let resp = app
+        .client
+        .post(app.url("/v1/attribution/convert"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&payload)
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["accepted"], 1);
+
+    let resp = app
+        .client
+        .post(app.url("/v1/attribution/convert"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&payload)
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["deduped"], 1);
+    assert_eq!(body["accepted"], 0);
+}
+
+#[tokio::test]
+async fn sdk_convert_unattributed_user() {
+    let app = common::spawn_app().await;
+    let (_api_key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/attribution/convert"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "user_id": "unknown-user",
+            "type": "trade",
+            "idempotency_key": "order-ghost"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["unattributed"], 1);
+    assert_eq!(body["accepted"], 0);
+}
+
+#[tokio::test]
+async fn sdk_convert_rejects_empty_user_id() {
+    let app = common::spawn_app().await;
+    let (_api_key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/attribution/convert"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "user_id": "",
+            "type": "trade"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+}
+
+#[tokio::test]
+async fn sdk_convert_rejects_empty_type() {
+    let app = common::spawn_app().await;
+    let (_api_key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/attribution/convert"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "user_id": "usr-test",
+            "type": ""
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+}
+
+#[tokio::test]
+async fn sdk_convert_rejects_no_auth() {
+    let app = common::spawn_app().await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/attribution/convert"))
+        .json(&serde_json::json!({
+            "user_id": "usr-test",
+            "type": "trade"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 401);
+}
+
+#[tokio::test]
+async fn sdk_convert_rejects_secret_key() {
+    let app = common::spawn_app().await;
+    let (api_key, _tenant_id) = common::seed_api_key(&app).await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/attribution/convert"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&serde_json::json!({
+            "user_id": "usr-test",
+            "type": "trade"
         }))
         .send()
         .await

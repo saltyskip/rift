@@ -326,3 +326,92 @@ pub async fn receive_webhook(
     }))
     .into_response()
 }
+
+// ── POST /v1/attribution/convert — SDK-authenticated conversion tracking ──
+//
+// Same pipeline as the webhook receiver but authenticated by publishable key
+// instead of an opaque URL token. The mobile SDK uses this so it doesn't need
+// a separate webhook URL in the binary.
+
+#[utoipa::path(
+    post,
+    path = "/v1/attribution/convert",
+    tag = "Conversions",
+    request_body = SdkConversionRequest,
+    responses(
+        (status = 200, description = "Event processed"),
+        (status = 400, description = "Invalid payload", body = crate::error::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::error::ErrorResponse),
+    ),
+    security(("api_key" = [])),
+)]
+#[tracing::instrument(skip(state, req))]
+pub async fn sdk_track_conversion(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+    Json(req): Json<SdkConversionRequest>,
+) -> Response {
+    let Some(service) = &state.conversions_service else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+
+    if req.user_id.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "user_id is required", "code": "bad_request" })),
+        )
+            .into_response();
+    }
+
+    if req.conversion_type.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "type is required", "code": "bad_request" })),
+        )
+            .into_response();
+    }
+
+    let parsed = vec![crate::services::conversions::parsers::ParsedConversion {
+        user_id: Some(req.user_id),
+        conversion_type: req.conversion_type,
+        amount_cents: req.amount_cents,
+        currency: req.currency,
+        idempotency_key: req.idempotency_key,
+        metadata: req
+            .metadata
+            .and_then(|v| mongodb::bson::to_bson(&v).ok())
+            .and_then(|b| b.as_document().cloned()),
+        occurred_at: None,
+    }];
+
+    let result = service.ingest_sdk_event(tenant.0, parsed).await;
+
+    Json(json!({
+        "accepted": result.accepted,
+        "deduped": result.deduped,
+        "unattributed": result.unattributed,
+        "failed": result.failed,
+    }))
+    .into_response()
+}
+
+/// Request body for the SDK conversion endpoint.
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct SdkConversionRequest {
+    /// The user ID (must match a previously bound user via setUserId).
+    #[schema(example = "usr_abc123")]
+    pub user_id: String,
+    /// Conversion type (free-form, e.g. "spot_trade", "perps_trade", "swap").
+    #[serde(rename = "type")]
+    #[schema(example = "spot_trade")]
+    pub conversion_type: String,
+    /// Idempotency key to prevent double-counting (e.g. order ID, tx hash).
+    #[schema(example = "order-12345")]
+    pub idempotency_key: Option<String>,
+    /// Monetary value in the currency's smallest unit (cents for USD).
+    pub amount_cents: Option<i64>,
+    /// ISO 4217 currency code, lowercase. Required if amount_cents is set.
+    pub currency: Option<String>,
+    /// Arbitrary metadata (max 1KB). Stored verbatim, forwarded on outbound webhooks.
+    pub metadata: Option<serde_json::Value>,
+}

@@ -36,7 +36,7 @@ export default function PublishableKeysPage() {
           </p>
           <ul className="list-disc pl-5 space-y-1 text-[15px] text-[#a1a1aa]">
             <li><code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/click</code> &mdash; record a click</li>
-            <li><code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/report</code> &mdash; report an install attribution</li>
+            <li><code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/install</code> &mdash; report an install attribution</li>
           </ul>
           <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
             Each publishable key is bound to a verified custom domain. This scopes all lookups to your tenant.

@@ -65,8 +65,7 @@ public class SharedPrefsStorage(context: Context) : RiftStorage {
  */
 fun RiftSdk.Companion.create(
     publishableKey: String,
-    context: Context,
-    conversionSourceUrl: String? = null
+    context: Context
 ): RiftSdk {
     val version = try {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
@@ -78,7 +77,6 @@ fun RiftSdk.Companion.create(
             publishableKey = publishableKey,
             baseUrl = null,
             logLevel = null,
-            conversionSourceUrl = conversionSourceUrl,
             appVersion = version
         ),
         storage = SharedPrefsStorage(context)
