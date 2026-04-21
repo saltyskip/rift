@@ -108,50 +108,53 @@ rift links test LINK_ID`}</CodeBlock>
         <section className="space-y-4">
           <h2 className="text-2xl font-bold text-[#fafafa]">Next steps</h2>
           <p className="text-[15px] text-[#71717a]">
-            You now have a working setup on Rift&apos;s shared domain. Pick your next goal — most
-            developers start with custom domains or an SDK integration.
+            You now have a working setup on Rift&apos;s shared domain. The rest of the docs
+            follow the value chain: set up your infrastructure, create links, acquire users,
+            then measure conversions.
           </p>
           <div className="grid gap-3">
             {[
               {
                 title: "Custom Domains",
-                desc: "Set up branded links on your own domain.",
+                desc: "Brand your links on your own domain.",
                 href: "/docs/domains",
+                eyebrow: "Setup",
               },
               {
                 title: "Register Your App",
-                desc: "Add iOS/Android for universal links and branded landing pages.",
+                desc: "Add iOS/Android for universal links and landing pages.",
                 href: "/docs/apps",
-              },
-              {
-                title: "Publishable Keys",
-                desc: "Create client-safe keys for the web and mobile SDKs.",
-                href: "/docs/publishable-keys",
+                eyebrow: "Setup",
               },
               {
                 title: "Create Links",
-                desc: "Create deep links with per-platform routing and metadata.",
+                desc: "Deep links with per-platform routing and metadata.",
                 href: "/docs/links",
+                eyebrow: "Create",
               },
               {
                 title: "Web SDK",
-                desc: "Add click tracking and attribution to your website.",
+                desc: "Track clicks and copy link IDs to clipboard for deferred deep linking.",
                 href: "/docs/web-sdk",
+                eyebrow: "Acquire",
               },
               {
                 title: "iOS SDK",
-                desc: "Integrate deep linking into your iOS app.",
+                desc: "User binding, conversion tracking, and deferred deep links.",
                 href: "/docs/ios-sdk",
+                eyebrow: "Convert",
               },
               {
                 title: "Android SDK",
-                desc: "Integrate deep linking into your Android app.",
+                desc: "User binding, conversion tracking, and deferred deep links.",
                 href: "/docs/android-sdk",
+                eyebrow: "Convert",
               },
               {
-                title: "Track Conversions",
-                desc: "Measure signups, purchases, and deposits with backend webhooks.",
+                title: "Conversions",
+                desc: "Measure signups, purchases, and revenue — from the SDK or your backend.",
                 href: "/docs/conversions",
+                eyebrow: "Convert",
               },
             ].map((item) => (
               <a
@@ -160,6 +163,11 @@ rift links test LINK_ID`}</CodeBlock>
                 className="group flex items-center justify-between rounded-xl border border-[#1e1e22] bg-[#111113] p-4 transition-colors hover:border-[#2dd4bf]/30"
               >
                 <div>
+                  {"eyebrow" in item && (
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#52525b] mb-1">
+                      {(item as { eyebrow: string }).eyebrow}
+                    </p>
+                  )}
                   <p className="text-[15px] font-medium text-[#fafafa] transition-colors group-hover:text-[#2dd4bf]">
                     {item.title}
                   </p>

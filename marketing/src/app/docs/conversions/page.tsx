@@ -19,11 +19,10 @@ export default function ConversionsPage() {
         <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Conversions</h1>
         <p className="text-lg text-[#71717a] leading-relaxed">
           Measure post-install events — signups, deposits, purchases, shares — and attribute
-          them back to the link that drove them. Conversions are{" "}
-          <strong className="text-[#fafafa]">backend-only</strong>: every event comes from a
-          server-side webhook. No client SDK calls, no ad-blocker loss, no spoofable events.
-          If your backend didn&apos;t see it, Rift won&apos;t count it — and that&apos;s the
-          point.
+          them back to the link that drove them. Two paths:{" "}
+          <strong className="text-[#fafafa]">SDK tracking</strong> from your mobile app, or{" "}
+          <strong className="text-[#fafafa]">backend webhooks</strong> from your server.
+          Both are attributed, deduped, and rolled up into your link stats.
         </p>
       </div>
 
@@ -31,51 +30,104 @@ export default function ConversionsPage() {
         {/* How it works */}
         <section className="space-y-4">
           <h2 className="text-2xl font-bold text-[#fafafa]">How it works</h2>
-          <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
-            Conversions flow through a <strong className="text-[#fafafa]">source</strong> — a
-            webhook receiver with a unique URL. Every tenant gets an auto-provisioned default
-            custom source on first request, so you can start POSTing events in under a minute.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-[#2dd4bf]/20 bg-[#2dd4bf]/5 p-4">
               <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf]">
-                1. Source
+                SDK tracking
               </p>
               <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
-                A webhook receiver with a unique URL. Your backend fires HTTP POSTs to it
-                whenever a user does something worth counting.
+                Call <code className="text-[#71717a] bg-[#18181b] px-1 py-0.5 rounded text-[11px]">trackConversion</code>{" "}
+                from your iOS or Android app. The SDK handles auth (publishable key),
+                user resolution, and the HTTP call. Best for client-side events like
+                trades, purchases, or in-app actions.
               </p>
             </div>
             <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
               <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#f59e0b]">
-                2. Attribution
+                Backend webhooks
               </p>
               <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
-                Rift looks up the{" "}
-                <code className="text-[#71717a] bg-[#18181b] px-1 py-0.5 rounded text-[11px]">
-                  user_id
-                </code>{" "}
-                in the event, finds the originating link via your existing attribution chain,
-                and records the conversion.
-              </p>
-            </div>
-            <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#a78bfa]">
-                3. Stats
-              </p>
-              <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
-                Counts and sums per link, per conversion type, surface on the link stats
-                endpoint. Raw events fan out to any registered webhook.
+                POST events to a source webhook URL from your server. Best for
+                server-side events like Stripe payments, RevenueCat callbacks, or
+                admin actions where the SDK isn&apos;t involved.
               </p>
             </div>
           </div>
+          <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
+            Both paths resolve{" "}
+            <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">user_id</code>{" "}
+            → attribution → link, dedupe via idempotency key, and roll counts into the
+            link stats endpoint.
+          </p>
         </section>
 
         <div className="gradient-line" />
 
-        {/* Quick start */}
+        {/* SDK tracking */}
         <section className="space-y-6">
-          <h2 className="text-2xl font-bold text-[#fafafa]">Quick start</h2>
+          <h2 className="text-2xl font-bold text-[#fafafa]">Option A: SDK tracking</h2>
+          <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
+            The fastest path. The mobile SDK handles auth, user resolution, and the HTTP call.
+            One line wherever a conversion happens.
+          </p>
+
+          <Step n={1} title="Bind the user (prerequisite)">
+            <p>
+              Before you can attribute conversions, call{" "}
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">setUserId</code>{" "}
+              wherever you handle your user session. See the{" "}
+              <a href="/docs/attribution" className="text-[#2dd4bf] hover:underline">Attribution</a>{" "}
+              docs for the full pattern.
+            </p>
+            <CodeBlock lang="swift">{`// iOS
+try? await rift.setUserId(userId: currentUser.id)`}</CodeBlock>
+            <CodeBlock lang="kotlin">{`// Android
+rift.setUserId(userId = currentUser.id)`}</CodeBlock>
+          </Step>
+
+          <Step n={2} title="Track a conversion">
+            <p>
+              Call <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">trackConversion</code>{" "}
+              whenever a user does something worth counting. The SDK reads the bound user,
+              authenticates with your publishable key, and POSTs to{" "}
+              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/convert</code>.
+            </p>
+            <CodeBlock lang="swift">{`// iOS — on trade completion, purchase, signup:
+try await rift.trackConversion(
+    conversionType: "trade",
+    idempotencyKey: orderId,
+    metadata: ["asset": "ETH", "side": "buy"]
+)`}</CodeBlock>
+            <CodeBlock lang="kotlin">{`// Android
+rift.trackConversion(
+    conversionType = "trade",
+    idempotencyKey = orderId,
+    metadata = mapOf("asset" to "ETH", "side" to "buy")
+)`}</CodeBlock>
+            <Callout type="info">
+              The server dedupes via <code>idempotencyKey</code>, so retries are safe.
+              If no <code>user_id</code> is bound, the SDK logs a warning and skips the call.
+            </Callout>
+          </Step>
+
+          <Step n={3} title="Check your stats">
+            <p>
+              Conversion counts roll up into the link stats endpoint immediately:
+            </p>
+            <CodeBlock>{`curl https://api.riftl.ink/v1/links/summer-sale/stats \\
+  -H "Authorization: Bearer rl_live_YOUR_KEY"`}</CodeBlock>
+          </Step>
+        </section>
+
+        <div className="gradient-line" />
+
+        {/* Webhook tracking */}
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold text-[#fafafa]">Option B: Backend webhooks</h2>
+          <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
+            For server-side events — Stripe webhooks, RevenueCat callbacks, admin actions —
+            POST directly to a source webhook URL. No SDK involved, no client-side code.
+          </p>
 
           <Step n={1} title="Get your webhook URL">
             <p>

@@ -49,14 +49,7 @@ dependencies {
             <CodeBlock lang="kotlin">{`import ink.riftl.sdk.*
 
 // One line — SharedPreferences storage, app version, all defaults.
-val rift = RiftSdk.create("pk_live_YOUR_KEY", applicationContext)
-
-// If you're tracking conversions, pass the source URL too:
-val rift = RiftSdk.create(
-    "pk_live_YOUR_KEY",
-    applicationContext,
-    conversionSourceUrl = "https://api.riftl.ink/w/YOUR_SOURCE_TOKEN"
-)`}</CodeBlock>
+val rift = RiftSdk.create("pk_live_YOUR_KEY", applicationContext)`}</CodeBlock>
             <Callout type="info">
               The SDK generates a persistent <code>install_id</code> (UUID) on first launch
               and stores it in SharedPreferences. On Android, app data is wiped on uninstall —
@@ -84,6 +77,8 @@ lifecycleScope.launch {
           <Step n={4} title="Track conversions (one line)">
             <p>
               Fire a conversion event whenever a user does something worth counting.
+              The SDK reads the bound <code>user_id</code> and POSTs to the Rift API
+              using your publishable key.
             </p>
             <CodeBlock lang="kotlin">{`// On trade completion, purchase, signup — whatever you're measuring:
 rift.trackConversion(
@@ -92,8 +87,8 @@ rift.trackConversion(
     metadata = mapOf("asset" to "ETH", "side" to "buy")
 )`}</CodeBlock>
             <p className="text-[13px] text-[#71717a]">
-              Fire-and-forget — the method returns immediately. The server dedupes via{" "}
-              <code>idempotencyKey</code>.
+              Suspend function — call from a coroutine scope. The server dedupes via{" "}
+              <code>idempotencyKey</code>, so retries are safe.
             </p>
           </Step>
         </section>
@@ -177,7 +172,7 @@ Log.d("Rift", "Deep link: \${result.androidDeepLink}")`}</CodeBlock>
                 </thead>
                 <tbody className="text-[#a1a1aa]">
                   <tr className="border-b border-[#1e1e22]">
-                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">RiftSdk.create(publishableKey, context, conversionSourceUrl?)</td>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">RiftSdk.create(publishableKey, context)</td>
                     <td className="px-4 py-2.5">Convenience. Auto-wires SharedPreferences storage + app version. Recommended.</td>
                   </tr>
                   <tr>
@@ -208,8 +203,8 @@ Log.d("Rift", "Deep link: \${result.androidDeepLink}")`}</CodeBlock>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">trackConversion(type, idempotencyKey, metadata?)</td>
-                    <td className="px-4 py-2.5 font-mono">Unit (@Throws)</td>
-                    <td className="px-4 py-2.5">Fire a conversion event. Fire-and-forget POST to the source URL.</td>
+                    <td className="px-4 py-2.5 font-mono">Unit (suspend @Throws)</td>
+                    <td className="px-4 py-2.5">Fire a conversion event. POSTs to the Rift API via publishable key.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">checkDeferredDeepLink(clipboardText)</td>
