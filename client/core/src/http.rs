@@ -67,6 +67,26 @@ impl RiftClient {
         self.send(request).await
     }
 
+    pub(crate) async fn get_bytes(&self, path: &str) -> Result<Vec<u8>, RiftClientError> {
+        let request = self.apply_auth(self.http.get(self.url(path)), false);
+        let response = request.send().await?;
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body: ApiErrorBody = response.json().await.unwrap_or(ApiErrorBody {
+                error: "Unknown error".to_string(),
+            });
+            return Err(RiftClientError::Api {
+                status,
+                message: body.error,
+            });
+        }
+        response
+            .bytes()
+            .await
+            .map(|b| b.to_vec())
+            .map_err(|e| RiftClientError::Network(e.to_string()))
+    }
+
     #[allow(dead_code)]
     pub(crate) async fn delete_empty(&self, path: &str) -> Result<(), RiftClientError> {
         let request = self.apply_auth(self.http.delete(self.url(path)), false);

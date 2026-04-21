@@ -8,6 +8,7 @@ use super::models::*;
 use super::repo::LinksRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
+use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 
 // ── Error ──
@@ -18,6 +19,7 @@ pub enum LinkError {
     InvalidUrl(String),
     InvalidMetadata(String),
     InvalidAgentContext(String),
+    InvalidSocialPreview(String),
     ThreatDetected(String),
     LinkIdTaken(String),
     NotFound,
@@ -33,6 +35,7 @@ impl fmt::Display for LinkError {
             Self::InvalidUrl(e) => write!(f, "{e}"),
             Self::InvalidMetadata(e) => write!(f, "{e}"),
             Self::InvalidAgentContext(e) => write!(f, "{e}"),
+            Self::InvalidSocialPreview(e) => write!(f, "{e}"),
             Self::ThreatDetected(e) => write!(f, "{e}"),
             Self::LinkIdTaken(id) => write!(f, "'{id}' is already taken"),
             Self::NotFound => write!(f, "Link not found"),
@@ -53,6 +56,7 @@ impl LinkError {
             Self::InvalidUrl(_) => "invalid_url",
             Self::InvalidMetadata(_) => "invalid_metadata",
             Self::InvalidAgentContext(_) => "invalid_agent_context",
+            Self::InvalidSocialPreview(_) => "invalid_social_preview",
             Self::ThreatDetected(_) => "threat_detected",
             Self::LinkIdTaken(_) => "link_id_taken",
             Self::NotFound => "not_found",
@@ -133,6 +137,7 @@ impl LinksService {
         }
 
         validate_agent_context(&req.agent_context)?;
+        validate_social_preview(&req.social_preview)?;
 
         if let Some(ref meta) = req.metadata {
             validation::validate_metadata(meta).map_err(LinkError::InvalidMetadata)?;
@@ -164,6 +169,9 @@ impl LinksService {
         if let Some(ac) = req.agent_context {
             input = input.agent_context(ac);
         }
+        if let Some(sp) = req.social_preview {
+            input = input.social_preview(sp);
+        }
 
         // Links without a verified custom domain expire after 30 days.
         let expires_at = if !has_verified_domain {
@@ -184,7 +192,7 @@ impl LinksService {
             }
         })?;
 
-        let url = format!("{}/r/{}", self.public_url, link_id);
+        let url = self.canonical_url(&tenant_id, &link_id).await;
         Ok(CreateLinkResponse {
             link_id,
             url,
@@ -205,7 +213,7 @@ impl LinksService {
             .map_err(LinkError::Internal)?
             .ok_or(LinkError::NotFound)?;
 
-        Ok(self.link_to_detail(&link))
+        Ok(self.link_to_detail(&link).await)
     }
 
     #[tracing::instrument(skip(self))]
@@ -237,7 +245,12 @@ impl LinksService {
             None
         };
 
-        let details: Vec<LinkDetail> = page.iter().map(|l| self.link_to_detail(l)).collect();
+        let primary_domain =
+            resolve_verified_primary_domain(self.domains_repo.as_deref(), tenant_id).await;
+        let details: Vec<LinkDetail> = page
+            .iter()
+            .map(|l| self.link_to_detail_with_domain(l, primary_domain.as_deref()))
+            .collect();
 
         Ok(ListLinksResponse {
             links: details,
@@ -275,6 +288,7 @@ impl LinksService {
         }
 
         validate_agent_context(&req.agent_context)?;
+        validate_social_preview(&req.social_preview)?;
 
         let mut update = mongodb::bson::Document::new();
         let mut unset = mongodb::bson::Document::new();
@@ -316,6 +330,11 @@ impl LinksService {
         if let Some(ref ac) = req.agent_context {
             if let Ok(doc) = mongodb::bson::to_document(ac) {
                 update.insert("agent_context", doc);
+            }
+        }
+        if let Some(ref sp) = req.social_preview {
+            if let Ok(doc) = mongodb::bson::to_document(sp) {
+                update.insert("social_preview", doc);
             }
         }
 
@@ -389,10 +408,20 @@ impl LinksService {
         Ok(())
     }
 
-    fn link_to_detail(&self, link: &Link) -> LinkDetail {
+    async fn link_to_detail(&self, link: &Link) -> LinkDetail {
+        let domain =
+            resolve_verified_primary_domain(self.domains_repo.as_deref(), &link.tenant_id).await;
+        self.link_to_detail_with_domain(link, domain.as_deref())
+    }
+
+    fn link_to_detail_with_domain(
+        &self,
+        link: &Link,
+        verified_primary_domain: Option<&str>,
+    ) -> LinkDetail {
         LinkDetail {
             link_id: link.link_id.clone(),
-            url: format!("{}/r/{}", self.public_url, link.link_id),
+            url: build_canonical_link_url(&self.public_url, &link.link_id, verified_primary_domain),
             ios_deep_link: link.ios_deep_link.clone(),
             android_deep_link: link.android_deep_link.clone(),
             web_url: link.web_url.clone(),
@@ -400,6 +429,7 @@ impl LinksService {
             android_store_url: link.android_store_url.clone(),
             created_at: link.created_at.try_to_rfc3339_string().unwrap_or_default(),
             agent_context: link.agent_context.clone(),
+            social_preview: link.social_preview.clone(),
         }
     }
 
@@ -413,6 +443,35 @@ impl LinksService {
             .map(|domains| domains.iter().any(|d| d.verified))
             .unwrap_or(false)
     }
+
+    pub async fn canonical_url(&self, tenant_id: &ObjectId, link_id: &str) -> String {
+        let domain = resolve_verified_primary_domain(self.domains_repo.as_deref(), tenant_id).await;
+        build_canonical_link_url(&self.public_url, link_id, domain.as_deref())
+    }
+}
+
+pub fn build_canonical_link_url(
+    public_url: &str,
+    link_id: &str,
+    verified_primary_domain: Option<&str>,
+) -> String {
+    match verified_primary_domain {
+        Some(domain) => format!("https://{domain}/{link_id}"),
+        None => format!("{}/r/{link_id}", public_url.trim_end_matches('/')),
+    }
+}
+
+pub async fn resolve_verified_primary_domain(
+    domains_repo: Option<&dyn DomainsRepository>,
+    tenant_id: &ObjectId,
+) -> Option<String> {
+    let repo = domains_repo?;
+    repo.list_by_tenant(tenant_id)
+        .await
+        .ok()?
+        .into_iter()
+        .find(|d| d.verified && d.role == DomainRole::Primary)
+        .map(|d| d.domain)
 }
 
 // ── Shared Validators ──
@@ -492,6 +551,52 @@ fn validate_agent_context(agent_context: &Option<AgentContext>) -> Result<(), Li
     Ok(())
 }
 
+fn validate_social_preview(social_preview: &Option<SocialPreview>) -> Result<(), LinkError> {
+    let Some(preview) = social_preview else {
+        return Ok(());
+    };
+
+    if preview.title.is_none() && preview.description.is_none() && preview.image_url.is_none() {
+        return Err(LinkError::InvalidSocialPreview(
+            "social_preview must include at least one field".to_string(),
+        ));
+    }
+
+    if let Some(title) = preview.title.as_deref() {
+        if title.trim().is_empty() {
+            return Err(LinkError::InvalidSocialPreview(
+                "social_preview.title must not be empty".to_string(),
+            ));
+        }
+        if title.chars().count() > 120 {
+            return Err(LinkError::InvalidSocialPreview(
+                "social_preview.title must be 120 characters or fewer".to_string(),
+            ));
+        }
+    }
+
+    if let Some(description) = preview.description.as_deref() {
+        if description.trim().is_empty() {
+            return Err(LinkError::InvalidSocialPreview(
+                "social_preview.description must not be empty".to_string(),
+            ));
+        }
+        if description.chars().count() > 300 {
+            return Err(LinkError::InvalidSocialPreview(
+                "social_preview.description must be 300 characters or fewer".to_string(),
+            ));
+        }
+    }
+
+    if let Some(image_url) = preview.image_url.as_deref() {
+        validation::validate_web_url(image_url).map_err(|e| {
+            LinkError::InvalidSocialPreview(format!("social_preview.image_url: {e}"))
+        })?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,6 +606,26 @@ mod tests {
     use async_trait::async_trait;
     use mongodb::bson::{oid::ObjectId, DateTime, Document};
     use std::sync::Mutex;
+
+    #[test]
+    fn canonical_link_url_prefers_verified_primary_domain() {
+        assert_eq!(
+            build_canonical_link_url(
+                "https://api.riftl.ink",
+                "summer-sale",
+                Some("go.example.com")
+            ),
+            "https://go.example.com/summer-sale"
+        );
+    }
+
+    #[test]
+    fn canonical_link_url_falls_back_to_public_resolve_path() {
+        assert_eq!(
+            build_canonical_link_url("https://api.riftl.ink/", "summer-sale", None),
+            "https://api.riftl.ink/r/summer-sale"
+        );
+    }
 
     // ── Mock LinksRepository ──
 
@@ -533,6 +658,7 @@ mod tests {
             flag_reason: None,
             expires_at: None,
             agent_context: None,
+            social_preview: None,
         }
     }
 
@@ -558,6 +684,7 @@ mod tests {
                 flag_reason: None,
                 expires_at: input.expires_at,
                 agent_context: input.agent_context,
+                social_preview: input.social_preview,
             };
             links.push(link.clone());
             Ok(link)
@@ -608,6 +735,15 @@ mod tests {
             }
             if let Ok(v) = update.get_str("android_store_url") {
                 link.android_store_url = Some(v.to_string());
+            }
+            if let Ok(v) = update.get_document("metadata") {
+                link.metadata = Some(v.clone());
+            }
+            if let Ok(v) = update.get_document("agent_context") {
+                link.agent_context = mongodb::bson::from_document(v.clone()).ok();
+            }
+            if let Ok(v) = update.get_document("social_preview") {
+                link.social_preview = mongodb::bson::from_document(v.clone()).ok();
             }
             Ok(true)
         }
@@ -787,6 +923,7 @@ mod tests {
             android_store_url: None,
             metadata: None,
             agent_context: None,
+            social_preview: None,
         };
 
         let resp = svc.create_link(tenant_id, req).await.unwrap();
@@ -807,6 +944,7 @@ mod tests {
             android_store_url: None,
             metadata: None,
             agent_context: None,
+            social_preview: None,
         };
 
         let err = svc.create_link(tenant_id, req).await.unwrap_err();
@@ -826,10 +964,12 @@ mod tests {
             android_store_url: None,
             metadata: None,
             agent_context: None,
+            social_preview: None,
         };
 
         let resp = svc.create_link(tenant_id, req).await.unwrap();
         assert_eq!(resp.link_id, "my-link");
+        assert_eq!(resp.url, "https://example.com/my-link");
     }
 
     #[tokio::test]
@@ -845,6 +985,7 @@ mod tests {
             android_store_url: None,
             metadata: None,
             agent_context: None,
+            social_preview: None,
         };
 
         let err = svc.create_link(tenant_id, req).await.unwrap_err();
@@ -866,6 +1007,7 @@ mod tests {
             android_store_url: None,
             metadata: None,
             agent_context: None,
+            social_preview: None,
         };
 
         // First create should succeed (random ID won't collide with "EXISTING")
@@ -947,6 +1089,7 @@ mod tests {
             android_store_url: None,
             metadata: None,
             agent_context: None,
+            social_preview: None,
         };
 
         let detail = svc.update_link(&tenant_id, "UPD123", req).await.unwrap();
@@ -966,6 +1109,7 @@ mod tests {
             android_store_url: None,
             metadata: None,
             agent_context: None,
+            social_preview: None,
         };
 
         let err = svc.update_link(&tenant_id, "NOPE", req).await.unwrap_err();
@@ -986,6 +1130,7 @@ mod tests {
             android_store_url: None,
             metadata: None,
             agent_context: None,
+            social_preview: None,
         };
 
         let err = svc

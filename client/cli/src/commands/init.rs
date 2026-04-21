@@ -135,6 +135,7 @@ pub async fn run(
                 android_store_url: None,
                 metadata: None,
                 agent_context: None,
+                social_preview: None,
             })
             .await?;
         starter_link = Some(created);

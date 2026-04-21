@@ -86,6 +86,354 @@ async fn create_link_with_platform_destinations() {
 }
 
 #[tokio::test]
+async fn create_get_and_resolve_link_with_social_preview() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "preview-test",
+            "web_url": "https://example.com/product/123",
+            "ios_deep_link": "myapp://product/123",
+            "social_preview": {
+                "title": "Summer Sale",
+                "description": "Limited time offer",
+                "image_url": "https://example.com/banner.png"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 201);
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links/preview-test"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["social_preview"]["title"], "Summer Sale");
+    assert_eq!(body["social_preview"]["description"], "Limited time offer");
+    assert_eq!(
+        body["social_preview"]["image_url"],
+        "https://example.com/banner.png"
+    );
+
+    let resp = app
+        .client
+        .get(app.url("/r/preview-test"))
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["social_preview"]["title"], "Summer Sale");
+}
+
+#[tokio::test]
+async fn landing_page_uses_social_preview_for_open_graph() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "og-preview",
+            "web_url": "https://example.com/product/123",
+            "ios_deep_link": "myapp://product/123",
+            "social_preview": {
+                "title": "Preview Title",
+                "description": "Preview description",
+                "image_url": "https://example.com/preview.png"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url("/r/og-preview"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let html = resp.text().await.unwrap();
+    assert!(html.contains(r#"<meta property="og:title" content="Preview Title" />"#));
+    assert!(html.contains(r#"<meta property="og:description" content="Preview description" />"#));
+    assert!(
+        html.contains(r#"<meta property="og:image" content="https://example.com/preview.png" />"#)
+    );
+    assert!(html.contains(r#"<meta name="twitter:title" content="Preview Title" />"#));
+}
+
+#[tokio::test]
+async fn metadata_preview_fields_fall_back_to_open_graph() {
+    // Backwards-compat: links created before `social_preview` existed stored OG fields under
+    // `metadata.{title,description,image}`. When `social_preview` is absent we read them so
+    // existing links don't lose rich previews on deploy.
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "metadata-og",
+            "web_url": "https://example.com/product/123",
+            "ios_deep_link": "myapp://product/123",
+            "metadata": {
+                "title": "Metadata Title",
+                "description": "Metadata description",
+                "image": "https://example.com/metadata.png"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url("/r/metadata-og"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let html = resp.text().await.unwrap();
+    assert!(html.contains(r#"<meta property="og:title" content="Metadata Title" />"#));
+    assert!(html.contains(r#"<meta property="og:description" content="Metadata description" />"#));
+    assert!(
+        html.contains(r#"<meta property="og:image" content="https://example.com/metadata.png" />"#)
+    );
+}
+
+#[tokio::test]
+async fn social_preview_overrides_metadata_fallback() {
+    // When both are present, `social_preview` wins.
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "preview-wins",
+            "web_url": "https://example.com/product/123",
+            "ios_deep_link": "myapp://product/123",
+            "metadata": {
+                "title": "Old Metadata Title",
+                "description": "Old metadata description",
+                "image": "https://example.com/old.png"
+            },
+            "social_preview": {
+                "title": "New Preview Title",
+                "description": "New preview description",
+                "image_url": "https://example.com/new.png"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url("/r/preview-wins"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let html = resp.text().await.unwrap();
+    assert!(html.contains("New Preview Title"));
+    assert!(!html.contains("Old Metadata Title"));
+    assert!(!html.contains("old.png"));
+}
+
+#[tokio::test]
+async fn invalid_social_preview_returns_400() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "bad-preview",
+            "web_url": "https://example.com",
+            "social_preview": {}
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_social_preview");
+}
+
+#[tokio::test]
+async fn qr_png_and_svg_endpoints_return_images() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "qr-test",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links/qr-test/qr.png?size=600&margin=2&level=H&fgColor=%23112233&bgColor=%23FFFFFF"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "image/png"
+    );
+    let bytes = resp.bytes().await.unwrap();
+    assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links/qr-test/qr.svg?size=256&margin=1&level=Q&fgColor=%23112233&bgColor=%23FFFFFF"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    assert!(resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("image/svg+xml"));
+    let svg = resp.text().await.unwrap();
+    assert!(svg.trim_start().contains("<svg"));
+    assert!(svg.contains("#112233") || svg.contains("rgb(17, 34, 51)"));
+}
+
+#[tokio::test]
+async fn invalid_qr_params_return_400() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "qr-bad",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links/qr-bad/qr.png?size=10"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_qr_options");
+}
+
+#[tokio::test]
+async fn qr_hide_logo_suppresses_logo_fetch() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "qr-hide-logo",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url(
+            "/v1/links/qr-hide-logo/qr.svg?hideLogo=true&logo=http%3A%2F%2Flocalhost%2Flogo.png",
+        ))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let svg = resp.text().await.unwrap();
+    assert!(!svg.contains("<image "));
+}
+
+#[tokio::test]
+async fn qr_invalid_logo_url_returns_400() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "qr-bad-logo",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links/qr-bad-logo/qr.png?logo=http%3A%2F%2Flocalhost%2Flogo.png"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_qr_options");
+}
+
+#[tokio::test]
 async fn duplicate_custom_id_returns_409() {
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;

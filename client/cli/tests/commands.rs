@@ -228,6 +228,47 @@ async fn links_create_with_all_fields() {
     assert!(body["expires_at"].is_string());
 }
 
+#[tokio::test]
+async fn links_create_sends_social_preview_flags() {
+    let h = TestHarness::spawn().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/links"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+            "link_id": "preview-slug",
+            "url": "https://riftl.ink/preview-slug",
+            "expires_at": null
+        })))
+        .mount(&h.server)
+        .await;
+
+    h.cmd()
+        .args([
+            "links",
+            "create",
+            "--web-url",
+            "https://example.com",
+            "--preview-title",
+            "Preview Title",
+            "--preview-description",
+            "Preview description",
+            "--preview-image-url",
+            "https://example.com/preview.png",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let requests = h.server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["social_preview"]["title"], "Preview Title");
+    assert_eq!(body["social_preview"]["description"], "Preview description");
+    assert_eq!(
+        body["social_preview"]["image_url"],
+        "https://example.com/preview.png"
+    );
+}
+
 // ── links test ──
 
 #[tokio::test]
@@ -307,6 +348,47 @@ async fn links_test_not_found() {
         .assert()
         .failure()
         .code(4);
+}
+
+#[tokio::test]
+async fn links_qr_writes_svg_file() {
+    let h = TestHarness::spawn().await;
+    let output = h.home.path().join("qr.svg");
+
+    Mock::given(method("GET"))
+        .and(path("/v1/links/abc123/qr.svg"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "image/svg+xml")
+                .set_body_string("<svg></svg>"),
+        )
+        .mount(&h.server)
+        .await;
+
+    h.cmd()
+        .args([
+            "links",
+            "qr",
+            "abc123",
+            "--format",
+            "svg",
+            "--output",
+            output.to_str().unwrap(),
+            "--size",
+            "600",
+            "--level",
+            "H",
+            "--fg-color",
+            "#111827",
+            "--bg-color",
+            "#ffffff",
+            "--hide-logo",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(std::fs::read_to_string(output).unwrap(), "<svg></svg>");
 }
 
 // ── login ──

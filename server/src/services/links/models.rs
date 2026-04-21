@@ -30,6 +30,22 @@ pub struct AgentContext {
     pub description: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct SocialPreview {
+    /// Public title used for Open Graph/Twitter previews (max 120 characters).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Summer Sale — 50% Off")]
+    pub title: Option<String>,
+    /// Public description used for Open Graph/Twitter previews (max 300 characters).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Limited time offer on all products")]
+    pub description: Option<String>,
+    /// Public preview image URL used for Open Graph/Twitter previews.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://example.com/promo-banner.jpg")]
+    pub image_url: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Link {
     #[serde(rename = "_id")]
@@ -68,6 +84,9 @@ pub struct Link {
     pub expires_at: Option<DateTime>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub agent_context: Option<AgentContext>,
+    /// Public social preview fields for rendered landing pages.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub social_preview: Option<SocialPreview>,
 }
 
 /// Click event stored in the `click_events` time series collection.
@@ -119,6 +138,7 @@ pub struct CreateLinkInput {
     pub metadata: Option<Document>,
     pub expires_at: Option<DateTime>,
     pub agent_context: Option<AgentContext>,
+    pub social_preview: Option<SocialPreview>,
 }
 
 impl CreateLinkInput {
@@ -134,6 +154,7 @@ impl CreateLinkInput {
             metadata: None,
             expires_at: None,
             agent_context: None,
+            social_preview: None,
         }
     }
 
@@ -176,6 +197,11 @@ impl CreateLinkInput {
         self.agent_context = Some(v);
         self
     }
+
+    pub fn social_preview(mut self, v: SocialPreview) -> Self {
+        self.social_preview = Some(v);
+        self
+    }
 }
 
 // ── API Request / Response Models ──
@@ -212,6 +238,9 @@ pub struct CreateLinkRequest {
     /// Structured context for AI agents. When set, agents resolving this link receive action, CTA, and description metadata alongside the destinations.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
+    /// Public Open Graph/Twitter preview data rendered on Rift landing pages.
+    #[serde(default)]
+    pub social_preview: Option<SocialPreview>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -254,6 +283,9 @@ pub struct UpdateLinkRequest {
     /// Structured context for AI agents. When set, agents resolving this link receive action, CTA, and description metadata alongside the destinations.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
+    /// Public Open Graph/Twitter preview data rendered on Rift landing pages.
+    #[serde(default)]
+    pub social_preview: Option<SocialPreview>,
 }
 
 /// Deserializes a field that can be absent, null, or present.
@@ -292,6 +324,8 @@ pub struct LinkDetail {
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub social_preview: Option<SocialPreview>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -386,6 +420,8 @@ pub struct ResolvedLink {
     pub metadata: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub social_preview: Option<SocialPreview>,
     /// Trust envelope with provenance and status information for agents.
     #[serde(rename = "_rift_meta")]
     pub rift_meta: RiftMeta,

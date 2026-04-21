@@ -101,7 +101,7 @@ fun checkDeferredDeepLink() {
   "ios_deep_link": "myapp://promo/summer-sale",
   "android_deep_link": "myapp://promo/summer-sale",
   "web_url": "https://example.com/promo/summer-sale",
-  "metadata": { "title": "Summer Sale — 50% Off" },
+  "social_preview": { "title": "Summer Sale — 50% Off" },
   "agent_context": {
     "action": "purchase",
     "cta": "Get 50% Off"

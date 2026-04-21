@@ -48,6 +48,7 @@ impl LinksRepository for MockLinksRepo {
             flag_reason: None,
             expires_at: input.expires_at,
             agent_context: input.agent_context,
+            social_preview: input.social_preview,
         };
         links.push(link.clone());
         Ok(link)
@@ -112,6 +113,9 @@ impl LinksRepository for MockLinksRepo {
         }
         if let Ok(v) = set.get_document("agent_context") {
             link.agent_context = mongodb::bson::from_document(v.clone()).ok();
+        }
+        if let Ok(v) = set.get_document("social_preview") {
+            link.social_preview = mongodb::bson::from_document(v.clone()).ok();
         }
         // Apply $unset fields.
         for key in unset.keys() {

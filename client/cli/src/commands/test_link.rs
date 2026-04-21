@@ -53,6 +53,18 @@ pub async fn run(target: String, json: bool) -> Result<(), CliError> {
                 .unwrap_or_else(|| "No Android destination configured".to_string()),
             link.android_deep_link.is_some() || link.android_store_url.is_some(),
         );
+        if let Some(preview) = link.social_preview {
+            ui::section("Social Preview");
+            if let Some(title) = preview.title {
+                ui::kv("Title", title);
+            }
+            if let Some(description) = preview.description {
+                ui::kv("Description", description);
+            }
+            if let Some(image_url) = preview.image_url {
+                ui::kv("Image", image_url);
+            }
+        }
     }
 
     Ok(())

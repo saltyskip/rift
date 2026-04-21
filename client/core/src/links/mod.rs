@@ -10,6 +10,13 @@ pub struct AgentContext {
     pub description: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SocialPreview {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub image_url: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CreateLinkRequest {
     pub custom_id: Option<String>,
@@ -20,6 +27,7 @@ pub struct CreateLinkRequest {
     pub android_store_url: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub agent_context: Option<AgentContext>,
+    pub social_preview: Option<SocialPreview>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -40,6 +48,7 @@ pub struct LinkDetail {
     pub android_store_url: Option<String>,
     pub created_at: String,
     pub agent_context: Option<AgentContext>,
+    pub social_preview: Option<SocialPreview>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -81,6 +90,7 @@ pub struct ResolvedLink {
     pub android_store_url: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub agent_context: Option<AgentContext>,
+    pub social_preview: Option<SocialPreview>,
 }
 
 #[derive(Debug, Serialize)]
@@ -99,6 +109,18 @@ pub struct ClickResponse {
     pub android_store_url: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub agent_context: Option<AgentContext>,
+    pub social_preview: Option<SocialPreview>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct QrCodeOptions {
+    pub logo: Option<String>,
+    pub size: Option<u32>,
+    pub level: Option<String>,
+    pub fg_color: Option<String>,
+    pub bg_color: Option<String>,
+    pub hide_logo: bool,
+    pub margin: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -176,6 +198,22 @@ impl RiftClient {
         self.get(&format!("/r/{link_id}")).await
     }
 
+    pub async fn get_link_qr_png(
+        &self,
+        link_id: &str,
+        options: &QrCodeOptions,
+    ) -> Result<Vec<u8>, RiftClientError> {
+        self.get_bytes(&qr_path(link_id, "png", options)).await
+    }
+
+    pub async fn get_link_qr_svg(
+        &self,
+        link_id: &str,
+        options: &QrCodeOptions,
+    ) -> Result<Vec<u8>, RiftClientError> {
+        self.get_bytes(&qr_path(link_id, "svg", options)).await
+    }
+
     pub async fn click(
         &self,
         link_id: impl Into<String>,
@@ -227,4 +265,35 @@ impl RiftClient {
         )
         .await
     }
+}
+
+fn qr_path(link_id: &str, format: &str, options: &QrCodeOptions) -> String {
+    let mut path = format!("/v1/links/{link_id}/qr.{format}");
+    let mut parts = Vec::new();
+    if let Some(logo) = &options.logo {
+        parts.push(format!("logo={}", urlencoding::encode(logo)));
+    }
+    if let Some(size) = options.size {
+        parts.push(format!("size={size}"));
+    }
+    if let Some(level) = &options.level {
+        parts.push(format!("level={}", urlencoding::encode(level)));
+    }
+    if let Some(fg_color) = &options.fg_color {
+        parts.push(format!("fgColor={}", urlencoding::encode(fg_color)));
+    }
+    if let Some(bg_color) = &options.bg_color {
+        parts.push(format!("bgColor={}", urlencoding::encode(bg_color)));
+    }
+    if options.hide_logo {
+        parts.push("hideLogo=true".to_string());
+    }
+    if let Some(margin) = options.margin {
+        parts.push(format!("margin={margin}"));
+    }
+    if !parts.is_empty() {
+        path.push('?');
+        path.push_str(&parts.join("&"));
+    }
+    path
 }

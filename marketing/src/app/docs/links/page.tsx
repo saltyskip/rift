@@ -40,7 +40,10 @@ rift links create \\
   --web-url https://example.com/promo/summer-sale \\
   --ios-deep-link myapp://promo/summer-sale \\
   --android-deep-link myapp://promo/summer-sale \\
-  --custom-id summer-sale`}</CodeBlock>
+  --custom-id summer-sale \\
+  --preview-title "Summer Sale — 50% Off" \\
+  --preview-description "Limited time offer on all products" \\
+  --preview-image-url https://example.com/promo-banner.jpg`}</CodeBlock>
                     <p>The CLI outputs the link ID and URL, and suggests <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">rift links test</code> to preview how it resolves across platforms:</p>
                     <CodeBlock lang="bash">{`rift links test summer-sale`}</CodeBlock>
                   </div>
@@ -64,10 +67,13 @@ rift links create \\
     "web_url": "https://example.com/promo/summer-sale",
     "ios_store_url": "https://apps.apple.com/app/id123456789",
     "android_store_url": "https://play.google.com/store/apps/details?id=com.example.myapp",
-    "metadata": {
+    "social_preview": {
       "title": "Summer Sale — 50% Off",
       "description": "Limited time offer on all products",
-      "image": "https://example.com/promo-banner.jpg"
+      "image_url": "https://example.com/promo-banner.jpg"
+    },
+    "metadata": {
+      "campaign": "summer-sale"
     },
     "agent_context": {
       "action": "purchase",
@@ -112,15 +118,40 @@ rift links create \\
               <li><strong className="text-[#fafafa]">Desktop</strong> — redirects to the web URL</li>
             </ul>
             <p>
-              The landing page includes your app branding (from app registration) and OG tags from link metadata
+              The landing page includes your app branding (from app registration) and OG tags from <code>social_preview</code>
               for rich social previews.
             </p>
           </Step>
 
-          <Step n={3} title="JSON resolution for agents">
+          <Step n={3} title="Download QR codes">
+            <p>
+              QR codes are generated from the link&apos;s canonical Rift URL and support Dub-style styling parameters.
+            </p>
+            <CodeBlock lang="bash">{`# CLI
+rift links qr summer-sale \\
+  --format png \\
+  --output summer-sale.png \\
+  --size 600 \\
+  --level H \\
+  --fg-color '#111827' \\
+  --bg-color '#ffffff' \\
+  --logo https://example.com/logo.png
+
+# HTTP
+curl -L "https://api.riftl.ink/v1/links/summer-sale/qr.png?size=600&level=H&fgColor=%23111827&bgColor=%23ffffff&logo=https%3A%2F%2Fexample.com%2Flogo.png" \\
+  -H "Authorization: Bearer rl_live_YOUR_KEY" \\
+  -o summer-sale.png`}</CodeBlock>
+            <p>
+              Use <code>qr.svg</code> instead of <code>qr.png</code> for SVG output. Supported options are
+              <code> logo</code>, <code>size</code>, <code>level</code>, <code>fgColor</code>,
+              <code>bgColor</code>, <code>hideLogo</code>, and <code>margin</code>.
+            </p>
+          </Step>
+
+          <Step n={4} title="JSON resolution for agents">
             <p>
               Agents sending <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">Accept: application/json</code> receive
-              all destinations and metadata as JSON. Use your custom domain for custom IDs:
+              all destinations, social preview fields, and metadata as JSON. Use your custom domain for custom IDs:
             </p>
             <CodeBlock lang="json">{`# Custom ID via custom domain
 curl https://go.yourcompany.com/summer-sale \\
@@ -137,7 +168,12 @@ curl https://api.riftl.ink/r/A1B2C3D4 \\
   "web_url": "https://example.com/promo/summer-sale",
   "ios_store_url": "https://apps.apple.com/app/id123456789",
   "android_store_url": "https://play.google.com/store/apps/details?id=com.example.myapp",
-  "metadata": { "title": "Summer Sale — 50% Off", "description": "..." },
+  "social_preview": {
+    "title": "Summer Sale — 50% Off",
+    "description": "Limited time offer on all products",
+    "image_url": "https://example.com/promo-banner.jpg"
+  },
+  "metadata": { "campaign": "summer-sale" },
   "agent_context": {
     "action": "purchase",
     "cta": "Get 50% Off",
@@ -159,7 +195,7 @@ curl https://api.riftl.ink/r/A1B2C3D4 \\
         <section className="space-y-6">
           <h2 className="text-2xl font-bold text-[#fafafa]">Handle incoming links</h2>
 
-          <Step n={4} title="iOS — SceneDelegate or AppDelegate">
+          <Step n={5} title="iOS — SceneDelegate or AppDelegate">
             <CodeBlock lang="swift">{`// SceneDelegate.swift
 func scene(_ scene: UIScene,
            continue userActivity: NSUserActivity) {
@@ -173,7 +209,7 @@ func scene(_ scene: UIScene,
 }`}</CodeBlock>
           </Step>
 
-          <Step n={5} title="Android — Intent handling">
+          <Step n={6} title="Android — Intent handling">
             <CodeBlock lang="kotlin">{`// MainActivity.kt
 override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)

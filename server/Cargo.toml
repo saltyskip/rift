@@ -44,6 +44,8 @@ headers = "0.4"
 utoipa = { version = "5.4", features = ["axum_extras"] }
 utoipa-axum = "0.2"
 utoipa-scalar = { version = "0.3", features = ["axum"] }
+qr-code-styling = { version = "0.1.1", default-features = false, features = ["png", "webp", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 cached = { version = "0.54", features = ["async"] }

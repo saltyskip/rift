@@ -15,6 +15,8 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/v1/links", post(routes::create_link))
         .route("/v1/links", get(routes::list_links))
         .route("/v1/links/{link_id}/stats", get(routes::get_link_stats))
+        .route("/v1/links/{link_id}/qr.png", get(routes::get_link_qr_png))
+        .route("/v1/links/{link_id}/qr.svg", get(routes::get_link_qr_svg))
         .route(
             "/v1/links/{link_id}/timeseries",
             get(routes::get_link_timeseries),
