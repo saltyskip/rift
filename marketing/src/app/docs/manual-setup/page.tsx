@@ -5,6 +5,7 @@ import { DocsStep as Step } from "@/components/docs-step";
 export const metadata: Metadata = {
   title: "Manual Setup — Rift Docs",
   description: "Set up Rift by hand with API calls and manual DNS configuration.",
+  alternates: { canonical: "/docs/manual-setup" },
 };
 
 export default function ManualSetupPage() {

@@ -6,6 +6,7 @@ import { DocsCallout as Callout } from "@/components/docs-callout";
 export const metadata: Metadata = {
   title: "Deferred Deep Linking — Rift Docs",
   description: "Route users to specific content even if they didn't have the app installed when they clicked.",
+  alternates: { canonical: "/docs/deferred" },
 };
 
 export default function DeferredPage() {

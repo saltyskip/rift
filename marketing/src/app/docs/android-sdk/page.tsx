@@ -6,6 +6,7 @@ import { DocsCallout as Callout } from "@/components/docs-callout";
 export const metadata: Metadata = {
   title: "Android SDK — Rift Docs",
   description: "Integrate Rift deep linking into your Android app with the native Kotlin SDK.",
+  alternates: { canonical: "/docs/android-sdk" },
 };
 
 export default function AndroidSdkPage() {

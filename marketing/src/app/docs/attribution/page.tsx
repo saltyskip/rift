@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "Attribution — Rift Docs",
   description:
     "Track clicks, attribute installs to links, and measure conversions across web, iOS, and Android.",
+  alternates: { canonical: "/docs/attribution" },
 };
 
 export default function AttributionPage() {

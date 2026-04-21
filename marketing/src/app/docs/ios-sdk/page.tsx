@@ -6,6 +6,7 @@ import { DocsCallout as Callout } from "@/components/docs-callout";
 export const metadata: Metadata = {
   title: "iOS SDK — Rift Docs",
   description: "Integrate Rift deep linking into your iOS app with the native Swift SDK.",
+  alternates: { canonical: "/docs/ios-sdk" },
 };
 
 export default function IosSdkPage() {

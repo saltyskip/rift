@@ -7,6 +7,7 @@ import { DocsCallout as Callout } from "@/components/docs-callout";
 export const metadata: Metadata = {
   title: "Custom Domains — Rift Docs",
   description: "Use your own brand domain for deep links with Rift custom domains.",
+  alternates: { canonical: "/docs/domains" },
 };
 
 export default function DomainsPage() {

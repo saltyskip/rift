@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   title: "Conversions — Rift Docs",
   description:
     "Track post-install events like signups, purchases, and deposits. Backend-only, attributed to the originating link.",
+  alternates: { canonical: "/docs/conversions" },
 };
 
 export default function ConversionsPage() {

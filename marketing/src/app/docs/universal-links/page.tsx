@@ -5,6 +5,7 @@ import { DocsStep as Step } from "@/components/docs-step";
 export const metadata: Metadata = {
   title: "Universal Links — Rift Docs",
   description: "Configure iOS Associated Domains and Android App Links with Rift.",
+  alternates: { canonical: "/docs/universal-links" },
 };
 
 export default function UniversalLinksPage() {
