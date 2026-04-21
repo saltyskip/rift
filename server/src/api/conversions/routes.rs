@@ -374,8 +374,6 @@ pub async fn sdk_track_conversion(
     let parsed = vec![crate::services::conversions::parsers::ParsedConversion {
         user_id: Some(req.user_id),
         conversion_type: req.conversion_type,
-        amount_cents: req.amount_cents,
-        currency: req.currency,
         idempotency_key: req.idempotency_key,
         metadata: req
             .metadata
@@ -408,10 +406,6 @@ pub struct SdkConversionRequest {
     /// Idempotency key to prevent double-counting (e.g. order ID, tx hash).
     #[schema(example = "order-12345")]
     pub idempotency_key: Option<String>,
-    /// Monetary value in the currency's smallest unit (cents for USD).
-    pub amount_cents: Option<i64>,
-    /// ISO 4217 currency code, lowercase. Required if amount_cents is set.
-    pub currency: Option<String>,
     /// Arbitrary metadata (max 1KB). Stored verbatim, forwarded on outbound webhooks.
     pub metadata: Option<serde_json::Value>,
 }

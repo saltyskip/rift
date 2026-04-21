@@ -121,8 +121,6 @@ impl ConversionsService {
                 },
                 occurred_at: event.occurred_at.unwrap_or_else(DateTime::now),
                 user_id: event.user_id.clone(),
-                amount_cents: event.amount_cents,
-                currency: event.currency.clone(),
                 idempotency_key: event.idempotency_key.clone(),
                 metadata: event.metadata.clone(),
             };
@@ -153,8 +151,6 @@ impl ConversionsService {
                     link_id: link_id.clone(),
                     conversion_type: event.conversion_type.clone(),
                     user_id: event.user_id.clone(),
-                    amount_cents: event.amount_cents,
-                    currency: event.currency.clone(),
                     metadata: metadata_json,
                     timestamp: DateTime::now().try_to_rfc3339_string().unwrap_or_default(),
                 });

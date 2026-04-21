@@ -483,7 +483,7 @@ lifecycleScope.launch {
   "install_count": 89,
   "conversion_rate": 0.072,
   "conversions": [
-    { "conversion_type": "deposit", "count": 19, "sum_cents": 247000, "currency": "usd" },
+    { "conversion_type": "deposit", "count": 19 },
     { "conversion_type": "signup", "count": 42 }
   ]
 }`}</CodeBlock>

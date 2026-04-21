@@ -48,15 +48,6 @@ pub struct ConversionEvent {
     pub occurred_at: DateTime,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
-    /// Monetary value in the currency's smallest unit (cents for USD, yen for JPY).
-    /// `i64` for integer math (avoids float rounding errors) and signed range
-    /// (refunds, chargebacks, dispute reversals are legitimately negative).
-    /// Interpret with the `currency` field. Matches Stripe/RevenueCat convention.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub amount_cents: Option<i64>,
-    /// ISO 4217, lowercase (e.g. "usd", "jpy"). Required when `amount_cents` is set.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub currency: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<String>,
     /// Up to 1KB of caller-defined data. Stored verbatim, exposed via the outbound
@@ -134,7 +125,7 @@ pub struct ListSourcesResponse {
     pub sources: Vec<SourceDetail>,
 }
 
-/// Aggregated counts and sums per `(link, type)` for embedding in `LinkStatsResponse`.
+/// Aggregated counts per `(link, type)` for embedding in `LinkStatsResponse`.
 /// Computed on read from `conversion_events` via an aggregation pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ConversionDetail {
@@ -142,14 +133,6 @@ pub struct ConversionDetail {
     pub conversion_type: String,
     #[schema(example = 19)]
     pub count: u64,
-    /// Total value in the currency's smallest unit. None when no events in this
-    /// group carried an amount (e.g. signup events are count-only).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = 24700000)]
-    pub sum_cents: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(example = "usd")]
-    pub currency: Option<String>,
 }
 
 // ── Ingestion result (service layer output) ──

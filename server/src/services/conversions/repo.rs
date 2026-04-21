@@ -289,17 +289,8 @@ impl ConversionsRepository for ConversionsRepo {
             },
             doc! {
                 "$group": {
-                    "_id": {
-                        "type": "$meta.conversion_type",
-                        "currency": "$currency",
-                    },
+                    "_id": "$meta.conversion_type",
                     "count": { "$sum": 1 },
-                    "sum_cents": {
-                        "$sum": { "$ifNull": ["$amount_cents", 0i64] }
-                    },
-                    "has_amount": {
-                        "$max": { "$cond": [{ "$ne": ["$amount_cents", null] }, 1, 0] }
-                    },
                 }
             },
         ];
@@ -314,26 +305,12 @@ impl ConversionsRepository for ConversionsRepo {
         while cursor.advance().await.map_err(|e| e.to_string())? {
             let raw: Document = cursor.deserialize_current().map_err(|e| e.to_string())?;
 
-            let id_doc = raw.get_document("_id").map_err(|e| e.to_string())?;
-            let conversion_type = id_doc
-                .get_str("type")
-                .map_err(|e| e.to_string())?
-                .to_string();
-            let currency = id_doc.get_str("currency").ok().map(|s| s.to_string());
+            let conversion_type = raw.get_str("_id").map_err(|e| e.to_string())?.to_string();
             let count = raw.get_i64("count").unwrap_or(0).max(0) as u64;
-            let has_amount = raw.get_i32("has_amount").unwrap_or(0) != 0;
-
-            let sum_cents = if has_amount {
-                Some(raw.get_i64("sum_cents").unwrap_or(0))
-            } else {
-                None
-            };
 
             results.push(ConversionDetail {
                 conversion_type,
                 count,
-                sum_cents,
-                currency: if has_amount { currency } else { None },
             });
         }
 

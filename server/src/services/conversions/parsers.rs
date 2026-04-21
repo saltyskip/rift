@@ -13,13 +13,6 @@ pub struct ParsedConversion {
     pub user_id: Option<String>,
     pub conversion_type: String,
 
-    /// Monetary value in the currency's smallest unit (cents for USD, yen for JPY).
-    /// `i64` for integer math (avoids float rounding) and signed range (refunds,
-    /// chargebacks are legitimately negative). Must be paired with `currency`.
-    pub amount_cents: Option<i64>,
-
-    pub currency: Option<String>,
-
     /// Optional idempotency key for exactly-once semantics.
     ///
     /// Contract:
@@ -50,8 +43,6 @@ pub enum ParseError {
     MetadataTooLarge(usize),
     #[error("idempotency key too long: {0} chars (max 256)")]
     IdempotencyKeyTooLong(usize),
-    #[error("amount_cents provided without currency")]
-    AmountWithoutCurrency,
 }
 
 pub trait ConversionParser: Send + Sync {
@@ -85,10 +76,6 @@ struct CustomPayload {
     #[serde(rename = "type")]
     conversion_type: String,
     #[serde(default)]
-    amount_cents: Option<i64>,
-    #[serde(default)]
-    currency: Option<String>,
-    #[serde(default)]
     idempotency_key: Option<String>,
     #[serde(default)]
     metadata: Option<serde_json::Value>,
@@ -106,11 +93,6 @@ impl ConversionParser for CustomParser {
         }
         if payload.conversion_type.trim().is_empty() {
             return Err(ParseError::MissingField("type"));
-        }
-
-        // Amount and currency must travel together.
-        if payload.amount_cents.is_some() && payload.currency.is_none() {
-            return Err(ParseError::AmountWithoutCurrency);
         }
 
         if let Some(key) = &payload.idempotency_key {
@@ -145,8 +127,6 @@ impl ConversionParser for CustomParser {
         Ok(vec![ParsedConversion {
             user_id: Some(payload.user_id),
             conversion_type: payload.conversion_type,
-            amount_cents: payload.amount_cents,
-            currency: payload.currency.map(|c| c.to_lowercase()),
             idempotency_key: payload.idempotency_key,
             metadata,
             occurred_at: None,
@@ -186,8 +166,6 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].user_id.as_deref(), Some("u1"));
         assert_eq!(out[0].conversion_type, "signup");
-        assert!(out[0].amount_cents.is_none());
-        assert!(out[0].currency.is_none());
     }
 
     #[test]
@@ -195,15 +173,11 @@ mod tests {
         let body = br#"{
             "user_id": "u1",
             "type": "deposit",
-            "amount_cents": 10000,
-            "currency": "USD",
             "idempotency_key": "tx_001",
             "metadata": {"tx_hash": "0xabc"}
         }"#;
         let out = CustomParser.parse(body, &test_source()).unwrap();
         let p = &out[0];
-        assert_eq!(p.amount_cents, Some(10000));
-        assert_eq!(p.currency.as_deref(), Some("usd")); // lowercased
         assert_eq!(p.idempotency_key.as_deref(), Some("tx_001"));
         assert!(p.metadata.is_some());
     }
@@ -236,15 +210,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_amount_without_currency() {
-        let body = br#"{"user_id":"u1","type":"deposit","amount_cents":100}"#;
-        assert!(matches!(
-            CustomParser.parse(body, &test_source()),
-            Err(ParseError::AmountWithoutCurrency)
-        ));
-    }
-
-    #[test]
     fn rejects_oversized_idempotency_key() {
         let long_key = "a".repeat(257);
         let body = format!(r#"{{"user_id":"u1","type":"t","idempotency_key":"{long_key}"}}"#);
@@ -263,12 +228,5 @@ mod tests {
             CustomParser.parse(body.as_bytes(), &test_source()),
             Err(ParseError::MetadataTooLarge(_))
         ));
-    }
-
-    #[test]
-    fn supports_negative_amount_for_refunds() {
-        let body = br#"{"user_id":"u1","type":"refund","amount_cents":-5000,"currency":"usd"}"#;
-        let out = CustomParser.parse(body, &test_source()).unwrap();
-        assert_eq!(out[0].amount_cents, Some(-5000));
     }
 }
