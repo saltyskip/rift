@@ -327,7 +327,7 @@ pub async fn receive_webhook(
     .into_response()
 }
 
-// ── POST /v1/attribution/conversion — SDK-authenticated conversion tracking ──
+// ── POST /v1/attribution/convert — SDK-authenticated conversion tracking ──
 //
 // Same pipeline as the webhook receiver but authenticated by publishable key
 // instead of an opaque URL token. The mobile SDK uses this so it doesn't need
@@ -335,7 +335,7 @@ pub async fn receive_webhook(
 
 #[utoipa::path(
     post,
-    path = "/v1/attribution/conversion",
+    path = "/v1/attribution/convert",
     tag = "Conversions",
     request_body = SdkConversionRequest,
     responses(

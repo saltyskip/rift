@@ -315,7 +315,7 @@ impl RiftSdk {
 #[uniffi::export(async_runtime = "tokio")]
 impl RiftSdk {
     /// Fire a conversion event. Reads the bound `user_id` from storage and
-    /// POSTs to the Rift API at `/v1/attribution/conversion` using the publishable key.
+    /// POSTs to the Rift API at `/v1/attribution/convert` using the publishable key.
     /// The server dedupes via `idempotency_key`.
     ///
     /// If no `user_id` is bound, logs a warning and returns (the event won't
@@ -345,7 +345,7 @@ impl RiftSdk {
         }
 
         let url = format!(
-            "{}/v1/attribution/conversion",
+            "{}/v1/attribution/convert",
             self.api_base_url.trim_end_matches('/')
         );
         let http = reqwest::Client::new();
