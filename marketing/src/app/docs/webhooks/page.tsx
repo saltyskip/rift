@@ -126,17 +126,10 @@ export default function WebhooksPage() {
     "link_id": "summer-sale",
     "conversion_type": "deposit",
     "user_id": "usr_abc123",
-    "amount_cents": 10000,
-    "currency": "usd",
     "metadata": { "tx_hash": "0xabc..." },
     "timestamp": "2026-03-24T15:10:00Z"
   }
 }`}</CodeBlock>
-            <Callout type="info">
-              <code>amount_cents</code> and <code>currency</code> are only present for
-              revenue-bearing conversion types. Non-revenue events (e.g.{" "}
-              <code>signup</code>, <code>tutorial_complete</code>) omit them.
-            </Callout>
           </Step>
         </section>
 

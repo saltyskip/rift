@@ -191,17 +191,15 @@ rift.setUserId("usr_abc123")`}</CodeBlock>
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">
                 type
               </code>
-              . Amount, currency, idempotency key, and metadata are optional.
+              . Idempotency key and metadata are optional.
             </p>
             <CodeBlock>{`curl -X POST https://api.riftl.ink/w/a1b2c3d4e5f6... \\
   -H "Content-Type: application/json" \\
   -d '{
     "user_id": "usr_abc123",
     "type": "deposit",
-    "amount_cents": 10000,
-    "currency": "usd",
     "idempotency_key": "tx_550e8400-e29b",
-    "metadata": { "tx_hash": "0xabc..." }
+    "metadata": { "tx_hash": "0xabc...", "amount": "100.00", "currency": "usd" }
   }'`}</CodeBlock>
             <p>
               The response tells you what Rift did with the batch:
@@ -220,7 +218,7 @@ rift.setUserId("usr_abc123")`}</CodeBlock>
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">
                 conversions
               </code>{" "}
-              array with counts and sums grouped by type:
+              array with counts grouped by type:
             </p>
             <CodeBlock>{`curl https://api.riftl.ink/v1/links/summer-sale/stats \\
   -H "Authorization: Bearer rl_live_YOUR_KEY"`}</CodeBlock>
@@ -230,7 +228,7 @@ rift.setUserId("usr_abc123")`}</CodeBlock>
   "install_count": 340,
   "conversion_rate": 0.239,
   "conversions": [
-    { "conversion_type": "deposit", "count": 19, "sum_cents": 24700000, "currency": "usd" },
+    { "conversion_type": "deposit", "count": 19 },
     { "conversion_type": "signup", "count": 91 }
   ]
 }`}</CodeBlock>
@@ -248,39 +246,15 @@ rift.setUserId("usr_abc123")`}</CodeBlock>
           <CodeBlock lang="json">{`{
   "user_id": "usr_abc123",           // required
   "type": "deposit",                 // required — free-form, up to 64 chars
-  "amount_cents": 10000,             // optional, i64 — see below
-  "currency": "usd",                 // required IF amount_cents is set
   "idempotency_key": "tx_abc",       // optional, <=256 chars
   "metadata": { "tx_hash": "0x..." } // optional, <=1KB, stored verbatim
 }`}</CodeBlock>
 
-          <div className="rounded-xl border border-[#2dd4bf]/20 bg-[#2dd4bf]/5 p-4">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf] mb-2">
-              Why amount_cents is a signed integer
-            </p>
-            <ul className="list-disc pl-5 space-y-1 text-[13px] text-[#d4d4d8]">
-              <li>
-                <strong className="text-[#fafafa]">Integer math</strong> — no float rounding
-                errors. Summing $0.10 + $0.20 in floats gives you{" "}
-                <code>0.30000000000000004</code>, which is not what you want when tallying real
-                money.
-              </li>
-              <li>
-                <strong className="text-[#fafafa]">Currency&apos;s smallest unit</strong> — cents
-                for USD, yen for JPY (JPY has no subunit so send whole units as{" "}
-                <code>amount_cents</code>). Interpret with the <code>currency</code> field.
-              </li>
-              <li>
-                <strong className="text-[#fafafa]">Signed</strong> — refunds, chargebacks, and
-                dispute reversals are legitimately negative. Send{" "}
-                <code>amount_cents: -5000</code> for a $50 refund.
-              </li>
-              <li>
-                Matches the Stripe / RevenueCat convention so you can pass amounts through
-                directly from upstream webhooks.
-              </li>
-            </ul>
-          </div>
+          <Callout type="info">
+            Need to track revenue or amounts? Put them in <code>metadata</code> — Rift stores
+            it verbatim and forwards it on the outbound webhook. Your warehouse handles the
+            aggregation.
+          </Callout>
 
           <div className="rounded-xl border border-[#2dd4bf]/20 bg-[#2dd4bf]/5 p-4">
             <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf] mb-2">
@@ -305,13 +279,13 @@ rift.setUserId("usr_abc123")`}</CodeBlock>
                 not double-counted.
               </li>
               <li>
-                <strong className="text-[#fafafa]">Typical values</strong> — Stripe invoice ID,
-                RevenueCat event ID, on-chain transaction hash, your DB transaction UUID.
+                <strong className="text-[#fafafa]">Typical values</strong> — on-chain transaction
+                hash, order ID, your DB transaction UUID.
               </li>
               <li>
                 <strong className="text-[#fafafa]">Optional</strong> — if you omit it, every
                 call counts. That&apos;s fine for events where double-counting doesn&apos;t
-                matter (e.g. content views), but dangerous for revenue.
+                matter (e.g. content views), but use a key for anything you need exact counts on.
               </li>
             </ul>
           </div>
@@ -402,8 +376,8 @@ rift.setUserId("usr_abc123")`}</CodeBlock>
                 In scope
               </p>
               <ul className="mt-2 list-disc pl-5 space-y-1 text-[13px] text-[#d4d4d8]">
-                <li>Total count and sum per link, per conversion type</li>
-                <li>Revenue attribution tied to the originating link</li>
+                <li>Total count per link, per conversion type</li>
+                <li>Conversion attribution tied to the originating link</li>
                 <li>Idempotent event ingestion with at-least-once delivery</li>
                 <li>Outbound webhooks for streaming events to your warehouse</li>
               </ul>
