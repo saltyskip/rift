@@ -235,6 +235,7 @@ impl LinksRepository for LinksRepo {
             flag_reason: None,
             expires_at: input.expires_at,
             agent_context: input.agent_context,
+            social_preview: input.social_preview,
         };
         self.links
             .insert_one(&link)

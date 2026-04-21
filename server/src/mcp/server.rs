@@ -95,6 +95,7 @@ impl RiftMcp {
                 cta: ac.cta,
                 description: ac.description,
             }),
+            social_preview: None,
         };
 
         let resp = self
@@ -164,6 +165,7 @@ impl RiftMcp {
                 cta: ac.cta,
                 description: ac.description,
             }),
+            social_preview: None,
         };
 
         let detail = self

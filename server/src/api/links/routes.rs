@@ -1,17 +1,29 @@
 use axum::extract::{Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect, Response};
 use chrono::Utc;
+use image::ImageFormat;
 use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
+use qr_code_styling::config::{
+    BackgroundOptions, Color, CornersDotOptions, CornersSquareOptions, DotsOptions, ImageOptions,
+    QROptions,
+};
+use qr_code_styling::types::{
+    CornerDotType, CornerSquareType, DotType, ErrorCorrectionLevel, OutputFormat,
+};
+use qr_code_styling::QRCodeStyling;
 use serde_json::json;
+use std::io::Cursor;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Deserialize;
 
 use crate::api::auth::middleware::{SdkDomain, TenantId};
 use crate::app::AppState;
 use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload};
+use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::models::*;
 use crate::services::links::repo::LinksRepository;
@@ -25,12 +37,38 @@ pub struct ResolveQuery {
     pub redirect: Option<String>,
 }
 
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct QrCodeQuery {
+    /// Logo image URL to center in the QR code.
+    pub logo: Option<String>,
+    /// Output size in pixels. Defaults to 600.
+    pub size: Option<u32>,
+    /// QR error correction level. One of L, M, Q, H. Defaults to L.
+    pub level: Option<String>,
+    /// Foreground color hex value. Defaults to #000000.
+    #[serde(rename = "fgColor")]
+    pub fg_color: Option<String>,
+    /// Background color hex value. Defaults to #FFFFFF.
+    #[serde(rename = "bgColor")]
+    pub bg_color: Option<String>,
+    /// Ignore the logo URL when true.
+    #[serde(default, rename = "hideLogo")]
+    pub hide_logo: bool,
+    /// Margin around the QR code in modules. Defaults to 2.
+    pub margin: Option<u32>,
+    /// Deprecated compatibility flag. If false and margin is absent, margin becomes 0.
+    #[serde(rename = "includeMargin")]
+    pub include_margin: Option<bool>,
+}
+
 fn link_error_to_response(err: LinkError) -> Response {
     let status = match &err {
         LinkError::InvalidCustomId(_)
         | LinkError::InvalidUrl(_)
         | LinkError::InvalidMetadata(_)
         | LinkError::InvalidAgentContext(_)
+        | LinkError::InvalidSocialPreview(_)
         | LinkError::ThreatDetected(_)
         | LinkError::NoVerifiedDomain
         | LinkError::EmptyUpdate => StatusCode::BAD_REQUEST,
@@ -321,6 +359,118 @@ pub async fn get_link_stats(
     .into_response()
 }
 
+// ── GET /v1/links/{link_id}/qr.{png,svg} — Styled QR export ──
+
+#[utoipa::path(
+    get,
+    path = "/v1/links/{link_id}/qr.png",
+    tag = "Links",
+    params(("link_id" = String, Path, description = "Link ID"), QrCodeQuery),
+    responses(
+        (status = 200, description = "PNG QR code", content_type = "image/png"),
+        (status = 400, description = "Invalid QR options", body = crate::error::ErrorResponse),
+        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
+    ),
+    security(("api_key" = []), ("x402" = [])),
+)]
+#[tracing::instrument(skip(state))]
+pub async fn get_link_qr_png(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+    Path(link_id): Path<String>,
+    Query(query): Query<QrCodeQuery>,
+) -> Response {
+    render_link_qr(state, tenant, link_id, query, QrOutputFormat::Png).await
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/links/{link_id}/qr.svg",
+    tag = "Links",
+    params(("link_id" = String, Path, description = "Link ID"), QrCodeQuery),
+    responses(
+        (status = 200, description = "SVG QR code", content_type = "image/svg+xml"),
+        (status = 400, description = "Invalid QR options", body = crate::error::ErrorResponse),
+        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
+    ),
+    security(("api_key" = []), ("x402" = [])),
+)]
+#[tracing::instrument(skip(state))]
+pub async fn get_link_qr_svg(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+    Path(link_id): Path<String>,
+    Query(query): Query<QrCodeQuery>,
+) -> Response {
+    render_link_qr(state, tenant, link_id, query, QrOutputFormat::Svg).await
+}
+
+#[derive(Debug, Clone, Copy)]
+enum QrOutputFormat {
+    Png,
+    Svg,
+}
+
+async fn render_link_qr(
+    state: Arc<AppState>,
+    tenant: TenantId,
+    link_id: String,
+    query: QrCodeQuery,
+    format: QrOutputFormat,
+) -> Response {
+    let Some(repo) = &state.links_repo else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    let Some(link) = repo
+        .find_link_by_tenant_and_id(&tenant.0, &link_id)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Link not found", "code": "not_found" })),
+        )
+            .into_response();
+    };
+
+    let options = match QrRenderOptions::try_from_query(&query).await {
+        Ok(options) => options,
+        Err(message) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": message, "code": "invalid_qr_options" })),
+            )
+                .into_response();
+        }
+    };
+
+    let url = canonical_link_url(&state, &link).await;
+    match render_qr(&url, &options, format) {
+        Ok(bytes) => match format {
+            QrOutputFormat::Png => {
+                (StatusCode::OK, [(header::CONTENT_TYPE, "image/png")], bytes).into_response()
+            }
+            QrOutputFormat::Svg => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+                bytes,
+            )
+                .into_response(),
+        },
+        Err(message) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": message, "code": "qr_render_error" })),
+        )
+            .into_response(),
+    }
+}
+
 // ── GET /r/{link_id} — Resolve/redirect (public) ──
 
 #[utoipa::path(
@@ -460,7 +610,7 @@ pub async fn resolve_link_custom(
     // Alternate domain: redirect to store (no landing page, no click recording).
     // This only runs when the app is NOT installed — if it IS installed, Universal
     // Links intercept the tap and this endpoint is never reached.
-    if domain.role == crate::services::domains::models::DomainRole::Alternate {
+    if domain.role == DomainRole::Alternate {
         let Some(links_svc) = &state.links_service else {
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -643,6 +793,7 @@ async fn do_resolve(
             "android_store_url": link.android_store_url,
             "metadata": metadata,
             "agent_context": link.agent_context,
+            "social_preview": link.social_preview,
             "_rift_meta": rift_meta,
         }))
         .into_response();
@@ -723,23 +874,6 @@ async fn do_resolve(
             (None, None, None)
         };
 
-        // Extract link-level metadata for OG tags.
-        let meta_title = link
-            .metadata
-            .as_ref()
-            .and_then(|d| d.get_str("title").ok())
-            .map(|s| s.to_string());
-        let meta_description = link
-            .metadata
-            .as_ref()
-            .and_then(|d| d.get_str("description").ok())
-            .map(|s| s.to_string());
-        let meta_image = link
-            .metadata
-            .as_ref()
-            .and_then(|d| d.get_str("image").ok())
-            .map(|s| s.to_string());
-
         // Look up alternate domain for the "Open in App" button.
         let alternate_domain = if let Some(domains_repo) = &state.domains_repo {
             domains_repo
@@ -759,9 +893,7 @@ async fn do_resolve(
             app_name: app_name.as_deref(),
             icon_url: icon_url.as_deref(),
             theme_color: theme_color.as_deref(),
-            meta_title: meta_title.as_deref(),
-            meta_description: meta_description.as_deref(),
-            meta_image: meta_image.as_deref(),
+            social_preview: link.social_preview.as_ref(),
             agent_context: link.agent_context.as_ref(),
             link_status,
             tenant_domain: tenant_domain.as_deref(),
@@ -928,6 +1060,7 @@ pub async fn attribution_click(
         "android_store_url": link.android_store_url,
         "metadata": metadata,
         "agent_context": link.agent_context,
+        "social_preview": link.social_preview,
     }))
     .into_response()
 }
@@ -1208,9 +1341,7 @@ struct LandingPageContext<'a> {
     app_name: Option<&'a str>,
     icon_url: Option<&'a str>,
     theme_color: Option<&'a str>,
-    meta_title: Option<&'a str>,
-    meta_description: Option<&'a str>,
-    meta_image: Option<&'a str>,
+    social_preview: Option<&'a SocialPreview>,
     agent_context: Option<&'a AgentContext>,
     link_status: &'a str,
     tenant_domain: Option<&'a str>,
@@ -1255,8 +1386,11 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         .unwrap_or_default();
     let alternate_url_js = js_escape(&alternate_url);
 
-    let og_title = ctx.meta_title.unwrap_or(app_name_display);
-    let og_description = ctx.meta_description.unwrap_or("Open in app");
+    let preview_title = ctx.social_preview.and_then(|p| p.title.as_deref());
+    let preview_description = ctx.social_preview.and_then(|p| p.description.as_deref());
+    let preview_image = ctx.social_preview.and_then(|p| p.image_url.as_deref());
+    let og_title = preview_title.unwrap_or(app_name_display);
+    let og_description = preview_description.unwrap_or("Open in app");
 
     let json_ld = if let Some(ac) = ctx.agent_context {
         if ac.action.is_some() || ac.cta.is_some() || ac.description.is_some() {
@@ -1303,13 +1437,13 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
                 action["target"] = json!(entry_points);
             }
 
-            // Add product info from metadata if available.
-            if ctx.meta_title.is_some() || ctx.meta_description.is_some() {
+            // Add public preview info if available.
+            if preview_title.is_some() || preview_description.is_some() {
                 let mut product = json!({"@type": "Product"});
-                if let Some(t) = ctx.meta_title {
+                if let Some(t) = preview_title {
                     product["name"] = json!(t);
                 }
-                if let Some(d) = ctx.meta_description {
+                if let Some(d) = preview_description {
                     product["description"] = json!(d);
                 }
                 action["object"] = product;
@@ -1339,12 +1473,12 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         String::new()
     };
 
-    let og_image_tag = ctx
-        .meta_image
+    let og_image_tag = preview_image
         .map(|img| {
             format!(
-                r#"    <meta property="og:image" content="{}" />"#,
-                html_escape(img)
+                r#"    <meta property="og:image" content="{img}" />
+    <meta name="twitter:image" content="{img}" />"#,
+                img = html_escape(img)
             )
         })
         .unwrap_or_default();
@@ -1360,8 +1494,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         })
         .unwrap_or_default();
 
-    let title_html = ctx
-        .meta_title
+    let title_html = preview_title
         .map(|t| {
             format!(
                 r#"<h1 style="font-size:20px;font-weight:600;margin-bottom:8px;">{}</h1>"#,
@@ -1370,8 +1503,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         })
         .unwrap_or_default();
 
-    let desc_html = ctx
-        .meta_description
+    let desc_html = preview_description
         .map(|d| {
             format!(
                 r#"<p style="color:#a3a3a3;font-size:14px;margin-bottom:8px;">{}</p>"#,
@@ -1383,7 +1515,7 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     let agent_description = ctx.agent_context.and_then(|ac| ac.description.as_deref());
 
     let meta_desc_tag = agent_description
-        .or(ctx.meta_description)
+        .or(preview_description)
         .map(|d| {
             format!(
                 r#"    <meta name="description" content="{}" />"#,
@@ -1403,6 +1535,9 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     <title>{og_title} — Rift</title>
     <meta property="og:title" content="{og_title_escaped}" />
     <meta property="og:description" content="{og_desc_escaped}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="{og_title_escaped}" />
+    <meta name="twitter:description" content="{og_desc_escaped}" />
 {meta_desc_tag}
 {og_image_tag}
 {json_ld}
@@ -1547,6 +1682,174 @@ pub async fn llms_txt() -> impl IntoResponse {
         )],
         include_str!("llms.txt"),
     )
+}
+
+// ── QR Rendering Helpers ──
+
+const QR_DEFAULT_SIZE: u32 = 600;
+const QR_MIN_SIZE: u32 = 128;
+const QR_MAX_SIZE: u32 = 2048;
+const QR_DEFAULT_MARGIN: u32 = 2;
+const QR_MAX_MARGIN: u32 = 16;
+const QR_MAX_LOGO_BYTES: usize = 512 * 1024;
+const QR_LOGO_TIMEOUT_SECS: u64 = 5;
+
+struct QrRenderOptions {
+    size: u32,
+    margin: u32,
+    level: ErrorCorrectionLevel,
+    fg: Color,
+    bg: Color,
+    logo: Option<LogoImage>,
+}
+
+struct LogoImage {
+    png_bytes: Vec<u8>,
+}
+
+impl QrRenderOptions {
+    async fn try_from_query(query: &QrCodeQuery) -> Result<Self, String> {
+        let size = query.size.unwrap_or(QR_DEFAULT_SIZE);
+        if !(QR_MIN_SIZE..=QR_MAX_SIZE).contains(&size) {
+            return Err(format!(
+                "size must be between {QR_MIN_SIZE} and {QR_MAX_SIZE}"
+            ));
+        }
+
+        let margin = query.margin.unwrap_or_else(|| {
+            if query.include_margin == Some(false) {
+                0
+            } else {
+                QR_DEFAULT_MARGIN
+            }
+        });
+        if margin > QR_MAX_MARGIN {
+            return Err(format!("margin must be between 0 and {QR_MAX_MARGIN}"));
+        }
+
+        let level = parse_ec_level(query.level.as_deref().unwrap_or("L"))?;
+        let fg = parse_hex_color(query.fg_color.as_deref().unwrap_or("#000000"), "fgColor")?;
+        let bg = parse_hex_color(query.bg_color.as_deref().unwrap_or("#FFFFFF"), "bgColor")?;
+        let logo = if query.hide_logo {
+            None
+        } else if let Some(url) = query.logo.as_deref() {
+            Some(fetch_logo(url).await?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            size,
+            margin,
+            level,
+            fg,
+            bg,
+            logo,
+        })
+    }
+}
+
+fn parse_ec_level(value: &str) -> Result<ErrorCorrectionLevel, String> {
+    match value {
+        "L" | "l" => Ok(ErrorCorrectionLevel::L),
+        "M" | "m" => Ok(ErrorCorrectionLevel::M),
+        "Q" | "q" => Ok(ErrorCorrectionLevel::Q),
+        "H" | "h" => Ok(ErrorCorrectionLevel::H),
+        _ => Err("level must be one of L, M, Q, H".to_string()),
+    }
+}
+
+fn parse_hex_color(value: &str, name: &str) -> Result<Color, String> {
+    let value = value.trim();
+    let Some(hex) = value.strip_prefix('#') else {
+        return Err(format!("{name} must be #RGB or #RRGGBB"));
+    };
+    if hex.len() != 3 && hex.len() != 6 {
+        return Err(format!("{name} must be #RGB or #RRGGBB"));
+    }
+    Color::from_hex(value).map_err(|_| format!("{name} must be #RGB or #RRGGBB"))
+}
+
+async fn fetch_logo(url: &str) -> Result<LogoImage, String> {
+    crate::core::validation::validate_web_url(url).map_err(|e| format!("logo: {e}"))?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(QR_LOGO_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("logo client error: {e}"))?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("logo fetch failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("logo fetch returned {}", response.status()));
+    }
+    if let Some(content_type) = response.headers().get(header::CONTENT_TYPE) {
+        let content_type = content_type.to_str().unwrap_or_default().to_lowercase();
+        let allowed = content_type.starts_with("image/png")
+            || content_type.starts_with("image/jpeg")
+            || content_type.starts_with("image/webp");
+        if !allowed {
+            return Err("logo must be PNG, JPEG, or WebP".to_string());
+        }
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("logo read failed: {e}"))?;
+    if bytes.len() > QR_MAX_LOGO_BYTES {
+        return Err(format!("logo must be under {QR_MAX_LOGO_BYTES} bytes"));
+    }
+
+    let image = image::load_from_memory(&bytes)
+        .map_err(|_| "logo must be a valid PNG, JPEG, or WebP image".to_string())?;
+    let mut png_bytes = Vec::new();
+    image
+        .write_to(&mut Cursor::new(&mut png_bytes), ImageFormat::Png)
+        .map_err(|e| format!("logo encode failed: {e}"))?;
+
+    Ok(LogoImage { png_bytes })
+}
+
+fn render_qr(
+    url: &str,
+    options: &QrRenderOptions,
+    format: QrOutputFormat,
+) -> Result<Vec<u8>, String> {
+    let margin_px = options.margin.saturating_mul(10);
+    let mut builder = QRCodeStyling::builder()
+        .data(url)
+        .size(options.size)
+        .margin(margin_px)
+        .qr_options(QROptions::new().with_error_correction_level(options.level))
+        .dots_options(DotsOptions::new(DotType::Rounded).with_color(options.fg))
+        .corners_square_options(
+            CornersSquareOptions::new(CornerSquareType::ExtraRounded).with_color(options.fg),
+        )
+        .corners_dot_options(CornersDotOptions::new(CornerDotType::Dot).with_color(options.fg))
+        .background_options(BackgroundOptions::new(options.bg));
+
+    if let Some(logo) = &options.logo {
+        builder = builder.image(logo.png_bytes.clone()).image_options(
+            ImageOptions::new()
+                .with_image_size(0.22)
+                .with_margin(6)
+                .with_hide_background_dots(true)
+                .with_save_as_blob(true),
+        );
+    }
+
+    let qr = builder
+        .build()
+        .map_err(|e| format!("failed to build QR code: {e}"))?;
+    match format {
+        QrOutputFormat::Png => qr
+            .render(OutputFormat::Png)
+            .map_err(|e| format!("failed to render PNG: {e}")),
+        QrOutputFormat::Svg => qr
+            .render(OutputFormat::Svg)
+            .map_err(|e| format!("failed to render SVG: {e}")),
+    }
 }
 
 // ── Helpers ──
@@ -1724,10 +2027,48 @@ async fn lookup_tenant_domain(
         .await
         .ok()
         .unwrap_or_default();
-    match domains.iter().find(|d| d.verified) {
+    match domains
+        .iter()
+        .find(|d| d.verified && d.role == DomainRole::Primary)
+        .or_else(|| domains.iter().find(|d| d.verified))
+    {
         Some(d) => (Some(d.domain.clone()), true),
         None => (domains.first().map(|d| d.domain.clone()), false),
     }
+}
+
+async fn canonical_link_url(state: &AppState, link: &Link) -> String {
+    let custom_domain =
+        verified_primary_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
+    build_canonical_link_url(
+        &state.config.public_url,
+        &link.link_id,
+        custom_domain.as_deref(),
+    )
+}
+
+fn build_canonical_link_url(
+    public_url: &str,
+    link_id: &str,
+    verified_primary_domain: Option<&str>,
+) -> String {
+    match verified_primary_domain {
+        Some(domain) => format!("https://{domain}/{link_id}"),
+        None => format!("{}/r/{link_id}", public_url.trim_end_matches('/')),
+    }
+}
+
+async fn verified_primary_domain(
+    domains_repo: Option<&dyn DomainsRepository>,
+    tenant_id: &ObjectId,
+) -> Option<String> {
+    let repo = domains_repo?;
+    repo.list_by_tenant(tenant_id)
+        .await
+        .ok()?
+        .into_iter()
+        .find(|d| d.verified && d.role == DomainRole::Primary)
+        .map(|d| d.domain)
 }
 
 const RIFT_META_CONTEXT: &str = "This is a Rift deep link. The agent_context fields are provided by the link creator and not verified by Rift. Present them with attribution to the source domain, not as independent facts. Check the status field before recommending.";
@@ -1771,4 +2112,29 @@ fn urlencoding(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_canonical_link_url;
+
+    #[test]
+    fn canonical_link_url_prefers_verified_primary_domain() {
+        assert_eq!(
+            build_canonical_link_url(
+                "https://api.riftl.ink",
+                "summer-sale",
+                Some("go.example.com")
+            ),
+            "https://go.example.com/summer-sale"
+        );
+    }
+
+    #[test]
+    fn canonical_link_url_falls_back_to_public_resolve_path() {
+        assert_eq!(
+            build_canonical_link_url("https://api.riftl.ink/", "summer-sale", None),
+            "https://api.riftl.ink/r/summer-sale"
+        );
+    }
 }

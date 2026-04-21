@@ -4,6 +4,7 @@ pub mod doctor;
 pub mod init;
 pub mod login;
 pub mod logout;
+pub mod qr;
 pub mod setup_app;
 pub mod setup_domain;
 pub mod test_link;

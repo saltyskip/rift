@@ -84,6 +84,36 @@ enum LinksCommand {
         #[arg(long)]
         custom_id: Option<String>,
         #[arg(long)]
+        preview_title: Option<String>,
+        #[arg(long)]
+        preview_description: Option<String>,
+        #[arg(long)]
+        preview_image_url: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Download a styled QR code for a deep link
+    Qr {
+        target: String,
+        #[arg(long, default_value = "png")]
+        format: String,
+        #[arg(long)]
+        output: String,
+        #[arg(long)]
+        logo: Option<String>,
+        #[arg(long)]
+        size: Option<u32>,
+        #[arg(long)]
+        level: Option<String>,
+        #[arg(long)]
+        fg_color: Option<String>,
+        #[arg(long)]
+        bg_color: Option<String>,
+        #[arg(long)]
+        hide_logo: bool,
+        #[arg(long)]
+        margin: Option<u32>,
+        #[arg(long)]
         json: bool,
     },
     /// Preview how a link resolves across platforms
@@ -150,6 +180,9 @@ pub async fn run() -> Result<(), CliError> {
                 ios_store_url,
                 android_store_url,
                 custom_id,
+                preview_title,
+                preview_description,
+                preview_image_url,
                 json,
             } => {
                 commands::create_link::run(commands::create_link::Args {
@@ -159,6 +192,37 @@ pub async fn run() -> Result<(), CliError> {
                     ios_store_url,
                     android_store_url,
                     custom_id,
+                    preview_title,
+                    preview_description,
+                    preview_image_url,
+                    json,
+                })
+                .await
+            }
+            LinksCommand::Qr {
+                target,
+                format,
+                output,
+                logo,
+                size,
+                level,
+                fg_color,
+                bg_color,
+                hide_logo,
+                margin,
+                json,
+            } => {
+                commands::qr::run(commands::qr::Args {
+                    target,
+                    format,
+                    output,
+                    logo,
+                    size,
+                    level,
+                    fg_color,
+                    bg_color,
+                    hide_logo,
+                    margin,
                     json,
                 })
                 .await

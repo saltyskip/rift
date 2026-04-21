@@ -12,6 +12,9 @@ pub struct Args {
     pub ios_store_url: Option<String>,
     pub android_store_url: Option<String>,
     pub custom_id: Option<String>,
+    pub preview_title: Option<String>,
+    pub preview_description: Option<String>,
+    pub preview_image_url: Option<String>,
     pub json: bool,
 }
 
@@ -42,6 +45,11 @@ pub async fn run(args: Args) -> Result<(), CliError> {
             android_store_url: args.android_store_url,
             metadata: None,
             agent_context: None,
+            social_preview: build_social_preview(
+                args.preview_title,
+                args.preview_description,
+                args.preview_image_url,
+            ),
         })
         .await?;
 
@@ -61,4 +69,18 @@ pub async fn run(args: Args) -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+fn build_social_preview(
+    title: Option<String>,
+    description: Option<String>,
+    image_url: Option<String>,
+) -> Option<rift_client_core::links::SocialPreview> {
+    (title.is_some() || description.is_some() || image_url.is_some()).then_some(
+        rift_client_core::links::SocialPreview {
+            title,
+            description,
+            image_url,
+        },
+    )
 }
