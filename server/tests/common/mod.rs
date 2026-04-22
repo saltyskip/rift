@@ -94,6 +94,7 @@ pub async fn spawn_app() -> TestApp {
             conversions_repo.clone(),
             links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>,
             Some(webhook_dispatcher.clone() as Arc<dyn WebhookDispatcher>),
+            None,
         ),
     ));
 

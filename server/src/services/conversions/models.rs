@@ -65,6 +65,9 @@ pub struct ConversionMeta {
     pub link_id: String,
     pub source_id: ObjectId,
     pub conversion_type: String,
+    /// Retention bucket frozen at insert time — see ClickMeta for details.
+    #[serde(default = "crate::services::links::models::default_retention_bucket")]
+    pub retention_bucket: String,
 }
 
 /// Idempotency dedup record. One row per `(tenant_id, idempotency_key)` that

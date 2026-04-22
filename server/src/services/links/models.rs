@@ -95,6 +95,17 @@ pub struct Link {
 pub struct ClickMeta {
     pub tenant_id: ObjectId,
     pub link_id: String,
+    /// Retention bucket frozen at insert time. One of: "30d", "1y", "3y",
+    /// "5y". Four partial TTL indexes on the time field + this value drop
+    /// documents when their bucket-relative age exceeds the tier they were
+    /// insert-stamped with. Defaults to "30d" so old docs migrated before
+    /// the backfill get Free-tier retention.
+    #[serde(default = "default_retention_bucket")]
+    pub retention_bucket: String,
+}
+
+pub fn default_retention_bucket() -> String {
+    "30d".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

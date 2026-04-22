@@ -816,6 +816,14 @@ async fn do_resolve(
         }
     }
 
+    let retention_bucket = match state.billing_service.as_ref() {
+        Some(b) => b
+            .retention_bucket_for_tenant(&link.tenant_id)
+            .await
+            .to_string(),
+        None => "30d".to_string(),
+    };
+
     if let Err(e) = repo
         .record_click(
             link.tenant_id,
@@ -823,6 +831,7 @@ async fn do_resolve(
             user_agent.clone(),
             referer.clone(),
             Some(platform.as_str().to_string()),
+            retention_bucket,
         )
         .await
     {
@@ -1094,6 +1103,14 @@ pub async fn attribution_click(
         .map(detect_platform)
         .unwrap_or(Platform::Other);
 
+    let retention_bucket = match state.billing_service.as_ref() {
+        Some(b) => b
+            .retention_bucket_for_tenant(&link.tenant_id)
+            .await
+            .to_string(),
+        None => "30d".to_string(),
+    };
+
     if let Err(e) = repo
         .record_click(
             link.tenant_id,
@@ -1101,6 +1118,7 @@ pub async fn attribution_click(
             user_agent.clone(),
             referer.clone(),
             Some(platform.as_str().to_string()),
+            retention_bucket,
         )
         .await
     {

@@ -3,6 +3,7 @@ use mongodb::bson::oid::ObjectId;
 use std::sync::Arc;
 
 use super::effective_tier::effective_tier;
+use super::limits::limits_for;
 use super::models::{BillingError, BillingStatus};
 use crate::services::auth::tenants::repo::{PlanTier, TenantsRepository};
 
@@ -30,6 +31,17 @@ impl BillingService {
             .map_err(BillingError::Internal)?
             .ok_or(BillingError::TenantNotFound)?;
         Ok(effective_tier(&tenant, bson::DateTime::now()))
+    }
+
+    /// Retention bucket string the caller should stamp on the event's meta
+    /// field so the partial TTL indexes catch it. Defaults to `"30d"` when
+    /// the tenant lookup fails, matching the Free-tier retention to avoid
+    /// accidental unbounded storage.
+    pub async fn retention_bucket_for_tenant(&self, tenant_id: &ObjectId) -> &'static str {
+        match self.effective_tier(tenant_id).await {
+            Ok(tier) => limits_for(tier).retention_bucket,
+            Err(_) => "30d",
+        }
     }
 
     pub async fn status(&self, tenant_id: &ObjectId) -> Result<BillingStatus, BillingError> {
