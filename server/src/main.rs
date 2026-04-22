@@ -262,7 +262,11 @@ async fn run_server(cfg: Config) {
         ))
     });
 
-    let users_service = match (&tenants_repo, &users_repo, &secret_keys_repo) {
+    let tenants_service = tenants_repo
+        .as_ref()
+        .map(|t| Arc::new(crate::services::auth::tenants::service::TenantsService::new(t.clone())));
+
+    let users_service = match (&tenants_service, &users_repo, &secret_keys_repo) {
         (Some(t), Some(u), Some(sk)) => Some(Arc::new(
             crate::services::auth::users::service::UsersService::new(
                 t.clone(),

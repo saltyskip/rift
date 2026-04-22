@@ -5,8 +5,9 @@ use std::sync::Arc;
 use super::repo::{UserDoc, UsersRepository};
 use crate::core::email;
 use crate::services::auth::keys;
-use crate::services::auth::secret_keys::repo::{SecretKeyDoc, SecretKeysRepository};
-use crate::services::auth::tenants::repo::{TenantDoc, TenantsRepository};
+use crate::services::auth::secret_keys::repo::SecretKeysRepository;
+use crate::services::auth::secret_keys::service::mint_for_tenant;
+use crate::services::auth::tenants::service::TenantsService;
 
 // ── Error ──
 
@@ -80,22 +81,54 @@ pub struct UserDetail {
 // ── Service ──
 
 pub struct UsersService {
-    tenants_repo: Arc<dyn TenantsRepository>,
+    tenants_service: Arc<TenantsService>,
     users_repo: Arc<dyn UsersRepository>,
     sk_repo: Arc<dyn SecretKeysRepository>,
 }
 
 impl UsersService {
     pub fn new(
-        tenants_repo: Arc<dyn TenantsRepository>,
+        tenants_service: Arc<TenantsService>,
         users_repo: Arc<dyn UsersRepository>,
         sk_repo: Arc<dyn SecretKeysRepository>,
     ) -> Self {
         Self {
-            tenants_repo,
+            tenants_service,
             users_repo,
             sk_repo,
         }
+    }
+
+    /// Create an email-owner user on a tenant and return the verify token the
+    /// caller should include in the verification email. Upserts by email so a
+    /// stale unverified signup can be retried.
+    pub async fn attach_email_owner(
+        &self,
+        tenant_id: ObjectId,
+        email: &str,
+    ) -> Result<String, UserError> {
+        let verify_token = keys::generate_verify_token();
+        let expires_at = mongodb::bson::DateTime::from_millis(
+            chrono::Utc::now().timestamp_millis() + 24 * 60 * 60 * 1000,
+        );
+
+        let user_doc = UserDoc {
+            id: Some(ObjectId::new()),
+            tenant_id,
+            email: email.to_string(),
+            verified: false,
+            is_owner: true,
+            verify_token: Some(verify_token.clone()),
+            verify_token_expires_at: Some(expires_at),
+            created_at: mongodb::bson::DateTime::now(),
+        };
+
+        self.users_repo
+            .upsert_by_email(&user_doc)
+            .await
+            .map_err(UserError::Internal)?;
+
+        Ok(verify_token)
     }
 
     /// Sign up a new account: creates tenant + owner user, sends verify email.
@@ -124,38 +157,13 @@ impl UsersService {
             }
         }
 
-        let verify_token = keys::generate_verify_token();
-        let expires_at = mongodb::bson::DateTime::from_millis(
-            chrono::Utc::now().timestamp_millis() + 24 * 60 * 60 * 1000,
-        );
-
-        let tenant_id = ObjectId::new();
-        let tenant_doc = TenantDoc {
-            id: Some(tenant_id),
-            monthly_quota: 100,
-            created_at: mongodb::bson::DateTime::now(),
-        };
-
-        self.tenants_repo
-            .create(&tenant_doc)
+        let tenant_id = self
+            .tenants_service
+            .create_blank()
             .await
             .map_err(UserError::Internal)?;
 
-        let user_doc = UserDoc {
-            id: Some(ObjectId::new()),
-            tenant_id,
-            email: email.clone(),
-            verified: false,
-            is_owner: true,
-            verify_token: Some(verify_token.clone()),
-            verify_token_expires_at: Some(expires_at),
-            created_at: mongodb::bson::DateTime::now(),
-        };
-
-        self.users_repo
-            .upsert_by_email(&user_doc)
-            .await
-            .map_err(UserError::Internal)?;
+        let verify_token = self.attach_email_owner(tenant_id, &email).await?;
 
         let verify_url = format!("{public_url}/v1/auth/verify?token={verify_token}");
         let html = format!(
@@ -192,28 +200,16 @@ impl UsersService {
             .ok_or(UserError::NotFound)?;
 
         if user.is_owner {
-            let (full_key, key_hash, key_prefix) = keys::generate_api_key();
             let user_id = user.id.unwrap_or_else(ObjectId::new);
-
-            let key_doc = SecretKeyDoc {
-                id: ObjectId::new(),
-                tenant_id: user.tenant_id,
-                created_by: user_id,
-                key_hash,
-                key_prefix: key_prefix.clone(),
-                created_at: mongodb::bson::DateTime::now(),
-            };
-
-            self.sk_repo
-                .create_key(&key_doc)
+            let created = mint_for_tenant(&*self.sk_repo, user.tenant_id, user_id)
                 .await
                 .map_err(UserError::Internal)?;
 
             Ok(VerifyResult {
                 tenant_id: user.tenant_id,
                 email: user.email,
-                key: Some(full_key),
-                key_prefix: Some(key_prefix),
+                key: Some(created.key),
+                key_prefix: Some(created.key_prefix),
             })
         } else {
             Ok(VerifyResult {

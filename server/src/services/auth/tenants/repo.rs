@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use mongodb::bson::{self, doc, oid::ObjectId};
+use mongodb::bson::{self, oid::ObjectId};
 use mongodb::{Collection, Database};
 use serde::{Deserialize, Serialize};
 
