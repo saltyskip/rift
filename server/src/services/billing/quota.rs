@@ -76,18 +76,39 @@ pub trait ResourceCounts: Send + Sync {
     async fn count(&self, tenant_id: &ObjectId, resource: Resource) -> Result<u64, String>;
 }
 
+/// Whether quota checks hard-reject or just log the would-be rejection.
+///
+/// `LogOnly` is the safe default — every code path calls `QuotaService::check`
+/// but it always returns `Ok(())`, emitting `tracing::warn!` when a tenant
+/// would have been rejected. `Enforce` flips `QuotaError::Exceeded` into a
+/// real error the caller maps to `402 Payment Required`.
+///
+/// Controlled by `QUOTA_ENFORCEMENT=enforce` (default: log_only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnforcementMode {
+    LogOnly,
+    Enforce,
+}
+
+impl EnforcementMode {
+    pub fn from_env_str(s: &str) -> Self {
+        if s.eq_ignore_ascii_case("enforce") {
+            Self::Enforce
+        } else {
+            Self::LogOnly
+        }
+    }
+}
+
 /// The quota gatekeeper. All enforcement points in the service layer call
 /// this. MCP tools and future transports call the same entry points —
 /// there's no HTTP middleware equivalent on purpose, so new transports can't
 /// accidentally bypass enforcement.
-///
-/// Phase A-1 runs in log-only mode: the service always returns `Ok(())` but
-/// logs would-be rejections via `tracing::warn!`. Phase A-2 will introduce
-/// an `EnforcementMode` and flip to hard rejection.
 pub struct QuotaService {
     billing: Arc<BillingService>,
     counters: Arc<dyn EventCountersRepository>,
     resource_counts: Arc<dyn ResourceCounts>,
+    mode: EnforcementMode,
 }
 
 impl QuotaService {
@@ -95,17 +116,21 @@ impl QuotaService {
         billing: Arc<BillingService>,
         counters: Arc<dyn EventCountersRepository>,
         resource_counts: Arc<dyn ResourceCounts>,
+        mode: EnforcementMode,
     ) -> Self {
         Self {
             billing,
             counters,
             resource_counts,
+            mode,
         }
     }
 
-    /// Observe (and in the case of `TrackEvent`, atomically record) a quota
-    /// check. In log-only mode the return is always `Ok(())` — the `Err`
-    /// variant exists so the call site is future-ready for enforcement.
+    /// Observe (and for `TrackEvent`, atomically record) a quota check.
+    ///
+    /// - `LogOnly`: returns `Ok(())` always, logs would-be rejections.
+    /// - `Enforce`: returns `Err(QuotaError::Exceeded { ... })` when over
+    ///   limit. Caller renders as `402 Payment Required`.
     pub async fn check(&self, tenant_id: &ObjectId, resource: Resource) -> Result<(), QuotaError> {
         let tier = self.billing.effective_tier(tenant_id).await?;
         let limits = limits_for(tier);
@@ -148,7 +173,20 @@ impl QuotaService {
                 limit,
                 current,
             };
-            tracing::warn!(quota_error = %err, "quota_check_log_only_would_reject");
+            match self.mode {
+                EnforcementMode::LogOnly => {
+                    tracing::warn!(
+                        quota_error = %err,
+                        mode = "log_only",
+                        "quota_check_would_reject"
+                    );
+                    return Ok(());
+                }
+                EnforcementMode::Enforce => {
+                    tracing::info!(quota_error = %err, mode = "enforce", "quota_rejected");
+                    return Err(err);
+                }
+            }
         }
         Ok(())
     }
@@ -265,8 +303,9 @@ mod tests {
         }
     }
 
-    async fn setup_with_plan(
+    async fn setup_with_plan_mode(
         plan: PlanTier,
+        mode: EnforcementMode,
     ) -> (QuotaService, ObjectId, Arc<MockCounts>, Arc<MockCounters>) {
         let tenants = Arc::new(MockTenants::default());
         let id = ObjectId::new();
@@ -287,8 +326,15 @@ mod tests {
             billing,
             counters.clone() as Arc<dyn EventCountersRepository>,
             counts.clone() as Arc<dyn ResourceCounts>,
+            mode,
         );
         (q, id, counts, counters)
+    }
+
+    async fn setup_with_plan(
+        plan: PlanTier,
+    ) -> (QuotaService, ObjectId, Arc<MockCounts>, Arc<MockCounters>) {
+        setup_with_plan_mode(plan, EnforcementMode::LogOnly).await
     }
 
     #[tokio::test]
@@ -303,6 +349,43 @@ mod tests {
         let (q, id, counts, _) = setup_with_plan(PlanTier::Free).await;
         counts.set(Resource::CreateLink, 50); // Free max
         q.check(&id, Resource::CreateLink).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn at_limit_rejects_in_enforce_mode() {
+        let (q, id, counts, _) =
+            setup_with_plan_mode(PlanTier::Free, EnforcementMode::Enforce).await;
+        counts.set(Resource::CreateLink, 50);
+        let err = q.check(&id, Resource::CreateLink).await.unwrap_err();
+        match err {
+            QuotaError::Exceeded {
+                resource,
+                limit,
+                current,
+            } => {
+                assert_eq!(resource, Resource::CreateLink);
+                assert_eq!(limit, 50);
+                assert_eq!(current, 50);
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    #[test]
+    fn enforcement_mode_env_parses() {
+        assert_eq!(
+            EnforcementMode::from_env_str("enforce"),
+            EnforcementMode::Enforce
+        );
+        assert_eq!(
+            EnforcementMode::from_env_str("ENFORCE"),
+            EnforcementMode::Enforce
+        );
+        assert_eq!(
+            EnforcementMode::from_env_str("log_only"),
+            EnforcementMode::LogOnly
+        );
+        assert_eq!(EnforcementMode::from_env_str(""), EnforcementMode::LogOnly);
     }
 
     #[tokio::test]

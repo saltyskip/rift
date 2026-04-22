@@ -344,14 +344,19 @@ async fn run_server(cfg: Config) {
                 },
             )
                 as Arc<dyn crate::services::billing::quota::ResourceCounts>;
-            // Phase A-1: log-only — QuotaService emits tracing warnings but
-            // never returns QuotaError::Exceeded to callers. Phase A-2 will
-            // introduce an EnforcementMode and flip to hard rejection.
+            // QUOTA_ENFORCEMENT=enforce flips hard rejection on. Default is
+            // log-only so accidental rollouts don't start 402ing real
+            // customers before the counters are verified in prod.
+            let mode = crate::services::billing::quota::EnforcementMode::from_env_str(
+                &std::env::var("QUOTA_ENFORCEMENT").unwrap_or_default(),
+            );
+            tracing::info!(mode = ?mode, "quota_enforcement_mode");
             Some(Arc::new(
                 crate::services::billing::quota::QuotaService::new(
                     b.clone(),
                     counters.clone(),
                     resource_counts,
+                    mode,
                 ),
             ))
         }
