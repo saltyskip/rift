@@ -311,20 +311,21 @@ async fn run_server(cfg: Config) {
         _ => None,
     };
 
-    let conversions_service = match (&conversions_repo, &links_repo) {
-        (Some(c), Some(l)) => Some(Arc::new(ConversionsService::new(
-            c.clone(),
-            l.clone(),
-            webhook_dispatcher.clone(),
-        ))),
-        _ => None,
-    };
-
     let billing_service = tenants_repo.as_ref().map(|t| {
         Arc::new(crate::services::billing::service::BillingService::new(
             t.clone(),
         ))
     });
+
+    let conversions_service = match (&conversions_repo, &links_repo) {
+        (Some(c), Some(l)) => Some(Arc::new(ConversionsService::new(
+            c.clone(),
+            l.clone(),
+            webhook_dispatcher.clone(),
+            billing_service.clone(),
+        ))),
+        _ => None,
+    };
 
     let quota_service = match (
         &billing_service,

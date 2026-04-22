@@ -54,6 +54,7 @@ pub trait LinksRepository: Send + Sync {
         user_agent: Option<String>,
         referer: Option<String>,
         platform: Option<String>,
+        retention_bucket: String,
     ) -> Result<(), String>;
 
     async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
@@ -125,6 +126,18 @@ impl LinksRepo {
             }
         }
         let click_events = database.collection::<ClickEvent>("click_events");
+
+        // Per-tier retention via partial TTL indexes on the timeField. Each
+        // index applies expireAfterSeconds only to events whose metaField
+        // `retention_bucket` matches. Events are stamped at insert and keep
+        // their bucket forever — a tier downgrade does not retroactively
+        // shrink historical retention (nor does an upgrade extend it).
+        crate::services::billing::retention::ensure_retention_ttl_indexes(
+            &click_events,
+            "clicked_at",
+            "meta",
+        )
+        .await;
 
         // Drop the old global unique index if it exists (replaced by compound index).
         let _ = links.drop_index("link_id_unique").await;
@@ -348,11 +361,13 @@ impl LinksRepository for LinksRepo {
         user_agent: Option<String>,
         referer: Option<String>,
         platform: Option<String>,
+        retention_bucket: String,
     ) -> Result<(), String> {
         let event = ClickEvent {
             meta: ClickMeta {
                 tenant_id,
                 link_id: link_id.to_string(),
+                retention_bucket,
             },
             clicked_at: DateTime::now(),
             user_agent,

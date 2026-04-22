@@ -100,6 +100,14 @@ impl ConversionsRepo {
         }
         let events = database.collection::<ConversionEvent>("conversion_events");
 
+        // Per-tier retention — same partial TTL pattern as click_events.
+        crate::services::billing::retention::ensure_retention_ttl_indexes(
+            &events,
+            "occurred_at",
+            "meta",
+        )
+        .await;
+
         let dedup = database.collection::<ConversionDedup>("conversion_dedup");
 
         // ── Indexes ──

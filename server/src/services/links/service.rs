@@ -782,6 +782,7 @@ mod tests {
             _user_agent: Option<String>,
             _referer: Option<String>,
             _platform: Option<String>,
+            _retention_bucket: String,
         ) -> Result<(), String> {
             Ok(())
         }

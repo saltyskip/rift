@@ -165,11 +165,13 @@ impl LinksRepository for MockLinksRepo {
         user_agent: Option<String>,
         referer: Option<String>,
         platform: Option<String>,
+        retention_bucket: String,
     ) -> Result<(), String> {
         self.clicks.lock().unwrap().push(ClickEvent {
             meta: ClickMeta {
                 tenant_id,
                 link_id: link_id.to_string(),
+                retention_bucket,
             },
             clicked_at: DateTime::now(),
             user_agent,
