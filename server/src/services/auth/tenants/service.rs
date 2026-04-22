@@ -22,8 +22,7 @@ impl TenantsService {
         let id = ObjectId::new();
         let doc = TenantDoc {
             id: Some(id),
-            monthly_quota: 100,
-            created_at: mongodb::bson::DateTime::now(),
+            ..TenantDoc::default()
         };
         self.tenants_repo.create(&doc).await?;
         Ok(id)

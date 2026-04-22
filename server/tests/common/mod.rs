@@ -212,7 +212,7 @@ pub async fn seed_api_key_with(app: &TestApp, raw_key: &str) -> (String, ObjectI
     let tenant_doc = TenantDoc {
         id: Some(tenant_id),
         monthly_quota: 1000,
-        created_at: mongodb::bson::DateTime::now(),
+        ..TenantDoc::default()
     };
     app.tenants_repo.create(&tenant_doc).await.unwrap();
 
