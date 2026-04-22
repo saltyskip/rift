@@ -198,6 +198,19 @@ function TierCard({
       ? "Pay with wallet"
       : `Get ${tier.name}`;
 
+  // Destinations:
+  //   Free (both lanes) → /docs (signup guide + API quickstart)
+  //   Paid human → mailto upgrade intent (dashboard/checkout flow ships
+  //     with Phase A-3; until then humans hit us by email). The backend
+  //     endpoint is live at POST /v1/billing/stripe/checkout?tier=... —
+  //     we just don't have an authenticated front door to route through.
+  //   Paid agent → /docs#x402 (the curl-based x402 subscribe recipe).
+  const ctaHref = !isPaid
+    ? "/docs"
+    : audience === "agent"
+      ? "/docs#agents"
+      : `mailto:hello@riftl.ink?subject=Upgrade%20to%20Rift%20${tier.name}`;
+
   return (
     <motion.div
       {...fade(delay)}
@@ -273,7 +286,7 @@ function TierCard({
       </ul>
 
       <a
-        href="#"
+        href={ctaHref}
         className={`text-center text-[13px] font-medium px-4 py-2 rounded-lg transition-colors ${
           tier.accent
             ? "bg-[#2dd4bf] text-[#042f2e] hover:bg-[#5eead4]"
