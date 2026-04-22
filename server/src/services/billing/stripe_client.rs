@@ -125,6 +125,37 @@ pub async fn create_checkout_session(
     serde_json::from_str::<CheckoutSession>(&body).map_err(|e| StripeError::Api(e.to_string()))
 }
 
+/// Schedule a subscription to end at the current period end. Stripe will
+/// keep the subscription active until `current_period_end`, then fire
+/// `customer.subscription.deleted` which our webhook handler converts into
+/// a tenant downgrade to Free.
+pub async fn cancel_subscription_at_period_end(
+    secret_key: &str,
+    subscription_id: &str,
+) -> Result<(), StripeError> {
+    if secret_key.is_empty() {
+        return Err(StripeError::NotConfigured);
+    }
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{STRIPE_API_BASE}/subscriptions/{subscription_id}"))
+        .basic_auth(secret_key, None::<&str>)
+        .form(&[("cancel_at_period_end", "true")])
+        .send()
+        .await
+        .map_err(|e| StripeError::Network(e.to_string()))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| StripeError::Network(e.to_string()))?;
+        return Err(StripeError::Api(format!("{status}: {body}")));
+    }
+    Ok(())
+}
+
 // ── Webhook signature verification ──
 
 /// Stripe tolerates webhook deliveries up to 5 minutes old. Anything older is

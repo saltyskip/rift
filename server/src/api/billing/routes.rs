@@ -10,7 +10,9 @@ use crate::app::AppState;
 use crate::services::auth::tenants::repo::{BillingMethod, PlanTier, SubscriptionStatus};
 use crate::services::billing::limits::limits_for;
 use crate::services::billing::models::{BillingError, BillingStatus};
-use crate::services::billing::stripe_client::{create_checkout_session, StripeError};
+use crate::services::billing::stripe_client::{
+    cancel_subscription_at_period_end, create_checkout_session, StripeError,
+};
 
 /// Slim JSON shape for the status endpoint. Rendered from `BillingStatus` so
 /// the external contract stays stable if we add internal fields later.
@@ -195,5 +197,138 @@ pub async fn create_stripe_checkout(
             )
                 .into_response()
         }
+    }
+}
+
+// ── POST /v1/billing/cancel — cancel at current_period_end ──
+
+#[utoipa::path(
+    post,
+    path = "/v1/billing/cancel",
+    tag = "Billing",
+    responses(
+        (status = 200, description = "Cancellation scheduled for period end"),
+        (status = 400, description = "Tenant has no cancellable subscription", body = crate::error::ErrorResponse),
+        (status = 401, description = "Missing or invalid API key", body = crate::error::ErrorResponse),
+        (status = 503, description = "Stripe not configured", body = crate::error::ErrorResponse),
+    ),
+    security(("api_key" = [])),
+)]
+#[tracing::instrument(skip(state))]
+pub async fn cancel_subscription(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+) -> Response {
+    let Some(billing) = state.billing_service.as_ref() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Billing service not configured", "code": "no_billing" })),
+        )
+            .into_response();
+    };
+
+    let status = match billing.status(&tenant.0).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!(error = %e, "billing_cancel_status_fetch_failed");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response();
+        }
+    };
+
+    match status.billing_method {
+        BillingMethod::Stripe => {
+            // Stripe path: schedule cancel-at-period-end via the API. The
+            // webhook handler will flip plan_tier to Free when the period
+            // actually ends.
+            let Some(tenants) = state.tenants_repo.as_ref() else {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({ "error": "Database not configured", "code": "no_database" })),
+                )
+                    .into_response();
+            };
+            let tenant_doc = match tenants.find_by_id(&tenant.0).await {
+                Ok(Some(t)) => t,
+                Ok(None) => {
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(json!({
+                            "error": "Tenant not found",
+                            "code": "tenant_not_found"
+                        })),
+                    )
+                        .into_response();
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "billing_cancel_tenant_fetch_failed");
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": "Internal error", "code": "db_error" })),
+                    )
+                        .into_response();
+                }
+            };
+            let Some(sub_id) = tenant_doc.stripe_subscription_id.as_deref() else {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "error": "Tenant has no Stripe subscription to cancel",
+                        "code": "no_subscription"
+                    })),
+                )
+                    .into_response();
+            };
+
+            match cancel_subscription_at_period_end(&state.config.stripe_secret_key, sub_id).await
+            {
+                Ok(()) => (
+                    StatusCode::OK,
+                    Json(json!({
+                        "status": "cancel_scheduled",
+                        "current_period_end": status.current_period_end.map(|d| d.timestamp_millis()),
+                    })),
+                )
+                    .into_response(),
+                Err(StripeError::NotConfigured) => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({
+                        "error": "Stripe is not configured on this server",
+                        "code": "stripe_not_configured"
+                    })),
+                )
+                    .into_response(),
+                Err(e) => {
+                    tracing::error!(error = %e, "stripe_cancel_failed");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({
+                            "error": "Failed to cancel Stripe subscription",
+                            "code": "stripe_api_error"
+                        })),
+                    )
+                        .into_response()
+                }
+            }
+        }
+        BillingMethod::X402 => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "x402 subscriptions end naturally at period end — just don't renew",
+                "code": "x402_no_cancel"
+            })),
+        )
+            .into_response(),
+        BillingMethod::Free => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "No paid subscription to cancel",
+                "code": "not_subscribed"
+            })),
+        )
+            .into_response(),
     }
 }
