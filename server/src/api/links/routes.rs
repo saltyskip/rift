@@ -98,6 +98,11 @@ pub struct QrCodeQuery {
 }
 
 fn link_error_to_response(err: LinkError) -> Response {
+    // QuotaExceeded is a structured 402 — delegate to the shared helper so
+    // the body shape stays consistent across every enforcement path.
+    if let LinkError::QuotaExceeded(q) = err {
+        return crate::api::billing::quota_response::to_response(q);
+    }
     let status = match &err {
         LinkError::InvalidCustomId(_)
         | LinkError::InvalidUrl(_)
@@ -109,6 +114,7 @@ fn link_error_to_response(err: LinkError) -> Response {
         | LinkError::EmptyUpdate => StatusCode::BAD_REQUEST,
         LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
         LinkError::NotFound => StatusCode::NOT_FOUND,
+        LinkError::QuotaExceeded(_) => unreachable!("handled above"),
         LinkError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     let code = err.code();
@@ -174,20 +180,8 @@ pub async fn create_link(
             .into_response();
     };
 
-    // Quota check. In log-only mode returns Ok regardless; in enforce mode
-    // QuotaError::Exceeded maps to 402 Payment Required.
-    if let Some(ref quota) = state.quota_service {
-        if let Err(e) = quota
-            .check(
-                &tenant.0,
-                crate::services::billing::quota::Resource::CreateLink,
-            )
-            .await
-        {
-            return crate::api::billing::quota_response::to_response(e);
-        }
-    }
-
+    // Quota check moved into LinksService::create_link so MCP tool calls hit
+    // the same enforcement path. Don't re-check here.
     match svc.create_link(tenant.0, req).await {
         Ok(resp) => (StatusCode::CREATED, Json(json!(resp))).into_response(),
         Err(e) => link_error_to_response(e),

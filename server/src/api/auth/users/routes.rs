@@ -77,18 +77,7 @@ pub async fn invite_user(
             .into_response();
     };
 
-    if let Some(ref quota) = state.quota_service {
-        if let Err(e) = quota
-            .check(
-                &tenant.0,
-                crate::services::billing::quota::Resource::InviteTeamMember,
-            )
-            .await
-        {
-            return crate::api::billing::quota_response::to_response(e);
-        }
-    }
-
+    // Quota check moved into UsersService::invite for MCP / API parity.
     match svc
         .invite(
             tenant.0,
@@ -198,12 +187,37 @@ pub async fn delete_user(
 // ── Error response helper ──
 
 fn error_response(e: &UserError) -> Response {
+    if let UserError::QuotaExceeded(q) = e {
+        // Move so we own the QuotaError, then delegate to the shared helper.
+        return crate::api::billing::quota_response::to_response(match q {
+            crate::services::billing::quota::QuotaError::Exceeded {
+                resource,
+                limit,
+                current,
+            } => crate::services::billing::quota::QuotaError::Exceeded {
+                resource: *resource,
+                limit: *limit,
+                current: *current,
+            },
+            crate::services::billing::quota::QuotaError::Billing(b) => {
+                crate::services::billing::quota::QuotaError::Billing(match b {
+                    crate::services::billing::models::BillingError::TenantNotFound => {
+                        crate::services::billing::models::BillingError::TenantNotFound
+                    }
+                    crate::services::billing::models::BillingError::Internal(s) => {
+                        crate::services::billing::models::BillingError::Internal(s.clone())
+                    }
+                })
+            }
+        });
+    }
     let status = match e {
         UserError::InvalidEmail => StatusCode::BAD_REQUEST,
         UserError::EmailExists | UserError::UserExists | UserError::LastUser => {
             StatusCode::CONFLICT
         }
         UserError::NotFound => StatusCode::NOT_FOUND,
+        UserError::QuotaExceeded(_) => unreachable!("handled above"),
         UserError::EmailFailed(_) | UserError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (

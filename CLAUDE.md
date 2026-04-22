@@ -15,6 +15,18 @@ The server separates **domain logic** from **transport layers**:
 - **`core/`** — Shared infra only (db connection, config, rate limiting) — no business logic
 - **Transport layers must not import from each other** — both `api/` and `mcp/` import from `services/`
 - **Domains own their models and repositories** in `services/<domain>/`
+
+### Quota enforcement + usage incrementation live in the service layer, never in transport
+
+Every operation that consumes a quota (link create, event track, domain create, team invite, webhook create) must call `QuotaService::check(tenant, resource)` from inside a `services/<domain>/service.rs` method, **not** from an `api/` route handler. Same rule for the atomic usage counter: `$inc` happens inside `QuotaService::check(TrackEvent)`, which is called from the service layer.
+
+The reason: both `api/` and `mcp/` are transport layers that import from `services/`. A quota check in an HTTP route handler is bypassed by any MCP tool that calls the same service method. The check must be in the one place both transports share — the service layer.
+
+- When a service method creates or tracks a new resource, call `self.quota.check(...)` as the first step after input validation and before the repo write.
+- When adding a new MCP tool for an existing service operation, **no quota work is needed** — the service method already enforces.
+- Surface `QuotaError` via the service's error enum (e.g. `LinkError::QuotaExceeded(QuotaError)`). Route handlers map it to `402 Payment Required` via `crate::api::billing::quota_response::to_response`.
+- If you add an operation that doesn't yet have a service layer (e.g. a direct `repo.create_*` call from a route), either extract a service method first or leave a `TODO: move to service layer when MCP or another transport consumes this` comment. Do not ship a new quota check at the route layer.
+
 - **Auth sub-slices** — `services/auth/` contains `tenants/` (billing entity), `users/` (team members, email verification), `secret_keys/` (signup/verify/CRUD, `rl_live_` keys with `service.rs`), `publishable_keys/` (SDK keys, `pk_live_` prefix), and `usage/` (request tracking). Transport routes live in `api/auth/`
 
 ### Cargo Features

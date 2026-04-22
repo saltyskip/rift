@@ -374,12 +374,42 @@ pub async fn delete_secret_key(
 // ── Error response helpers ──
 
 fn user_error_response(e: &UserError) -> Response {
+    // Quota violations come through the shared 402 renderer.
+    if matches!(e, UserError::QuotaExceeded(_)) {
+        // Signup flows don't invoke quota today, but keep the mapping complete
+        // so adding a quota check on signup later doesn't silently 500.
+        if let UserError::QuotaExceeded(q) = e {
+            let cloned = match q {
+                crate::services::billing::quota::QuotaError::Exceeded {
+                    resource,
+                    limit,
+                    current,
+                } => crate::services::billing::quota::QuotaError::Exceeded {
+                    resource: *resource,
+                    limit: *limit,
+                    current: *current,
+                },
+                crate::services::billing::quota::QuotaError::Billing(b) => {
+                    crate::services::billing::quota::QuotaError::Billing(match b {
+                        crate::services::billing::models::BillingError::TenantNotFound => {
+                            crate::services::billing::models::BillingError::TenantNotFound
+                        }
+                        crate::services::billing::models::BillingError::Internal(s) => {
+                            crate::services::billing::models::BillingError::Internal(s.clone())
+                        }
+                    })
+                }
+            };
+            return crate::api::billing::quota_response::to_response(cloned);
+        }
+    }
     let status = match e {
         UserError::InvalidEmail => StatusCode::BAD_REQUEST,
         UserError::EmailExists => StatusCode::CONFLICT,
         UserError::UserExists => StatusCode::CONFLICT,
         UserError::LastUser => StatusCode::CONFLICT,
         UserError::NotFound => StatusCode::NOT_FOUND,
+        UserError::QuotaExceeded(_) => unreachable!("handled above"),
         UserError::EmailFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
         UserError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };

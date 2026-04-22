@@ -8,6 +8,7 @@ use crate::services::auth::keys;
 use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::mint_for_tenant;
 use crate::services::auth::tenants::service::TenantsService;
+use crate::services::billing::quota::{QuotaError, QuotaService, Resource};
 
 // ── Error ──
 
@@ -18,8 +19,15 @@ pub enum UserError {
     UserExists,
     LastUser,
     NotFound,
+    QuotaExceeded(QuotaError),
     EmailFailed(String),
     Internal(String),
+}
+
+impl From<QuotaError> for UserError {
+    fn from(err: QuotaError) -> Self {
+        UserError::QuotaExceeded(err)
+    }
 }
 
 impl fmt::Display for UserError {
@@ -33,6 +41,7 @@ impl fmt::Display for UserError {
             Self::UserExists => write!(f, "User already exists on this team"),
             Self::LastUser => write!(f, "Cannot remove the last verified user on this team"),
             Self::NotFound => write!(f, "User not found"),
+            Self::QuotaExceeded(e) => write!(f, "{e}"),
             Self::EmailFailed(e) => write!(f, "Failed to send email: {e}"),
             Self::Internal(e) => write!(f, "Internal error: {e}"),
         }
@@ -47,6 +56,7 @@ impl UserError {
             Self::UserExists => "user_exists",
             Self::LastUser => "last_user",
             Self::NotFound => "not_found",
+            Self::QuotaExceeded(_) => "quota_exceeded",
             Self::EmailFailed(_) => "email_error",
             Self::Internal(_) => "db_error",
         }
@@ -84,6 +94,7 @@ pub struct UsersService {
     tenants_service: Arc<TenantsService>,
     users_repo: Arc<dyn UsersRepository>,
     sk_repo: Arc<dyn SecretKeysRepository>,
+    quota: Option<Arc<QuotaService>>,
 }
 
 impl UsersService {
@@ -91,11 +102,13 @@ impl UsersService {
         tenants_service: Arc<TenantsService>,
         users_repo: Arc<dyn UsersRepository>,
         sk_repo: Arc<dyn SecretKeysRepository>,
+        quota: Option<Arc<QuotaService>>,
     ) -> Self {
         Self {
             tenants_service,
             users_repo,
             sk_repo,
+            quota,
         }
     }
 
@@ -244,6 +257,11 @@ impl UsersService {
             .is_some()
         {
             return Err(UserError::UserExists);
+        }
+
+        // Service-layer quota enforcement (applies to every transport).
+        if let Some(q) = &self.quota {
+            q.check(&tenant_id, Resource::InviteTeamMember).await?;
         }
 
         let verify_token = keys::generate_verify_token();

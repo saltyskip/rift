@@ -92,6 +92,7 @@ pub async fn spawn_app() -> TestApp {
         Some(domains_repo.clone() as Arc<dyn rift::services::domains::repo::DomainsRepository>),
         threat_feed.clone(),
         config.public_url.clone(),
+        None,
     )));
 
     let conversions_repo: Arc<dyn rift::services::conversions::repo::ConversionsRepository> =
@@ -101,6 +102,7 @@ pub async fn spawn_app() -> TestApp {
             conversions_repo.clone(),
             links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>,
             Some(webhook_dispatcher.clone() as Arc<dyn WebhookDispatcher>),
+            None,
             None,
         ),
     ));
@@ -136,6 +138,7 @@ pub async fn spawn_app() -> TestApp {
                 tenants_service.clone(),
                 users_repo.clone() as Arc<dyn UsersRepository>,
                 secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>,
+                None,
             ),
         )),
         secret_keys_service: Some(Arc::new(
