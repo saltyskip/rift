@@ -10,8 +10,11 @@ interface Tier {
   human: { price: string; unit?: string };
   agent: { price: string; unit?: string };
   desc: string;
+  limits: string[];
+  inherits?: string;
   items: string[];
   accent?: boolean;
+  enterprise?: boolean;
 }
 
 const TIERS: Tier[] = [
@@ -20,53 +23,68 @@ const TIERS: Tier[] = [
     human: { price: "$0" },
     agent: { price: "$0" },
     desc: "For prototyping",
-    items: [
+    limits: [
       "50 links",
       "10,000 events / month",
       "1 custom domain",
-      "Full API access",
+      "30-day analytics retention",
+    ],
+    items: [
+      "Full REST API + MCP server",
+      "iOS, Android & Web SDKs",
+      "Deep links + deferred deep linking",
+      "Install attribution + click tracking",
+      "Custom styled QR codes with logos",
       "Commercial use allowed",
     ],
   },
   {
     name: "Pro",
-    human: { price: "$12", unit: "/ month" },
-    agent: { price: "$10", unit: "USDC / 30d" },
+    human: { price: "$18", unit: "/ month" },
+    agent: { price: "$15", unit: "USDC / 30d" },
     desc: "For shipping",
-    items: [
+    limits: [
       "2,000 links",
       "100,000 events / month",
       "5 custom domains",
-      "Full API access",
-      "Webhooks & analytics",
+      "1-year analytics retention",
+    ],
+    inherits: "Free",
+    items: [
+      "Conversion tracking",
+      "Webhooks on every event",
+      "Email support",
     ],
     accent: true,
   },
   {
     name: "Business",
-    human: { price: "$39", unit: "/ month" },
-    agent: { price: "$33", unit: "USDC / 30d" },
+    human: { price: "$55", unit: "/ month" },
+    agent: { price: "$47", unit: "USDC / 30d" },
     desc: "For scaling",
-    items: [
+    limits: [
       "20,000 links",
       "500,000 events / month",
       "20 custom domains",
-      "10 team seats",
-      "Priority support",
+      "3-year analytics retention",
     ],
+    inherits: "Pro",
+    items: ["Priority email support"],
   },
   {
     name: "Scale",
-    human: { price: "$149", unit: "/ month" },
-    agent: { price: "$125", unit: "USDC / 30d" },
+    human: { price: "$199", unit: "/ month" },
+    agent: { price: "$169", unit: "USDC / 30d" },
     desc: "For serious volume",
-    items: [
+    limits: [
       "100,000 links",
-      "2,000,000 events / month",
-      "Unlimited domains",
-      "Unlimited seats",
-      "SLA & dedicated support",
+      "2M events / month",
+      "Unlimited custom domains",
+      "5-year analytics retention",
     ],
+    inherits: "Business",
+    items: ["Dedicated Slack channel"],
+    enterprise: true,
   },
 ];
 
@@ -91,7 +109,7 @@ export function PricingSection() {
             One product. Pay in dollars or USDC.
           </h2>
           <p className="text-[#71717a]">
-            Same limits on both lanes. API access on every tier, free tier included. No credit card required.
+            Same limits on both lanes. Full API, SDKs, and deep links on every tier — free included. No credit card required.
           </p>
         </motion.div>
 
@@ -107,7 +125,7 @@ export function PricingSection() {
               className="text-[12px] font-mono text-[#52525b] tracking-wide"
             >
               {audience === "human"
-                ? "Stripe · monthly or annual"
+                ? "Stripe · cancel anytime"
                 : "x402 · USDC · no card, no email required"}
             </motion.span>
           </AnimatePresence>
@@ -229,9 +247,30 @@ function TierCard({
         </AnimatePresence>
       </div>
 
-      <p className="text-[13px] text-[#52525b] mb-6">{tier.desc}</p>
-      <div className="h-px bg-[#222225] mb-5" />
+      <p className="text-[13px] text-[#52525b] mb-5">{tier.desc}</p>
 
+      {/* Limits block — the dense quantitative "what you get" panel */}
+      <div className="rounded-lg border border-[#222225] bg-[#0d0d0f] px-3.5 py-3 mb-5">
+        <ul className="space-y-1.5">
+          {tier.limits.map((limit) => (
+            <li
+              key={limit}
+              className="text-[12px] font-mono text-[#a1a1aa] leading-snug"
+            >
+              {limit}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Inherits label + feature bullets */}
+      {tier.inherits && (
+        <p className="text-[11px] text-[#52525b] mb-3 leading-snug">
+          Everything in{" "}
+          <span className="text-[#a1a1aa] font-medium">{tier.inherits}</span>,
+          plus:
+        </p>
+      )}
       <ul className="space-y-2.5 flex-1 mb-6">
         {tier.items.map((item) => (
           <li
@@ -254,6 +293,15 @@ function TierCard({
       >
         {cta}
       </a>
+
+      {tier.enterprise && (
+        <a
+          href="mailto:hello@riftl.ink?subject=Rift%20Scale%20tier%20inquiry"
+          className="mt-2 text-center text-[12px] text-[#52525b] hover:text-[#2dd4bf] transition-colors"
+        >
+          Need SSO or a custom SLA? Talk to us →
+        </a>
+      )}
     </motion.div>
   );
 }
