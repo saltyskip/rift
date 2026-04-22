@@ -28,25 +28,13 @@ pub async fn create_domain(
     axum::Extension(tenant): axum::Extension<TenantId>,
     Json(req): Json<CreateDomainRequest>,
 ) -> Response {
-    let Some(repo) = &state.domains_repo else {
+    let Some(svc) = &state.domains_service else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Database not configured", "code": "no_database" })),
         )
             .into_response();
     };
-
-    if let Some(ref quota) = state.quota_service {
-        if let Err(e) = quota
-            .check(
-                &tenant.0,
-                crate::services::billing::quota::Resource::CreateDomain,
-            )
-            .await
-        {
-            return crate::api::billing::quota_response::to_response(e);
-        }
-    }
 
     let domain = req.domain.trim().to_lowercase();
 
@@ -70,40 +58,30 @@ pub async fn create_domain(
         }
     };
 
-    // Max 1 alternate domain per tenant.
-    if role == DomainRole::Alternate {
-        if let Ok(Some(_)) = repo.find_alternate_by_tenant(&tenant.0).await {
-            return (
-                StatusCode::CONFLICT,
-                Json(json!({ "error": "Only one alternate domain allowed per team", "code": "alternate_limit" })),
-            )
-                .into_response();
-        }
-    }
-
-    // Check if already registered.
-    if repo.find_by_domain(&domain).await.ok().flatten().is_some() {
-        return (
-            StatusCode::CONFLICT,
-            Json(json!({ "error": "Domain already registered", "code": "domain_taken" })),
-        )
-            .into_response();
-    }
-
     let token = generate_verification_token();
-    let created = match repo
+    let created = match svc
         .create_domain(tenant.0, domain.clone(), token.clone(), role)
         .await
     {
         Ok(d) => d,
-        Err(e) if e.to_string().contains("E11000") => {
+        Err(crate::services::domains::service::DomainError::QuotaExceeded(q)) => {
+            return crate::api::billing::quota_response::to_response(q);
+        }
+        Err(crate::services::domains::service::DomainError::AlreadyRegistered) => {
             return (
                 StatusCode::CONFLICT,
                 Json(json!({ "error": "Domain already registered", "code": "domain_taken" })),
             )
                 .into_response();
         }
-        Err(e) => {
+        Err(crate::services::domains::service::DomainError::AlternateLimit) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({ "error": "Only one alternate domain allowed per team", "code": "alternate_limit" })),
+            )
+                .into_response();
+        }
+        Err(crate::services::domains::service::DomainError::Internal(e)) => {
             tracing::error!("Failed to create domain: {e}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,

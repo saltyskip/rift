@@ -9,14 +9,15 @@ use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::SecretKeysService;
 use crate::services::auth::usage::repo::UsageRepository;
 use crate::services::auth::users::service::UsersService;
-use crate::services::billing::quota::QuotaService;
 use crate::services::billing::service::BillingService;
 use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::conversions::service::ConversionsService;
 use crate::services::domains::repo::DomainsRepository;
+use crate::services::domains::service::DomainsService;
 use crate::services::links::repo::LinksRepository;
 use crate::services::links::service::LinksService;
 use crate::services::webhooks::repo::WebhooksRepository;
+use crate::services::webhooks::service::WebhooksService;
 
 use x402_types::proto::v1;
 
@@ -35,9 +36,10 @@ pub struct AppState {
     pub sdk_keys_repo: Option<Arc<dyn SdkKeysRepository>>,
     pub conversions_repo: Option<Arc<dyn ConversionsRepository>>,
     pub links_service: Option<Arc<LinksService>>,
+    pub domains_service: Option<Arc<DomainsService>>,
+    pub webhooks_service: Option<Arc<WebhooksService>>,
     pub users_service: Option<Arc<UsersService>>,
     pub secret_keys_service: Option<Arc<SecretKeysService>>,
     pub conversions_service: Option<Arc<ConversionsService>>,
     pub billing_service: Option<Arc<BillingService>>,
-    pub quota_service: Option<Arc<QuotaService>>,
 }

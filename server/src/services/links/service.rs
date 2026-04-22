@@ -9,6 +9,7 @@ use super::repo::LinksRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
 use crate::services::billing::quota::{QuotaError, QuotaService, Resource};
+use crate::services::billing::service::BillingService;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 
@@ -85,6 +86,7 @@ pub struct LinksService {
     threat_feed: ThreatFeed,
     public_url: String,
     quota: Option<Arc<QuotaService>>,
+    billing: Option<Arc<BillingService>>,
 }
 
 impl LinksService {
@@ -94,6 +96,7 @@ impl LinksService {
         threat_feed: ThreatFeed,
         public_url: String,
         quota: Option<Arc<QuotaService>>,
+        billing: Option<Arc<BillingService>>,
     ) -> Self {
         Self {
             links_repo,
@@ -101,6 +104,53 @@ impl LinksService {
             threat_feed,
             public_url,
             quota,
+            billing,
+        }
+    }
+
+    /// Fire-and-forget click recording. Runs the `TrackEvent` quota check
+    /// (which also increments the atomic counter), resolves the tenant's
+    /// retention bucket, then persists. Failures are logged, never
+    /// propagated — the caller (public redirect path) must not break on a
+    /// DB hiccup or a quota rejection. The counter's conditional `$inc`
+    /// already keeps over-limit tenants from spilling past their cap.
+    ///
+    /// Lives here (not in route handlers) because both the public resolver
+    /// and the SDK click endpoint record clicks, and a future MCP / CLI
+    /// transport must not be able to bypass quota by inventing its own
+    /// path to `LinksRepository::record_click`.
+    pub async fn record_click(
+        &self,
+        tenant_id: ObjectId,
+        link_id: &str,
+        user_agent: Option<String>,
+        referer: Option<String>,
+        platform: Option<String>,
+    ) {
+        if let Some(q) = &self.quota {
+            if let Err(e) = q.check(&tenant_id, Resource::TrackEvent).await {
+                tracing::info!(error = %e, "click_track_quota_skipped");
+            }
+        }
+
+        let retention_bucket = match &self.billing {
+            Some(b) => b.retention_bucket_for_tenant(&tenant_id).await.to_string(),
+            None => "30d".to_string(),
+        };
+
+        if let Err(e) = self
+            .links_repo
+            .record_click(
+                tenant_id,
+                link_id,
+                user_agent,
+                referer,
+                platform,
+                retention_bucket,
+            )
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record click");
         }
     }
 
@@ -934,6 +984,7 @@ mod tests {
             Some(domains),
             ThreatFeed::new(),
             "https://riftl.ink".to_string(),
+            None,
             None,
         )
     }
