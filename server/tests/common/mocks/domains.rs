@@ -57,6 +57,16 @@ impl DomainsRepository for MockDomainsRepo {
             .collect())
     }
 
+    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+        Ok(self
+            .domains
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|d| &d.tenant_id == tenant_id)
+            .count() as u64)
+    }
+
     async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String> {
         let mut domains = self.domains.lock().unwrap();
         let len_before = domains.len();

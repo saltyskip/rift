@@ -32,6 +32,16 @@ impl WebhooksRepository for MockWebhooksRepo {
             .collect())
     }
 
+    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+        Ok(self
+            .webhooks
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|w| &w.tenant_id == tenant_id)
+            .count() as u64)
+    }
+
     async fn delete_webhook(
         &self,
         tenant_id: &ObjectId,

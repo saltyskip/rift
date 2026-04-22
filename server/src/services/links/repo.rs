@@ -37,6 +37,9 @@ pub trait LinksRepository: Send + Sync {
 
     async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String>;
 
+    /// Total active links owned by this tenant — feeds the CreateLink quota.
+    async fn count_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String>;
+
     async fn list_links_by_tenant(
         &self,
         tenant_id: &ObjectId,
@@ -303,6 +306,13 @@ impl LinksRepository for LinksRepo {
             invalidate_link_cache(tenant_id, link_id).await;
         }
         Ok(result.deleted_count > 0)
+    }
+
+    async fn count_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+        self.links
+            .count_documents(doc! { "tenant_id": tenant_id })
+            .await
+            .map_err(|e| e.to_string())
     }
 
     async fn list_links_by_tenant(

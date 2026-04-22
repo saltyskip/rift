@@ -77,6 +77,19 @@ pub async fn invite_user(
             .into_response();
     };
 
+    // Log-only quota check (Phase A-1).
+    if let Some(ref quota) = state.quota_service {
+        if let Err(e) = quota
+            .check(
+                &tenant.0,
+                crate::services::billing::quota::Resource::InviteTeamMember,
+            )
+            .await
+        {
+            tracing::warn!(error = %e, "quota_check_invite_team_member_error");
+        }
+    }
+
     match svc
         .invite(
             tenant.0,

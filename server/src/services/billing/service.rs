@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use super::effective_tier::effective_tier;
 use super::models::{BillingError, BillingStatus};
-use crate::services::auth::tenants::repo::TenantsRepository;
+use crate::services::auth::tenants::repo::{PlanTier, TenantsRepository};
 
 /// Central entry point for anything that cares about a tenant's billing state.
-/// Every status endpoint, quota check (A-1.3), webhook handler, and admin
-/// operation routes through here so "what plan is this tenant on" has exactly
-/// one answer.
+/// Every status endpoint, quota check, webhook handler, and admin operation
+/// routes through here so "what plan is this tenant on" has exactly one
+/// answer.
 pub struct BillingService {
     tenants_repo: Arc<dyn TenantsRepository>,
 }
@@ -17,6 +17,19 @@ pub struct BillingService {
 impl BillingService {
     pub fn new(tenants_repo: Arc<dyn TenantsRepository>) -> Self {
         Self { tenants_repo }
+    }
+
+    /// Cheap resolution of a tenant's current effective plan, honoring an
+    /// active comp override. Callers on the hot path should front this with
+    /// a tenant-id → tier cache.
+    pub async fn effective_tier(&self, tenant_id: &ObjectId) -> Result<PlanTier, BillingError> {
+        let tenant = self
+            .tenants_repo
+            .find_by_id(tenant_id)
+            .await
+            .map_err(BillingError::Internal)?
+            .ok_or(BillingError::TenantNotFound)?;
+        Ok(effective_tier(&tenant, bson::DateTime::now()))
     }
 
     pub async fn status(&self, tenant_id: &ObjectId) -> Result<BillingStatus, BillingError> {

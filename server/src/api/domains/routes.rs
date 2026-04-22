@@ -36,6 +36,19 @@ pub async fn create_domain(
             .into_response();
     };
 
+    // Log-only quota check (Phase A-1).
+    if let Some(ref quota) = state.quota_service {
+        if let Err(e) = quota
+            .check(
+                &tenant.0,
+                crate::services::billing::quota::Resource::CreateDomain,
+            )
+            .await
+        {
+            tracing::warn!(error = %e, "quota_check_create_domain_error");
+        }
+    }
+
     let domain = req.domain.trim().to_lowercase();
 
     if let Err(e) = validate_domain(&domain, &state.config.primary_domain) {

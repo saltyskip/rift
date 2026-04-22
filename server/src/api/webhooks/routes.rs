@@ -44,6 +44,19 @@ pub async fn create_webhook(
             .into_response();
     }
 
+    // Log-only quota check (Phase A-1).
+    if let Some(ref quota) = state.quota_service {
+        if let Err(e) = quota
+            .check(
+                &tenant.0,
+                crate::services::billing::quota::Resource::CreateWebhook,
+            )
+            .await
+        {
+            tracing::warn!(error = %e, "quota_check_create_webhook_error");
+        }
+    }
+
     if let Err(e) = validate_webhook_url(&req.url) {
         return (
             StatusCode::BAD_REQUEST,

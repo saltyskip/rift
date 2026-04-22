@@ -23,6 +23,9 @@ pub trait DomainsRepository: Send + Sync {
 
     async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Domain>, String>;
 
+    /// Total domains attached to this tenant — feeds the CreateDomain quota.
+    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String>;
+
     async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String>;
 
     async fn mark_verified(&self, domain: &str) -> Result<(), String>;
@@ -84,6 +87,13 @@ impl DomainsRepository for DomainsRepo {
     async fn find_by_domain(&self, domain: &str) -> Result<Option<Domain>, String> {
         self.domains
             .find_one(doc! { "domain": domain })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+        self.domains
+            .count_documents(doc! { "tenant_id": tenant_id })
             .await
             .map_err(|e| e.to_string())
     }

@@ -755,6 +755,11 @@ mod tests {
             Ok(links.len() < len_before)
         }
 
+        async fn count_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+            let links = self.links.lock().unwrap();
+            Ok(links.iter().filter(|l| l.tenant_id == *tenant_id).count() as u64)
+        }
+
         async fn list_links_by_tenant(
             &self,
             tenant_id: &ObjectId,
@@ -873,6 +878,10 @@ mod tests {
             } else {
                 Ok(vec![])
             }
+        }
+
+        async fn count_by_tenant(&self, _tenant_id: &ObjectId) -> Result<u64, String> {
+            Ok(if self.has_verified { 1 } else { 0 })
         }
 
         async fn delete_domain(
