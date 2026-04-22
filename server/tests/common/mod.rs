@@ -93,6 +93,7 @@ pub async fn spawn_app() -> TestApp {
         threat_feed.clone(),
         config.public_url.clone(),
         None,
+        None,
     )));
 
     let conversions_repo: Arc<dyn rift::services::conversions::repo::ConversionsRepository> =
@@ -133,6 +134,19 @@ pub async fn spawn_app() -> TestApp {
         sdk_keys_repo: Some(sdk_keys_repo.clone()
             as Arc<dyn rift::services::auth::publishable_keys::repo::SdkKeysRepository>),
         links_service,
+        domains_service: Some(Arc::new(
+            rift::services::domains::service::DomainsService::new(
+                domains_repo.clone() as Arc<dyn rift::services::domains::repo::DomainsRepository>,
+                None,
+            ),
+        )),
+        webhooks_service: Some(Arc::new(
+            rift::services::webhooks::service::WebhooksService::new(
+                webhooks_repo.clone()
+                    as Arc<dyn rift::services::webhooks::repo::WebhooksRepository>,
+                None,
+            ),
+        )),
         users_service: Some(Arc::new(
             rift::services::auth::users::service::UsersService::new(
                 tenants_service.clone(),
@@ -154,7 +168,6 @@ pub async fn spawn_app() -> TestApp {
                 tenants_repo.clone() as Arc<dyn TenantsRepository>
             ),
         )),
-        quota_service: None,
     });
 
     let app = rift::api::router(state.clone())

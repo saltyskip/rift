@@ -26,7 +26,6 @@ use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::models::*;
-use crate::services::links::repo::LinksRepository;
 use crate::services::links::service::LinkError;
 
 // ── Resolve Query Params ──
@@ -572,7 +571,7 @@ pub async fn resolve_link(
 
     let redirect = query.redirect.as_deref() == Some("1");
 
-    do_resolve(&state, repo.as_ref(), link, &link_id, &headers, redirect).await
+    do_resolve(&state, link, &link_id, &headers, redirect).await
 }
 
 // ── GET /{link_id} — Resolve via custom domain (public) ──
@@ -706,7 +705,7 @@ pub async fn resolve_link_custom(
 
     let redirect = query.redirect.as_deref() == Some("1");
 
-    do_resolve(&state, repo.as_ref(), link, &link_id, &headers, redirect).await
+    do_resolve(&state, link, &link_id, &headers, redirect).await
 }
 
 /// Check if a link is resolvable (active, not expired, not flagged/disabled).
@@ -773,7 +772,6 @@ fn check_link_resolvable(link: &Link) -> Option<Response> {
 /// Shared resolve logic: detect platform, record click, content negotiation.
 async fn do_resolve(
     state: &Arc<AppState>,
-    repo: &dyn LinksRepository,
     link: Link,
     link_id: &str,
     headers: &HeaderMap,
@@ -793,43 +791,18 @@ async fn do_resolve(
         .map(detect_platform)
         .unwrap_or(Platform::Other);
 
-    // Click quota check is fire-and-forget even in Enforce mode — we don't
-    // want the redirect to fail on a DB hiccup or a quota-exceeded tenant.
-    // Tenants past their events/month cap still get redirected; their event
-    // data just isn't recorded (QuotaService returns Err(Exceeded) before
-    // the counter increments past the limit). Log the rejection and move on.
-    if let Some(ref quota) = state.quota_service {
-        if let Err(e) = quota
-            .check(
-                &link.tenant_id,
-                crate::services::billing::quota::Resource::TrackEvent,
-            )
-            .await
-        {
-            tracing::info!(error = %e, "click_track_quota_skipped");
-        }
-    }
-
-    let retention_bucket = match state.billing_service.as_ref() {
-        Some(b) => b
-            .retention_bucket_for_tenant(&link.tenant_id)
-            .await
-            .to_string(),
-        None => "30d".to_string(),
-    };
-
-    if let Err(e) = repo
-        .record_click(
+    // Quota check + retention bucket + DB write all happen inside the
+    // service method so MCP / CLI / any future transport that records a
+    // click can't bypass enforcement.
+    if let Some(ref svc) = state.links_service {
+        svc.record_click(
             link.tenant_id,
             link_id,
             user_agent.clone(),
             referer.clone(),
             Some(platform.as_str().to_string()),
-            retention_bucket,
         )
-        .await
-    {
-        tracing::warn!(error = %e, "Failed to record click");
+        .await;
     }
 
     if let Some(dispatcher) = &state.webhook_dispatcher {
@@ -1097,26 +1070,15 @@ pub async fn attribution_click(
         .map(detect_platform)
         .unwrap_or(Platform::Other);
 
-    let retention_bucket = match state.billing_service.as_ref() {
-        Some(b) => b
-            .retention_bucket_for_tenant(&link.tenant_id)
-            .await
-            .to_string(),
-        None => "30d".to_string(),
-    };
-
-    if let Err(e) = repo
-        .record_click(
+    if let Some(ref svc) = state.links_service {
+        svc.record_click(
             link.tenant_id,
             &req.link_id,
             user_agent.clone(),
             referer.clone(),
             Some(platform.as_str().to_string()),
-            retention_bucket,
         )
-        .await
-    {
-        tracing::warn!(error = %e, "Failed to record click");
+        .await;
     }
 
     if let Some(dispatcher) = &state.webhook_dispatcher {

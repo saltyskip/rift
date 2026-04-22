@@ -353,6 +353,21 @@ async fn run_server(cfg: Config) {
             threat_feed.clone(),
             cfg.public_url.clone(),
             quota_service.clone(),
+            billing_service.clone(),
+        ))
+    });
+
+    let domains_service = domains_repo.as_ref().map(|r| {
+        Arc::new(crate::services::domains::service::DomainsService::new(
+            r.clone(),
+            quota_service.clone(),
+        ))
+    });
+
+    let webhooks_service = webhooks_repo.as_ref().map(|r| {
+        Arc::new(crate::services::webhooks::service::WebhooksService::new(
+            r.clone(),
+            quota_service.clone(),
         ))
     });
 
@@ -395,12 +410,16 @@ async fn run_server(cfg: Config) {
         sdk_keys_repo,
         conversions_repo,
         links_service,
+        domains_service,
+        webhooks_service,
         users_service,
         secret_keys_service,
         conversions_service,
         billing_service,
-        quota_service,
     });
+    // quota_service is consumed by the per-domain services above; it's
+    // intentionally not stored in AppState (no route-level callers).
+    drop(quota_service);
 
     // ── Build app: API + optional MCP on same port ──
     let mut app = axum::Router::new();
