@@ -3,18 +3,22 @@ use mongodb::bson::{doc, Document};
 use mongodb::Database;
 
 /// Backfills billing fields on existing tenants so the server can read them
-/// after the Plan A rollout. Every tenant ends up with:
-///   plan_tier:        "free"
-///   billing_method:   "free"
-///   status:           "active"
+/// after the Plan A rollout. Every existing tenant ends up with:
+///   plan_tier:      "free"   (the baseline, if comp ever expires)
+///   billing_method: "free"
+///   status:         "active"
+///   comp_tier:      "scale"  (grandfather — unlimited access)
+///   comp_until:     (unset → forever)
 ///
-/// The rest of the new `TenantDoc` fields (`current_period_*`, `stripe_*`,
-/// `comp_*`) are optional and stay absent on existing rows.
+/// The comp overlay means every existing tenant has effective_tier=Scale
+/// on day 1, so enforcement flipping on never surprises them. New tenants
+/// created after the migration runs get the plain Free default from
+/// TenantDoc::default() and go through normal Stripe/x402 paths.
 ///
-/// The update is gated on `plan_tier` being missing — re-running this
-/// migration is a no-op once applied. Serde `#[serde(default)]` on the new
-/// fields lets the server read old rows even before the migration runs, so
-/// there's no ordering constraint with a deploy.
+/// The update is gated on `plan_tier` being missing — re-running is a no-op
+/// once applied. Serde `#[serde(default)]` on the new fields lets the server
+/// read old rows even before the migration runs, so there's no deploy-
+/// ordering constraint.
 pub struct M002BillingFoundation;
 
 #[async_trait]
@@ -37,7 +41,9 @@ impl super::Migration for M002BillingFoundation {
             .map_err(|e| format!("Failed to count candidates: {e}"))?;
 
         if dry_run {
-            println!("  Would backfill {candidates} tenant(s) with plan_tier='free', billing_method='free', status='active'");
+            println!(
+                "  Would backfill {candidates} tenant(s) with plan_tier='free', billing_method='free', status='active', comp_tier='scale' (grandfathered — unlimited via comp overlay)"
+            );
             return Ok(());
         }
 
@@ -46,6 +52,11 @@ impl super::Migration for M002BillingFoundation {
                 "plan_tier": "free",
                 "billing_method": "free",
                 "status": "active",
+                // Grandfather: effective_tier = Scale via the comp overlay.
+                // comp_until left unset = forever. An operator can revoke
+                // this via a targeted mongosh update if a specific tenant
+                // should be moved to paid billing.
+                "comp_tier": "scale",
             }
         };
 
