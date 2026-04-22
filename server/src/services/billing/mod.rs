@@ -4,3 +4,4 @@ pub mod models;
 pub mod quota;
 pub mod repos;
 pub mod service;
+pub mod stripe_client;

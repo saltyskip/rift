@@ -36,6 +36,14 @@ pub struct Config {
     // ── Fly.io (cert provisioning) ──
     pub fly_api_token: String,
     pub fly_app_name: String,
+
+    // ── Stripe (Plan A billing) ──
+    pub stripe_secret_key: String,
+    pub stripe_price_id_pro: String,
+    pub stripe_price_id_business: String,
+    pub stripe_price_id_scale: String,
+    pub stripe_success_url: String,
+    pub stripe_cancel_url: String,
 }
 
 impl Config {
@@ -81,6 +89,13 @@ impl Config {
 
             fly_api_token: std::env::var("FLY_API_TOKEN").unwrap_or_default(),
             fly_app_name: std::env::var("FLY_APP_NAME").unwrap_or_default(),
+
+            stripe_secret_key: std::env::var("STRIPE_SECRET_KEY").unwrap_or_default(),
+            stripe_price_id_pro: std::env::var("STRIPE_PRICE_ID_PRO").unwrap_or_default(),
+            stripe_price_id_business: std::env::var("STRIPE_PRICE_ID_BUSINESS").unwrap_or_default(),
+            stripe_price_id_scale: std::env::var("STRIPE_PRICE_ID_SCALE").unwrap_or_default(),
+            stripe_success_url: std::env::var("STRIPE_SUCCESS_URL").unwrap_or_default(),
+            stripe_cancel_url: std::env::var("STRIPE_CANCEL_URL").unwrap_or_default(),
         }
     }
 

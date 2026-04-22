@@ -76,6 +76,7 @@ use crate::app::AppState;
         conversions::routes::sdk_track_conversion,
         // Billing — plan status, Stripe checkout, webhooks
         billing::routes::get_billing_status,
+        billing::routes::create_stripe_checkout,
         // System
         health::routes::health,
     ),
@@ -134,6 +135,7 @@ use crate::app::AppState;
         crate::services::conversions::models::ConversionDetail,
         crate::api::billing::routes::BillingStatusResponse,
         crate::api::billing::routes::LimitsView,
+        crate::api::billing::routes::CheckoutSessionResponse,
         crate::services::auth::tenants::repo::PlanTier,
         crate::services::auth::tenants::repo::BillingMethod,
         crate::services::auth::tenants::repo::SubscriptionStatus,
