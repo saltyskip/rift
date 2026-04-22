@@ -76,6 +76,12 @@ pub async fn spawn_app() -> TestApp {
         primary_domain: "riftl.ink".to_string(),
         fly_api_token: String::new(),
         fly_app_name: String::new(),
+        stripe_secret_key: String::new(),
+        stripe_price_id_pro: String::new(),
+        stripe_price_id_business: String::new(),
+        stripe_price_id_scale: String::new(),
+        stripe_success_url: String::new(),
+        stripe_cancel_url: String::new(),
     };
 
     let threat_feed = rift::core::threat_feed::ThreatFeed::new();
