@@ -92,6 +92,39 @@ pub struct KeyDetail {
     pub created_at: mongodb::bson::DateTime,
 }
 
+// ── Shared primitive: mint a new secret key for an existing tenant ──
+//
+// Used by the initial owner-key path (UsersService::verify) and the
+// confirmation-code path (SecretKeysService::confirm_create). Billing paths
+// in later phases can call this directly.
+pub async fn mint_for_tenant(
+    sk_repo: &dyn SecretKeysRepository,
+    tenant_id: ObjectId,
+    created_by: ObjectId,
+) -> Result<CreatedKey, String> {
+    let (full_key, key_hash, key_prefix) = keys::generate_api_key();
+    let key_id = ObjectId::new();
+    let now = mongodb::bson::DateTime::now();
+
+    let key_doc = SecretKeyDoc {
+        id: key_id,
+        tenant_id,
+        created_by,
+        key_hash,
+        key_prefix: key_prefix.clone(),
+        created_at: now,
+    };
+
+    sk_repo.create_key(&key_doc).await?;
+
+    Ok(CreatedKey {
+        id: key_id,
+        key: full_key,
+        key_prefix,
+        created_at: now,
+    })
+}
+
 // ── Service ──
 
 pub struct SecretKeysService {
@@ -242,31 +275,9 @@ impl SecretKeysService {
             return Err(SecretKeyError::InvalidCode);
         }
 
-        // Create key
-        let (full_key, key_hash, key_prefix) = keys::generate_api_key();
-        let key_id = ObjectId::new();
-        let now = mongodb::bson::DateTime::now();
-
-        let key_doc = SecretKeyDoc {
-            id: key_id,
-            tenant_id,
-            created_by: user_id,
-            key_hash,
-            key_prefix: key_prefix.clone(),
-            created_at: now,
-        };
-
-        self.sk_repo
-            .create_key(&key_doc)
+        mint_for_tenant(&*self.sk_repo, tenant_id, user_id)
             .await
-            .map_err(SecretKeyError::Internal)?;
-
-        Ok(CreatedKey {
-            id: key_id,
-            key: full_key,
-            key_prefix,
-            created_at: now,
-        })
+            .map_err(SecretKeyError::Internal)
     }
 
     /// List all secret keys for a tenant (prefix only).

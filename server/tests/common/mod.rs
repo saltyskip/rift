@@ -97,6 +97,10 @@ pub async fn spawn_app() -> TestApp {
         ),
     ));
 
+    let tenants_service = Arc::new(rift::services::auth::tenants::service::TenantsService::new(
+        tenants_repo.clone() as Arc<dyn TenantsRepository>,
+    ));
+
     let state = Arc::new(AppState {
         secret_keys_repo: Some(secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>),
         usage_repo: Some(usage_repo.clone() as Arc<dyn UsageRepository>),
@@ -119,7 +123,7 @@ pub async fn spawn_app() -> TestApp {
         links_service,
         users_service: Some(Arc::new(
             rift::services::auth::users::service::UsersService::new(
-                tenants_repo.clone() as Arc<dyn TenantsRepository>,
+                tenants_service.clone(),
                 users_repo.clone() as Arc<dyn UsersRepository>,
                 secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>,
             ),
