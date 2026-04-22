@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 
-type Audience = "humans" | "agents";
+type Audience = "human" | "agent";
 
 interface Tier {
   name: string;
@@ -78,7 +78,7 @@ const fade = (delay: number) => ({
 });
 
 export function PricingSection() {
-  const [audience, setAudience] = useState<Audience>("humans");
+  const [audience, setAudience] = useState<Audience>("human");
 
   return (
     <section id="pricing" className="py-24 px-6">
@@ -106,7 +106,7 @@ export function PricingSection() {
               transition={{ duration: 0.18 }}
               className="text-[12px] font-mono text-[#52525b] tracking-wide"
             >
-              {audience === "humans"
+              {audience === "human"
                 ? "Stripe · monthly or annual"
                 : "x402 · USDC · no card, no email required"}
             </motion.span>
@@ -148,7 +148,7 @@ function AudienceToggle({
       aria-label="Pricing audience"
       className="inline-flex rounded-full border border-[#222225] bg-[#111113] p-1"
     >
-      {(["humans", "agents"] as const).map((a) => {
+      {(["human", "agent"] as const).map((a) => {
         const active = audience === a;
         return (
           <button
@@ -166,7 +166,7 @@ function AudienceToggle({
                 transition={{ type: "spring", stiffness: 400, damping: 35 }}
               />
             )}
-            <span className="relative z-10 capitalize">{a}</span>
+            <span className="relative z-10 capitalize">{a}s</span>
           </button>
         );
       })}
@@ -187,7 +187,7 @@ function TierCard({
   const isPaid = tier.name !== "Free";
   const cta = !isPaid
     ? "Start free"
-    : audience === "agents"
+    : audience === "agent"
       ? "Pay with wallet"
       : `Get ${tier.name}`;
 
