@@ -19,6 +19,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/v1/billing/stripe/checkout",
             post(routes::create_stripe_checkout),
         )
+        .route("/v1/billing/cancel", post(routes::cancel_subscription))
         .layer(middleware::from_fn_with_state(state, auth_gate));
 
     // Stripe webhook is public — auth comes from the HMAC signature over the
