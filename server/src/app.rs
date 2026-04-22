@@ -9,6 +9,7 @@ use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::SecretKeysService;
 use crate::services::auth::usage::repo::UsageRepository;
 use crate::services::auth::users::service::UsersService;
+use crate::services::billing::quota::QuotaService;
 use crate::services::billing::service::BillingService;
 use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::conversions::service::ConversionsService;
@@ -38,4 +39,5 @@ pub struct AppState {
     pub secret_keys_service: Option<Arc<SecretKeysService>>,
     pub conversions_service: Option<Arc<ConversionsService>>,
     pub billing_service: Option<Arc<BillingService>>,
+    pub quota_service: Option<Arc<QuotaService>>,
 }

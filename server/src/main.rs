@@ -161,11 +161,14 @@ async fn run_server(cfg: Config) {
         webhooks_repo,
         sdk_keys_repo,
         conversions_repo,
+        event_counters_repo,
     ) = if cfg.mongo_uri.is_empty() {
         tracing::warn!(
             "MONGO_URI not set — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
         );
-        (None, None, None, None, None, None, None, None, None, None)
+        (
+            None, None, None, None, None, None, None, None, None, None, None,
+        )
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
             Some(database) => {
@@ -193,6 +196,14 @@ async fn run_server(cfg: Config) {
                 let conversions: Arc<
                     dyn crate::services::conversions::repo::ConversionsRepository,
                 > = Arc::new(ConversionsRepo::new(&database).await);
+                let event_counters: Arc<
+                    dyn crate::services::billing::repos::event_counters::EventCountersRepository,
+                > = Arc::new(
+                    crate::services::billing::repos::event_counters::EventCountersRepo::new(
+                        &database,
+                    )
+                    .await,
+                );
                 (
                     Some(tenants),
                     Some(users),
@@ -204,13 +215,16 @@ async fn run_server(cfg: Config) {
                     Some(webhooks),
                     Some(sdk_keys),
                     Some(conversions),
+                    Some(event_counters),
                 )
             }
             None => {
                 tracing::warn!(
                     "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
                 );
-                (None, None, None, None, None, None, None, None, None, None)
+                (
+                    None, None, None, None, None, None, None, None, None, None, None,
+                )
             }
         }
     };
@@ -302,6 +316,38 @@ async fn run_server(cfg: Config) {
         ))
     });
 
+    let quota_service = match (
+        &billing_service,
+        &event_counters_repo,
+        &links_repo,
+        &domains_repo,
+        &users_repo,
+        &webhooks_repo,
+    ) {
+        (Some(b), Some(counters), Some(l), Some(d), Some(u), Some(w)) => {
+            let resource_counts = Arc::new(
+                crate::services::billing::repos::resource_counts_adapter::RepoResourceCounts {
+                    links: l.clone(),
+                    domains: d.clone(),
+                    users: u.clone(),
+                    webhooks: w.clone(),
+                },
+            )
+                as Arc<dyn crate::services::billing::quota::ResourceCounts>;
+            // Phase A-1: log-only — QuotaService emits tracing warnings but
+            // never returns QuotaError::Exceeded to callers. Phase A-2 will
+            // introduce an EnforcementMode and flip to hard rejection.
+            Some(Arc::new(
+                crate::services::billing::quota::QuotaService::new(
+                    b.clone(),
+                    counters.clone(),
+                    resource_counts,
+                ),
+            ))
+        }
+        _ => None,
+    };
+
     let state = Arc::new(AppState {
         secret_keys_repo,
         usage_repo,
@@ -320,6 +366,7 @@ async fn run_server(cfg: Config) {
         secret_keys_service,
         conversions_service,
         billing_service,
+        quota_service,
     });
 
     // ── Build app: API + optional MCP on same port ──

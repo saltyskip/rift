@@ -174,6 +174,20 @@ pub async fn create_link(
             .into_response();
     };
 
+    // Log-only quota check (Phase A-1). A-2 flips enforcement on, converting
+    // QuotaError::Exceeded into a 402 response.
+    if let Some(ref quota) = state.quota_service {
+        if let Err(e) = quota
+            .check(
+                &tenant.0,
+                crate::services::billing::quota::Resource::CreateLink,
+            )
+            .await
+        {
+            tracing::warn!(error = ?e, "quota_check_create_link_error");
+        }
+    }
+
     match svc.create_link(tenant.0, req).await {
         Ok(resp) => (StatusCode::CREATED, Json(json!(resp))).into_response(),
         Err(e) => link_error_to_response(e),
@@ -784,6 +798,22 @@ async fn do_resolve(
         .as_deref()
         .map(detect_platform)
         .unwrap_or(Platform::Other);
+
+    // Log-only event quota check (Phase A-1). The atomic counter doc is
+    // populated here so the data pipeline is in prod shape before A-2 flips
+    // enforcement. The counter $inc runs inside QuotaService::check for
+    // TrackEvent. Fire-and-forget: a DB error here doesn't block the click.
+    if let Some(ref quota) = state.quota_service {
+        if let Err(e) = quota
+            .check(
+                &link.tenant_id,
+                crate::services::billing::quota::Resource::TrackEvent,
+            )
+            .await
+        {
+            tracing::warn!(error = %e, "quota_check_track_click_error");
+        }
+    }
 
     if let Err(e) = repo
         .record_click(
