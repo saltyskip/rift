@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use mongodb::bson::{self, oid::ObjectId};
+use mongodb::bson::{self, doc, oid::ObjectId};
 use mongodb::{Collection, Database};
 use serde::{Deserialize, Serialize};
 
 // ── Plan / billing enums ──
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanTier {
     #[default]
@@ -15,7 +15,7 @@ pub enum PlanTier {
     Scale,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BillingMethod {
     #[default]
@@ -25,7 +25,7 @@ pub enum BillingMethod {
     X402,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SubscriptionStatus {
     #[default]
@@ -90,6 +90,7 @@ impl Default for TenantDoc {
 #[async_trait]
 pub trait TenantsRepository: Send + Sync {
     async fn create(&self, doc: &TenantDoc) -> Result<(), String>;
+    async fn find_by_id(&self, id: &ObjectId) -> Result<Option<TenantDoc>, String>;
 }
 
 // ── Repository ──
@@ -114,5 +115,12 @@ impl TenantsRepository for TenantsRepo {
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    async fn find_by_id(&self, id: &ObjectId) -> Result<Option<TenantDoc>, String> {
+        self.tenants
+            .find_one(doc! { "_id": id })
+            .await
+            .map_err(|e| e.to_string())
     }
 }
