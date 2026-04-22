@@ -394,50 +394,53 @@ pub async fn get_link_stats(
     .into_response()
 }
 
-// ── GET /v1/links/{link_id}/qr.{png,svg} — Styled QR export ──
+// ── GET /v1/links/{link_id}/qr.{format} — Styled QR export ──
+//
+// Positioned as a generate-and-save endpoint: callers fetch once and embed
+// the returned bytes statically. `Cache-Control: no-store` is set on success
+// to discourage hotlinking, since every render re-fetches the logo and
+// re-rasterizes from scratch. If hotlinking becomes a real pattern in
+// telemetry, revisit with ETag/304 or a server-side cache.
 
 #[utoipa::path(
     get,
-    path = "/v1/links/{link_id}/qr.png",
+    path = "/v1/links/{link_id}/qr.{format}",
     tag = "Links",
-    params(("link_id" = String, Path, description = "Link ID"), QrCodeQuery),
+    params(
+        ("link_id" = String, Path, description = "Link ID"),
+        ("format" = String, Path, description = "Output format: `png` or `svg`", example = "png"),
+        QrCodeQuery,
+    ),
     responses(
         (status = 200, description = "PNG QR code", content_type = "image/png"),
-        (status = 400, description = "Invalid QR options", body = crate::error::ErrorResponse),
-        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
-    ),
-    security(("api_key" = []), ("x402" = [])),
-)]
-#[tracing::instrument(skip(state))]
-pub async fn get_link_qr_png(
-    State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(link_id): Path<String>,
-    Query(query): Query<QrCodeQuery>,
-) -> Response {
-    render_link_qr(state, tenant, link_id, query, QrOutputFormat::Png).await
-}
-
-#[utoipa::path(
-    get,
-    path = "/v1/links/{link_id}/qr.svg",
-    tag = "Links",
-    params(("link_id" = String, Path, description = "Link ID"), QrCodeQuery),
-    responses(
         (status = 200, description = "SVG QR code", content_type = "image/svg+xml"),
-        (status = 400, description = "Invalid QR options", body = crate::error::ErrorResponse),
+        (status = 400, description = "Invalid QR format or options", body = crate::error::ErrorResponse),
         (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
     ),
     security(("api_key" = []), ("x402" = [])),
 )]
 #[tracing::instrument(skip(state))]
-pub async fn get_link_qr_svg(
+pub async fn get_link_qr(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(link_id): Path<String>,
+    Path((link_id, format)): Path<(String, String)>,
     Query(query): Query<QrCodeQuery>,
 ) -> Response {
-    render_link_qr(state, tenant, link_id, query, QrOutputFormat::Svg).await
+    let format = match format.as_str() {
+        "png" => QrOutputFormat::Png,
+        "svg" => QrOutputFormat::Svg,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "format must be png or svg",
+                    "code": "invalid_qr_format",
+                })),
+            )
+                .into_response();
+        }
+    };
+    render_link_qr(state, tenant, link_id, query, format).await
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -487,17 +490,21 @@ async fn render_link_qr(
 
     let url = canonical_link_url(&state, &link).await;
     match render_qr(&url, &options, format) {
-        Ok(bytes) => match format {
-            QrOutputFormat::Png => {
-                (StatusCode::OK, [(header::CONTENT_TYPE, "image/png")], bytes).into_response()
-            }
-            QrOutputFormat::Svg => (
+        Ok(bytes) => {
+            let content_type = match format {
+                QrOutputFormat::Png => "image/png",
+                QrOutputFormat::Svg => "image/svg+xml; charset=utf-8",
+            };
+            (
                 StatusCode::OK,
-                [(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+                [
+                    (header::CONTENT_TYPE, content_type),
+                    (header::CACHE_CONTROL, "no-store"),
+                ],
                 bytes,
             )
-                .into_response(),
-        },
+                .into_response()
+        }
         Err(message) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": message, "code": "qr_render_error" })),

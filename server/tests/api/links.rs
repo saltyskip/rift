@@ -318,6 +318,14 @@ async fn qr_png_and_svg_endpoints_return_images() {
             .unwrap(),
         "image/png"
     );
+    assert_eq!(
+        resp.headers()
+            .get(reqwest::header::CACHE_CONTROL)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "no-store"
+    );
     let bytes = resp.bytes().await.unwrap();
     assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
 
@@ -441,6 +449,36 @@ async fn invalid_qr_params_return_400() {
     assert_eq!(resp.status(), 400);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["code"], "invalid_qr_options");
+}
+
+#[tokio::test]
+async fn qr_unknown_format_returns_400() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "qr-bad-format",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links/qr-bad-format/qr.gif"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "invalid_qr_format");
 }
 
 #[tokio::test]
