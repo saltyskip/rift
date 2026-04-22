@@ -267,29 +267,15 @@ async fn run_server(cfg: Config) {
                 as Arc<dyn crate::core::webhook_dispatcher::WebhookDispatcher>
         });
 
-    let links_service = links_repo.as_ref().map(|repo| {
-        Arc::new(crate::services::links::service::LinksService::new(
-            repo.clone(),
-            domains_repo.clone(),
-            threat_feed.clone(),
-            cfg.public_url.clone(),
-        ))
-    });
+    // links_service is constructed after quota_service (below) — service-
+    // layer quota enforcement is required for MCP parity.
 
     let tenants_service = tenants_repo
         .as_ref()
         .map(|t| Arc::new(crate::services::auth::tenants::service::TenantsService::new(t.clone())));
 
-    let users_service = match (&tenants_service, &users_repo, &secret_keys_repo) {
-        (Some(t), Some(u), Some(sk)) => Some(Arc::new(
-            crate::services::auth::users::service::UsersService::new(
-                t.clone(),
-                u.clone(),
-                sk.clone(),
-            ),
-        )),
-        _ => None,
-    };
+    // users_service is built after quota_service to enforce team-member
+    // quota at the service layer — MCP and HTTP both benefit.
 
     let secret_keys_service = match (&secret_keys_repo, &users_repo) {
         (Some(sk), Some(u)) => Some(Arc::new(
@@ -307,15 +293,8 @@ async fn run_server(cfg: Config) {
         ))
     });
 
-    let conversions_service = match (&conversions_repo, &links_repo) {
-        (Some(c), Some(l)) => Some(Arc::new(ConversionsService::new(
-            c.clone(),
-            l.clone(),
-            webhook_dispatcher.clone(),
-            billing_service.clone(),
-        ))),
-        _ => None,
-    };
+    // conversions_service is built after quota_service — it takes both
+    // billing (for retention bucketing) and quota (for TrackEvent check).
 
     let quota_service = match (
         &billing_service,
@@ -351,6 +330,42 @@ async fn run_server(cfg: Config) {
                 ),
             ))
         }
+        _ => None,
+    };
+
+    // LinksService + UsersService need quota_service, so construct them
+    // after the match above. Service-layer enforcement is the contract:
+    // MCP tool invocations hit the same checks as HTTP route handlers.
+    let links_service = links_repo.as_ref().map(|repo| {
+        Arc::new(crate::services::links::service::LinksService::new(
+            repo.clone(),
+            domains_repo.clone(),
+            threat_feed.clone(),
+            cfg.public_url.clone(),
+            quota_service.clone(),
+        ))
+    });
+
+    let users_service = match (&tenants_service, &users_repo, &secret_keys_repo) {
+        (Some(t), Some(u), Some(sk)) => Some(Arc::new(
+            crate::services::auth::users::service::UsersService::new(
+                t.clone(),
+                u.clone(),
+                sk.clone(),
+                quota_service.clone(),
+            ),
+        )),
+        _ => None,
+    };
+
+    let conversions_service = match (&conversions_repo, &links_repo) {
+        (Some(c), Some(l)) => Some(Arc::new(ConversionsService::new(
+            c.clone(),
+            l.clone(),
+            webhook_dispatcher.clone(),
+            billing_service.clone(),
+            quota_service.clone(),
+        ))),
         _ => None,
     };
 

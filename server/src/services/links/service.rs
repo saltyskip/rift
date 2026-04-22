@@ -8,6 +8,7 @@ use super::models::*;
 use super::repo::LinksRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
+use crate::services::billing::quota::{QuotaError, QuotaService, Resource};
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 
@@ -25,7 +26,14 @@ pub enum LinkError {
     NotFound,
     NoVerifiedDomain,
     EmptyUpdate,
+    QuotaExceeded(QuotaError),
     Internal(String),
+}
+
+impl From<QuotaError> for LinkError {
+    fn from(err: QuotaError) -> Self {
+        LinkError::QuotaExceeded(err)
+    }
 }
 
 impl fmt::Display for LinkError {
@@ -43,6 +51,7 @@ impl fmt::Display for LinkError {
                 write!(f, "Custom IDs require a verified custom domain")
             }
             Self::EmptyUpdate => write!(f, "No fields to update"),
+            Self::QuotaExceeded(e) => write!(f, "{e}"),
             Self::Internal(e) => write!(f, "Internal error: {e}"),
         }
     }
@@ -62,6 +71,7 @@ impl LinkError {
             Self::NotFound => "not_found",
             Self::NoVerifiedDomain => "no_verified_domain",
             Self::EmptyUpdate => "empty_update",
+            Self::QuotaExceeded(_) => "quota_exceeded",
             Self::Internal(_) => "db_error",
         }
     }
@@ -74,6 +84,7 @@ pub struct LinksService {
     domains_repo: Option<Arc<dyn DomainsRepository>>,
     threat_feed: ThreatFeed,
     public_url: String,
+    quota: Option<Arc<QuotaService>>,
 }
 
 impl LinksService {
@@ -82,12 +93,14 @@ impl LinksService {
         domains_repo: Option<Arc<dyn DomainsRepository>>,
         threat_feed: ThreatFeed,
         public_url: String,
+        quota: Option<Arc<QuotaService>>,
     ) -> Self {
         Self {
             links_repo,
             domains_repo,
             threat_feed,
             public_url,
+            quota,
         }
     }
 
@@ -97,6 +110,12 @@ impl LinksService {
         tenant_id: ObjectId,
         req: CreateLinkRequest,
     ) -> Result<CreateLinkResponse, LinkError> {
+        // Quota enforcement lives here (service layer) so MCP tool invocations
+        // and HTTP route handlers both hit the same choke point. CLAUDE.md
+        // codifies this rule — see "Quota enforcement" section there.
+        if let Some(q) = &self.quota {
+            q.check(&tenant_id, Resource::CreateLink).await?;
+        }
         let has_verified_domain = self.tenant_has_verified_domain(&tenant_id).await;
 
         let link_id = match &req.custom_id {
@@ -915,6 +934,7 @@ mod tests {
             Some(domains),
             ThreatFeed::new(),
             "https://riftl.ink".to_string(),
+            None,
         )
     }
 
