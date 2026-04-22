@@ -174,8 +174,8 @@ pub async fn create_link(
             .into_response();
     };
 
-    // Log-only quota check (Phase A-1). A-2 flips enforcement on, converting
-    // QuotaError::Exceeded into a 402 response.
+    // Quota check. In log-only mode returns Ok regardless; in enforce mode
+    // QuotaError::Exceeded maps to 402 Payment Required.
     if let Some(ref quota) = state.quota_service {
         if let Err(e) = quota
             .check(
@@ -184,7 +184,7 @@ pub async fn create_link(
             )
             .await
         {
-            tracing::warn!(error = ?e, "quota_check_create_link_error");
+            return crate::api::billing::quota_response::to_response(e);
         }
     }
 
@@ -799,10 +799,11 @@ async fn do_resolve(
         .map(detect_platform)
         .unwrap_or(Platform::Other);
 
-    // Log-only event quota check (Phase A-1). The atomic counter doc is
-    // populated here so the data pipeline is in prod shape before A-2 flips
-    // enforcement. The counter $inc runs inside QuotaService::check for
-    // TrackEvent. Fire-and-forget: a DB error here doesn't block the click.
+    // Click quota check is fire-and-forget even in Enforce mode — we don't
+    // want the redirect to fail on a DB hiccup or a quota-exceeded tenant.
+    // Tenants past their events/month cap still get redirected; their event
+    // data just isn't recorded (QuotaService returns Err(Exceeded) before
+    // the counter increments past the limit). Log the rejection and move on.
     if let Some(ref quota) = state.quota_service {
         if let Err(e) = quota
             .check(
@@ -811,7 +812,7 @@ async fn do_resolve(
             )
             .await
         {
-            tracing::warn!(error = %e, "quota_check_track_click_error");
+            tracing::info!(error = %e, "click_track_quota_skipped");
         }
     }
 

@@ -36,7 +36,6 @@ pub async fn create_domain(
             .into_response();
     };
 
-    // Log-only quota check (Phase A-1).
     if let Some(ref quota) = state.quota_service {
         if let Err(e) = quota
             .check(
@@ -45,7 +44,7 @@ pub async fn create_domain(
             )
             .await
         {
-            tracing::warn!(error = %e, "quota_check_create_domain_error");
+            return crate::api::billing::quota_response::to_response(e);
         }
     }
 

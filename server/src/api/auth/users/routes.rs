@@ -77,7 +77,6 @@ pub async fn invite_user(
             .into_response();
     };
 
-    // Log-only quota check (Phase A-1).
     if let Some(ref quota) = state.quota_service {
         if let Err(e) = quota
             .check(
@@ -86,7 +85,7 @@ pub async fn invite_user(
             )
             .await
         {
-            tracing::warn!(error = %e, "quota_check_invite_team_member_error");
+            return crate::api::billing::quota_response::to_response(e);
         }
     }
 
