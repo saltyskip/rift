@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import dynamic from "next/dynamic";
 import { TerminalDemo } from "@/components/terminal-demo";
+import { PricingSection } from "@/components/pricing-section";
 
 const WarpTunnel = dynamic(
   () => import("@/components/warp-tunnel").then((m) => m.WarpTunnel),
@@ -394,82 +395,7 @@ export default function Home() {
 
       <div className="mx-auto max-w-6xl px-6"><div className="gradient-line" /></div>
 
-      {/* ─── PRICING ─── */}
-      <section id="pricing" className="py-24 px-6">
-        <div className="mx-auto max-w-6xl">
-          <motion.div {...fade(0)}>
-            <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">Pricing</p>
-            <h2 className="text-3xl font-semibold tracking-[-0.03em] mb-3">Start free. Scale with usage.</h2>
-            <p className="text-[#71717a] mb-12">No credit card. No trial period. No sales demo.</p>
-          </motion.div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {[
-              {
-                name: "Free",
-                price: "$0",
-                desc: "For prototyping",
-                items: ["100 links", "1,000 clicks/month", "Full API access", "Click & install tracking", "7-day analytics retention"],
-                accent: false,
-              },
-              {
-                name: "Pay per request",
-                price: "$0.01",
-                unit: "/ request",
-                desc: "For production",
-                items: ["Unlimited links & clicks", "Pay with USDC — no API key needed", "Agents can pay autonomously", "Full attribution & analytics", "Unlimited retention"],
-                accent: true,
-              },
-              {
-                name: "Volume",
-                price: "Custom",
-                desc: "For scale",
-                items: ["Volume discounts", "Custom domains", "Webhooks on events", "SLA & priority support", "Dedicated onboarding"],
-                accent: false,
-              },
-            ].map((tier, i) => (
-              <motion.div
-                key={tier.name}
-                {...fade(i * 0.08)}
-                className={`rounded-xl border p-7 flex flex-col ${
-                  tier.accent
-                    ? "border-[#2dd4bf]/30 bg-[#2dd4bf]/[0.03] glow-teal"
-                    : "border-[#222225] bg-[#111113] hover:border-[#2dd4bf]/15"
-                } transition-colors`}
-              >
-                {tier.accent && (
-                  <span className="text-[11px] font-mono text-[#2dd4bf] mb-4">Recommended</span>
-                )}
-                <p className="text-[11px] font-mono text-[#52525b] uppercase tracking-widest mb-3">{tier.name}</p>
-                <div className="flex items-baseline gap-1 mb-1">
-                  <span className="text-3xl font-semibold tracking-tight">{tier.price}</span>
-                  {tier.unit && <span className="text-sm text-[#52525b]">{tier.unit}</span>}
-                </div>
-                <p className="text-[13px] text-[#52525b] mb-6">{tier.desc}</p>
-                <div className="h-px bg-[#222225] mb-5" />
-                <ul className="space-y-2.5 flex-1 mb-6">
-                  {tier.items.map((item) => (
-                    <li key={item} className="flex items-start gap-2.5 text-[13px] text-[#71717a]">
-                      <span className="mt-1.5 size-1 rounded-full bg-[#2dd4bf] shrink-0" />
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-                <a
-                  href="/docs"
-                  className={`text-center text-[13px] font-medium px-4 py-2 rounded-lg transition-colors ${
-                    tier.accent
-                      ? "bg-[#2dd4bf] text-[#042f2e] hover:bg-[#5eead4]"
-                      : "border border-[#222225] text-[#a1a1aa] hover:border-[#2dd4bf]/30 hover:text-[#fafafa]"
-                  }`}
-                >
-                  {tier.accent ? "Create your first link" : "Read quickstart"}
-                </a>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <PricingSection />
 
       <div className="mx-auto max-w-6xl px-6"><div className="gradient-line" /></div>
 
