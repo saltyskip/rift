@@ -10,7 +10,7 @@ interface Tier {
   human: { price: string; unit?: string };
   agent: { price: string; unit?: string };
   desc: string;
-  stats: string;
+  stats: string[];
   inherits?: string;
   items: string[];
   accent?: boolean;
@@ -23,7 +23,7 @@ const TIERS: Tier[] = [
     human: { price: "$0" },
     agent: { price: "$0" },
     desc: "For prototyping",
-    stats: "50 links · 10k events / mo · 1 domain",
+    stats: ["50 links", "10k events / mo", "1 domain"],
     items: [
       "Full REST API + MCP server",
       "iOS, Android & Web SDKs",
@@ -39,7 +39,7 @@ const TIERS: Tier[] = [
     human: { price: "$18", unit: "/ month" },
     agent: { price: "$15", unit: "USDC / 30d" },
     desc: "For shipping",
-    stats: "2,000 links · 100k events / mo · 5 domains",
+    stats: ["2,000 links", "100k events / mo", "5 domains"],
     inherits: "Free",
     items: [
       "Conversion tracking",
@@ -54,7 +54,7 @@ const TIERS: Tier[] = [
     human: { price: "$55", unit: "/ month" },
     agent: { price: "$47", unit: "USDC / 30d" },
     desc: "For scaling teams",
-    stats: "20,000 links · 500k events / mo · 20 domains",
+    stats: ["20,000 links", "500k events / mo", "20 domains"],
     inherits: "Pro",
     items: [
       "Unlimited team members",
@@ -67,7 +67,7 @@ const TIERS: Tier[] = [
     human: { price: "$199", unit: "/ month" },
     agent: { price: "$169", unit: "USDC / 30d" },
     desc: "For serious volume",
-    stats: "100,000 links · 2M events / mo · unlimited domains",
+    stats: ["100,000 links", "2M events / mo", "Unlimited domains"],
     inherits: "Business",
     items: [
       "5-year analytics retention",
@@ -238,10 +238,17 @@ function TierCard({
 
       <p className="text-[13px] text-[#52525b] mb-3">{tier.desc}</p>
 
-      {/* Compact stats line — scannable limits summary, no heavy chrome */}
-      <p className="text-[11px] font-mono text-[#2dd4bf]/70 mb-5 leading-snug">
-        {tier.stats}
-      </p>
+      {/* Stats — stacked for cross-card scannability */}
+      <ul className="space-y-1 mb-5">
+        {tier.stats.map((s) => (
+          <li
+            key={s}
+            className="text-[12px] font-mono text-[#2dd4bf]/75 leading-snug"
+          >
+            {s}
+          </li>
+        ))}
+      </ul>
 
       <div className="h-px bg-[#222225] mb-5" />
 
