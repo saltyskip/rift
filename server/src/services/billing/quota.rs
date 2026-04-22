@@ -196,6 +196,22 @@ mod tests {
                 .find(|t| t.id.as_ref() == Some(id))
                 .cloned())
         }
+        async fn find_by_stripe_customer_id(
+            &self,
+            _customer_id: &str,
+        ) -> Result<Option<TenantDoc>, String> {
+            Ok(None)
+        }
+        async fn apply_subscription_update(
+            &self,
+            _tenant_id: &ObjectId,
+            _update: crate::services::auth::tenants::repo::SubscriptionUpdate,
+        ) -> Result<bool, String> {
+            Ok(true)
+        }
+        async fn clear_subscription(&self, _tenant_id: &ObjectId) -> Result<bool, String> {
+            Ok(true)
+        }
     }
 
     #[derive(Default)]

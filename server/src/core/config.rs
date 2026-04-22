@@ -39,6 +39,7 @@ pub struct Config {
 
     // ── Stripe (Plan A billing) ──
     pub stripe_secret_key: String,
+    pub stripe_webhook_secret: String,
     pub stripe_price_id_pro: String,
     pub stripe_price_id_business: String,
     pub stripe_price_id_scale: String,
@@ -91,6 +92,7 @@ impl Config {
             fly_app_name: std::env::var("FLY_APP_NAME").unwrap_or_default(),
 
             stripe_secret_key: std::env::var("STRIPE_SECRET_KEY").unwrap_or_default(),
+            stripe_webhook_secret: std::env::var("STRIPE_WEBHOOK_SECRET").unwrap_or_default(),
             stripe_price_id_pro: std::env::var("STRIPE_PRICE_ID_PRO").unwrap_or_default(),
             stripe_price_id_business: std::env::var("STRIPE_PRICE_ID_BUSINESS").unwrap_or_default(),
             stripe_price_id_scale: std::env::var("STRIPE_PRICE_ID_SCALE").unwrap_or_default(),
