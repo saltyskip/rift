@@ -136,6 +136,11 @@ pub async fn spawn_app() -> TestApp {
         )),
         conversions_repo: Some(conversions_repo),
         conversions_service,
+        billing_service: Some(Arc::new(
+            rift::services::billing::service::BillingService::new(
+                tenants_repo.clone() as Arc<dyn TenantsRepository>
+            ),
+        )),
     });
 
     let app = rift::api::router(state.clone())

@@ -296,6 +296,12 @@ async fn run_server(cfg: Config) {
         _ => None,
     };
 
+    let billing_service = tenants_repo.as_ref().map(|t| {
+        Arc::new(crate::services::billing::service::BillingService::new(
+            t.clone(),
+        ))
+    });
+
     let state = Arc::new(AppState {
         secret_keys_repo,
         usage_repo,
@@ -313,6 +319,7 @@ async fn run_server(cfg: Config) {
         users_service,
         secret_keys_service,
         conversions_service,
+        billing_service,
     });
 
     // ── Build app: API + optional MCP on same port ──
