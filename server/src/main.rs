@@ -162,12 +162,13 @@ async fn run_server(cfg: Config) {
         sdk_keys_repo,
         conversions_repo,
         event_counters_repo,
+        stripe_webhook_dedup_repo,
     ) = if cfg.mongo_uri.is_empty() {
         tracing::warn!(
             "MONGO_URI not set — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
         );
         (
-            None, None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None, None,
         )
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
@@ -204,6 +205,14 @@ async fn run_server(cfg: Config) {
                     )
                     .await,
                 );
+                let stripe_dedup: Arc<
+                    dyn crate::services::billing::repos::stripe_webhook_dedup::StripeWebhookDedupRepository,
+                > = Arc::new(
+                    crate::services::billing::repos::stripe_webhook_dedup::StripeWebhookDedupRepo::new(
+                        &database,
+                    )
+                    .await,
+                );
                 (
                     Some(tenants),
                     Some(users),
@@ -216,6 +225,7 @@ async fn run_server(cfg: Config) {
                     Some(sdk_keys),
                     Some(conversions),
                     Some(event_counters),
+                    Some(stripe_dedup),
                 )
             }
             None => {
@@ -223,7 +233,7 @@ async fn run_server(cfg: Config) {
                     "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
                 );
                 (
-                    None, None, None, None, None, None, None, None, None, None, None,
+                    None, None, None, None, None, None, None, None, None, None, None, None,
                 )
             }
         }
@@ -391,6 +401,8 @@ async fn run_server(cfg: Config) {
     };
 
     let state = Arc::new(AppState {
+        tenants_repo,
+        stripe_webhook_dedup: stripe_webhook_dedup_repo,
         secret_keys_repo,
         usage_repo,
         links_repo,

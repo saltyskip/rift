@@ -77,6 +77,7 @@ pub async fn spawn_app() -> TestApp {
         fly_api_token: String::new(),
         fly_app_name: String::new(),
         stripe_secret_key: String::new(),
+        stripe_webhook_secret: String::new(),
         stripe_price_id_pro: String::new(),
         stripe_price_id_business: String::new(),
         stripe_price_id_scale: String::new(),
@@ -112,6 +113,8 @@ pub async fn spawn_app() -> TestApp {
     ));
 
     let state = Arc::new(AppState {
+        tenants_repo: Some(tenants_repo.clone() as Arc<dyn TenantsRepository>),
+        stripe_webhook_dedup: None,
         secret_keys_repo: Some(secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>),
         usage_repo: Some(usage_repo.clone() as Arc<dyn UsageRepository>),
         links_repo: Some(

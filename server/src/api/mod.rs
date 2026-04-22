@@ -77,6 +77,7 @@ use crate::app::AppState;
         // Billing — plan status, Stripe checkout, webhooks
         billing::routes::get_billing_status,
         billing::routes::create_stripe_checkout,
+        // (Stripe webhook omitted — raw-body handler, documented on Stripe's end)
         // System
         health::routes::health,
     ),
