@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use mongodb::bson;
 use mongodb::bson::oid::ObjectId;
 use std::sync::Arc;
@@ -6,6 +7,22 @@ use super::effective_tier::effective_tier;
 use super::limits::limits_for;
 use super::models::{BillingError, BillingStatus};
 use crate::services::auth::tenants::repo::{PlanTier, TenantsRepository};
+
+/// The read-side of billing state that most services actually need.
+///
+/// Quota checks ask for the tenant's effective tier; event insert paths ask
+/// for the retention bucket. Neither needs the full BillingService — which
+/// also owns subscription lifecycle methods (`status`, Stripe update apply,
+/// etc.) that most consumers don't care about.
+///
+/// Injecting this trait instead of `Arc<BillingService>` keeps the type
+/// surface of downstream services small and makes them testable with
+/// fake tier data.
+#[async_trait]
+pub trait TierResolver: Send + Sync {
+    async fn effective_tier(&self, tenant_id: &ObjectId) -> Result<PlanTier, BillingError>;
+    async fn retention_bucket_for_tenant(&self, tenant_id: &ObjectId) -> &'static str;
+}
 
 /// Central entry point for anything that cares about a tenant's billing state.
 /// Every status endpoint, quota check, webhook handler, and admin operation
@@ -18,30 +35,6 @@ pub struct BillingService {
 impl BillingService {
     pub fn new(tenants_repo: Arc<dyn TenantsRepository>) -> Self {
         Self { tenants_repo }
-    }
-
-    /// Cheap resolution of a tenant's current effective plan, honoring an
-    /// active comp override. Callers on the hot path should front this with
-    /// a tenant-id → tier cache.
-    pub async fn effective_tier(&self, tenant_id: &ObjectId) -> Result<PlanTier, BillingError> {
-        let tenant = self
-            .tenants_repo
-            .find_by_id(tenant_id)
-            .await
-            .map_err(BillingError::Internal)?
-            .ok_or(BillingError::TenantNotFound)?;
-        Ok(effective_tier(&tenant, bson::DateTime::now()))
-    }
-
-    /// Retention bucket string the caller should stamp on the event's meta
-    /// field so the partial TTL indexes catch it. Defaults to `"30d"` when
-    /// the tenant lookup fails, matching the Free-tier retention to avoid
-    /// accidental unbounded storage.
-    pub async fn retention_bucket_for_tenant(&self, tenant_id: &ObjectId) -> &'static str {
-        match self.effective_tier(tenant_id).await {
-            Ok(tier) => limits_for(tier).retention_bucket,
-            Err(_) => "30d",
-        }
     }
 
     pub async fn status(&self, tenant_id: &ObjectId) -> Result<BillingStatus, BillingError> {
@@ -63,6 +56,28 @@ impl BillingService {
             status: tenant.status,
             current_period_end: tenant.current_period_end,
         })
+    }
+}
+
+// Production impl. Downstream services inject `Arc<dyn TierResolver>` to
+// stay decoupled from BillingService's subscription-lifecycle surface.
+#[async_trait]
+impl TierResolver for BillingService {
+    async fn effective_tier(&self, tenant_id: &ObjectId) -> Result<PlanTier, BillingError> {
+        let tenant = self
+            .tenants_repo
+            .find_by_id(tenant_id)
+            .await
+            .map_err(BillingError::Internal)?
+            .ok_or(BillingError::TenantNotFound)?;
+        Ok(effective_tier(&tenant, bson::DateTime::now()))
+    }
+
+    async fn retention_bucket_for_tenant(&self, tenant_id: &ObjectId) -> &'static str {
+        match self.effective_tier(tenant_id).await {
+            Ok(tier) => limits_for(tier).retention_bucket,
+            Err(_) => "30d",
+        }
     }
 }
 

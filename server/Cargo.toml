@@ -60,6 +60,11 @@ schemars = { version = "1.2", optional = true }
 default = ["api", "mcp"]
 api = []
 mcp = ["dep:rmcp", "dep:schemars"]
+# Exposes Noop/Deny QuotaChecker implementations for integration tests that
+# want to exercise over-limit paths without wiring a real counter stack.
+# Enabled only by tests (`cargo test` activates it automatically via the
+# [[test]] fixture below when you pass --features test-harness).
+test-harness = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

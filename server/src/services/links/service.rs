@@ -8,8 +8,8 @@ use super::models::*;
 use super::repo::LinksRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
-use crate::services::billing::quota::{QuotaError, QuotaService, Resource};
-use crate::services::billing::service::BillingService;
+use crate::services::billing::quota::{QuotaChecker, QuotaError, Resource};
+use crate::services::billing::service::TierResolver;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 
@@ -85,8 +85,8 @@ pub struct LinksService {
     domains_repo: Option<Arc<dyn DomainsRepository>>,
     threat_feed: ThreatFeed,
     public_url: String,
-    quota: Option<Arc<QuotaService>>,
-    billing: Option<Arc<BillingService>>,
+    quota: Option<Arc<dyn QuotaChecker>>,
+    tiers: Option<Arc<dyn TierResolver>>,
 }
 
 impl LinksService {
@@ -95,8 +95,8 @@ impl LinksService {
         domains_repo: Option<Arc<dyn DomainsRepository>>,
         threat_feed: ThreatFeed,
         public_url: String,
-        quota: Option<Arc<QuotaService>>,
-        billing: Option<Arc<BillingService>>,
+        quota: Option<Arc<dyn QuotaChecker>>,
+        tiers: Option<Arc<dyn TierResolver>>,
     ) -> Self {
         Self {
             links_repo,
@@ -104,7 +104,7 @@ impl LinksService {
             threat_feed,
             public_url,
             quota,
-            billing,
+            tiers,
         }
     }
 
@@ -133,7 +133,7 @@ impl LinksService {
             }
         }
 
-        let retention_bucket = match &self.billing {
+        let retention_bucket = match &self.tiers {
             Some(b) => b.retention_bucket_for_tenant(&tenant_id).await.to_string(),
             None => "30d".to_string(),
         };

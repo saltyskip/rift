@@ -6,8 +6,8 @@ use super::models::{ConversionEvent, ConversionMeta, IngestResult, Source};
 use super::parsers::ParsedConversion;
 use super::repo::ConversionsRepository;
 use crate::core::webhook_dispatcher::{ConversionEventPayload, WebhookDispatcher};
-use crate::services::billing::quota::{QuotaService, Resource};
-use crate::services::billing::service::BillingService;
+use crate::services::billing::quota::{QuotaChecker, Resource};
+use crate::services::billing::service::TierResolver;
 use crate::services::links::repo::LinksRepository;
 
 /// Orchestration layer for conversion ingestion. Keeps route handlers thin per
@@ -17,8 +17,8 @@ pub struct ConversionsService {
     conversions_repo: Arc<dyn ConversionsRepository>,
     links_repo: Arc<dyn LinksRepository>,
     webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
-    billing: Option<Arc<BillingService>>,
-    quota: Option<Arc<QuotaService>>,
+    tiers: Option<Arc<dyn TierResolver>>,
+    quota: Option<Arc<dyn QuotaChecker>>,
 }
 
 impl ConversionsService {
@@ -26,14 +26,14 @@ impl ConversionsService {
         conversions_repo: Arc<dyn ConversionsRepository>,
         links_repo: Arc<dyn LinksRepository>,
         webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
-        billing: Option<Arc<BillingService>>,
-        quota: Option<Arc<QuotaService>>,
+        tiers: Option<Arc<dyn TierResolver>>,
+        quota: Option<Arc<dyn QuotaChecker>>,
     ) -> Self {
         Self {
             conversions_repo,
             links_repo,
             webhook_dispatcher,
-            billing,
+            tiers,
             quota,
         }
     }
@@ -137,7 +137,7 @@ impl ConversionsService {
             }
 
             // 3. Insert event.
-            let retention_bucket = match &self.billing {
+            let retention_bucket = match &self.tiers {
                 Some(b) => b.retention_bucket_for_tenant(&tenant_id).await.to_string(),
                 None => "30d".to_string(),
             };
