@@ -38,9 +38,30 @@ jobs:
       - name: Format check
         run: cargo fmt -- --check
 
-  deploy:
-    name: Deploy to Fly
+  deploy-sandbox:
+    name: Deploy to Sandbox
     needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy server/ --config server/fly.sandbox.toml --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Wait for sandbox to be healthy
+        run: |
+          for i in {1..30}; do
+            if curl -fsS https://rift-api-sandbox.fly.dev/health > /dev/null; then
+              echo "Sandbox healthy"; exit 0
+            fi
+            echo "Attempt $i: sandbox not healthy yet, retrying..."; sleep 5
+          done
+          echo "Sandbox failed to become healthy"; exit 1
+
+  deploy-prod:
+    name: Deploy to Prod
+    needs: deploy-sandbox
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
