@@ -7,8 +7,10 @@ use crate::services::apps::repo::AppsRepository;
 use crate::services::auth::publishable_keys::repo::SdkKeysRepository;
 use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::SecretKeysService;
+use crate::services::auth::tenants::repo::TenantsRepository;
 use crate::services::auth::usage::repo::UsageRepository;
 use crate::services::auth::users::service::UsersService;
+use crate::services::billing::repos::stripe_webhook_dedup::StripeWebhookDedupRepository;
 use crate::services::billing::service::BillingService;
 use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::conversions::service::ConversionsService;
@@ -23,6 +25,8 @@ use x402_types::proto::v1;
 
 /// Shared application state available to all route handlers.
 pub struct AppState {
+    pub tenants_repo: Option<Arc<dyn TenantsRepository>>,
+    pub stripe_webhook_dedup: Option<Arc<dyn StripeWebhookDedupRepository>>,
     pub secret_keys_repo: Option<Arc<dyn SecretKeysRepository>>,
     pub usage_repo: Option<Arc<dyn UsageRepository>>,
     pub links_repo: Option<Arc<dyn LinksRepository>>,
