@@ -1,4 +1,4 @@
-name: SDK Release
+name: Mobile SDK Release
 
 on:
   push:
