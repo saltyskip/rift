@@ -135,6 +135,11 @@ impl LinksRepository for MockLinksRepo {
         Ok(links.len() < len_before)
     }
 
+    async fn count_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+        let links = self.links.lock().unwrap();
+        Ok(links.iter().filter(|l| &l.tenant_id == tenant_id).count() as u64)
+    }
+
     async fn list_links_by_tenant(
         &self,
         tenant_id: &ObjectId,
@@ -160,11 +165,13 @@ impl LinksRepository for MockLinksRepo {
         user_agent: Option<String>,
         referer: Option<String>,
         platform: Option<String>,
+        retention_bucket: String,
     ) -> Result<(), String> {
         self.clicks.lock().unwrap().push(ClickEvent {
             meta: ClickMeta {
                 tenant_id,
                 link_id: link_id.to_string(),
+                retention_bucket,
             },
             clicked_at: DateTime::now(),
             user_agent,

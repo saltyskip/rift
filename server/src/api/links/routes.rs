@@ -26,7 +26,6 @@ use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::models::*;
-use crate::services::links::repo::LinksRepository;
 use crate::services::links::service::LinkError;
 
 // ── Resolve Query Params ──
@@ -98,6 +97,11 @@ pub struct QrCodeQuery {
 }
 
 fn link_error_to_response(err: LinkError) -> Response {
+    // QuotaExceeded is a structured 402 — delegate to the shared helper so
+    // the body shape stays consistent across every enforcement path.
+    if let LinkError::QuotaExceeded(q) = err {
+        return crate::api::billing::quota_response::to_response(q);
+    }
     let status = match &err {
         LinkError::InvalidCustomId(_)
         | LinkError::InvalidUrl(_)
@@ -109,6 +113,7 @@ fn link_error_to_response(err: LinkError) -> Response {
         | LinkError::EmptyUpdate => StatusCode::BAD_REQUEST,
         LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
         LinkError::NotFound => StatusCode::NOT_FOUND,
+        LinkError::QuotaExceeded(_) => unreachable!("handled above"),
         LinkError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     let code = err.code();
@@ -174,6 +179,8 @@ pub async fn create_link(
             .into_response();
     };
 
+    // Quota check moved into LinksService::create_link so MCP tool calls hit
+    // the same enforcement path. Don't re-check here.
     match svc.create_link(tenant.0, req).await {
         Ok(resp) => (StatusCode::CREATED, Json(json!(resp))).into_response(),
         Err(e) => link_error_to_response(e),
@@ -564,7 +571,7 @@ pub async fn resolve_link(
 
     let redirect = query.redirect.as_deref() == Some("1");
 
-    do_resolve(&state, repo.as_ref(), link, &link_id, &headers, redirect).await
+    do_resolve(&state, link, &link_id, &headers, redirect).await
 }
 
 // ── GET /{link_id} — Resolve via custom domain (public) ──
@@ -698,7 +705,7 @@ pub async fn resolve_link_custom(
 
     let redirect = query.redirect.as_deref() == Some("1");
 
-    do_resolve(&state, repo.as_ref(), link, &link_id, &headers, redirect).await
+    do_resolve(&state, link, &link_id, &headers, redirect).await
 }
 
 /// Check if a link is resolvable (active, not expired, not flagged/disabled).
@@ -765,7 +772,6 @@ fn check_link_resolvable(link: &Link) -> Option<Response> {
 /// Shared resolve logic: detect platform, record click, content negotiation.
 async fn do_resolve(
     state: &Arc<AppState>,
-    repo: &dyn LinksRepository,
     link: Link,
     link_id: &str,
     headers: &HeaderMap,
@@ -785,17 +791,18 @@ async fn do_resolve(
         .map(detect_platform)
         .unwrap_or(Platform::Other);
 
-    if let Err(e) = repo
-        .record_click(
+    // Quota check + retention bucket + DB write all happen inside the
+    // service method so MCP / CLI / any future transport that records a
+    // click can't bypass enforcement.
+    if let Some(ref svc) = state.links_service {
+        svc.record_click(
             link.tenant_id,
             link_id,
             user_agent.clone(),
             referer.clone(),
             Some(platform.as_str().to_string()),
         )
-        .await
-    {
-        tracing::warn!(error = %e, "Failed to record click");
+        .await;
     }
 
     if let Some(dispatcher) = &state.webhook_dispatcher {
@@ -1063,17 +1070,15 @@ pub async fn attribution_click(
         .map(detect_platform)
         .unwrap_or(Platform::Other);
 
-    if let Err(e) = repo
-        .record_click(
+    if let Some(ref svc) = state.links_service {
+        svc.record_click(
             link.tenant_id,
             &req.link_id,
             user_agent.clone(),
             referer.clone(),
             Some(platform.as_str().to_string()),
         )
-        .await
-    {
-        tracing::warn!(error = %e, "Failed to record click");
+        .await;
     }
 
     if let Some(dispatcher) = &state.webhook_dispatcher {

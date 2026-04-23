@@ -10,6 +10,8 @@ use super::models::{Webhook, WebhookEventType};
 pub trait WebhooksRepository: Send + Sync {
     async fn create_webhook(&self, webhook: Webhook) -> Result<(), String>;
     async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Webhook>, String>;
+    /// Total webhooks on this tenant — feeds the CreateWebhook quota.
+    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String>;
     async fn delete_webhook(
         &self,
         tenant_id: &ObjectId,
@@ -71,6 +73,13 @@ impl WebhooksRepository for WebhooksRepo {
             webhooks.push(cursor.deserialize_current().map_err(|e| e.to_string())?);
         }
         Ok(webhooks)
+    }
+
+    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+        self.webhooks
+            .count_documents(doc! { "tenant_id": tenant_id })
+            .await
+            .map_err(|e| e.to_string())
     }
 
     async fn delete_webhook(

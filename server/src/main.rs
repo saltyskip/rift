@@ -161,11 +161,14 @@ async fn run_server(cfg: Config) {
         webhooks_repo,
         sdk_keys_repo,
         conversions_repo,
+        event_counters_repo,
     ) = if cfg.mongo_uri.is_empty() {
         tracing::warn!(
             "MONGO_URI not set — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
         );
-        (None, None, None, None, None, None, None, None, None, None)
+        (
+            None, None, None, None, None, None, None, None, None, None, None,
+        )
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
             Some(database) => {
@@ -193,6 +196,14 @@ async fn run_server(cfg: Config) {
                 let conversions: Arc<
                     dyn crate::services::conversions::repo::ConversionsRepository,
                 > = Arc::new(ConversionsRepo::new(&database).await);
+                let event_counters: Arc<
+                    dyn crate::services::billing::repos::event_counters::EventCountersRepository,
+                > = Arc::new(
+                    crate::services::billing::repos::event_counters::EventCountersRepo::new(
+                        &database,
+                    )
+                    .await,
+                );
                 (
                     Some(tenants),
                     Some(users),
@@ -204,13 +215,16 @@ async fn run_server(cfg: Config) {
                     Some(webhooks),
                     Some(sdk_keys),
                     Some(conversions),
+                    Some(event_counters),
                 )
             }
             None => {
                 tracing::warn!(
                     "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
                 );
-                (None, None, None, None, None, None, None, None, None, None)
+                (
+                    None, None, None, None, None, None, None, None, None, None, None,
+                )
             }
         }
     };
@@ -253,25 +267,15 @@ async fn run_server(cfg: Config) {
                 as Arc<dyn crate::core::webhook_dispatcher::WebhookDispatcher>
         });
 
-    let links_service = links_repo.as_ref().map(|repo| {
-        Arc::new(crate::services::links::service::LinksService::new(
-            repo.clone(),
-            domains_repo.clone(),
-            threat_feed.clone(),
-            cfg.public_url.clone(),
-        ))
-    });
+    // links_service is constructed after quota_service (below) — service-
+    // layer quota enforcement is required for MCP parity.
 
-    let users_service = match (&tenants_repo, &users_repo, &secret_keys_repo) {
-        (Some(t), Some(u), Some(sk)) => Some(Arc::new(
-            crate::services::auth::users::service::UsersService::new(
-                t.clone(),
-                u.clone(),
-                sk.clone(),
-            ),
-        )),
-        _ => None,
-    };
+    let tenants_service = tenants_repo
+        .as_ref()
+        .map(|t| Arc::new(crate::services::auth::tenants::service::TenantsService::new(t.clone())));
+
+    // users_service is built after quota_service to enforce team-member
+    // quota at the service layer — MCP and HTTP both benefit.
 
     let secret_keys_service = match (&secret_keys_repo, &users_repo) {
         (Some(sk), Some(u)) => Some(Arc::new(
@@ -283,11 +287,105 @@ async fn run_server(cfg: Config) {
         _ => None,
     };
 
+    let billing_service = tenants_repo.as_ref().map(|t| {
+        Arc::new(crate::services::billing::service::BillingService::new(
+            t.clone(),
+        ))
+    });
+
+    // conversions_service is built after quota_service — it takes both
+    // billing (for retention bucketing) and quota (for TrackEvent check).
+
+    let quota_service: Option<Arc<dyn crate::services::billing::quota::QuotaChecker>> = match (
+        &billing_service,
+        &event_counters_repo,
+        &links_repo,
+        &domains_repo,
+        &users_repo,
+        &webhooks_repo,
+    ) {
+        (Some(b), Some(counters), Some(l), Some(d), Some(u), Some(w)) => {
+            let resource_counts = Arc::new(
+                crate::services::billing::repos::resource_counts_adapter::RepoResourceCounts {
+                    links: l.clone(),
+                    domains: d.clone(),
+                    users: u.clone(),
+                    webhooks: w.clone(),
+                },
+            )
+                as Arc<dyn crate::services::billing::quota::ResourceCounts>;
+            // QUOTA_ENFORCEMENT=enforce flips hard rejection on. Default is
+            // log-only so accidental rollouts don't start 402ing real
+            // customers before the counters are verified in prod.
+            let mode = crate::services::billing::quota::EnforcementMode::from_env_str(
+                &std::env::var("QUOTA_ENFORCEMENT").unwrap_or_default(),
+            );
+            tracing::info!(mode = ?mode, "quota_enforcement_mode");
+            let tiers = b.clone() as Arc<dyn crate::services::billing::service::TierResolver>;
+            Some(Arc::new(
+                crate::services::billing::quota::QuotaService::new(
+                    tiers,
+                    counters.clone(),
+                    resource_counts,
+                    mode,
+                ),
+            ))
+        }
+        _ => None,
+    };
+
+    // LinksService + UsersService need quota_service, so construct them
+    // after the match above. Service-layer enforcement is the contract:
+    // MCP tool invocations hit the same checks as HTTP route handlers.
+    let tier_resolver: Option<Arc<dyn crate::services::billing::service::TierResolver>> =
+        billing_service
+            .as_ref()
+            .map(|b| b.clone() as Arc<dyn crate::services::billing::service::TierResolver>);
+
+    let links_service = links_repo.as_ref().map(|repo| {
+        Arc::new(crate::services::links::service::LinksService::new(
+            repo.clone(),
+            domains_repo.clone(),
+            threat_feed.clone(),
+            cfg.public_url.clone(),
+            quota_service.clone(),
+            tier_resolver.clone(),
+        ))
+    });
+
+    let domains_service = domains_repo.as_ref().map(|r| {
+        Arc::new(crate::services::domains::service::DomainsService::new(
+            r.clone(),
+            quota_service.clone(),
+        ))
+    });
+
+    let webhooks_service = webhooks_repo.as_ref().map(|r| {
+        Arc::new(crate::services::webhooks::service::WebhooksService::new(
+            r.clone(),
+            quota_service.clone(),
+        ))
+    });
+
+    let users_service = match (&tenants_service, &users_repo, &secret_keys_repo) {
+        (Some(t), Some(u), Some(sk)) => Some(Arc::new(
+            crate::services::auth::users::service::UsersService::new(
+                t.clone(),
+                u.clone(),
+                sk.clone(),
+                quota_service.clone(),
+            ),
+        )),
+        _ => None,
+    };
+
     let conversions_service = match (&conversions_repo, &links_repo) {
         (Some(c), Some(l)) => Some(Arc::new(ConversionsService::new(
             c.clone(),
             l.clone(),
             webhook_dispatcher.clone(),
+            tier_resolver.clone(),
+            quota_service.clone(),
         ))),
         _ => None,
     };
@@ -306,10 +404,16 @@ async fn run_server(cfg: Config) {
         sdk_keys_repo,
         conversions_repo,
         links_service,
+        domains_service,
+        webhooks_service,
         users_service,
         secret_keys_service,
         conversions_service,
+        billing_service,
     });
+    // quota_service is consumed by the per-domain services above; it's
+    // intentionally not stored in AppState (no route-level callers).
+    drop(quota_service);
 
     // ── Build app: API + optional MCP on same port ──
     let mut app = axum::Router::new();

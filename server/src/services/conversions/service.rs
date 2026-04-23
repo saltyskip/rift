@@ -6,6 +6,8 @@ use super::models::{ConversionEvent, ConversionMeta, IngestResult, Source};
 use super::parsers::ParsedConversion;
 use super::repo::ConversionsRepository;
 use crate::core::webhook_dispatcher::{ConversionEventPayload, WebhookDispatcher};
+use crate::services::billing::quota::{QuotaChecker, Resource};
+use crate::services::billing::service::TierResolver;
 use crate::services::links::repo::LinksRepository;
 
 /// Orchestration layer for conversion ingestion. Keeps route handlers thin per
@@ -15,6 +17,8 @@ pub struct ConversionsService {
     conversions_repo: Arc<dyn ConversionsRepository>,
     links_repo: Arc<dyn LinksRepository>,
     webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
+    tiers: Option<Arc<dyn TierResolver>>,
+    quota: Option<Arc<dyn QuotaChecker>>,
 }
 
 impl ConversionsService {
@@ -22,11 +26,15 @@ impl ConversionsService {
         conversions_repo: Arc<dyn ConversionsRepository>,
         links_repo: Arc<dyn LinksRepository>,
         webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
+        tiers: Option<Arc<dyn TierResolver>>,
+        quota: Option<Arc<dyn QuotaChecker>>,
     ) -> Self {
         Self {
             conversions_repo,
             links_repo,
             webhook_dispatcher,
+            tiers,
+            quota,
         }
     }
 
@@ -111,13 +119,35 @@ impl ConversionsService {
                 continue;
             };
 
+            // 2b. Quota check (TrackEvent) — same "events per month" counter
+            // as clicks. Runs post-dedup so a duplicate doesn't consume the
+            // quota twice; runs before insert so a rejection keeps the
+            // event out of the DB. In log-only mode returns Ok and records
+            // a warn; in enforce mode returns Err and we count it as failed.
+            if let Some(q) = &self.quota {
+                if let Err(e) = q.check(&tenant_id, Resource::TrackEvent).await {
+                    tracing::info!(
+                        source_id = %source_id,
+                        error = %e,
+                        "conversion_ingest_quota_rejected"
+                    );
+                    result.failed += 1;
+                    continue;
+                }
+            }
+
             // 3. Insert event.
+            let retention_bucket = match &self.tiers {
+                Some(b) => b.retention_bucket_for_tenant(&tenant_id).await.to_string(),
+                None => "30d".to_string(),
+            };
             let record = ConversionEvent {
                 meta: ConversionMeta {
                     tenant_id,
                     link_id: link_id.clone(),
                     source_id,
                     conversion_type: event.conversion_type.clone(),
+                    retention_bucket,
                 },
                 occurred_at: event.occurred_at.unwrap_or_else(DateTime::now),
                 user_id: event.user_id.clone(),

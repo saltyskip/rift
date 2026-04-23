@@ -85,6 +85,8 @@ pub async fn spawn_app() -> TestApp {
         Some(domains_repo.clone() as Arc<dyn rift::services::domains::repo::DomainsRepository>),
         threat_feed.clone(),
         config.public_url.clone(),
+        None,
+        None,
     )));
 
     let conversions_repo: Arc<dyn rift::services::conversions::repo::ConversionsRepository> =
@@ -94,7 +96,13 @@ pub async fn spawn_app() -> TestApp {
             conversions_repo.clone(),
             links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>,
             Some(webhook_dispatcher.clone() as Arc<dyn WebhookDispatcher>),
+            None,
+            None,
         ),
+    ));
+
+    let tenants_service = Arc::new(rift::services::auth::tenants::service::TenantsService::new(
+        tenants_repo.clone() as Arc<dyn TenantsRepository>,
     ));
 
     let state = Arc::new(AppState {
@@ -117,11 +125,25 @@ pub async fn spawn_app() -> TestApp {
         sdk_keys_repo: Some(sdk_keys_repo.clone()
             as Arc<dyn rift::services::auth::publishable_keys::repo::SdkKeysRepository>),
         links_service,
+        domains_service: Some(Arc::new(
+            rift::services::domains::service::DomainsService::new(
+                domains_repo.clone() as Arc<dyn rift::services::domains::repo::DomainsRepository>,
+                None,
+            ),
+        )),
+        webhooks_service: Some(Arc::new(
+            rift::services::webhooks::service::WebhooksService::new(
+                webhooks_repo.clone()
+                    as Arc<dyn rift::services::webhooks::repo::WebhooksRepository>,
+                None,
+            ),
+        )),
         users_service: Some(Arc::new(
             rift::services::auth::users::service::UsersService::new(
-                tenants_repo.clone() as Arc<dyn TenantsRepository>,
+                tenants_service.clone(),
                 users_repo.clone() as Arc<dyn UsersRepository>,
                 secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>,
+                None,
             ),
         )),
         secret_keys_service: Some(Arc::new(
@@ -132,6 +154,11 @@ pub async fn spawn_app() -> TestApp {
         )),
         conversions_repo: Some(conversions_repo),
         conversions_service,
+        billing_service: Some(Arc::new(
+            rift::services::billing::service::BillingService::new(
+                tenants_repo.clone() as Arc<dyn TenantsRepository>
+            ),
+        )),
     });
 
     let app = rift::api::router(state.clone())
@@ -208,7 +235,7 @@ pub async fn seed_api_key_with(app: &TestApp, raw_key: &str) -> (String, ObjectI
     let tenant_doc = TenantDoc {
         id: Some(tenant_id),
         monthly_quota: 1000,
-        created_at: mongodb::bson::DateTime::now(),
+        ..TenantDoc::default()
     };
     app.tenants_repo.create(&tenant_doc).await.unwrap();
 

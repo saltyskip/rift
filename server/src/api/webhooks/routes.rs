@@ -9,8 +9,6 @@ use crate::api::auth::middleware::TenantId;
 use crate::app::AppState;
 use crate::services::webhooks::models::*;
 
-const MAX_WEBHOOKS_PER_TENANT: usize = 2;
-
 #[utoipa::path(
     post,
     path = "/v1/webhooks",
@@ -28,7 +26,7 @@ pub async fn create_webhook(
     axum::Extension(tenant): axum::Extension<TenantId>,
     Json(req): Json<CreateWebhookRequest>,
 ) -> Response {
-    let Some(repo) = &state.webhooks_repo else {
+    let Some(svc) = &state.webhooks_service else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Database not configured", "code": "no_database" })),
@@ -52,50 +50,44 @@ pub async fn create_webhook(
             .into_response();
     }
 
-    // Enforce per-tenant webhook limit.
-    let existing = repo.list_by_tenant(&tenant.0).await.unwrap_or_default();
-    if existing.len() >= MAX_WEBHOOKS_PER_TENANT {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": format!("Maximum of {} webhooks per tenant", MAX_WEBHOOKS_PER_TENANT), "code": "webhook_limit" })),
-        )
-            .into_response();
-    }
-
     let secret = generate_secret();
     let now = DateTime::now();
     let id = ObjectId::new();
 
-    let webhook = Webhook {
-        id,
-        tenant_id: tenant.0,
-        url: req.url.clone(),
-        secret: secret.clone(),
-        events: req.events.clone(),
-        active: true,
-        created_at: now,
-    };
-
-    if let Err(e) = repo.create_webhook(webhook).await {
-        tracing::error!("Failed to create webhook: {e}");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "Internal error", "code": "db_error" })),
+    match svc
+        .create_webhook(
+            tenant.0,
+            id,
+            req.url.clone(),
+            secret.clone(),
+            req.events.clone(),
+            now,
         )
-            .into_response();
+        .await
+    {
+        Ok(_) => (
+            StatusCode::CREATED,
+            Json(CreateWebhookResponse {
+                id: id.to_hex(),
+                url: req.url,
+                events: req.events,
+                secret,
+                created_at: now.try_to_rfc3339_string().unwrap_or_default(),
+            }),
+        )
+            .into_response(),
+        Err(crate::services::webhooks::service::WebhookError::QuotaExceeded(q)) => {
+            crate::api::billing::quota_response::to_response(q)
+        }
+        Err(crate::services::webhooks::service::WebhookError::Internal(e)) => {
+            tracing::error!("Failed to create webhook: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
+        }
     }
-
-    (
-        StatusCode::CREATED,
-        Json(CreateWebhookResponse {
-            id: id.to_hex(),
-            url: req.url,
-            events: req.events,
-            secret,
-            created_at: now.try_to_rfc3339_string().unwrap_or_default(),
-        }),
-    )
-        .into_response()
 }
 
 #[utoipa::path(

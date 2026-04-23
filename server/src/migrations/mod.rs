@@ -1,4 +1,5 @@
 pub mod m001_auth_split;
+pub mod m002_billing_foundation;
 
 use async_trait::async_trait;
 use mongodb::Database;
@@ -11,7 +12,10 @@ pub trait Migration: Send + Sync {
 }
 
 pub fn all() -> Vec<Box<dyn Migration>> {
-    vec![Box::new(m001_auth_split::M001AuthSplit)]
+    vec![
+        Box::new(m001_auth_split::M001AuthSplit),
+        Box::new(m002_billing_foundation::M002BillingFoundation),
+    ]
 }
 
 pub fn get_by_name(name: &str) -> Option<Box<dyn Migration>> {

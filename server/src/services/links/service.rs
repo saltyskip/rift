@@ -8,6 +8,8 @@ use super::models::*;
 use super::repo::LinksRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
+use crate::services::billing::quota::{QuotaChecker, QuotaError, Resource};
+use crate::services::billing::service::TierResolver;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 
@@ -25,7 +27,14 @@ pub enum LinkError {
     NotFound,
     NoVerifiedDomain,
     EmptyUpdate,
+    QuotaExceeded(QuotaError),
     Internal(String),
+}
+
+impl From<QuotaError> for LinkError {
+    fn from(err: QuotaError) -> Self {
+        LinkError::QuotaExceeded(err)
+    }
 }
 
 impl fmt::Display for LinkError {
@@ -43,6 +52,7 @@ impl fmt::Display for LinkError {
                 write!(f, "Custom IDs require a verified custom domain")
             }
             Self::EmptyUpdate => write!(f, "No fields to update"),
+            Self::QuotaExceeded(e) => write!(f, "{e}"),
             Self::Internal(e) => write!(f, "Internal error: {e}"),
         }
     }
@@ -62,6 +72,7 @@ impl LinkError {
             Self::NotFound => "not_found",
             Self::NoVerifiedDomain => "no_verified_domain",
             Self::EmptyUpdate => "empty_update",
+            Self::QuotaExceeded(_) => "quota_exceeded",
             Self::Internal(_) => "db_error",
         }
     }
@@ -74,6 +85,8 @@ pub struct LinksService {
     domains_repo: Option<Arc<dyn DomainsRepository>>,
     threat_feed: ThreatFeed,
     public_url: String,
+    quota: Option<Arc<dyn QuotaChecker>>,
+    tiers: Option<Arc<dyn TierResolver>>,
 }
 
 impl LinksService {
@@ -82,12 +95,62 @@ impl LinksService {
         domains_repo: Option<Arc<dyn DomainsRepository>>,
         threat_feed: ThreatFeed,
         public_url: String,
+        quota: Option<Arc<dyn QuotaChecker>>,
+        tiers: Option<Arc<dyn TierResolver>>,
     ) -> Self {
         Self {
             links_repo,
             domains_repo,
             threat_feed,
             public_url,
+            quota,
+            tiers,
+        }
+    }
+
+    /// Fire-and-forget click recording. Runs the `TrackEvent` quota check
+    /// (which also increments the atomic counter), resolves the tenant's
+    /// retention bucket, then persists. Failures are logged, never
+    /// propagated — the caller (public redirect path) must not break on a
+    /// DB hiccup or a quota rejection. The counter's conditional `$inc`
+    /// already keeps over-limit tenants from spilling past their cap.
+    ///
+    /// Lives here (not in route handlers) because both the public resolver
+    /// and the SDK click endpoint record clicks, and a future MCP / CLI
+    /// transport must not be able to bypass quota by inventing its own
+    /// path to `LinksRepository::record_click`.
+    pub async fn record_click(
+        &self,
+        tenant_id: ObjectId,
+        link_id: &str,
+        user_agent: Option<String>,
+        referer: Option<String>,
+        platform: Option<String>,
+    ) {
+        if let Some(q) = &self.quota {
+            if let Err(e) = q.check(&tenant_id, Resource::TrackEvent).await {
+                tracing::info!(error = %e, "click_track_quota_skipped");
+            }
+        }
+
+        let retention_bucket = match &self.tiers {
+            Some(b) => b.retention_bucket_for_tenant(&tenant_id).await.to_string(),
+            None => "30d".to_string(),
+        };
+
+        if let Err(e) = self
+            .links_repo
+            .record_click(
+                tenant_id,
+                link_id,
+                user_agent,
+                referer,
+                platform,
+                retention_bucket,
+            )
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to record click");
         }
     }
 
@@ -97,6 +160,12 @@ impl LinksService {
         tenant_id: ObjectId,
         req: CreateLinkRequest,
     ) -> Result<CreateLinkResponse, LinkError> {
+        // Quota enforcement lives here (service layer) so MCP tool invocations
+        // and HTTP route handlers both hit the same choke point. CLAUDE.md
+        // codifies this rule — see "Quota enforcement" section there.
+        if let Some(q) = &self.quota {
+            q.check(&tenant_id, Resource::CreateLink).await?;
+        }
         let has_verified_domain = self.tenant_has_verified_domain(&tenant_id).await;
 
         let link_id = match &req.custom_id {
@@ -755,6 +824,11 @@ mod tests {
             Ok(links.len() < len_before)
         }
 
+        async fn count_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+            let links = self.links.lock().unwrap();
+            Ok(links.iter().filter(|l| l.tenant_id == *tenant_id).count() as u64)
+        }
+
         async fn list_links_by_tenant(
             &self,
             tenant_id: &ObjectId,
@@ -777,6 +851,7 @@ mod tests {
             _user_agent: Option<String>,
             _referer: Option<String>,
             _platform: Option<String>,
+            _retention_bucket: String,
         ) -> Result<(), String> {
             Ok(())
         }
@@ -875,6 +950,10 @@ mod tests {
             }
         }
 
+        async fn count_by_tenant(&self, _tenant_id: &ObjectId) -> Result<u64, String> {
+            Ok(if self.has_verified { 1 } else { 0 })
+        }
+
         async fn delete_domain(
             &self,
             _tenant_id: &ObjectId,
@@ -905,6 +984,8 @@ mod tests {
             Some(domains),
             ThreatFeed::new(),
             "https://riftl.ink".to_string(),
+            None,
+            None,
         )
     }
 

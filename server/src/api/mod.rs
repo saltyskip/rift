@@ -1,5 +1,6 @@
 pub mod apps;
 pub mod auth;
+pub mod billing;
 pub mod conversions;
 pub mod domains;
 pub mod health;
@@ -73,6 +74,8 @@ use crate::app::AppState;
         conversions::routes::get_source,
         conversions::routes::delete_source,
         conversions::routes::sdk_track_conversion,
+        // Billing — plan status, Stripe checkout, webhooks
+        billing::routes::get_billing_status,
         // System
         health::routes::health,
     ),
@@ -129,6 +132,11 @@ use crate::app::AppState;
         crate::api::conversions::routes::SdkConversionRequest,
         crate::services::conversions::models::ListSourcesResponse,
         crate::services::conversions::models::ConversionDetail,
+        crate::api::billing::routes::BillingStatusResponse,
+        crate::api::billing::routes::LimitsView,
+        crate::services::auth::tenants::repo::PlanTier,
+        crate::services::auth::tenants::repo::BillingMethod,
+        crate::services::auth::tenants::repo::SubscriptionStatus,
     )),
     security(
         ("api_key" = []),
@@ -145,6 +153,7 @@ use crate::app::AppState;
         (name = "Attribution", description = "Click tracking, install reporting, and timeseries analytics"),
         (name = "Webhooks", description = "Real-time event notifications for clicks, attributions, and conversions"),
         (name = "Conversions", description = "Backend-only conversion tracking via webhook sources"),
+        (name = "Billing", description = "Plan status, upgrades, and subscription lifecycle"),
         (name = "System", description = "Health checks and operational endpoints"),
     )
 )]
@@ -177,6 +186,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                     { "name": "Configuration", "tags": ["Domains", "Apps"] },
                     { "name": "Links", "tags": ["Links", "Attribution"] },
                     { "name": "Integrations", "tags": ["Webhooks", "Conversions"] },
+                    { "name": "Billing", "tags": ["Billing"] },
                     { "name": "System", "tags": ["System"] },
                 ]),
             )
@@ -197,6 +207,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(apps::router(state.clone()))
         .merge(webhooks::router(state.clone()))
         .merge(conversions::router(state.clone()))
+        .merge(billing::router(state.clone()))
         .merge(openapi_json)
         .merge(sdk)
 }
