@@ -1,4 +1,4 @@
-name: CI
+name: Server CI
 
 on:
   pull_request:
@@ -46,7 +46,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --config server/fly.sandbox.toml --remote-only
+      - name: Deploy sandbox
+        working-directory: server
+        run: flyctl deploy --config fly.sandbox.toml --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       - name: Wait for sandbox to be healthy
