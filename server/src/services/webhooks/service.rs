@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use super::models::{Webhook, WebhookEventType};
 use super::repo::WebhooksRepository;
-use crate::services::billing::quota::{QuotaError, QuotaService, Resource};
+use crate::services::billing::quota::{QuotaChecker, QuotaError, Resource};
 
 #[derive(Debug)]
 pub enum WebhookError {
@@ -33,11 +33,11 @@ impl std::fmt::Display for WebhookError {
 
 pub struct WebhooksService {
     repo: Arc<dyn WebhooksRepository>,
-    quota: Option<Arc<QuotaService>>,
+    quota: Option<Arc<dyn QuotaChecker>>,
 }
 
 impl WebhooksService {
-    pub fn new(repo: Arc<dyn WebhooksRepository>, quota: Option<Arc<QuotaService>>) -> Self {
+    pub fn new(repo: Arc<dyn WebhooksRepository>, quota: Option<Arc<dyn QuotaChecker>>) -> Self {
         Self { repo, quota }
     }
 

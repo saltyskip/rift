@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use super::models::{Domain, DomainRole};
 use super::repo::DomainsRepository;
-use crate::services::billing::quota::{QuotaError, QuotaService, Resource};
+use crate::services::billing::quota::{QuotaChecker, QuotaError, Resource};
 
 #[derive(Debug)]
 pub enum DomainError {
@@ -38,11 +38,11 @@ impl std::fmt::Display for DomainError {
 
 pub struct DomainsService {
     repo: Arc<dyn DomainsRepository>,
-    quota: Option<Arc<QuotaService>>,
+    quota: Option<Arc<dyn QuotaChecker>>,
 }
 
 impl DomainsService {
-    pub fn new(repo: Arc<dyn DomainsRepository>, quota: Option<Arc<QuotaService>>) -> Self {
+    pub fn new(repo: Arc<dyn DomainsRepository>, quota: Option<Arc<dyn QuotaChecker>>) -> Self {
         Self { repo, quota }
     }
 

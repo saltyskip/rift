@@ -306,7 +306,7 @@ async fn run_server(cfg: Config) {
     // conversions_service is built after quota_service — it takes both
     // billing (for retention bucketing) and quota (for TrackEvent check).
 
-    let quota_service = match (
+    let quota_service: Option<Arc<dyn crate::services::billing::quota::QuotaChecker>> = match (
         &billing_service,
         &event_counters_repo,
         &links_repo,
@@ -331,9 +331,10 @@ async fn run_server(cfg: Config) {
                 &std::env::var("QUOTA_ENFORCEMENT").unwrap_or_default(),
             );
             tracing::info!(mode = ?mode, "quota_enforcement_mode");
+            let tiers = b.clone() as Arc<dyn crate::services::billing::service::TierResolver>;
             Some(Arc::new(
                 crate::services::billing::quota::QuotaService::new(
-                    b.clone(),
+                    tiers,
                     counters.clone(),
                     resource_counts,
                     mode,
@@ -346,6 +347,11 @@ async fn run_server(cfg: Config) {
     // LinksService + UsersService need quota_service, so construct them
     // after the match above. Service-layer enforcement is the contract:
     // MCP tool invocations hit the same checks as HTTP route handlers.
+    let tier_resolver: Option<Arc<dyn crate::services::billing::service::TierResolver>> =
+        billing_service
+            .as_ref()
+            .map(|b| b.clone() as Arc<dyn crate::services::billing::service::TierResolver>);
+
     let links_service = links_repo.as_ref().map(|repo| {
         Arc::new(crate::services::links::service::LinksService::new(
             repo.clone(),
@@ -353,7 +359,7 @@ async fn run_server(cfg: Config) {
             threat_feed.clone(),
             cfg.public_url.clone(),
             quota_service.clone(),
-            billing_service.clone(),
+            tier_resolver.clone(),
         ))
     });
 
@@ -388,7 +394,7 @@ async fn run_server(cfg: Config) {
             c.clone(),
             l.clone(),
             webhook_dispatcher.clone(),
-            billing_service.clone(),
+            tier_resolver.clone(),
             quota_service.clone(),
         ))),
         _ => None,

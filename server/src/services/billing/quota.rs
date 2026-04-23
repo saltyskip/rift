@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use chrono::{Datelike, Utc};
 use mongodb::bson::oid::ObjectId;
 use std::sync::Arc;
@@ -5,7 +6,22 @@ use std::sync::Arc;
 use super::limits::{limits_for, PlanLimits};
 use super::models::BillingError;
 use super::repos::event_counters::EventCountersRepository;
-use super::service::BillingService;
+use super::service::TierResolver;
+
+/// The quota decision surface used by every service that creates a resource
+/// or tracks an event.
+///
+/// Services inject `Arc<dyn QuotaChecker>` rather than the concrete
+/// `QuotaService`, which keeps the internal fanout (billing, event
+/// counters, per-domain resource counts) invisible at the call site.
+///
+/// Production wiring uses `QuotaService`; tests use `NoopQuotaChecker`
+/// (always Ok) or `DenyQuotaChecker` (configurable rejection) — see
+/// `#[cfg(test)]` at the bottom of this file.
+#[async_trait]
+pub trait QuotaChecker: Send + Sync {
+    async fn check(&self, tenant_id: &ObjectId, resource: Resource) -> Result<(), QuotaError>;
+}
 
 /// Quotable resource categories. Each maps to a specific enforcement path.
 /// `TrackEvent` covers both click and conversion writes — they share the
@@ -100,12 +116,10 @@ impl EnforcementMode {
     }
 }
 
-/// The quota gatekeeper. All enforcement points in the service layer call
-/// this. MCP tools and future transports call the same entry points —
-/// there's no HTTP middleware equivalent on purpose, so new transports can't
-/// accidentally bypass enforcement.
+/// The concrete production quota gatekeeper. Injected behind
+/// `Arc<dyn QuotaChecker>` so services don't see the internal fanout.
 pub struct QuotaService {
-    billing: Arc<BillingService>,
+    billing: Arc<dyn TierResolver>,
     counters: Arc<dyn EventCountersRepository>,
     resource_counts: Arc<dyn ResourceCounts>,
     mode: EnforcementMode,
@@ -113,7 +127,7 @@ pub struct QuotaService {
 
 impl QuotaService {
     pub fn new(
-        billing: Arc<BillingService>,
+        billing: Arc<dyn TierResolver>,
         counters: Arc<dyn EventCountersRepository>,
         resource_counts: Arc<dyn ResourceCounts>,
         mode: EnforcementMode,
@@ -125,13 +139,16 @@ impl QuotaService {
             mode,
         }
     }
+}
 
+#[async_trait]
+impl QuotaChecker for QuotaService {
     /// Observe (and for `TrackEvent`, atomically record) a quota check.
     ///
     /// - `LogOnly`: returns `Ok(())` always, logs would-be rejections.
     /// - `Enforce`: returns `Err(QuotaError::Exceeded { ... })` when over
     ///   limit. Caller renders as `402 Payment Required`.
-    pub async fn check(&self, tenant_id: &ObjectId, resource: Resource) -> Result<(), QuotaError> {
+    async fn check(&self, tenant_id: &ObjectId, resource: Resource) -> Result<(), QuotaError> {
         let tier = self.billing.effective_tier(tenant_id).await?;
         let limits = limits_for(tier);
         let max = match limit_for_resource(&limits, resource) {
@@ -207,10 +224,46 @@ fn current_period() -> String {
     format!("{:04}-{:02}", now.year(), now.month())
 }
 
+// ── Test-only helpers ──
+//
+// `NoopQuotaChecker` is used by the integration test harness so tests that
+// don't care about quota don't need to wire repos. `DenyQuotaChecker` is used
+// by tests that want to verify "what happens when over limit" without
+// standing up the full counter/billing stack. Gated behind the
+// `test-harness` feature so they don't show up in production builds.
+#[cfg(any(test, feature = "test-harness"))]
+pub struct NoopQuotaChecker;
+
+#[cfg(any(test, feature = "test-harness"))]
+#[async_trait]
+impl QuotaChecker for NoopQuotaChecker {
+    async fn check(&self, _tenant_id: &ObjectId, _resource: Resource) -> Result<(), QuotaError> {
+        Ok(())
+    }
+}
+
+#[cfg(any(test, feature = "test-harness"))]
+pub struct DenyQuotaChecker {
+    pub limit: u64,
+}
+
+#[cfg(any(test, feature = "test-harness"))]
+#[async_trait]
+impl QuotaChecker for DenyQuotaChecker {
+    async fn check(&self, _tenant_id: &ObjectId, resource: Resource) -> Result<(), QuotaError> {
+        Err(QuotaError::Exceeded {
+            resource,
+            limit: self.limit,
+            current: self.limit,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::services::auth::tenants::repo::{PlanTier, TenantDoc, TenantsRepository};
+    use crate::services::billing::service::BillingService;
     use async_trait::async_trait;
     use std::sync::Mutex;
 
@@ -321,7 +374,7 @@ mod tests {
         let counters = Arc::new(MockCounters::default());
         let billing = Arc::new(BillingService::new(
             tenants.clone() as Arc<dyn TenantsRepository>
-        ));
+        )) as Arc<dyn TierResolver>;
         let q = QuotaService::new(
             billing,
             counters.clone() as Arc<dyn EventCountersRepository>,
@@ -409,6 +462,31 @@ mod tests {
         let (q, _, _, _) = setup_with_plan(PlanTier::Free).await;
         let err = q.check(&ObjectId::new(), Resource::CreateLink).await;
         assert!(matches!(err, Err(QuotaError::Billing(_))));
+    }
+
+    #[tokio::test]
+    async fn noop_checker_always_ok() {
+        let c = NoopQuotaChecker;
+        c.check(&ObjectId::new(), Resource::CreateLink)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn deny_checker_always_errs() {
+        let c = DenyQuotaChecker { limit: 42 };
+        let err = c
+            .check(&ObjectId::new(), Resource::CreateLink)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            QuotaError::Exceeded {
+                resource: Resource::CreateLink,
+                limit: 42,
+                ..
+            }
+        ));
     }
 
     #[test]

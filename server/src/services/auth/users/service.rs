@@ -8,7 +8,7 @@ use crate::services::auth::keys;
 use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::mint_for_tenant;
 use crate::services::auth::tenants::service::TenantsService;
-use crate::services::billing::quota::{QuotaError, QuotaService, Resource};
+use crate::services::billing::quota::{QuotaChecker, QuotaError, Resource};
 
 // ── Error ──
 
@@ -94,7 +94,7 @@ pub struct UsersService {
     tenants_service: Arc<TenantsService>,
     users_repo: Arc<dyn UsersRepository>,
     sk_repo: Arc<dyn SecretKeysRepository>,
-    quota: Option<Arc<QuotaService>>,
+    quota: Option<Arc<dyn QuotaChecker>>,
 }
 
 impl UsersService {
@@ -102,7 +102,7 @@ impl UsersService {
         tenants_service: Arc<TenantsService>,
         users_repo: Arc<dyn UsersRepository>,
         sk_repo: Arc<dyn SecretKeysRepository>,
-        quota: Option<Arc<QuotaService>>,
+        quota: Option<Arc<dyn QuotaChecker>>,
     ) -> Self {
         Self {
             tenants_service,
