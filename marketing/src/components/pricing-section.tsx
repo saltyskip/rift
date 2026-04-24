@@ -44,7 +44,7 @@ export function PricingSection() {
             >
               {audience === "human"
                 ? "Stripe · cancel anytime"
-                : "x402 · USDC · no card, no email required"}
+                : "x402 · USDC · coming soon"}
             </motion.span>
           </AnimatePresence>
         </motion.div>
@@ -121,21 +121,22 @@ function TierCard({
 }) {
   const price = tier[audience];
   const isPaid = tier.slug !== "free";
-  const cta = !isPaid
-    ? "Start free"
-    : audience === "agent"
-      ? "Pay with wallet"
+
+  // Agent-lane payment flows (x402 subscribe, x402 free signup w/o email) are
+  // not shipped yet. Render every agent-lane card as a disabled "Coming soon"
+  // chip instead of a live CTA. Human lane behaves normally.
+  const agentComingSoon = audience === "agent";
+
+  const cta = agentComingSoon
+    ? "Coming soon"
+    : !isPaid
+      ? "Start free"
       : `Get ${tier.name}`;
 
-  // Destinations:
-  //   Free (both lanes) → /signup (install + Free web signup form)
-  //   Paid human → /checkout?tier=<slug> (magic-link paid flow)
-  //   Paid agent → /docs#x402 (the curl-based x402 subscribe recipe)
-  const ctaHref = !isPaid
-    ? "/signup"
-    : audience === "agent"
-      ? "/docs#agents"
-      : `/checkout?tier=${tier.slug}`;
+  // Destinations (human lane only):
+  //   Free → /signup (install + Free web signup form)
+  //   Paid → /checkout?tier=<slug> (magic-link paid flow)
+  const ctaHref = !isPaid ? "/signup" : `/checkout?tier=${tier.slug}`;
 
   return (
     <motion.div
@@ -211,16 +212,25 @@ function TierCard({
         ))}
       </ul>
 
-      <a
-        href={ctaHref}
-        className={`text-center text-[13px] font-medium px-4 py-2 rounded-lg transition-colors ${
-          tier.accent
-            ? "bg-[#2dd4bf] text-[#042f2e] hover:bg-[#5eead4]"
-            : "border border-[#222225] text-[#a1a1aa] hover:border-[#2dd4bf]/30 hover:text-[#fafafa]"
-        }`}
-      >
-        {cta}
-      </a>
+      {agentComingSoon ? (
+        <span
+          aria-disabled="true"
+          className="text-center text-[13px] font-medium px-4 py-2 rounded-lg border border-dashed border-[#222225] text-[#52525b] cursor-not-allowed"
+        >
+          {cta}
+        </span>
+      ) : (
+        <a
+          href={ctaHref}
+          className={`text-center text-[13px] font-medium px-4 py-2 rounded-lg transition-colors ${
+            tier.accent
+              ? "bg-[#2dd4bf] text-[#042f2e] hover:bg-[#5eead4]"
+              : "border border-[#222225] text-[#a1a1aa] hover:border-[#2dd4bf]/30 hover:text-[#fafafa]"
+          }`}
+        >
+          {cta}
+        </a>
+      )}
 
       {tier.enterprise && (
         <a
