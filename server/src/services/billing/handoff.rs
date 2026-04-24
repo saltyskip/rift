@@ -293,8 +293,7 @@ impl BillingHandoffService {
                 let customer_id = tenant.as_ref().and_then(|t| t.stripe_customer_id.clone());
 
                 let success_url = format!("{}/welcome", self.config.marketing_url);
-                let cancel_url =
-                    format!("{}/?error=cancelled#pricing", self.config.marketing_url);
+                let cancel_url = format!("{}/?error=cancelled#pricing", self.config.marketing_url);
 
                 let opts = HandoffCheckoutOpts {
                     tier: plan_tier,
