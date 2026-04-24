@@ -13,7 +13,16 @@ pub struct Config {
     pub resend_from_email: String,
 
     // ── Auth / rate limits ──
+    /// Public-facing URL of *this* API server. Used to build links that must
+    /// hit an API route (email-verify URL, magic-link redeem URL). In prod
+    /// this is `https://api.riftl.ink`.
     pub public_url: String,
+    /// Public-facing URL of the *marketing* site. Used to build redirect
+    /// targets that land on a marketing page (Stripe success/cancel,
+    /// link-expired banner, billing-portal return). In prod this is
+    /// `https://riftl.ink`. Falls back to `public_url` for dev so a solo
+    /// server still works end-to-end.
+    pub marketing_url: String,
     pub free_daily_limit: i64,
 
     // ── Sentry ──
@@ -65,6 +74,11 @@ impl Config {
 
             public_url: std::env::var("PUBLIC_URL")
                 .unwrap_or_else(|_| "http://localhost:3000".to_string()),
+            // MARKETING_URL is separate because PUBLIC_URL points at the API
+            // domain in prod. Fall back to PUBLIC_URL for local dev.
+            marketing_url: std::env::var("MARKETING_URL").unwrap_or_else(|_| {
+                std::env::var("PUBLIC_URL").unwrap_or_else(|_| "http://localhost:3000".to_string())
+            }),
             free_daily_limit: std::env::var("FREE_DAILY_LIMIT")
                 .ok()
                 .and_then(|v| v.parse().ok())

@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import { FreeSignupForm } from "@/components/free-signup-form";
-import { Navbar } from "@/components/navbar";
-import { Footer } from "@/components/footer";
 
 export const metadata: Metadata = {
   title: "Sign up for Rift — Deep links for humans and agents",
@@ -14,10 +12,8 @@ const INSTALL_CMD =
 
 export default function SignupPage() {
   return (
-    <>
-      <Navbar />
-      <main className="pt-24 pb-20 px-6">
-        <div className="mx-auto max-w-3xl">
+    <main className="pt-24 pb-20 px-6">
+      <div className="mx-auto max-w-3xl">
           <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">
             Get started
           </p>
@@ -85,9 +81,7 @@ rift subscribe pro   # when you outgrow Free`}</code>
 rift whoami    # confirm this machine is connected`}</code>
             </pre>
           </section>
-        </div>
-      </main>
-      <Footer />
-    </>
+      </div>
+    </main>
   );
 }

@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { MagicLinkForm } from "@/components/magic-link-form";
-import { Navbar } from "@/components/navbar";
-import { Footer } from "@/components/footer";
 import { getTierBySlug, isPaidTierSlug, type PaidTierSlug } from "@/lib/tiers";
 
 export const metadata: Metadata = {
@@ -22,37 +20,31 @@ export default async function CheckoutPage({
 
   if (!tier) {
     return (
-      <>
-        <Navbar />
-        <main className="pt-32 pb-20 px-6 min-h-[60vh]">
-          <div className="mx-auto max-w-xl text-center">
-            <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">
-              Pick a tier
-            </p>
-            <h1 className="text-3xl font-semibold tracking-[-0.03em] mb-4">
-              No tier selected.
-            </h1>
-            <p className="text-[14px] text-[#71717a] mb-8">
-              Head back to pricing to pick the right plan for your workload.
-            </p>
-            <Link
-              href="/#pricing"
-              className="inline-block bg-[#2dd4bf] text-[#042f2e] text-[14px] font-semibold px-5 py-2.5 rounded-lg hover:bg-[#5eead4] transition-colors"
-            >
-              See pricing
-            </Link>
-          </div>
-        </main>
-        <Footer />
-      </>
+      <main className="pt-32 pb-20 px-6 min-h-[60vh]">
+        <div className="mx-auto max-w-xl text-center">
+          <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">
+            Pick a tier
+          </p>
+          <h1 className="text-3xl font-semibold tracking-[-0.03em] mb-4">
+            No tier selected.
+          </h1>
+          <p className="text-[14px] text-[#71717a] mb-8">
+            Head back to pricing to pick the right plan for your workload.
+          </p>
+          <Link
+            href="/#pricing"
+            className="inline-block bg-[#2dd4bf] text-[#042f2e] text-[14px] font-semibold px-5 py-2.5 rounded-lg hover:bg-[#5eead4] transition-colors"
+          >
+            See pricing
+          </Link>
+        </div>
+      </main>
     );
   }
 
   return (
-    <>
-      <Navbar />
-      <main className="pt-24 pb-20 px-6">
-        <div className="mx-auto max-w-3xl grid md:grid-cols-[1.1fr_1fr] gap-10">
+    <main className="pt-24 pb-20 px-6">
+      <div className="mx-auto max-w-3xl grid md:grid-cols-[1.1fr_1fr] gap-10">
           <section>
             <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">
               Subscribe
@@ -127,10 +119,8 @@ export default async function CheckoutPage({
                 </p>
               </div>
             </div>
-          </aside>
-        </div>
-      </main>
-      <Footer />
-    </>
+        </aside>
+      </div>
+    </main>
   );
 }
