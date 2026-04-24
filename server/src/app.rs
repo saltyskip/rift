@@ -10,6 +10,7 @@ use crate::services::auth::secret_keys::service::SecretKeysService;
 use crate::services::auth::tenants::repo::TenantsRepository;
 use crate::services::auth::usage::repo::UsageRepository;
 use crate::services::auth::users::service::UsersService;
+use crate::services::billing::magic_links_service::MagicLinksService;
 use crate::services::billing::repos::stripe_webhook_dedup::StripeWebhookDedupRepository;
 use crate::services::billing::service::BillingService;
 use crate::services::conversions::repo::ConversionsRepository;
@@ -46,4 +47,5 @@ pub struct AppState {
     pub secret_keys_service: Option<Arc<SecretKeysService>>,
     pub conversions_service: Option<Arc<ConversionsService>>,
     pub billing_service: Option<Arc<BillingService>>,
+    pub magic_links_service: Option<Arc<MagicLinksService>>,
 }

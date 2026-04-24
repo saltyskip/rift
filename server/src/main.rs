@@ -163,12 +163,13 @@ async fn run_server(cfg: Config) {
         conversions_repo,
         event_counters_repo,
         stripe_webhook_dedup_repo,
+        magic_links_repo,
     ) = if cfg.mongo_uri.is_empty() {
         tracing::warn!(
             "MONGO_URI not set — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
         );
         (
-            None, None, None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None, None, None,
         )
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
@@ -213,6 +214,12 @@ async fn run_server(cfg: Config) {
                     )
                     .await,
                 );
+                let magic_links: Arc<
+                    dyn crate::services::billing::repos::magic_links::MagicLinksRepository,
+                > = Arc::new(
+                    crate::services::billing::repos::magic_links::MagicLinksRepo::new(&database)
+                        .await,
+                );
                 (
                     Some(tenants),
                     Some(users),
@@ -226,6 +233,7 @@ async fn run_server(cfg: Config) {
                     Some(conversions),
                     Some(event_counters),
                     Some(stripe_dedup),
+                    Some(magic_links),
                 )
             }
             None => {
@@ -233,7 +241,7 @@ async fn run_server(cfg: Config) {
                     "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
                 );
                 (
-                    None, None, None, None, None, None, None, None, None, None, None, None,
+                    None, None, None, None, None, None, None, None, None, None, None, None, None,
                 )
             }
         }
@@ -302,6 +310,32 @@ async fn run_server(cfg: Config) {
             t.clone(),
         ))
     });
+
+    let magic_links_service = match (&magic_links_repo, &tenants_repo) {
+        (Some(ml), Some(t)) => {
+            let config = crate::services::billing::magic_links_service::MagicLinksConfig {
+                resend_api_key: cfg.resend_api_key.clone(),
+                resend_from_email: cfg.resend_from_email.clone(),
+                public_url: cfg.public_url.clone(),
+                stripe: crate::services::billing::stripe_client::StripeConfig {
+                    secret_key: cfg.stripe_secret_key.clone(),
+                    price_id_pro: cfg.stripe_price_id_pro.clone(),
+                    price_id_business: cfg.stripe_price_id_business.clone(),
+                    price_id_scale: cfg.stripe_price_id_scale.clone(),
+                    success_url: cfg.stripe_success_url.clone(),
+                    cancel_url: cfg.stripe_cancel_url.clone(),
+                },
+            };
+            Some(Arc::new(
+                crate::services::billing::magic_links_service::MagicLinksService::new(
+                    ml.clone(),
+                    t.clone(),
+                    config,
+                ),
+            ))
+        }
+        _ => None,
+    };
 
     // conversions_service is built after quota_service — it takes both
     // billing (for retention bucketing) and quota (for TrackEvent check).
@@ -422,6 +456,7 @@ async fn run_server(cfg: Config) {
         secret_keys_service,
         conversions_service,
         billing_service,
+        magic_links_service,
     });
     // quota_service is consumed by the per-domain services above; it's
     // intentionally not stored in AppState (no route-level callers).

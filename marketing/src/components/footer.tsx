@@ -29,6 +29,7 @@ export function Footer() {
                 ["Quick Setup", "/docs"],
                 ["API Reference", "/api-reference"],
                 ["Pricing", "/#pricing"],
+                ["Manage billing", "/manage"],
               ],
               Resources: [
                 ["Blog", "/blog"],

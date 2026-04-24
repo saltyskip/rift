@@ -168,6 +168,7 @@ pub async fn spawn_app() -> TestApp {
                 tenants_repo.clone() as Arc<dyn TenantsRepository>
             ),
         )),
+        magic_links_service: None,
     });
 
     let app = rift::api::router(state.clone())

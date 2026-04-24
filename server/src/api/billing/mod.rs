@@ -19,8 +19,18 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/v1/billing/stripe/checkout",
             post(routes::create_stripe_checkout),
         )
+        .route(
+            "/v1/billing/stripe/portal",
+            post(routes::create_stripe_portal),
+        )
         .route("/v1/billing/cancel", post(routes::cancel_subscription))
         .layer(middleware::from_fn_with_state(state, auth_gate));
+
+    // Public magic-link endpoints. No bearer auth — identity is proven by
+    // control of the emailed token. Rate limiting is inline in the handler.
+    let public = Router::new()
+        .route("/v1/billing/magic-link", post(routes::create_magic_link))
+        .route("/v1/billing/go", get(routes::redeem_magic_link));
 
     // Stripe webhook is public — auth comes from the HMAC signature over the
     // raw body, not a Bearer key. Must NOT go through auth_gate so the handler
@@ -30,5 +40,8 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         post(stripe_webhook::receive_stripe_webhook),
     );
 
-    Router::new().merge(authenticated).merge(webhook)
+    Router::new()
+        .merge(authenticated)
+        .merge(public)
+        .merge(webhook)
 }

@@ -113,6 +113,11 @@ pub trait TenantsRepository: Send + Sync {
         customer_id: &str,
     ) -> Result<Option<TenantDoc>, String>;
 
+    /// Find the tenant whose owner user has the given email. Used by the
+    /// magic-link resolver to decide between creating a new customer and
+    /// upgrading/managing an existing tenant's subscription.
+    async fn find_by_owner_email(&self, email: &str) -> Result<Option<TenantDoc>, String>;
+
     /// Apply a partial subscription update. `Some(_)` fields are set;
     /// `None` fields are left untouched.
     async fn apply_subscription_update(
@@ -131,12 +136,14 @@ pub trait TenantsRepository: Send + Sync {
 #[derive(Clone)]
 pub struct TenantsRepo {
     tenants: Collection<TenantDoc>,
+    users: Collection<bson::Document>,
 }
 
 impl TenantsRepo {
     pub async fn new(database: &Database) -> Self {
         let tenants = database.collection::<TenantDoc>("tenants");
-        TenantsRepo { tenants }
+        let users = database.collection::<bson::Document>("users");
+        TenantsRepo { tenants, users }
     }
 }
 
@@ -163,6 +170,31 @@ impl TenantsRepository for TenantsRepo {
     ) -> Result<Option<TenantDoc>, String> {
         self.tenants
             .find_one(doc! { "stripe_customer_id": customer_id })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn find_by_owner_email(&self, email: &str) -> Result<Option<TenantDoc>, String> {
+        // Two-hop lookup: users collection is authoritative for email→tenant.
+        // We pick the owner row if one exists; otherwise fall back to any
+        // verified user on the tenant (covers tenants whose "owner" flag was
+        // lost during earlier migrations).
+        let user_doc = self
+            .users
+            .find_one(doc! {
+                "email": email,
+                "is_owner": true,
+            })
+            .await
+            .map_err(|e| e.to_string())?;
+        let Some(user_doc) = user_doc else {
+            return Ok(None);
+        };
+        let Some(tenant_id) = user_doc.get_object_id("tenant_id").ok() else {
+            return Ok(None);
+        };
+        self.tenants
+            .find_one(doc! { "_id": tenant_id })
             .await
             .map_err(|e| e.to_string())
     }

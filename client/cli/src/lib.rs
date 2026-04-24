@@ -59,6 +59,23 @@ enum Command {
     /// Add and verify custom domains
     #[command(subcommand)]
     Domains(DomainsCommand),
+    /// Start or upgrade a paid subscription (opens Stripe in browser)
+    Subscribe {
+        /// One of: pro, business, scale
+        tier: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Cancel your subscription at current_period_end
+    Cancel {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show plan tier, limits, and renewal date
+    Billing {
+        #[arg(long)]
+        json: bool,
+    },
     /// Generate shell completions
     Completions {
         /// Shell to generate completions for
@@ -260,6 +277,9 @@ pub async fn run() -> Result<(), CliError> {
                 commands::setup_domain::run(domain, json).await
             }
         },
+        Command::Subscribe { tier, json } => commands::subscribe::run(tier, json).await,
+        Command::Cancel { json } => commands::cancel::run(json).await,
+        Command::Billing { json } => commands::billing::run(json).await,
         Command::Completions { shell } => commands::completions::run(shell),
     }
 }

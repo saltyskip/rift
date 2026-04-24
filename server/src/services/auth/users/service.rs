@@ -144,6 +144,49 @@ impl UsersService {
         Ok(verify_token)
     }
 
+    /// Create a tenant with an already-verified email owner. Used by the
+    /// billing webhook path when a new customer completes Stripe Checkout —
+    /// payment success is itself proof-of-email, so no verification round
+    /// trip is needed.
+    ///
+    /// Returns `(tenant_id, user_id)`. Bubbles up a db error if the email is
+    /// already present; callers should only reach this path after a
+    /// `TenantsRepo::find_by_owner_email` miss.
+    pub async fn create_tenant_with_verified_owner(
+        &self,
+        email: &str,
+    ) -> Result<(ObjectId, ObjectId), UserError> {
+        let email = email.trim().to_lowercase();
+        if !email.contains('@') || email.len() < 5 {
+            return Err(UserError::InvalidEmail);
+        }
+
+        let tenant_id = self
+            .tenants_service
+            .create_blank()
+            .await
+            .map_err(UserError::Internal)?;
+
+        let user_id = ObjectId::new();
+        let user_doc = UserDoc {
+            id: Some(user_id),
+            tenant_id,
+            email: email.clone(),
+            verified: true,
+            is_owner: true,
+            verify_token: None,
+            verify_token_expires_at: None,
+            created_at: mongodb::bson::DateTime::now(),
+        };
+
+        self.users_repo
+            .create(&user_doc)
+            .await
+            .map_err(UserError::Internal)?;
+
+        Ok((tenant_id, user_id))
+    }
+
     /// Sign up a new account: creates tenant + owner user, sends verify email.
     pub async fn signup(
         &self,

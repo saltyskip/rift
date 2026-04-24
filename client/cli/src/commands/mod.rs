@@ -1,3 +1,5 @@
+pub mod billing;
+pub mod cancel;
 pub mod completions;
 pub mod create_link;
 pub mod doctor;
@@ -7,5 +9,6 @@ pub mod logout;
 pub mod qr;
 pub mod setup_app;
 pub mod setup_domain;
+pub mod subscribe;
 pub mod test_link;
 pub mod whoami;
