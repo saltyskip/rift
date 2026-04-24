@@ -17,8 +17,8 @@ use rift::services::domains::repo::DomainsRepository;
 
 use mocks::{
     MockAppsRepo, MockConversionsRepo, MockDomainsRepo, MockLinksRepo, MockSdkKeysRepo,
-    MockSecretKeysRepo, MockTenantsRepo, MockUsageRepo, MockUsersRepo, MockWebhookDispatcher,
-    MockWebhooksRepo,
+    MockSecretKeysRepo, MockTenantsRepo, MockTokensRepo, MockUsageRepo, MockUsersRepo,
+    MockWebhookDispatcher, MockWebhooksRepo,
 };
 
 #[allow(dead_code)]
@@ -112,6 +112,12 @@ pub async fn spawn_app() -> TestApp {
         tenants_repo.clone() as Arc<dyn TenantsRepository>,
     ));
 
+    let tokens_repo: Arc<dyn rift::services::tokens::TokensRepository> =
+        Arc::new(MockTokensRepo::default());
+    let tokens_service = Arc::new(rift::services::tokens::TokenService::new(
+        tokens_repo.clone(),
+    ));
+
     let state = Arc::new(AppState {
         tenants_repo: Some(tenants_repo.clone() as Arc<dyn TenantsRepository>),
         stripe_webhook_dedup: None,
@@ -152,6 +158,7 @@ pub async fn spawn_app() -> TestApp {
                 tenants_service.clone(),
                 users_repo.clone() as Arc<dyn UsersRepository>,
                 secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>,
+                tokens_service.clone(),
                 None,
             ),
         )),
@@ -159,6 +166,7 @@ pub async fn spawn_app() -> TestApp {
             rift::services::auth::secret_keys::service::SecretKeysService::new(
                 secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>,
                 users_repo.clone() as Arc<dyn UsersRepository>,
+                tokens_service.clone(),
             ),
         )),
         conversions_repo: Some(conversions_repo),
@@ -168,7 +176,8 @@ pub async fn spawn_app() -> TestApp {
                 tenants_repo.clone() as Arc<dyn TenantsRepository>
             ),
         )),
-        magic_links_service: None,
+        billing_handoff_service: None,
+        tokens_service: Some(tokens_service.clone()),
     });
 
     let app = rift::api::router(state.clone())

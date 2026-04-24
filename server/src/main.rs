@@ -163,7 +163,7 @@ async fn run_server(cfg: Config) {
         conversions_repo,
         event_counters_repo,
         stripe_webhook_dedup_repo,
-        magic_links_repo,
+        tokens_repo,
     ) = if cfg.mongo_uri.is_empty() {
         tracing::warn!(
             "MONGO_URI not set — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
@@ -214,12 +214,8 @@ async fn run_server(cfg: Config) {
                     )
                     .await,
                 );
-                let magic_links: Arc<
-                    dyn crate::services::billing::repos::magic_links::MagicLinksRepository,
-                > = Arc::new(
-                    crate::services::billing::repos::magic_links::MagicLinksRepo::new(&database)
-                        .await,
-                );
+                let tokens: Arc<dyn crate::services::tokens::TokensRepository> =
+                    Arc::new(crate::services::tokens::repo::TokensRepoMongo::new(&database).await);
                 (
                     Some(tenants),
                     Some(users),
@@ -233,7 +229,7 @@ async fn run_server(cfg: Config) {
                     Some(conversions),
                     Some(event_counters),
                     Some(stripe_dedup),
-                    Some(magic_links),
+                    Some(tokens),
                 )
             }
             None => {
@@ -292,14 +288,21 @@ async fn run_server(cfg: Config) {
         .as_ref()
         .map(|t| Arc::new(crate::services::auth::tenants::service::TenantsService::new(t.clone())));
 
+    // TokenService is a leaf (depends only on its repo) — construct early so
+    // every domain service below can take an Arc into it.
+    let tokens_service = tokens_repo
+        .as_ref()
+        .map(|r| Arc::new(crate::services::tokens::TokenService::new(r.clone())));
+
     // users_service is built after quota_service to enforce team-member
     // quota at the service layer — MCP and HTTP both benefit.
 
-    let secret_keys_service = match (&secret_keys_repo, &users_repo) {
-        (Some(sk), Some(u)) => Some(Arc::new(
+    let secret_keys_service = match (&secret_keys_repo, &users_repo, &tokens_service) {
+        (Some(sk), Some(u), Some(tokens)) => Some(Arc::new(
             crate::services::auth::secret_keys::service::SecretKeysService::new(
                 sk.clone(),
                 u.clone(),
+                tokens.clone(),
             ),
         )),
         _ => None,
@@ -311,9 +314,9 @@ async fn run_server(cfg: Config) {
         ))
     });
 
-    let magic_links_service = match (&magic_links_repo, &tenants_repo) {
-        (Some(ml), Some(t)) => {
-            let config = crate::services::billing::magic_links_service::MagicLinksConfig {
+    let billing_handoff_service = match (&tokens_service, &tenants_repo) {
+        (Some(tokens), Some(t)) => {
+            let config = crate::services::billing::handoff::BillingHandoffConfig {
                 resend_api_key: cfg.resend_api_key.clone(),
                 resend_from_email: cfg.resend_from_email.clone(),
                 public_url: cfg.public_url.clone(),
@@ -327,8 +330,8 @@ async fn run_server(cfg: Config) {
                 },
             };
             Some(Arc::new(
-                crate::services::billing::magic_links_service::MagicLinksService::new(
-                    ml.clone(),
+                crate::services::billing::handoff::BillingHandoffService::new(
+                    tokens.clone(),
                     t.clone(),
                     config,
                 ),
@@ -411,12 +414,18 @@ async fn run_server(cfg: Config) {
         ))
     });
 
-    let users_service = match (&tenants_service, &users_repo, &secret_keys_repo) {
-        (Some(t), Some(u), Some(sk)) => Some(Arc::new(
+    let users_service = match (
+        &tenants_service,
+        &users_repo,
+        &secret_keys_repo,
+        &tokens_service,
+    ) {
+        (Some(t), Some(u), Some(sk), Some(tokens)) => Some(Arc::new(
             crate::services::auth::users::service::UsersService::new(
                 t.clone(),
                 u.clone(),
                 sk.clone(),
+                tokens.clone(),
                 quota_service.clone(),
             ),
         )),
@@ -456,7 +465,8 @@ async fn run_server(cfg: Config) {
         secret_keys_service,
         conversions_service,
         billing_service,
-        magic_links_service,
+        billing_handoff_service,
+        tokens_service,
     });
     // quota_service is consumed by the per-domain services above; it's
     // intentionally not stored in AppState (no route-level callers).

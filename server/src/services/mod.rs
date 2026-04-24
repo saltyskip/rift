@@ -4,4 +4,5 @@ pub mod billing;
 pub mod conversions;
 pub mod domains;
 pub mod links;
+pub mod tokens;
 pub mod webhooks;

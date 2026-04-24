@@ -5,13 +5,13 @@
 //! low-level Resend primitive (`core::email::send_email`) is reused.
 
 use crate::core::email;
-use crate::services::billing::repos::magic_links::MagicLinkTier;
+use crate::services::billing::handoff::BillingTier;
 
-fn tier_label(tier: MagicLinkTier) -> &'static str {
+fn tier_label(tier: BillingTier) -> &'static str {
     match tier {
-        MagicLinkTier::Pro => "Pro",
-        MagicLinkTier::Business => "Business",
-        MagicLinkTier::Scale => "Scale",
+        BillingTier::Pro => "Pro",
+        BillingTier::Business => "Business",
+        BillingTier::Scale => "Scale",
     }
 }
 
@@ -21,7 +21,7 @@ pub async fn send_magic_link_subscribe(
     from: &str,
     to: &str,
     link_url: &str,
-    tier: MagicLinkTier,
+    tier: BillingTier,
 ) -> Result<(), String> {
     let label = tier_label(tier);
     let subject = format!("Complete your Rift {label} subscription");
@@ -65,7 +65,7 @@ pub async fn send_welcome(
     from: &str,
     to: &str,
     api_key: &str,
-    tier: MagicLinkTier,
+    tier: BillingTier,
     public_url: &str,
 ) -> Result<(), String> {
     let label = tier_label(tier);

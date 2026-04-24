@@ -8,8 +8,8 @@ use std::sync::Arc;
 use crate::api::auth::middleware::TenantId;
 use crate::app::AppState;
 use crate::services::auth::tenants::repo::{BillingMethod, PlanTier, SubscriptionStatus};
+use crate::services::billing::handoff::{BillingHandoffError, HandoffOutcome};
 use crate::services::billing::limits::limits_for;
-use crate::services::billing::magic_links_service::{MagicLinkError, RedeemOutcome};
 use crate::services::billing::models::{BillingError, BillingStatus};
 use crate::services::billing::stripe_client::{
     cancel_subscription_at_period_end, create_checkout_session, create_portal_session, StripeError,
@@ -255,7 +255,7 @@ pub async fn create_magic_link(
     headers: HeaderMap,
     Json(body): Json<MagicLinkRequest>,
 ) -> Response {
-    let Some(service) = state.magic_links_service.as_ref() else {
+    let Some(service) = state.billing_handoff_service.as_ref() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Billing not configured", "code": "no_billing" })),
@@ -269,7 +269,7 @@ pub async fn create_magic_link(
         .await
     {
         Ok(()) => (StatusCode::OK, Json(MagicLinkResponse { status: "sent" })).into_response(),
-        Err(MagicLinkError::RateLimited) => (
+        Err(BillingHandoffError::RateLimited) => (
             StatusCode::TOO_MANY_REQUESTS,
             Json(json!({
                 "error": "Too many magic-link requests. Try again later.",
@@ -277,7 +277,7 @@ pub async fn create_magic_link(
             })),
         )
             .into_response(),
-        Err(MagicLinkError::Invalid { code, message }) => (
+        Err(BillingHandoffError::Invalid { code, message }) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": message, "code": code })),
         )
@@ -300,16 +300,16 @@ pub async fn redeem_magic_link(
     let expired_url = format!("{}/pricing?error=link_expired", state.config.public_url);
     let no_subscription_url = format!("{}/manage?error=no_subscription", state.config.public_url);
 
-    let Some(service) = state.magic_links_service.as_ref() else {
+    let Some(service) = state.billing_handoff_service.as_ref() else {
         return Redirect::to(&expired_url).into_response();
     };
 
     match service.redeem(&q.token).await {
-        RedeemOutcome::CheckoutUrl(url) | RedeemOutcome::PortalUrl(url) => {
+        HandoffOutcome::CheckoutUrl(url) | HandoffOutcome::PortalUrl(url) => {
             Redirect::to(&url).into_response()
         }
-        RedeemOutcome::NoSubscription => Redirect::to(&no_subscription_url).into_response(),
-        RedeemOutcome::Expired => Redirect::to(&expired_url).into_response(),
+        HandoffOutcome::NoSubscription => Redirect::to(&no_subscription_url).into_response(),
+        HandoffOutcome::Expired => Redirect::to(&expired_url).into_response(),
     }
 }
 

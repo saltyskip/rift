@@ -317,25 +317,25 @@ async fn handle_subscription_upsert(
     // succeeded at its primary job (tenant + subscription state). Customers
     // can always use the magic-link portal flow to recover.
     if let Some((email, api_key)) = newly_minted_key {
-        let ml_tier = match plan_tier {
+        let billing_tier = match plan_tier {
             Some(crate::services::auth::tenants::repo::PlanTier::Pro) => {
-                Some(crate::services::billing::repos::magic_links::MagicLinkTier::Pro)
+                Some(crate::services::billing::handoff::BillingTier::Pro)
             }
             Some(crate::services::auth::tenants::repo::PlanTier::Business) => {
-                Some(crate::services::billing::repos::magic_links::MagicLinkTier::Business)
+                Some(crate::services::billing::handoff::BillingTier::Business)
             }
             Some(crate::services::auth::tenants::repo::PlanTier::Scale) => {
-                Some(crate::services::billing::repos::magic_links::MagicLinkTier::Scale)
+                Some(crate::services::billing::handoff::BillingTier::Scale)
             }
             _ => None,
         };
-        if let Some(ml_tier) = ml_tier {
+        if let Some(billing_tier) = billing_tier {
             if let Err(e) = crate::services::billing::email::send_welcome(
                 &state.config.resend_api_key,
                 &state.config.resend_from_email,
                 &email,
                 &api_key,
-                ml_tier,
+                billing_tier,
                 &state.config.public_url,
             )
             .await

@@ -1,14 +1,14 @@
-use mongodb::bson::oid::ObjectId;
+use mongodb::bson::{doc, oid::ObjectId};
 use std::fmt;
 use std::sync::Arc;
 
 use super::repo::{UserDoc, UsersRepository};
 use crate::core::email;
-use crate::services::auth::keys;
 use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::mint_for_tenant;
 use crate::services::auth::tenants::service::TenantsService;
 use crate::services::billing::quota::{QuotaChecker, QuotaError, Resource};
+use crate::services::tokens::{ConsumeOutcome, TokenKind, TokenPurpose, TokenService, TokenSpec};
 
 // ── Error ──
 
@@ -94,45 +94,45 @@ pub struct UsersService {
     tenants_service: Arc<TenantsService>,
     users_repo: Arc<dyn UsersRepository>,
     sk_repo: Arc<dyn SecretKeysRepository>,
+    tokens: Arc<TokenService>,
     quota: Option<Arc<dyn QuotaChecker>>,
 }
 
 impl UsersService {
+    /// 24h TTL for email verification — users might not check their inbox
+    /// same-day. After expiry they re-request.
+    const EMAIL_VERIFY_TTL_SECS: i64 = 24 * 60 * 60;
+
     pub fn new(
         tenants_service: Arc<TenantsService>,
         users_repo: Arc<dyn UsersRepository>,
         sk_repo: Arc<dyn SecretKeysRepository>,
+        tokens: Arc<TokenService>,
         quota: Option<Arc<dyn QuotaChecker>>,
     ) -> Self {
         Self {
             tenants_service,
             users_repo,
             sk_repo,
+            tokens,
             quota,
         }
     }
 
-    /// Create an email-owner user on a tenant and return the verify token the
-    /// caller should include in the verification email. Upserts by email so a
-    /// stale unverified signup can be retried.
+    /// Create an unverified owner user on a tenant and return the raw verify
+    /// token. Idempotent on the user row (upsert by email) — a retry from an
+    /// unverified state supersedes the previous token via TokenService.
     pub async fn attach_email_owner(
         &self,
         tenant_id: ObjectId,
         email: &str,
     ) -> Result<String, UserError> {
-        let verify_token = keys::generate_verify_token();
-        let expires_at = mongodb::bson::DateTime::from_millis(
-            chrono::Utc::now().timestamp_millis() + 24 * 60 * 60 * 1000,
-        );
-
         let user_doc = UserDoc {
             id: Some(ObjectId::new()),
             tenant_id,
             email: email.to_string(),
             verified: false,
             is_owner: true,
-            verify_token: Some(verify_token.clone()),
-            verify_token_expires_at: Some(expires_at),
             created_at: mongodb::bson::DateTime::now(),
         };
 
@@ -141,7 +141,16 @@ impl UsersService {
             .await
             .map_err(UserError::Internal)?;
 
-        Ok(verify_token)
+        self.tokens
+            .issue(TokenSpec {
+                purpose: TokenPurpose::EmailVerify,
+                kind: TokenKind::HashKeyed,
+                ttl_secs: Self::EMAIL_VERIFY_TTL_SECS,
+                email: email.to_string(),
+                metadata: doc! {},
+            })
+            .await
+            .map_err(UserError::Internal)
     }
 
     /// Create a tenant with an already-verified email owner. Used by the
@@ -174,8 +183,6 @@ impl UsersService {
             email: email.clone(),
             verified: true,
             is_owner: true,
-            verify_token: None,
-            verify_token_expires_at: None,
             created_at: mongodb::bson::DateTime::now(),
         };
 
@@ -248,9 +255,29 @@ impl UsersService {
 
     /// Verify a user's email. For owners, generates the first key.
     pub async fn verify(&self, token: &str) -> Result<VerifyResult, UserError> {
+        let outcome = self
+            .tokens
+            .consume_hash(token)
+            .await
+            .map_err(UserError::Internal)?;
+
+        let email = match outcome {
+            ConsumeOutcome::Ok {
+                purpose: TokenPurpose::EmailVerify,
+                email,
+                ..
+            } => email,
+            // Token valid but for a different flow — treat as not found so
+            // we don't leak purpose info.
+            ConsumeOutcome::Ok { .. } => return Err(UserError::NotFound),
+            ConsumeOutcome::NotFound | ConsumeOutcome::AttemptsExhausted => {
+                return Err(UserError::NotFound)
+            }
+        };
+
         let user = self
             .users_repo
-            .verify_user(token)
+            .mark_verified(&email)
             .await
             .map_err(UserError::Internal)?
             .ok_or(UserError::NotFound)?;
@@ -307,11 +334,6 @@ impl UsersService {
             q.check(&tenant_id, Resource::InviteTeamMember).await?;
         }
 
-        let verify_token = keys::generate_verify_token();
-        let expires_at = mongodb::bson::DateTime::from_millis(
-            chrono::Utc::now().timestamp_millis() + 24 * 60 * 60 * 1000,
-        );
-
         let user_id = ObjectId::new();
         let user_doc = UserDoc {
             id: Some(user_id),
@@ -319,13 +341,23 @@ impl UsersService {
             email: email.clone(),
             verified: false,
             is_owner: false,
-            verify_token: Some(verify_token.clone()),
-            verify_token_expires_at: Some(expires_at),
             created_at: mongodb::bson::DateTime::now(),
         };
 
         self.users_repo
             .create(&user_doc)
+            .await
+            .map_err(UserError::Internal)?;
+
+        let verify_token = self
+            .tokens
+            .issue(TokenSpec {
+                purpose: TokenPurpose::EmailVerify,
+                kind: TokenKind::HashKeyed,
+                ttl_secs: Self::EMAIL_VERIFY_TTL_SECS,
+                email: email.clone(),
+                metadata: doc! {},
+            })
             .await
             .map_err(UserError::Internal)?;
 
