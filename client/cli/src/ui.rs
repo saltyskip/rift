@@ -1,5 +1,7 @@
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Select};
+use indicatif::{ProgressBar, ProgressStyle};
+use std::time::Duration;
 
 pub fn theme() -> ColorfulTheme {
     ColorfulTheme::default()
@@ -65,6 +67,17 @@ pub fn badge(label: &str, title: &str, description: &str, done: bool) {
     };
     println!("  {} {}", badge, style(title).bold());
     println!("      {}", style(description).dim());
+}
+
+pub fn spinner(message: impl Into<String>) -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.enable_steady_tick(Duration::from_millis(100));
+    pb.set_style(
+        ProgressStyle::with_template("{spinner:.cyan} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
+    );
+    pb.set_message(message.into());
+    pb
 }
 
 pub fn choose(

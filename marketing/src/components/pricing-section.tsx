@@ -199,17 +199,14 @@ function TierCard({
       : `Get ${tier.name}`;
 
   // Destinations:
-  //   Free (both lanes) → /docs (signup guide + API quickstart)
-  //   Paid human → mailto upgrade intent (dashboard/checkout flow ships
-  //     with Phase A-3; until then humans hit us by email). The backend
-  //     endpoint is live at POST /v1/billing/stripe/checkout?tier=... —
-  //     we just don't have an authenticated front door to route through.
-  //   Paid agent → /docs#x402 (the curl-based x402 subscribe recipe).
+  //   Free (both lanes) → /signup (install + Free web signup form)
+  //   Paid human → /checkout?tier=<lowercase> (magic-link paid flow)
+  //   Paid agent → /docs#x402 (the curl-based x402 subscribe recipe)
   const ctaHref = !isPaid
-    ? "/docs"
+    ? "/signup"
     : audience === "agent"
       ? "/docs#agents"
-      : `mailto:hello@riftl.ink?subject=Upgrade%20to%20Rift%20${tier.name}`;
+      : `/checkout?tier=${tier.name.toLowerCase()}`;
 
   return (
     <motion.div

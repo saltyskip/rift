@@ -1,5 +1,6 @@
 pub mod apps;
 pub mod auth;
+pub mod billing;
 pub mod config;
 pub mod credentials;
 pub mod domains;

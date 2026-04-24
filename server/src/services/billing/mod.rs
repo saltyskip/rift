@@ -1,4 +1,5 @@
 pub mod effective_tier;
+pub mod email;
 pub mod limits;
 pub mod models;
 pub mod quota;

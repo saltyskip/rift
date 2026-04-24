@@ -16,6 +16,15 @@ type HmacSha256 = Hmac<Sha256>;
 
 const STRIPE_API_BASE: &str = "https://api.stripe.com/v1";
 
+/// Stripe-Version header pinned for all outbound calls.
+///
+/// Pinning guards against silent Stripe-side version rollups that could break
+/// our deserializers. Our webhook parser already tolerates the 2025+ shape
+/// where `current_period_*` moved from the top-level subscription onto
+/// individual items, so we track the current Dashboard default here. Bump
+/// deliberately after reviewing Stripe's upgrade notes.
+const STRIPE_API_VERSION: &str = "2026-03-25.dahlia";
+
 #[derive(Debug, Clone)]
 pub struct StripeConfig {
     pub secret_key: String,
@@ -107,6 +116,7 @@ pub async fn create_checkout_session(
     let resp = client
         .post(format!("{STRIPE_API_BASE}/checkout/sessions"))
         .basic_auth(&cfg.secret_key, None::<&str>)
+        .header("Stripe-Version", STRIPE_API_VERSION)
         .form(&params)
         .send()
         .await
@@ -125,6 +135,126 @@ pub async fn create_checkout_session(
     serde_json::from_str::<CheckoutSession>(&body).map_err(|e| StripeError::Api(e.to_string()))
 }
 
+/// Options for the magic-link driven Checkout session. Unlike the
+/// Bearer-authed `create_checkout_session`, this variant doesn't assume an
+/// existing tenant — either `customer_id` is known (tenant upgrading) or
+/// `customer_email` + `pending_email` are set (brand-new customer, the
+/// webhook will materialize the tenant on payment completion).
+pub struct MagicLinkCheckoutOpts<'a> {
+    pub tier: PlanTier,
+    pub customer_id: Option<&'a str>,
+    pub customer_email: Option<&'a str>,
+    /// Written to subscription metadata so the webhook handler can create a
+    /// tenant after payment without any client-side state.
+    pub pending_email: Option<&'a str>,
+    /// When set, echoed back via subscription metadata and
+    /// `client_reference_id` so the webhook can find the tenant fast.
+    pub tenant_id_hex: Option<&'a str>,
+    pub success_url: &'a str,
+    pub cancel_url: &'a str,
+}
+
+/// Create a Checkout session for the magic-link paid flow.
+pub async fn create_checkout_session_for_magic_link(
+    cfg: &StripeConfig,
+    opts: MagicLinkCheckoutOpts<'_>,
+) -> Result<CheckoutSession, StripeError> {
+    if !cfg.is_configured() {
+        return Err(StripeError::NotConfigured);
+    }
+    let price_id = cfg
+        .price_id_for(opts.tier)
+        .ok_or(StripeError::MissingPriceId(opts.tier))?;
+
+    // Stripe's form encoder accepts repeated keys, so we build the params
+    // as a Vec of (&str, &str) rather than a fixed-size array.
+    let mut params: Vec<(&str, &str)> = vec![
+        ("mode", "subscription"),
+        ("line_items[0][price]", price_id),
+        ("line_items[0][quantity]", "1"),
+        ("success_url", opts.success_url),
+        ("cancel_url", opts.cancel_url),
+        ("automatic_tax[enabled]", "false"),
+    ];
+    if let Some(cust) = opts.customer_id {
+        params.push(("customer", cust));
+    } else if let Some(email) = opts.customer_email {
+        params.push(("customer_email", email));
+    }
+    if let Some(tenant_id) = opts.tenant_id_hex {
+        params.push(("client_reference_id", tenant_id));
+        params.push(("subscription_data[metadata][tenant_id]", tenant_id));
+    }
+    if let Some(pending_email) = opts.pending_email {
+        params.push(("subscription_data[metadata][pending_email]", pending_email));
+    }
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{STRIPE_API_BASE}/checkout/sessions"))
+        .basic_auth(&cfg.secret_key, None::<&str>)
+        .header("Stripe-Version", STRIPE_API_VERSION)
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| StripeError::Network(e.to_string()))?;
+
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| StripeError::Network(e.to_string()))?;
+
+    if !status.is_success() {
+        return Err(StripeError::Api(format!("{status}: {body}")));
+    }
+
+    serde_json::from_str::<CheckoutSession>(&body).map_err(|e| StripeError::Api(e.to_string()))
+}
+
+/// Result of creating a Billing Portal session — the caller redirects the
+/// user to `url`.
+#[derive(Debug, serde::Deserialize)]
+pub struct PortalSession {
+    pub url: String,
+}
+
+/// Create a Stripe Billing Portal session for an existing customer. The
+/// customer manages their subscription on Stripe's hosted UI and returns to
+/// `return_url` when done.
+pub async fn create_portal_session(
+    secret_key: &str,
+    customer_id: &str,
+    return_url: &str,
+) -> Result<PortalSession, StripeError> {
+    if secret_key.is_empty() {
+        return Err(StripeError::NotConfigured);
+    }
+    let params = [("customer", customer_id), ("return_url", return_url)];
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{STRIPE_API_BASE}/billing_portal/sessions"))
+        .basic_auth(secret_key, None::<&str>)
+        .header("Stripe-Version", STRIPE_API_VERSION)
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| StripeError::Network(e.to_string()))?;
+
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| StripeError::Network(e.to_string()))?;
+
+    if !status.is_success() {
+        return Err(StripeError::Api(format!("{status}: {body}")));
+    }
+
+    serde_json::from_str::<PortalSession>(&body).map_err(|e| StripeError::Api(e.to_string()))
+}
+
 /// Schedule a subscription to end at the current period end. Stripe will
 /// keep the subscription active until `current_period_end`, then fire
 /// `customer.subscription.deleted` which our webhook handler converts into
@@ -140,6 +270,7 @@ pub async fn cancel_subscription_at_period_end(
     let resp = client
         .post(format!("{STRIPE_API_BASE}/subscriptions/{subscription_id}"))
         .basic_auth(secret_key, None::<&str>)
+        .header("Stripe-Version", STRIPE_API_VERSION)
         .form(&[("cancel_at_period_end", "true")])
         .send()
         .await

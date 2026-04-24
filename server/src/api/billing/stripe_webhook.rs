@@ -66,6 +66,13 @@ struct StripeItems {
 #[derive(Debug, Deserialize)]
 struct StripeItem {
     price: StripePrice,
+    // Stripe API versions from 2025 dropped `current_period_{start,end}` from
+    // the top-level subscription and moved them onto the individual items.
+    // Fall back to the first item's copy when the top-level field is None.
+    #[serde(default)]
+    current_period_start: Option<i64>,
+    #[serde(default)]
+    current_period_end: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -253,26 +260,50 @@ async fn handle_subscription_upsert(
 ) -> Result<(), String> {
     let sub: StripeSubscription = serde_json::from_value(object).map_err(|e| e.to_string())?;
 
-    let tenant_id = resolve_tenant(tenants, &sub.metadata, &sub.customer).await?;
-
-    let price_id = sub
-        .items
-        .data
-        .first()
-        .map(|i| i.price.id.as_str())
-        .unwrap_or_default();
+    let first_item = sub.items.data.first();
+    let price_id = first_item.map(|i| i.price.id.as_str()).unwrap_or_default();
 
     let plan_tier = price_id_to_tier(state, price_id);
     if plan_tier.is_none() {
         tracing::warn!(price_id, "stripe_webhook_unknown_price_id");
     }
 
+    let period_start = sub
+        .current_period_start
+        .or_else(|| first_item.and_then(|i| i.current_period_start));
+    let period_end = sub
+        .current_period_end
+        .or_else(|| first_item.and_then(|i| i.current_period_end));
+
+    // Resolve (or materialize) the tenant. Fast path: metadata.tenant_id or
+    // existing stripe_customer_id. Fallback: pending_email from the
+    // magic-link flow, which means this is the first webhook for a
+    // brand-new customer — we create the tenant, owner user, and rl_live_
+    // key here, then email the key to the customer.
+    let (tenant_id, newly_minted_key) =
+        match try_resolve_tenant(tenants, &sub.metadata, &sub.customer).await? {
+            Some(id) => (id, None),
+            None => {
+                let Some(pending_email) =
+                    sub.metadata.get("pending_email").and_then(|v| v.as_str())
+                else {
+                    return Err(format!(
+                        "no tenant mapping for customer {} and no pending_email metadata",
+                        sub.customer
+                    ));
+                };
+                let (tid, key_info) =
+                    materialize_tenant_from_pending_email(state, pending_email).await?;
+                (tid, key_info)
+            }
+        };
+
     let update = SubscriptionUpdate {
         plan_tier,
         billing_method: Some(BillingMethod::Stripe),
         status: Some(map_status(&sub.status)),
-        current_period_start: sub.current_period_start.map(secs_to_bson_dt),
-        current_period_end: sub.current_period_end.map(secs_to_bson_dt),
+        current_period_start: period_start.map(secs_to_bson_dt),
+        current_period_end: period_end.map(secs_to_bson_dt),
         stripe_customer_id: Some(sub.customer),
         stripe_subscription_id: Some(sub.id),
     };
@@ -280,7 +311,72 @@ async fn handle_subscription_upsert(
     tenants
         .apply_subscription_update(&tenant_id, update)
         .await?;
+
+    // Send welcome email *after* the subscription is persisted. Failure to
+    // email is logged but doesn't re-queue the webhook — the webhook already
+    // succeeded at its primary job (tenant + subscription state). Customers
+    // can always use the magic-link portal flow to recover.
+    if let Some((email, api_key)) = newly_minted_key {
+        let ml_tier = match plan_tier {
+            Some(crate::services::auth::tenants::repo::PlanTier::Pro) => {
+                Some(crate::services::billing::repos::magic_links::MagicLinkTier::Pro)
+            }
+            Some(crate::services::auth::tenants::repo::PlanTier::Business) => {
+                Some(crate::services::billing::repos::magic_links::MagicLinkTier::Business)
+            }
+            Some(crate::services::auth::tenants::repo::PlanTier::Scale) => {
+                Some(crate::services::billing::repos::magic_links::MagicLinkTier::Scale)
+            }
+            _ => None,
+        };
+        if let Some(ml_tier) = ml_tier {
+            if let Err(e) = crate::services::billing::email::send_welcome(
+                &state.config.resend_api_key,
+                &state.config.resend_from_email,
+                &email,
+                &api_key,
+                ml_tier,
+                &state.config.public_url,
+            )
+            .await
+            {
+                tracing::error!(error = %e, email = %email, "welcome_email_send_failed");
+            }
+        }
+    }
+
     Ok(())
+}
+
+/// Create a fresh tenant for a customer that completed Checkout without ever
+/// having an account on our side. Returns `(tenant_id, Some((email,
+/// api_key)))` so the caller can email the customer their freshly-minted key.
+async fn materialize_tenant_from_pending_email(
+    state: &AppState,
+    pending_email: &str,
+) -> Result<(ObjectId, Option<(String, String)>), String> {
+    let users_service = state
+        .users_service
+        .as_ref()
+        .ok_or("users_service not configured")?;
+    let sk_repo = state
+        .secret_keys_repo
+        .as_ref()
+        .ok_or("secret_keys_repo not configured")?;
+
+    let (tenant_id, user_id) = users_service
+        .create_tenant_with_verified_owner(pending_email)
+        .await
+        .map_err(|e| format!("tenant materialize failed: {e}"))?;
+
+    let created = crate::services::auth::secret_keys::service::mint_for_tenant(
+        sk_repo.as_ref(),
+        tenant_id,
+        user_id,
+    )
+    .await?;
+
+    Ok((tenant_id, Some((pending_email.to_string(), created.key))))
 }
 
 async fn handle_subscription_deleted(
@@ -288,7 +384,13 @@ async fn handle_subscription_deleted(
     object: Value,
 ) -> Result<(), String> {
     let sub: StripeSubscription = serde_json::from_value(object).map_err(|e| e.to_string())?;
-    let tenant_id = resolve_tenant(tenants, &sub.metadata, &sub.customer).await?;
+    let Some(tenant_id) = try_resolve_tenant(tenants, &sub.metadata, &sub.customer).await? else {
+        // No tenant mapping for a subscription delete means we never fully
+        // materialized a tenant (webhook failed before the welcome path).
+        // Nothing to clean up.
+        tracing::warn!(customer = %sub.customer, "stripe_webhook_deleted_no_tenant");
+        return Ok(());
+    };
     tenants.clear_subscription(&tenant_id).await?;
     Ok(())
 }
@@ -333,18 +435,18 @@ async fn handle_invoice_status(
     Ok(())
 }
 
-async fn resolve_tenant(
+/// Resolve a tenant for a Stripe subscription event. Returns `None` if the
+/// event references a customer we don't yet know about — the caller decides
+/// whether that's a fatal error (subscription.deleted) or a signal to create
+/// a new tenant via the pending_email path (subscription.created/updated).
+async fn try_resolve_tenant(
     tenants: &dyn crate::services::auth::tenants::repo::TenantsRepository,
     metadata: &serde_json::Map<String, Value>,
     customer_id: &str,
-) -> Result<ObjectId, String> {
-    // Fast path: tenant_id embedded in subscription metadata.
+) -> Result<Option<ObjectId>, String> {
     if let Some(id) = tenant_id_from_metadata(metadata) {
-        return Ok(id);
+        return Ok(Some(id));
     }
-    // Fallback: look up by Stripe customer id (set on an earlier event).
     let found = tenants.find_by_stripe_customer_id(customer_id).await?;
-    found
-        .and_then(|t| t.id)
-        .ok_or_else(|| format!("no tenant for customer {customer_id}"))
+    Ok(found.and_then(|t| t.id))
 }

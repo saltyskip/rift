@@ -123,8 +123,10 @@ pub async fn run(
             })
             .interact_text()?;
         let web_url = util::normalize_web_url(&web_url);
-        let secret_client =
-            rift_client_core::RiftClient::with_secret_key(secret_key, Some(base_url.clone()));
+        let secret_client = rift_client_core::RiftClient::with_secret_key(
+            secret_key.clone(),
+            Some(base_url.clone()),
+        );
         let created = secret_client
             .create_link(&rift_client_core::links::CreateLinkRequest {
                 custom_id: None,
@@ -169,6 +171,22 @@ pub async fn run(
         ui::note("Connect iOS or Android app metadata.");
         ui::code_line("rift domains setup");
         ui::note("Add a branded custom domain.");
+
+        // Nudge Free-tier users toward a paid plan. Best-effort: if the
+        // server call fails, we silently skip the nudge rather than derail
+        // the success path.
+        let key_client =
+            rift_client_core::RiftClient::with_secret_key(secret_key, Some(base_url.clone()));
+        if let Ok(status) = key_client.billing_status().await {
+            if matches!(
+                status.effective_tier,
+                rift_client_core::billing::PlanTier::Free
+            ) {
+                ui::section("Ready for Production?");
+                ui::code_line("rift subscribe pro");
+                ui::note("Unlock higher limits and longer analytics retention.");
+            }
+        }
     }
 
     Ok(())

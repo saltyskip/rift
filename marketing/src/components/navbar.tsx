@@ -63,7 +63,7 @@ export function Navbar() {
             API Reference
           </a>
           <a
-            href="#"
+            href="/signup"
             className="text-[13px] font-medium bg-[#2dd4bf] text-[#042f2e] px-3.5 py-1.5 rounded-lg hover:bg-[#5eead4] transition-colors"
           >
             Get API Key
