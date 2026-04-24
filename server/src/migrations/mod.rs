@@ -1,5 +1,6 @@
 pub mod m001_auth_split;
 pub mod m002_billing_foundation;
+pub mod m003_unify_tokens;
 
 use async_trait::async_trait;
 use mongodb::Database;
@@ -15,6 +16,7 @@ pub fn all() -> Vec<Box<dyn Migration>> {
     vec![
         Box::new(m001_auth_split::M001AuthSplit),
         Box::new(m002_billing_foundation::M002BillingFoundation),
+        Box::new(m003_unify_tokens::M003UnifyTokens),
     ]
 }
 

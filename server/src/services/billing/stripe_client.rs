@@ -135,12 +135,12 @@ pub async fn create_checkout_session(
     serde_json::from_str::<CheckoutSession>(&body).map_err(|e| StripeError::Api(e.to_string()))
 }
 
-/// Options for the magic-link driven Checkout session. Unlike the
-/// Bearer-authed `create_checkout_session`, this variant doesn't assume an
-/// existing tenant — either `customer_id` is known (tenant upgrading) or
-/// `customer_email` + `pending_email` are set (brand-new customer, the
-/// webhook will materialize the tenant on payment completion).
-pub struct MagicLinkCheckoutOpts<'a> {
+/// Options for the billing-handoff Checkout session. Unlike the Bearer-authed
+/// `create_checkout_session`, this variant doesn't assume an existing tenant —
+/// either `customer_id` is known (tenant upgrading) or `customer_email` +
+/// `pending_email` are set (brand-new customer, the webhook will materialize
+/// the tenant on payment completion).
+pub struct HandoffCheckoutOpts<'a> {
     pub tier: PlanTier,
     pub customer_id: Option<&'a str>,
     pub customer_email: Option<&'a str>,
@@ -154,10 +154,11 @@ pub struct MagicLinkCheckoutOpts<'a> {
     pub cancel_url: &'a str,
 }
 
-/// Create a Checkout session for the magic-link paid flow.
-pub async fn create_checkout_session_for_magic_link(
+/// Create a Checkout session for the billing-handoff flow (email magic-link
+/// → Stripe Checkout).
+pub async fn create_checkout_session_for_handoff(
     cfg: &StripeConfig,
-    opts: MagicLinkCheckoutOpts<'_>,
+    opts: HandoffCheckoutOpts<'_>,
 ) -> Result<CheckoutSession, StripeError> {
     if !cfg.is_configured() {
         return Err(StripeError::NotConfigured);

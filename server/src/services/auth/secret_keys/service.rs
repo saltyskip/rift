@@ -1,11 +1,12 @@
-use mongodb::bson::oid::ObjectId;
+use mongodb::bson::{doc, oid::ObjectId};
 use std::fmt;
 use std::sync::Arc;
 
-use super::repo::{SecretKeyCreateRequestDoc, SecretKeyDoc, SecretKeysRepository};
+use super::repo::{SecretKeyDoc, SecretKeysRepository};
 use crate::core::email;
 use crate::services::auth::keys;
 use crate::services::auth::users::repo::UsersRepository;
+use crate::services::tokens::{ConsumeOutcome, TokenKind, TokenPurpose, TokenService, TokenSpec};
 
 // ── Error ──
 
@@ -16,7 +17,6 @@ pub enum SecretKeyError {
     KeyLimit,
     RequestPending,
     TooManyAttempts,
-    NoPendingRequest,
     InvalidCode,
     LastKey,
     SelfDelete,
@@ -36,12 +36,6 @@ impl fmt::Display for SecretKeyError {
                 "A key creation request is already pending. Check your email or wait 15 minutes."
             ),
             Self::TooManyAttempts => write!(f, "Too many attempts. Request a new code."),
-            Self::NoPendingRequest => {
-                write!(
-                    f,
-                    "No pending key creation request. Request a new code first."
-                )
-            }
             Self::InvalidCode => write!(f, "Invalid or expired confirmation code"),
             Self::LastKey => write!(f, "Cannot delete your only secret key"),
             Self::SelfDelete => {
@@ -65,7 +59,6 @@ impl SecretKeyError {
             Self::KeyLimit => "key_limit",
             Self::RequestPending => "request_pending",
             Self::TooManyAttempts => "too_many_attempts",
-            Self::NoPendingRequest => "no_pending_request",
             Self::InvalidCode => "invalid_code",
             Self::LastKey => "last_key",
             Self::SelfDelete => "self_delete",
@@ -130,16 +123,27 @@ pub async fn mint_for_tenant(
 pub struct SecretKeysService {
     sk_repo: Arc<dyn SecretKeysRepository>,
     users_repo: Arc<dyn UsersRepository>,
+    tokens: Arc<TokenService>,
 }
 
 impl SecretKeysService {
+    /// 15min TTL matches the old `secret_key_create_requests` TTL exactly.
+    const ROTATION_TTL_SECS: i64 = 15 * 60;
+
+    /// 5 tries before the token is wiped and the user must re-request.
+    /// Real security work — 36^6 = 2.2B code space is guessable at network
+    /// speed without this cap.
+    const ROTATION_MAX_ATTEMPTS: i32 = 5;
+
     pub fn new(
         sk_repo: Arc<dyn SecretKeysRepository>,
         users_repo: Arc<dyn UsersRepository>,
+        tokens: Arc<TokenService>,
     ) -> Self {
         Self {
             sk_repo,
             users_repo,
+            tokens,
         }
     }
 
@@ -151,7 +155,7 @@ impl SecretKeysService {
         resend_api_key: &str,
         resend_from_email: &str,
     ) -> Result<(), SecretKeyError> {
-        // Permission check
+        // Permission check: caller's email must be a verified member of this tenant.
         let user = self
             .users_repo
             .find_by_tenant_and_email(&tenant_id, email)
@@ -165,7 +169,7 @@ impl SecretKeysService {
 
         let user_id = user.id.unwrap_or_else(ObjectId::new);
 
-        // Key limit
+        // Key limit.
         let count = self
             .sk_repo
             .count_by_tenant(&tenant_id)
@@ -175,40 +179,35 @@ impl SecretKeysService {
             return Err(SecretKeyError::KeyLimit);
         }
 
-        // Cooldown
+        // Cooldown: bail if a pending rotation is already live. TokenService
+        // supersedes on re-issue, but we don't want repeat emails filling
+        // the user's inbox.
         if self
-            .sk_repo
-            .find_pending_request(&tenant_id, &user_id)
+            .tokens
+            .pending_exists(TokenPurpose::KeyRotation, email)
             .await
             .map_err(SecretKeyError::Internal)?
-            .is_some()
         {
             return Err(SecretKeyError::RequestPending);
         }
 
-        // Generate code and store request
-        let code = keys::generate_key_create_code();
-        let token_hash = keys::hash_key(&code);
-        let expires_at = mongodb::bson::DateTime::from_millis(
-            chrono::Utc::now().timestamp_millis() + 15 * 60 * 1000,
-        );
-
-        let request_doc = SecretKeyCreateRequestDoc {
-            id: None,
-            tenant_id,
-            user_id,
-            token_hash,
-            attempts: 0,
-            expires_at,
-            created_at: mongodb::bson::DateTime::now(),
-        };
-
-        self.sk_repo
-            .create_request(&request_doc)
+        let code = self
+            .tokens
+            .issue(TokenSpec {
+                purpose: TokenPurpose::KeyRotation,
+                kind: TokenKind::TupleKeyed {
+                    max_attempts: Self::ROTATION_MAX_ATTEMPTS,
+                },
+                ttl_secs: Self::ROTATION_TTL_SECS,
+                email: email.to_string(),
+                metadata: doc! {
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                },
+            })
             .await
             .map_err(SecretKeyError::Internal)?;
 
-        // Send email
         let html = format!(
             r#"<div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
                 <h2 style="margin-bottom: 24px;">Key creation confirmation</h2>
@@ -234,50 +233,49 @@ impl SecretKeysService {
     }
 
     /// Confirm key creation with the 6-char code. Returns the new key (shown once).
+    ///
+    /// `tenant_id` and `email` are only used for transport-layer auth sanity —
+    /// the token metadata is the authoritative source of (tenant_id, user_id)
+    /// because that's what was bound to the code when it was issued.
     pub async fn confirm_create(
         &self,
         tenant_id: ObjectId,
         email: &str,
         token: &str,
     ) -> Result<CreatedKey, SecretKeyError> {
-        let user = self
-            .users_repo
-            .find_by_tenant_and_email(&tenant_id, email)
+        match self
+            .tokens
+            .consume_tuple(token, TokenPurpose::KeyRotation, email)
             .await
             .map_err(SecretKeyError::Internal)?
-            .ok_or(SecretKeyError::InvalidCode)?;
+        {
+            ConsumeOutcome::AttemptsExhausted => Err(SecretKeyError::TooManyAttempts),
+            ConsumeOutcome::NotFound => Err(SecretKeyError::InvalidCode),
+            ConsumeOutcome::Ok {
+                purpose: TokenPurpose::KeyRotation,
+                metadata,
+                ..
+            } => {
+                let meta_tenant = metadata
+                    .get_object_id("tenant_id")
+                    .map_err(|e| SecretKeyError::Internal(format!("missing tenant_id: {e}")))?;
+                let meta_user = metadata
+                    .get_object_id("user_id")
+                    .map_err(|e| SecretKeyError::Internal(format!("missing user_id: {e}")))?;
 
-        let user_id = user.id.unwrap_or_else(ObjectId::new);
+                // Belt-and-suspenders: the token is bound to a tenant; the
+                // HTTP caller also claims a tenant via API key. They must
+                // match, otherwise someone's crossing sessions.
+                if meta_tenant != tenant_id {
+                    return Err(SecretKeyError::InvalidCode);
+                }
 
-        // Rate limit
-        let attempts = self
-            .sk_repo
-            .increment_request_attempts(&tenant_id, &user_id)
-            .await
-            .map_err(SecretKeyError::Internal)?;
-
-        if attempts == 0 {
-            return Err(SecretKeyError::NoPendingRequest);
+                mint_for_tenant(&*self.sk_repo, meta_tenant, meta_user)
+                    .await
+                    .map_err(SecretKeyError::Internal)
+            }
+            ConsumeOutcome::Ok { .. } => Err(SecretKeyError::InvalidCode),
         }
-        if attempts > 5 {
-            return Err(SecretKeyError::TooManyAttempts);
-        }
-
-        // Validate token
-        let token_hash = keys::hash_key(&token.trim().to_uppercase());
-        let consumed = self
-            .sk_repo
-            .validate_and_consume_request(&tenant_id, &user_id, &token_hash)
-            .await
-            .map_err(SecretKeyError::Internal)?;
-
-        if !consumed {
-            return Err(SecretKeyError::InvalidCode);
-        }
-
-        mint_for_tenant(&*self.sk_repo, tenant_id, user_id)
-            .await
-            .map_err(SecretKeyError::Internal)
     }
 
     /// List all secret keys for a tenant (prefix only).

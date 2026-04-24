@@ -16,8 +16,6 @@ pub struct UserDoc {
     pub email: String,
     pub verified: bool,
     pub is_owner: bool,
-    pub verify_token: Option<String>,
-    pub verify_token_expires_at: Option<bson::DateTime>,
     pub created_at: bson::DateTime,
 }
 
@@ -35,7 +33,10 @@ pub trait UsersRepository: Send + Sync {
     async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<UserDoc>, String>;
     async fn count_verified_by_tenant(&self, tenant_id: &ObjectId) -> Result<i64, String>;
     async fn delete(&self, tenant_id: &ObjectId, user_id: &ObjectId) -> Result<bool, String>;
-    async fn verify_user(&self, token: &str) -> Result<Option<UserDoc>, String>;
+    /// Flip `verified: true` on the user with this email. Returns the updated
+    /// doc on success, `None` if no such user exists. Idempotent — verifying
+    /// an already-verified user is a no-op that returns the doc.
+    async fn mark_verified(&self, email: &str) -> Result<Option<UserDoc>, String>;
     async fn upsert_by_email(&self, doc: &UserDoc) -> Result<(), String>;
 }
 
@@ -122,19 +123,16 @@ impl UsersRepository for UsersRepo {
         Ok(result.deleted_count > 0)
     }
 
-    async fn verify_user(&self, token: &str) -> Result<Option<UserDoc>, String> {
-        let now = bson::DateTime::now();
+    async fn mark_verified(&self, email: &str) -> Result<Option<UserDoc>, String> {
         self.users
             .find_one_and_update(
-                doc! {
-                    "verify_token": token,
-                    "verified": false,
-                    "verify_token_expires_at": { "$gt": now },
-                },
-                doc! {
-                    "$set": { "verified": true },
-                    "$unset": { "verify_token": "", "verify_token_expires_at": "" },
-                },
+                doc! { "email": email },
+                doc! { "$set": { "verified": true } },
+            )
+            .with_options(
+                mongodb::options::FindOneAndUpdateOptions::builder()
+                    .return_document(mongodb::options::ReturnDocument::After)
+                    .build(),
             )
             .await
             .map_err(|e| e.to_string())
@@ -150,13 +148,11 @@ impl UsersRepository for UsersRepo {
                 doc! {
                     "$set": {
                         "tenant_id": doc.tenant_id,
-                        "verified": doc.verified,
                         "is_owner": doc.is_owner,
-                        "verify_token": &doc.verify_token,
-                        "verify_token_expires_at": doc.verify_token_expires_at,
                     },
                     "$setOnInsert": {
                         "email": &doc.email,
+                        "verified": doc.verified,
                         "created_at": doc.created_at,
                     },
                 },

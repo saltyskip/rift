@@ -10,7 +10,7 @@ use crate::services::auth::secret_keys::service::SecretKeysService;
 use crate::services::auth::tenants::repo::TenantsRepository;
 use crate::services::auth::usage::repo::UsageRepository;
 use crate::services::auth::users::service::UsersService;
-use crate::services::billing::magic_links_service::MagicLinksService;
+use crate::services::billing::handoff::BillingHandoffService;
 use crate::services::billing::repos::stripe_webhook_dedup::StripeWebhookDedupRepository;
 use crate::services::billing::service::BillingService;
 use crate::services::conversions::repo::ConversionsRepository;
@@ -19,6 +19,7 @@ use crate::services::domains::repo::DomainsRepository;
 use crate::services::domains::service::DomainsService;
 use crate::services::links::repo::LinksRepository;
 use crate::services::links::service::LinksService;
+use crate::services::tokens::TokenService;
 use crate::services::webhooks::repo::WebhooksRepository;
 use crate::services::webhooks::service::WebhooksService;
 
@@ -47,5 +48,9 @@ pub struct AppState {
     pub secret_keys_service: Option<Arc<SecretKeysService>>,
     pub conversions_service: Option<Arc<ConversionsService>>,
     pub billing_service: Option<Arc<BillingService>>,
-    pub magic_links_service: Option<Arc<MagicLinksService>>,
+    pub billing_handoff_service: Option<Arc<BillingHandoffService>>,
+    /// Held on AppState primarily so integration tests can inspect issued
+    /// tokens. Domain services capture their own Arc at construction time.
+    #[allow(dead_code)]
+    pub tokens_service: Option<Arc<TokenService>>,
 }

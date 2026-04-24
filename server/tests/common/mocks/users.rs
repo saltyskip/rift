@@ -68,15 +68,10 @@ impl UsersRepository for MockUsersRepo {
         Ok(users.len() < len)
     }
 
-    async fn verify_user(&self, token: &str) -> Result<Option<UserDoc>, String> {
+    async fn mark_verified(&self, email: &str) -> Result<Option<UserDoc>, String> {
         let mut users = self.users.lock().unwrap();
-        if let Some(user) = users
-            .iter_mut()
-            .find(|u| u.verify_token.as_deref() == Some(token) && !u.verified)
-        {
+        if let Some(user) = users.iter_mut().find(|u| u.email == email) {
             user.verified = true;
-            user.verify_token = None;
-            user.verify_token_expires_at = None;
             Ok(Some(user.clone()))
         } else {
             Ok(None)
@@ -87,10 +82,7 @@ impl UsersRepository for MockUsersRepo {
         let mut users = self.users.lock().unwrap();
         if let Some(existing) = users.iter_mut().find(|u| u.email == doc.email) {
             existing.tenant_id = doc.tenant_id;
-            existing.verified = doc.verified;
             existing.is_owner = doc.is_owner;
-            existing.verify_token = doc.verify_token.clone();
-            existing.verify_token_expires_at = doc.verify_token_expires_at;
         } else {
             users.push(doc.clone());
         }

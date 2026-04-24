@@ -429,7 +429,7 @@ fn sk_error_response(e: &SecretKeyError) -> Response {
         SecretKeyError::RequestPending | SecretKeyError::TooManyAttempts => {
             StatusCode::TOO_MANY_REQUESTS
         }
-        SecretKeyError::NoPendingRequest | SecretKeyError::InvalidCode => StatusCode::BAD_REQUEST,
+        SecretKeyError::InvalidCode => StatusCode::BAD_REQUEST,
         SecretKeyError::NotFound => StatusCode::NOT_FOUND,
         SecretKeyError::EmailFailed(_) | SecretKeyError::Internal(_) => {
             StatusCode::INTERNAL_SERVER_ERROR
