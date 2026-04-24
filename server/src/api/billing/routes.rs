@@ -299,10 +299,7 @@ pub async fn redeem_magic_link(
 ) -> Response {
     // `/pricing` doesn't exist as a standalone route on the marketing site —
     // it's an anchor on the home page.
-    let expired_url = format!(
-        "{}/?error=link_expired#pricing",
-        state.config.marketing_url
-    );
+    let expired_url = format!("{}/?error=link_expired#pricing", state.config.marketing_url);
     let no_subscription_url = format!(
         "{}/manage?error=no_subscription",
         state.config.marketing_url

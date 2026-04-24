@@ -1,0 +1,19 @@
+# Collapse noisy files by default in GitHub PR diffs.
+# `linguist-generated=true` hides the file from diffs (shown on demand) and
+# excludes it from language stats. We use it for lockfiles and test files so
+# reviewers can focus on production-code changes.
+
+# ── Lockfiles ──
+Cargo.lock          linguist-generated=true
+package-lock.json   linguist-generated=true
+pnpm-lock.yaml      linguist-generated=true
+yarn.lock           linguist-generated=true
+*.lock              linguist-generated=true
+
+# ── Tests ──
+# Sibling unit-test files (convention: <stem>_tests.rs next to <stem>.rs)
+*_tests.rs          linguist-generated=true
+# Integration-test directories
+server/tests/**     linguist-generated=true
+client/cli/tests/** linguist-generated=true
+client/mobile/**/tests/** linguist-generated=true

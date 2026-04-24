@@ -152,6 +152,24 @@ cargo test   # All tests pass
 - If an import is unused, remove it — don't `#[allow(unused_imports)]`
 - Run `cargo fmt` before committing to avoid formatting failures in CI
 
+## Testing
+
+Tests must live in **separate files**, not inline in source files. This keeps source files focused on production code and keeps PR diffs reviewable.
+
+- **No inline `#[cfg(test)] mod tests { ... }` blocks with test bodies in source files.** The only acceptable inline form is a one-line module declaration pointing at a sibling file.
+- **Unit tests that need private-item access** — put them in a sibling file named `<stem>_tests.rs` next to the source file, and reference it from the source like:
+
+  ```rust
+  #[cfg(test)]
+  #[path = "foo_tests.rs"]
+  mod tests;
+  ```
+
+  Use the `_tests.rs` suffix (not a bare `tests.rs`) to avoid collisions when multiple source files in the same module folder have tests.
+
+- **Integration tests** (public API only, no private access needed) go in the crate's `tests/` directory — `server/tests/`, `client/cli/tests/`, etc.
+- `*_tests.rs` files and `tests/**` are marked `linguist-generated=true` in `.gitattributes` so GitHub collapses them by default in PR diffs. Lock files (`Cargo.lock`, `package-lock.json`, etc.) are collapsed the same way.
+
 ## Mobile SDK (`client/mobile/`)
 
 Rust library compiled to Swift/Kotlin via UniFFI. Three-crate workspace:
