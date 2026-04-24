@@ -66,11 +66,11 @@ pub async fn send_welcome(
     to: &str,
     api_key: &str,
     tier: BillingTier,
-    public_url: &str,
+    marketing_url: &str,
 ) -> Result<(), String> {
     let label = tier_label(tier);
     let subject = format!("Welcome to Rift {label} — your API key inside");
-    let manage_url = format!("{public_url}/manage");
+    let manage_url = format!("{marketing_url}/manage");
     let install_cmd =
         "curl -fsSL https://raw.githubusercontent.com/saltyskip/rift/main/client/cli/install.sh | sh";
 

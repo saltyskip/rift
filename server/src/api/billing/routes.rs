@@ -297,8 +297,16 @@ pub async fn redeem_magic_link(
     State(state): State<Arc<AppState>>,
     Query(q): Query<MagicLinkGoQuery>,
 ) -> Response {
-    let expired_url = format!("{}/pricing?error=link_expired", state.config.public_url);
-    let no_subscription_url = format!("{}/manage?error=no_subscription", state.config.public_url);
+    // `/pricing` doesn't exist as a standalone route on the marketing site —
+    // it's an anchor on the home page.
+    let expired_url = format!(
+        "{}/?error=link_expired#pricing",
+        state.config.marketing_url
+    );
+    let no_subscription_url = format!(
+        "{}/manage?error=no_subscription",
+        state.config.marketing_url
+    );
 
     let Some(service) = state.billing_handoff_service.as_ref() else {
         return Redirect::to(&expired_url).into_response();
@@ -375,7 +383,7 @@ pub async fn create_stripe_portal(
             .into_response();
     };
 
-    let return_url = format!("{}/manage", state.config.public_url);
+    let return_url = format!("{}/manage", state.config.marketing_url);
     match create_portal_session(&state.config.stripe_secret_key, customer_id, &return_url).await {
         Ok(session) => (
             StatusCode::OK,

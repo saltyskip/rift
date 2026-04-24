@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Navbar } from "@/components/navbar";
-import { Footer } from "@/components/footer";
 
 export const metadata: Metadata = {
   title: "Welcome to Rift",
@@ -13,10 +11,8 @@ const INSTALL_CMD =
 
 export default function WelcomePage() {
   return (
-    <>
-      <Navbar />
-      <main className="pt-24 pb-20 px-6 min-h-[70vh]">
-        <div className="mx-auto max-w-2xl">
+    <main className="pt-24 pb-20 px-6 min-h-[70vh]">
+      <div className="mx-auto max-w-2xl">
           <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">
             Payment received
           </p>
@@ -81,10 +77,8 @@ rift whoami
                 See all commands
               </Link>
             </div>
-          </section>
-        </div>
-      </main>
-      <Footer />
-    </>
+        </section>
+      </div>
+    </main>
   );
 }

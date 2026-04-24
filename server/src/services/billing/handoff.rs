@@ -102,7 +102,13 @@ pub enum HandoffOutcome {
 pub struct BillingHandoffConfig {
     pub resend_api_key: String,
     pub resend_from_email: String,
+    /// API domain (e.g. `https://api.riftl.ink`). Used when building the
+    /// magic-link URL that embeds in the email — must hit an API route.
     pub public_url: String,
+    /// Marketing site (e.g. `https://riftl.ink`). Used for every redirect
+    /// target that lands on a marketing page: Stripe success/cancel, portal
+    /// return, link-expired banner, no-subscription banner.
+    pub marketing_url: String,
     pub stripe: StripeConfig,
 }
 
@@ -286,8 +292,9 @@ impl BillingHandoffService {
                 let tenant_id_hex = tenant.as_ref().and_then(|t| t.id).map(|oid| oid.to_hex());
                 let customer_id = tenant.as_ref().and_then(|t| t.stripe_customer_id.clone());
 
-                let success_url = format!("{}/welcome", self.config.public_url);
-                let cancel_url = format!("{}/pricing?error=cancelled", self.config.public_url);
+                let success_url = format!("{}/welcome", self.config.marketing_url);
+                let cancel_url =
+                    format!("{}/?error=cancelled#pricing", self.config.marketing_url);
 
                 let opts = HandoffCheckoutOpts {
                     tier: plan_tier,
@@ -322,7 +329,7 @@ impl BillingHandoffService {
                 let Some(customer_id) = tenant.stripe_customer_id else {
                     return HandoffOutcome::NoSubscription;
                 };
-                let return_url = format!("{}/manage?done=1", self.config.public_url);
+                let return_url = format!("{}/manage?done=1", self.config.marketing_url);
                 match create_portal_session(
                     &self.config.stripe.secret_key,
                     &customer_id,

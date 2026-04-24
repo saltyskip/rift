@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import { MagicLinkForm } from "@/components/magic-link-form";
-import { Navbar } from "@/components/navbar";
-import { Footer } from "@/components/footer";
 
 export const metadata: Metadata = {
   title: "Manage your Rift subscription",
@@ -17,10 +15,8 @@ export default async function ManagePage({
   const { done, error } = await searchParams;
 
   return (
-    <>
-      <Navbar />
-      <main className="pt-24 pb-20 px-6 min-h-[60vh]">
-        <div className="mx-auto max-w-xl">
+    <main className="pt-24 pb-20 px-6 min-h-[60vh]">
+      <div className="mx-auto max-w-xl">
           <p className="text-[12px] font-mono text-[#2dd4bf] tracking-wide uppercase mb-3">
             Billing
           </p>
@@ -72,10 +68,8 @@ export default async function ManagePage({
               schedule a cancellation, or <code className="text-[#a1a1aa]">rift billing</code>{" "}
               to see your current plan and renewal date.
             </p>
-          </section>
-        </div>
-      </main>
-      <Footer />
-    </>
+        </section>
+      </div>
+    </main>
   );
 }

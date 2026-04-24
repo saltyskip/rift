@@ -336,7 +336,7 @@ async fn handle_subscription_upsert(
                 &email,
                 &api_key,
                 billing_tier,
-                &state.config.public_url,
+                &state.config.marketing_url,
             )
             .await
             {

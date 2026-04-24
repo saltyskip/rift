@@ -320,6 +320,7 @@ async fn run_server(cfg: Config) {
                 resend_api_key: cfg.resend_api_key.clone(),
                 resend_from_email: cfg.resend_from_email.clone(),
                 public_url: cfg.public_url.clone(),
+                marketing_url: cfg.marketing_url.clone(),
                 stripe: crate::services::billing::stripe_client::StripeConfig {
                     secret_key: cfg.stripe_secret_key.clone(),
                     price_id_pro: cfg.stripe_price_id_pro.clone(),
