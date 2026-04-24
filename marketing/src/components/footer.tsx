@@ -26,7 +26,7 @@ export function Footer() {
           <div className="flex gap-16">
             {Object.entries({
               Product: [
-                ["Quick Setup", "/signup"],
+                ["Quick Setup", "/docs"],
                 ["API Reference", "/api-reference"],
                 ["Pricing", "/#pricing"],
                 ["Manage billing", "/manage"],

@@ -3,46 +3,12 @@ import Link from "next/link";
 import { MagicLinkForm } from "@/components/magic-link-form";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
+import { getTierBySlug, isPaidTierSlug, type PaidTierSlug } from "@/lib/tiers";
 
 export const metadata: Metadata = {
   title: "Subscribe to Rift",
-  description: "Start your Rift paid subscription. We'll email a secure link to complete checkout.",
-};
-
-type Tier = "pro" | "business" | "scale";
-
-const TIERS: Record<
-  Tier,
-  { label: string; price: string; unit: string; stats: string[] }
-> = {
-  pro: {
-    label: "Pro",
-    price: "$18",
-    unit: "/ month",
-    stats: ["2,000 links", "100k events / mo", "5 domains", "1-year retention"],
-  },
-  business: {
-    label: "Business",
-    price: "$55",
-    unit: "/ month",
-    stats: [
-      "20,000 links",
-      "500k events / mo",
-      "20 domains",
-      "3-year retention",
-    ],
-  },
-  scale: {
-    label: "Scale",
-    price: "$199",
-    unit: "/ month",
-    stats: [
-      "100,000 links",
-      "2M events / mo",
-      "Unlimited domains",
-      "5-year retention",
-    ],
-  },
+  description:
+    "Start your Rift paid subscription. We'll email a secure link to complete checkout.",
 };
 
 export default async function CheckoutPage({
@@ -52,9 +18,7 @@ export default async function CheckoutPage({
 }) {
   const { tier: tierParam } = await searchParams;
   const tier =
-    tierParam === "pro" || tierParam === "business" || tierParam === "scale"
-      ? (tierParam as Tier)
-      : null;
+    tierParam && isPaidTierSlug(tierParam) ? getTierBySlug(tierParam) : undefined;
 
   if (!tier) {
     return (
@@ -84,8 +48,6 @@ export default async function CheckoutPage({
     );
   }
 
-  const info = TIERS[tier];
-
   return (
     <>
       <Navbar />
@@ -96,15 +58,17 @@ export default async function CheckoutPage({
               Subscribe
             </p>
             <h1 className="text-3xl font-semibold tracking-[-0.03em] mb-2">
-              Start Rift {info.label}.
+              Start Rift {tier.name}.
             </h1>
             <div className="flex items-baseline gap-1 mb-6">
-              <span className="text-3xl font-semibold">{info.price}</span>
-              <span className="text-sm text-[#71717a]">{info.unit}</span>
+              <span className="text-3xl font-semibold">{tier.human.price}</span>
+              {tier.human.unit && (
+                <span className="text-sm text-[#71717a]">{tier.human.unit}</span>
+              )}
             </div>
 
             <ul className="space-y-2 mb-8">
-              {info.stats.map((s) => (
+              {tier.stats.map((s) => (
                 <li
                   key={s}
                   className="text-[13px] font-mono text-[#2dd4bf]/75 leading-snug"
@@ -117,9 +81,9 @@ export default async function CheckoutPage({
             <div className="rounded-xl border border-[#222225] bg-[#111113] p-6">
               <MagicLinkForm
                 intent="subscribe"
-                tier={tier}
+                tier={tier.slug as PaidTierSlug}
                 label="Your email"
-                submitLabel={`Continue to Stripe`}
+                submitLabel="Continue to Stripe"
                 note="We'll email a single-use link that takes you to secure Stripe checkout. Existing customers are recognized automatically."
               />
             </div>
@@ -154,8 +118,12 @@ export default async function CheckoutPage({
               <div>
                 <p className="text-[#fafafa] font-medium mb-1">Cancel anytime</p>
                 <p>
-                  Use the <Link href="/manage" className="text-[#2dd4bf] hover:underline">manage billing</Link>{" "}
-                  link or <code className="text-[#a1a1aa]">rift cancel</code> in the CLI.
+                  Use the{" "}
+                  <Link href="/manage" className="text-[#2dd4bf] hover:underline">
+                    manage billing
+                  </Link>{" "}
+                  link or <code className="text-[#a1a1aa]">rift cancel</code> in
+                  the CLI.
                 </p>
               </div>
             </div>

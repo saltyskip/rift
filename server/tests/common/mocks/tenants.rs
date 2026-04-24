@@ -41,6 +41,13 @@ impl TenantsRepository for MockTenantsRepo {
             .cloned())
     }
 
+    async fn find_by_owner_email(&self, _email: &str) -> Result<Option<TenantDoc>, String> {
+        // Integration tests that need the billing magic-link path will need
+        // a users collection mock too; current suite only exercises direct
+        // subscription webhooks, so a None return is sufficient.
+        Ok(None)
+    }
+
     async fn apply_subscription_update(
         &self,
         tenant_id: &ObjectId,

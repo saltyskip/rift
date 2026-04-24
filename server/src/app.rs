@@ -10,7 +10,7 @@ use crate::services::auth::secret_keys::service::SecretKeysService;
 use crate::services::auth::tenants::repo::TenantsRepository;
 use crate::services::auth::usage::repo::UsageRepository;
 use crate::services::auth::users::service::UsersService;
-use crate::services::billing::repos::magic_links::MagicLinksRepository;
+use crate::services::billing::magic_links_service::MagicLinksService;
 use crate::services::billing::repos::stripe_webhook_dedup::StripeWebhookDedupRepository;
 use crate::services::billing::service::BillingService;
 use crate::services::conversions::repo::ConversionsRepository;
@@ -28,7 +28,6 @@ use x402_types::proto::v1;
 pub struct AppState {
     pub tenants_repo: Option<Arc<dyn TenantsRepository>>,
     pub stripe_webhook_dedup: Option<Arc<dyn StripeWebhookDedupRepository>>,
-    pub magic_links_repo: Option<Arc<dyn MagicLinksRepository>>,
     pub secret_keys_repo: Option<Arc<dyn SecretKeysRepository>>,
     pub usage_repo: Option<Arc<dyn UsageRepository>>,
     pub links_repo: Option<Arc<dyn LinksRepository>>,
@@ -48,4 +47,5 @@ pub struct AppState {
     pub secret_keys_service: Option<Arc<SecretKeysService>>,
     pub conversions_service: Option<Arc<ConversionsService>>,
     pub billing_service: Option<Arc<BillingService>>,
+    pub magic_links_service: Option<Arc<MagicLinksService>>,
 }

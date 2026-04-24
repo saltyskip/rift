@@ -8,14 +8,11 @@ use std::sync::Arc;
 use crate::api::auth::middleware::TenantId;
 use crate::app::AppState;
 use crate::services::auth::tenants::repo::{BillingMethod, PlanTier, SubscriptionStatus};
-use crate::services::billing::email as billing_email;
 use crate::services::billing::limits::limits_for;
+use crate::services::billing::magic_links_service::{MagicLinkError, RedeemOutcome};
 use crate::services::billing::models::{BillingError, BillingStatus};
-use crate::services::billing::repos::magic_links::{MagicLinkIntent, MagicLinkTier};
 use crate::services::billing::stripe_client::{
-    cancel_subscription_at_period_end, create_checkout_session,
-    create_checkout_session_for_magic_link, create_portal_session, MagicLinkCheckoutOpts,
-    StripeError,
+    cancel_subscription_at_period_end, create_checkout_session, create_portal_session, StripeError,
 };
 
 /// Slim JSON shape for the status endpoint. Rendered from `BillingStatus` so
@@ -227,20 +224,7 @@ pub struct MagicLinkResponse {
     pub status: &'static str,
 }
 
-/// Per-IP token bucket used by the magic-link endpoint. Module-local so it
-/// lives for the process lifetime — fine because limits here are hours long
-/// and the state is cheap.
-static MAGIC_LINK_IP_LIMITER: std::sync::OnceLock<crate::core::rate_limit::RateLimiter> =
-    std::sync::OnceLock::new();
-
-fn magic_link_ip_limiter() -> &'static crate::core::rate_limit::RateLimiter {
-    // 5 requests per minute sustained with a burst of 5 — translates to
-    // "roughly 5 magic-link requests per IP before you have to wait." Simple
-    // and enough to kill abusers without blocking legitimate retries.
-    MAGIC_LINK_IP_LIMITER.get_or_init(|| crate::core::rate_limit::RateLimiter::new(5, 5))
-}
-
-fn extract_ip_for_rl(headers: &HeaderMap) -> String {
+fn extract_client_ip(headers: &HeaderMap) -> String {
     // In production we run behind Fly's proxy which sets X-Forwarded-For.
     // Local dev without the header falls back to a single shared bucket,
     // which is fine for a dev machine.
@@ -271,70 +255,7 @@ pub async fn create_magic_link(
     headers: HeaderMap,
     Json(body): Json<MagicLinkRequest>,
 ) -> Response {
-    // IP rate limit first — cheapest check.
-    let ip = extract_ip_for_rl(&headers);
-    if !magic_link_ip_limiter().check(&ip) {
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(json!({
-                "error": "Too many magic-link requests. Try again later.",
-                "code": "rate_limited"
-            })),
-        )
-            .into_response();
-    }
-
-    let email = body.email.trim().to_lowercase();
-    if !email.contains('@') || email.len() < 5 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid email", "code": "invalid_email" })),
-        )
-            .into_response();
-    }
-
-    let intent = match body.intent.as_str() {
-        "subscribe" => MagicLinkIntent::Subscribe,
-        "portal" => MagicLinkIntent::Portal,
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "error": "intent must be 'subscribe' or 'portal'",
-                    "code": "invalid_intent"
-                })),
-            )
-                .into_response();
-        }
-    };
-
-    let tier = if intent == MagicLinkIntent::Subscribe {
-        let Some(tier_str) = body.tier.as_deref() else {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "error": "tier is required when intent=subscribe",
-                    "code": "missing_tier"
-                })),
-            )
-                .into_response();
-        };
-        let Some(t) = MagicLinkTier::parse(tier_str) else {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "error": "tier must be one of pro, business, scale",
-                    "code": "invalid_tier"
-                })),
-            )
-                .into_response();
-        };
-        Some(t)
-    } else {
-        None
-    };
-
-    let Some(magic_links) = state.magic_links_repo.as_ref() else {
+    let Some(service) = state.magic_links_service.as_ref() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Billing not configured", "code": "no_billing" })),
@@ -342,56 +263,26 @@ pub async fn create_magic_link(
             .into_response();
     };
 
-    // Per-email rate limit: 3 per hour. Returns a 200 ("sent") anyway to
-    // avoid enumeration, but skip actually sending an email.
-    let recent = magic_links
-        .count_recent_for_email(&email, 3600)
+    let client_ip = extract_client_ip(&headers);
+    match service
+        .request(&body.email, &body.intent, body.tier.as_deref(), &client_ip)
         .await
-        .unwrap_or(0);
-
-    if recent < 3 {
-        match magic_links.create(&email, intent, tier, 15 * 60).await {
-            Ok((raw_token, _doc)) => {
-                let link_url = format!(
-                    "{}/v1/billing/go?token={}",
-                    state.config.public_url, raw_token
-                );
-                let send_result = match intent {
-                    MagicLinkIntent::Subscribe => {
-                        billing_email::send_magic_link_subscribe(
-                            &state.config.resend_api_key,
-                            &state.config.resend_from_email,
-                            &email,
-                            &link_url,
-                            tier.expect("validated above"),
-                        )
-                        .await
-                    }
-                    MagicLinkIntent::Portal => {
-                        billing_email::send_magic_link_portal(
-                            &state.config.resend_api_key,
-                            &state.config.resend_from_email,
-                            &email,
-                            &link_url,
-                        )
-                        .await
-                    }
-                };
-                if let Err(e) = send_result {
-                    // Don't leak the failure to the caller (enumeration) but do
-                    // log it for ops.
-                    tracing::error!(error = %e, email = %email, "magic_link_email_send_failed");
-                }
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "magic_link_create_failed");
-            }
-        }
-    } else {
-        tracing::info!(email = %email, "magic_link_email_rate_limited");
+    {
+        Ok(()) => (StatusCode::OK, Json(MagicLinkResponse { status: "sent" })).into_response(),
+        Err(MagicLinkError::RateLimited) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({
+                "error": "Too many magic-link requests. Try again later.",
+                "code": "rate_limited"
+            })),
+        )
+            .into_response(),
+        Err(MagicLinkError::Invalid { code, message }) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": message, "code": code })),
+        )
+            .into_response(),
     }
-
-    (StatusCode::OK, Json(MagicLinkResponse { status: "sent" })).into_response()
 }
 
 // ── GET /v1/billing/go — redeem magic link → Stripe redirect ──
@@ -409,99 +300,16 @@ pub async fn redeem_magic_link(
     let expired_url = format!("{}/pricing?error=link_expired", state.config.public_url);
     let no_subscription_url = format!("{}/manage?error=no_subscription", state.config.public_url);
 
-    let Some(magic_links) = state.magic_links_repo.as_ref() else {
-        return Redirect::to(&expired_url).into_response();
-    };
-    let Some(tenants) = state.tenants_repo.as_ref() else {
+    let Some(service) = state.magic_links_service.as_ref() else {
         return Redirect::to(&expired_url).into_response();
     };
 
-    let doc = match magic_links.consume(&q.token).await {
-        Ok(Some(d)) => d,
-        Ok(None) => return Redirect::to(&expired_url).into_response(),
-        Err(e) => {
-            tracing::error!(error = %e, "magic_link_consume_failed");
-            return Redirect::to(&expired_url).into_response();
+    match service.redeem(&q.token).await {
+        RedeemOutcome::CheckoutUrl(url) | RedeemOutcome::PortalUrl(url) => {
+            Redirect::to(&url).into_response()
         }
-    };
-
-    let tenant = match tenants.find_by_owner_email(&doc.email).await {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::error!(error = %e, "magic_link_tenant_lookup_failed");
-            return Redirect::to(&expired_url).into_response();
-        }
-    };
-
-    let stripe_cfg = crate::services::billing::stripe_client::StripeConfig {
-        secret_key: state.config.stripe_secret_key.clone(),
-        price_id_pro: state.config.stripe_price_id_pro.clone(),
-        price_id_business: state.config.stripe_price_id_business.clone(),
-        price_id_scale: state.config.stripe_price_id_scale.clone(),
-        success_url: state.config.stripe_success_url.clone(),
-        cancel_url: state.config.stripe_cancel_url.clone(),
-    };
-
-    let success_url = format!("{}/welcome", state.config.public_url);
-    let cancel_url = format!("{}/pricing?error=cancelled", state.config.public_url);
-
-    match doc.intent {
-        MagicLinkIntent::Subscribe => {
-            let Some(ml_tier) = doc.tier else {
-                return Redirect::to(&expired_url).into_response();
-            };
-            let plan_tier = match ml_tier {
-                MagicLinkTier::Pro => PlanTier::Pro,
-                MagicLinkTier::Business => PlanTier::Business,
-                MagicLinkTier::Scale => PlanTier::Scale,
-            };
-            let tenant_id_hex = tenant.as_ref().and_then(|t| t.id).map(|oid| oid.to_hex());
-            let customer_id = tenant.as_ref().and_then(|t| t.stripe_customer_id.clone());
-
-            let opts = MagicLinkCheckoutOpts {
-                tier: plan_tier,
-                customer_id: customer_id.as_deref(),
-                customer_email: if customer_id.is_none() {
-                    Some(doc.email.as_str())
-                } else {
-                    None
-                },
-                pending_email: if tenant.is_none() {
-                    Some(doc.email.as_str())
-                } else {
-                    None
-                },
-                tenant_id_hex: tenant_id_hex.as_deref(),
-                success_url: &success_url,
-                cancel_url: &cancel_url,
-            };
-
-            match create_checkout_session_for_magic_link(&stripe_cfg, opts).await {
-                Ok(session) => Redirect::to(&session.url).into_response(),
-                Err(e) => {
-                    tracing::error!(error = %e, "magic_link_checkout_failed");
-                    Redirect::to(&expired_url).into_response()
-                }
-            }
-        }
-        MagicLinkIntent::Portal => {
-            let Some(tenant) = tenant else {
-                return Redirect::to(&no_subscription_url).into_response();
-            };
-            let Some(customer_id) = tenant.stripe_customer_id else {
-                return Redirect::to(&no_subscription_url).into_response();
-            };
-            let return_url = format!("{}/manage?done=1", state.config.public_url);
-            match create_portal_session(&state.config.stripe_secret_key, &customer_id, &return_url)
-                .await
-            {
-                Ok(session) => Redirect::to(&session.url).into_response(),
-                Err(e) => {
-                    tracing::error!(error = %e, "magic_link_portal_failed");
-                    Redirect::to(&expired_url).into_response()
-                }
-            }
-        }
+        RedeemOutcome::NoSubscription => Redirect::to(&no_subscription_url).into_response(),
+        RedeemOutcome::Expired => Redirect::to(&expired_url).into_response(),
     }
 }
 

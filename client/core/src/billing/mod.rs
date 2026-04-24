@@ -92,7 +92,10 @@ impl RiftClient {
         self.get("/v1/billing/status").await
     }
 
-    pub async fn create_checkout(&self, tier: PlanTier) -> Result<CheckoutSession, RiftClientError> {
+    pub async fn create_checkout(
+        &self,
+        tier: PlanTier,
+    ) -> Result<CheckoutSession, RiftClientError> {
         let path = format!("/v1/billing/stripe/checkout?tier={}", tier.as_slug());
         self.post(&path, &serde_json::json!({}), false).await
     }

@@ -2,80 +2,9 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { TIERS, type Tier, type TierAudience } from "@/lib/tiers";
 
-type Audience = "human" | "agent";
-
-interface Tier {
-  name: string;
-  human: { price: string; unit?: string };
-  agent: { price: string; unit?: string };
-  desc: string;
-  stats: string[];
-  inherits?: string;
-  items: string[];
-  accent?: boolean;
-  enterprise?: boolean;
-}
-
-const TIERS: Tier[] = [
-  {
-    name: "Free",
-    human: { price: "$0" },
-    agent: { price: "$0" },
-    desc: "For prototyping",
-    stats: ["50 links", "10k events / mo", "1 domain"],
-    items: [
-      "Full REST API + MCP server",
-      "iOS, Android & Web SDKs",
-      "Deep links + deferred deep linking",
-      "Install attribution + click tracking",
-      "Custom styled QR codes with logos",
-      "30-day analytics retention",
-      "Commercial use allowed",
-    ],
-  },
-  {
-    name: "Pro",
-    human: { price: "$18", unit: "/ month" },
-    agent: { price: "$15", unit: "USDC / 30d" },
-    desc: "For shipping",
-    stats: ["2,000 links", "100k events / mo", "5 domains"],
-    inherits: "Free",
-    items: [
-      "Conversion tracking",
-      "Webhooks on every event",
-      "1-year analytics retention",
-      "Email support",
-    ],
-    accent: true,
-  },
-  {
-    name: "Business",
-    human: { price: "$55", unit: "/ month" },
-    agent: { price: "$47", unit: "USDC / 30d" },
-    desc: "For scaling teams",
-    stats: ["20,000 links", "500k events / mo", "20 domains"],
-    inherits: "Pro",
-    items: [
-      "Unlimited team members",
-      "3-year analytics retention",
-      "Priority email support",
-    ],
-  },
-  {
-    name: "Scale",
-    human: { price: "$199", unit: "/ month" },
-    agent: { price: "$169", unit: "USDC / 30d" },
-    desc: "For serious volume",
-    stats: ["100,000 links", "2M events / mo", "Unlimited domains"],
-    inherits: "Business",
-    items: [
-      "5-year analytics retention",
-      "Dedicated Slack channel",
-    ],
-    enterprise: true,
-  },
-];
+type Audience = TierAudience;
 
 const fade = (delay: number) => ({
   initial: { opacity: 0, y: 20 },
@@ -123,7 +52,7 @@ export function PricingSection() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {TIERS.map((tier, i) => (
             <TierCard
-              key={tier.name}
+              key={tier.slug}
               tier={tier}
               audience={audience}
               delay={i * 0.06}
@@ -191,7 +120,7 @@ function TierCard({
   delay: number;
 }) {
   const price = tier[audience];
-  const isPaid = tier.name !== "Free";
+  const isPaid = tier.slug !== "free";
   const cta = !isPaid
     ? "Start free"
     : audience === "agent"
@@ -200,13 +129,13 @@ function TierCard({
 
   // Destinations:
   //   Free (both lanes) → /signup (install + Free web signup form)
-  //   Paid human → /checkout?tier=<lowercase> (magic-link paid flow)
+  //   Paid human → /checkout?tier=<slug> (magic-link paid flow)
   //   Paid agent → /docs#x402 (the curl-based x402 subscribe recipe)
   const ctaHref = !isPaid
     ? "/signup"
     : audience === "agent"
       ? "/docs#agents"
-      : `/checkout?tier=${tier.name.toLowerCase()}`;
+      : `/checkout?tier=${tier.slug}`;
 
   return (
     <motion.div
