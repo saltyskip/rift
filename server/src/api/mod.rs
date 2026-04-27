@@ -1,3 +1,4 @@
+pub mod affiliates;
 pub mod apps;
 pub mod auth;
 pub mod billing;
@@ -67,6 +68,16 @@ use crate::app::AppState;
         webhooks::routes::list_webhooks,
         webhooks::routes::delete_webhook,
         webhooks::routes::patch_webhook,
+        // Affiliates — partner CRUD + scoped credentials (postback dispatch
+        // ships in a follow-up; v1 unblocks partner-side link minting).
+        affiliates::routes::create_affiliate,
+        affiliates::routes::list_affiliates,
+        affiliates::routes::get_affiliate,
+        affiliates::routes::patch_affiliate,
+        affiliates::routes::delete_affiliate,
+        affiliates::routes::create_affiliate_credential,
+        affiliates::routes::list_affiliate_credentials,
+        affiliates::routes::revoke_affiliate_credential,
         // Conversions — sources, webhook ingestion, and SDK tracking
         // (receive_webhook is intentionally excluded — opaque parser-specific body)
         conversions::routes::create_source,
@@ -130,6 +141,14 @@ use crate::app::AppState;
         crate::services::webhooks::models::ListWebhooksResponse,
         crate::services::webhooks::models::UpdateWebhookRequest,
         crate::services::webhooks::models::WebhookEventType,
+        crate::services::affiliates::models::CreateAffiliateRequest,
+        crate::services::affiliates::models::AffiliateDetail,
+        crate::services::affiliates::models::ListAffiliatesResponse,
+        crate::services::affiliates::models::UpdateAffiliateRequest,
+        crate::services::affiliates::models::AffiliateStatus,
+        crate::services::affiliates::models::CreateAffiliateCredentialResponse,
+        crate::services::affiliates::models::AffiliateCredentialDetail,
+        crate::services::affiliates::models::ListAffiliateCredentialsResponse,
         crate::services::conversions::models::SourceType,
         crate::services::conversions::models::CreateSourceRequest,
         crate::services::conversions::models::CreateSourceResponse,
@@ -162,6 +181,7 @@ use crate::app::AppState;
         (name = "Attribution", description = "Click tracking, install reporting, and timeseries analytics"),
         (name = "Webhooks", description = "Real-time event notifications for clicks, attributions, and conversions"),
         (name = "Conversions", description = "Backend-only conversion tracking via webhook sources"),
+        (name = "Affiliates", description = "Named partners with scoped credentials that mint links pinned to their affiliate"),
         (name = "Billing", description = "Plan status, upgrades, and subscription lifecycle"),
         (name = "System", description = "Health checks and operational endpoints"),
     )
@@ -194,7 +214,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                     { "name": "Authentication", "tags": ["Signup", "Secret Keys", "Publishable Keys", "Team Members"] },
                     { "name": "Configuration", "tags": ["Domains", "Apps"] },
                     { "name": "Links", "tags": ["Links", "Attribution"] },
-                    { "name": "Integrations", "tags": ["Webhooks", "Conversions"] },
+                    { "name": "Integrations", "tags": ["Webhooks", "Conversions", "Affiliates"] },
                     { "name": "Billing", "tags": ["Billing"] },
                     { "name": "System", "tags": ["System"] },
                 ]),
@@ -216,6 +236,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(apps::router(state.clone()))
         .merge(webhooks::router(state.clone()))
         .merge(conversions::router(state.clone()))
+        .merge(affiliates::router(state.clone()))
         .merge(billing::router(state.clone()))
         .merge(openapi_json)
         .merge(sdk)

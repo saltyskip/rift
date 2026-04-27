@@ -1,3 +1,4 @@
+pub mod affiliates;
 pub mod apps;
 pub mod conversions;
 pub mod domains;
@@ -10,6 +11,7 @@ pub mod usage;
 pub mod users;
 pub mod webhooks;
 
+pub use affiliates::MockAffiliatesRepo;
 pub use apps::MockAppsRepo;
 pub use conversions::MockConversionsRepo;
 pub use domains::MockDomainsRepo;

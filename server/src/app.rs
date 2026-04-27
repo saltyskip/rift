@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::core::cdp::CdpFacilitator;
 use crate::core::config::Config;
 use crate::core::webhook_dispatcher::WebhookDispatcher;
+use crate::services::affiliates::service::AffiliatesService;
 use crate::services::apps::repo::AppsRepository;
 use crate::services::auth::publishable_keys::repo::SdkKeysRepository;
 use crate::services::auth::secret_keys::repo::SecretKeysRepository;
@@ -44,6 +45,7 @@ pub struct AppState {
     pub links_service: Option<Arc<LinksService>>,
     pub domains_service: Option<Arc<DomainsService>>,
     pub webhooks_service: Option<Arc<WebhooksService>>,
+    pub affiliates_service: Option<Arc<AffiliatesService>>,
     pub users_service: Option<Arc<UsersService>>,
     pub secret_keys_service: Option<Arc<SecretKeysService>>,
     pub conversions_service: Option<Arc<ConversionsService>>,

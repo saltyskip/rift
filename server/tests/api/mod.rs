@@ -1,3 +1,5 @@
+mod affiliate_credentials;
+mod affiliates;
 mod apps;
 mod auth;
 mod domains;

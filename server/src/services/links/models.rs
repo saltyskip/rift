@@ -72,6 +72,11 @@ pub struct Link {
     /// Arbitrary metadata (campaign name, source, etc.).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Document>,
+    /// Affiliate this link belongs to (None for unattributed advertiser links).
+    /// Stamped automatically when minted by an affiliate-scoped credential;
+    /// can also be set explicitly by an unscoped (Full) caller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub affiliate_id: Option<ObjectId>,
     pub created_at: DateTime,
     /// Link safety status.
     #[serde(default)]
@@ -147,6 +152,7 @@ pub struct CreateLinkInput {
     pub ios_store_url: Option<String>,
     pub android_store_url: Option<String>,
     pub metadata: Option<Document>,
+    pub affiliate_id: Option<ObjectId>,
     pub expires_at: Option<DateTime>,
     pub agent_context: Option<AgentContext>,
     pub social_preview: Option<SocialPreview>,
@@ -163,10 +169,16 @@ impl CreateLinkInput {
             ios_store_url: None,
             android_store_url: None,
             metadata: None,
+            affiliate_id: None,
             expires_at: None,
             agent_context: None,
             social_preview: None,
         }
+    }
+
+    pub fn affiliate_id(mut self, v: ObjectId) -> Self {
+        self.affiliate_id = Some(v);
+        self
     }
 
     pub fn expires_at(mut self, v: DateTime) -> Self {
@@ -246,6 +258,13 @@ pub struct CreateLinkRequest {
     /// Arbitrary key-value metadata.
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
+    /// Affiliate this link should be attributed to. Optional for full-scope
+    /// callers (advertiser keys); ignored / overridden for affiliate-scoped
+    /// callers — server pins to the credential's affiliate. Mismatched values
+    /// from a scoped caller return `affiliate_scope_mismatch`.
+    #[serde(default)]
+    #[schema(value_type = String, example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    pub affiliate_id: Option<ObjectId>,
     /// Structured context for AI agents. When set, agents resolving this link receive action, CTA, and description metadata alongside the destinations.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
@@ -333,6 +352,10 @@ pub struct LinkDetail {
     pub android_store_url: Option<String>,
     #[schema(example = "2025-06-15T10:30:00Z")]
     pub created_at: String,
+    /// Affiliate this link is attributed to. None for unattributed links.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>, example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    pub affiliate_id: Option<ObjectId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,
     #[serde(skip_serializing_if = "Option::is_none")]

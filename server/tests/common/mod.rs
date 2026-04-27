@@ -16,9 +16,9 @@ use rift::services::auth::users::repo::UsersRepository;
 use rift::services::domains::repo::DomainsRepository;
 
 use mocks::{
-    MockAppsRepo, MockConversionsRepo, MockDomainsRepo, MockLinksRepo, MockSdkKeysRepo,
-    MockSecretKeysRepo, MockTenantsRepo, MockTokensRepo, MockUsageRepo, MockUsersRepo,
-    MockWebhookDispatcher, MockWebhooksRepo,
+    MockAffiliatesRepo, MockAppsRepo, MockConversionsRepo, MockDomainsRepo, MockLinksRepo,
+    MockSdkKeysRepo, MockSecretKeysRepo, MockTenantsRepo, MockTokensRepo, MockUsageRepo,
+    MockUsersRepo, MockWebhookDispatcher, MockWebhooksRepo,
 };
 
 #[allow(dead_code)]
@@ -35,6 +35,7 @@ pub struct TestApp {
     pub webhooks_repo: Arc<MockWebhooksRepo>,
     pub webhook_dispatcher: Arc<MockWebhookDispatcher>,
     pub sdk_keys_repo: Arc<MockSdkKeysRepo>,
+    pub affiliates_repo: Arc<MockAffiliatesRepo>,
     pub threat_feed: rift::core::threat_feed::ThreatFeed,
 }
 
@@ -55,6 +56,7 @@ pub async fn spawn_app() -> TestApp {
     let webhooks_repo = Arc::new(MockWebhooksRepo::default());
     let webhook_dispatcher = Arc::new(MockWebhookDispatcher::default());
     let sdk_keys_repo = Arc::new(MockSdkKeysRepo::default());
+    let affiliates_repo = Arc::new(MockAffiliatesRepo::default());
 
     let config = Config {
         host: "127.0.0.1".to_string(),
@@ -91,6 +93,8 @@ pub async fn spawn_app() -> TestApp {
     let links_service = Some(Arc::new(rift::services::links::service::LinksService::new(
         links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>,
         Some(domains_repo.clone() as Arc<dyn rift::services::domains::repo::DomainsRepository>),
+        Some(affiliates_repo.clone()
+            as Arc<dyn rift::services::affiliates::repo::AffiliatesRepository>),
         threat_feed.clone(),
         config.public_url.clone(),
         None,
@@ -154,6 +158,14 @@ pub async fn spawn_app() -> TestApp {
                 None,
             ),
         )),
+        affiliates_service: Some(Arc::new(
+            rift::services::affiliates::service::AffiliatesService::new(
+                affiliates_repo.clone()
+                    as Arc<dyn rift::services::affiliates::repo::AffiliatesRepository>,
+                secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>,
+                None,
+            ),
+        )),
         users_service: Some(Arc::new(
             rift::services::auth::users::service::UsersService::new(
                 tenants_service.clone(),
@@ -206,6 +218,7 @@ pub async fn spawn_app() -> TestApp {
         webhooks_repo,
         webhook_dispatcher,
         sdk_keys_repo,
+        affiliates_repo,
     }
 }
 
@@ -259,7 +272,9 @@ pub async fn seed_api_key_with(app: &TestApp, raw_key: &str) -> (String, ObjectI
     };
     app.tenants_repo.create(&tenant_doc).await.unwrap();
 
-    // Create secret key
+    // Create secret key. Default to KeyScope::Full so test fixtures match
+    // post-migration production semantics (advertiser key, full tenant access).
+    // Tests that need affiliate-scoped credentials build the doc inline.
     let key_doc = SecretKeyDoc {
         id: ObjectId::new(),
         tenant_id,
@@ -267,8 +282,31 @@ pub async fn seed_api_key_with(app: &TestApp, raw_key: &str) -> (String, ObjectI
         key_hash: hash,
         key_prefix: format!("{}...", &raw_key[..18]),
         created_at: mongodb::bson::DateTime::now(),
+        scope: Some(rift::services::auth::secret_keys::repo::KeyScope::Full),
     };
     app.secret_keys_repo.create_key(&key_doc).await.unwrap();
 
     (raw_key.to_string(), tenant_id)
+}
+
+/// Seed a `KeyScope::Affiliate`-scoped credential for an existing tenant.
+/// Used to test partner-side flows: scoped link minting + middleware allowlist.
+pub async fn seed_affiliate_scoped_key(
+    app: &TestApp,
+    tenant_id: ObjectId,
+    affiliate_id: ObjectId,
+    raw_key: &str,
+) -> String {
+    let hash = hex::encode(Sha256::digest(raw_key.as_bytes()));
+    let key_doc = SecretKeyDoc {
+        id: ObjectId::new(),
+        tenant_id,
+        created_by: ObjectId::new(),
+        key_hash: hash,
+        key_prefix: format!("{}...", &raw_key[..18]),
+        created_at: mongodb::bson::DateTime::now(),
+        scope: Some(rift::services::auth::secret_keys::repo::KeyScope::Affiliate { affiliate_id }),
+    };
+    app.secret_keys_repo.create_key(&key_doc).await.unwrap();
+    raw_key.to_string()
 }

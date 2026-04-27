@@ -11,7 +11,7 @@ use x402_types::proto::v1;
 
 use crate::app::AppState;
 use crate::services::auth::keys;
-use crate::services::auth::secret_keys::repo::SecretKeysRepository;
+use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::auth::usage::repo::{self as usage_repo};
 
 /// Tenant identity injected by the auth middleware.
@@ -27,6 +27,15 @@ pub struct AuthKeyId(pub ObjectId);
 /// Domain associated with an SDK key, injected by `sdk_auth_gate`.
 #[derive(Debug, Clone)]
 pub struct SdkDomain(pub String);
+
+/// Scope the calling key carries.
+///
+/// Always injected as `Extension<CallerScope>`, with `scope: None` for
+/// pre-migration rows that haven't been backfilled yet (grandfathered to
+/// `Full` per `services/auth/scope::require_full`). Affiliate-scoped keys
+/// can only hit the path allowlist; everything else returns 403.
+#[derive(Debug, Clone)]
+pub struct CallerScope(pub Option<KeyScope>);
 
 /// Auth + rate-limit middleware for protected endpoints.
 ///
@@ -50,15 +59,34 @@ pub async fn auth_gate(
 
     // ── Path 1: API key ──
     if let Some(raw_key) = extract_bearer(&req) {
-        let (tenant_id, key_id) =
+        let (tenant_id, key_id, scope) =
             match validate_api_key(state.secret_keys_repo.as_deref(), &raw_key).await {
                 Ok(ids) => ids,
                 Err(resp) => return resp,
             };
 
-        // Inject tenant identity and key identity for downstream handlers.
+        // Affiliate-scoped keys can only hit the link-minting allowlist.
+        // Defense in depth: services that own affiliate-side logic also
+        // call `services::auth::scope::require_*` so MCP and other
+        // transports stay honest. The middleware is the coarse, fast
+        // fail-closed for HTTP.
+        if let Some(KeyScope::Affiliate { .. }) = scope {
+            if !is_path_allowed_for_affiliate(req.method(), req.uri().path()) {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(json!({
+                        "error": "This key's scope does not permit this operation",
+                        "code": "forbidden_scope"
+                    })),
+                )
+                    .into_response();
+            }
+        }
+
+        // Inject tenant identity, key identity, and scope for downstream handlers.
         req.extensions_mut().insert(TenantId(tenant_id));
         req.extensions_mut().insert(AuthKeyId(key_id));
+        req.extensions_mut().insert(CallerScope(scope));
 
         let response = next.run(req).await;
         if response.status().is_success() {
@@ -266,11 +294,11 @@ fn extract_sdk_query_key(req: &Request) -> Option<String> {
 }
 
 /// Validate an API key against SecretKeysRepository.
-/// Returns (tenant_id, key_id).
+/// Returns (tenant_id, key_id, scope).
 async fn validate_api_key(
     secret_keys_repo: Option<&dyn SecretKeysRepository>,
     raw_key: &str,
-) -> Result<(ObjectId, ObjectId), Response> {
+) -> Result<(ObjectId, ObjectId, Option<KeyScope>), Response> {
     let hash = keys::hash_key(raw_key);
 
     let sk_repo = secret_keys_repo.ok_or_else(|| {
@@ -303,7 +331,45 @@ async fn validate_api_key(
                 .into_response()
         })?;
 
-    Ok((key_doc.tenant_id, key_doc.id))
+    if key_doc.scope.is_none() {
+        // Migration-window grandfather. After m004 runs in prod and the
+        // follow-up PR ships, this branch becomes a 401.
+        tracing::warn!(
+            key_id = %key_doc.id,
+            "secret_key_missing_scope_grandfathered_to_full"
+        );
+    }
+
+    Ok((key_doc.tenant_id, key_doc.id, key_doc.scope))
+}
+
+/// Path allowlist for `KeyScope::Affiliate`.
+///
+/// In v1 affiliate-scoped credentials can:
+///   - mint a link (server pins `affiliate_id` to the scope's affiliate)
+///   - read one of their own links by id
+///
+/// Everything else (managing affiliates, webhooks, domains, team, conversion
+/// sources, etc.) requires `KeyScope::Full`. New affiliate-side endpoints
+/// must be added here AND have a service-layer check.
+fn is_path_allowed_for_affiliate(method: &axum::http::Method, path: &str) -> bool {
+    use axum::http::Method;
+
+    match (method, path) {
+        // POST /v1/links — server pins affiliate_id at the service layer.
+        (m, "/v1/links") if m == Method::POST => true,
+        // GET /v1/links/{link_id} — service layer 404s on cross-affiliate.
+        (m, p) if m == Method::GET && is_link_get_path(p) => true,
+        _ => false,
+    }
+}
+
+fn is_link_get_path(path: &str) -> bool {
+    // Match `/v1/links/<segment>` exactly — no trailing slashes, no nested paths.
+    let Some(rest) = path.strip_prefix("/v1/links/") else {
+        return false;
+    };
+    !rest.is_empty() && !rest.contains('/')
 }
 
 async fn check_anonymous_limit(

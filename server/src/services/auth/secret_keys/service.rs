@@ -2,7 +2,7 @@ use mongodb::bson::{doc, oid::ObjectId};
 use std::fmt;
 use std::sync::Arc;
 
-use super::repo::{SecretKeyDoc, SecretKeysRepository};
+use super::repo::{KeyScope, SecretKeyDoc, SecretKeysRepository};
 use crate::core::email;
 use crate::services::auth::keys;
 use crate::services::auth::users::repo::UsersRepository;
@@ -89,11 +89,25 @@ pub struct KeyDetail {
 //
 // Used by the initial owner-key path (UsersService::verify) and the
 // confirmation-code path (SecretKeysService::confirm_create). Billing paths
-// in later phases can call this directly.
+// in later phases can call this directly. Mints with `KeyScope::Full`;
+// affiliate-scoped keys go through `mint_scoped` below.
 pub async fn mint_for_tenant(
     sk_repo: &dyn SecretKeysRepository,
     tenant_id: ObjectId,
     created_by: ObjectId,
+) -> Result<CreatedKey, String> {
+    mint_scoped(sk_repo, tenant_id, created_by, KeyScope::Full).await
+}
+
+/// Mint a secret key with an explicit scope.
+///
+/// `KeyScope::Full` for advertiser keys, `KeyScope::Affiliate { affiliate_id }`
+/// for partner credentials provisioned via `POST /v1/affiliates/{id}/credentials`.
+pub async fn mint_scoped(
+    sk_repo: &dyn SecretKeysRepository,
+    tenant_id: ObjectId,
+    created_by: ObjectId,
+    scope: KeyScope,
 ) -> Result<CreatedKey, String> {
     let (full_key, key_hash, key_prefix) = keys::generate_api_key();
     let key_id = ObjectId::new();
@@ -106,6 +120,7 @@ pub async fn mint_for_tenant(
         key_hash,
         key_prefix: key_prefix.clone(),
         created_at: now,
+        scope: Some(scope),
     };
 
     sk_repo.create_key(&key_doc).await?;

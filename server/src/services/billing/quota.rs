@@ -33,6 +33,7 @@ pub enum Resource {
     CreateDomain,
     InviteTeamMember,
     CreateWebhook,
+    CreateAffiliate,
 }
 
 impl Resource {
@@ -43,6 +44,7 @@ impl Resource {
             Self::CreateDomain => "create_domain",
             Self::InviteTeamMember => "invite_team_member",
             Self::CreateWebhook => "create_webhook",
+            Self::CreateAffiliate => "create_affiliate",
         }
     }
 }
@@ -216,6 +218,7 @@ fn limit_for_resource(limits: &PlanLimits, resource: Resource) -> Option<u64> {
         Resource::CreateDomain => limits.max_domains,
         Resource::InviteTeamMember => limits.max_team_members,
         Resource::CreateWebhook => limits.max_webhooks,
+        Resource::CreateAffiliate => limits.max_affiliates,
     }
 }
 

@@ -21,6 +21,7 @@ use x402_types::networks::USDC;
 
 use crate::app::AppState;
 use crate::core::config::Config;
+use crate::services::affiliates::repo::AffiliatesRepo;
 use crate::services::apps::repo::AppsRepo;
 use crate::services::auth::publishable_keys::repo::SdkKeysRepo;
 use crate::services::auth::secret_keys::repo::SecretKeysRepo;
@@ -164,12 +165,13 @@ async fn run_server(cfg: Config) {
         event_counters_repo,
         stripe_webhook_dedup_repo,
         tokens_repo,
+        affiliates_repo,
     ) = if cfg.mongo_uri.is_empty() {
         tracing::warn!(
-            "MONGO_URI not set — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
+            "MONGO_URI not set — auth, links, domains, apps, webhooks, sdk_keys, conversions, and affiliates disabled"
         );
         (
-            None, None, None, None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None, None, None, None,
         )
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
@@ -192,6 +194,8 @@ async fn run_server(cfg: Config) {
                     Arc::new(AppsRepo::new(&database).await);
                 let webhooks: Arc<dyn crate::services::webhooks::repo::WebhooksRepository> =
                     Arc::new(WebhooksRepo::new(&database).await);
+                let affiliates: Arc<dyn crate::services::affiliates::repo::AffiliatesRepository> =
+                    Arc::new(AffiliatesRepo::new(&database).await);
                 let sdk_keys: Arc<
                     dyn crate::services::auth::publishable_keys::repo::SdkKeysRepository,
                 > = Arc::new(SdkKeysRepo::new(&database).await);
@@ -230,14 +234,16 @@ async fn run_server(cfg: Config) {
                     Some(event_counters),
                     Some(stripe_dedup),
                     Some(tokens),
+                    Some(affiliates),
                 )
             }
             None => {
                 tracing::warn!(
-                    "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, sdk_keys, and conversions disabled"
+                    "Failed to connect to MongoDB — auth, links, domains, apps, webhooks, sdk_keys, conversions, and affiliates disabled"
                 );
                 (
                     None, None, None, None, None, None, None, None, None, None, None, None, None,
+                    None,
                 )
             }
         }
@@ -351,14 +357,16 @@ async fn run_server(cfg: Config) {
         &domains_repo,
         &users_repo,
         &webhooks_repo,
+        &affiliates_repo,
     ) {
-        (Some(b), Some(counters), Some(l), Some(d), Some(u), Some(w)) => {
+        (Some(b), Some(counters), Some(l), Some(d), Some(u), Some(w), Some(a)) => {
             let resource_counts = Arc::new(
                 crate::services::billing::repos::resource_counts_adapter::RepoResourceCounts {
                     links: l.clone(),
                     domains: d.clone(),
                     users: u.clone(),
                     webhooks: w.clone(),
+                    affiliates: a.clone(),
                 },
             )
                 as Arc<dyn crate::services::billing::quota::ResourceCounts>;
@@ -394,6 +402,7 @@ async fn run_server(cfg: Config) {
         Arc::new(crate::services::links::service::LinksService::new(
             repo.clone(),
             domains_repo.clone(),
+            affiliates_repo.clone(),
             threat_feed.clone(),
             cfg.public_url.clone(),
             quota_service.clone(),
@@ -414,6 +423,17 @@ async fn run_server(cfg: Config) {
             quota_service.clone(),
         ))
     });
+
+    let affiliates_service = match (&affiliates_repo, &secret_keys_repo) {
+        (Some(r), Some(sk)) => Some(Arc::new(
+            crate::services::affiliates::service::AffiliatesService::new(
+                r.clone(),
+                sk.clone(),
+                quota_service.clone(),
+            ),
+        )),
+        _ => None,
+    };
 
     let users_service = match (
         &tenants_service,
@@ -462,6 +482,7 @@ async fn run_server(cfg: Config) {
         links_service,
         domains_service,
         webhooks_service,
+        affiliates_service,
         users_service,
         secret_keys_service,
         conversions_service,
