@@ -1,3 +1,4 @@
+pub mod affiliates;
 pub mod apps;
 pub mod auth;
 pub mod billing;

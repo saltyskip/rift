@@ -8,6 +8,7 @@ pub struct PlanLimits {
     pub max_domains: Option<u64>,
     pub max_team_members: Option<u64>,
     pub max_webhooks: Option<u64>,
+    pub max_affiliates: Option<u64>,
     /// Retention bucket string written into event metaField for partial TTL.
     pub retention_bucket: &'static str,
 }
@@ -25,6 +26,7 @@ pub fn limits_for(tier: PlanTier) -> PlanLimits {
             max_domains: Some(1),
             max_team_members: Some(1),
             max_webhooks: Some(1),
+            max_affiliates: Some(1),
             retention_bucket: "30d",
         },
         PlanTier::Pro => PlanLimits {
@@ -33,6 +35,7 @@ pub fn limits_for(tier: PlanTier) -> PlanLimits {
             max_domains: Some(5),
             max_team_members: Some(1),
             max_webhooks: Some(5),
+            max_affiliates: Some(5),
             retention_bucket: "1y",
         },
         PlanTier::Business => PlanLimits {
@@ -41,6 +44,7 @@ pub fn limits_for(tier: PlanTier) -> PlanLimits {
             max_domains: Some(20),
             max_team_members: None,
             max_webhooks: Some(20),
+            max_affiliates: Some(20),
             retention_bucket: "3y",
         },
         PlanTier::Scale => PlanLimits {
@@ -49,6 +53,7 @@ pub fn limits_for(tier: PlanTier) -> PlanLimits {
             max_domains: None,
             max_team_members: None,
             max_webhooks: None,
+            max_affiliates: None,
             retention_bucket: "5y",
         },
     }

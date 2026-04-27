@@ -152,6 +152,16 @@ impl LinksRepo {
         // Non-unique index on link_id for public resolution via /r/{link_id}.
         ensure_index!(links, doc! { "link_id": 1 }, "link_id_lookup");
 
+        // Affiliate-scoped lookups: "list/find this tenant's links by affiliate".
+        // Sparse-friendly without a partial filter — Mongo indexes nullable
+        // fields at the index leaf so unattributed links don't bloat the
+        // ratio relevant to affiliate queries.
+        ensure_index!(
+            links,
+            doc! { "tenant_id": 1, "affiliate_id": 1 },
+            "links_tenant_affiliate"
+        );
+
         // The default _id index covers cursor-based pagination (sorted by _id desc).
         // ObjectIds are monotonically increasing, so _id order matches creation order.
 
@@ -246,6 +256,7 @@ impl LinksRepository for LinksRepo {
             ios_store_url: input.ios_store_url,
             android_store_url: input.android_store_url,
             metadata: input.metadata,
+            affiliate_id: input.affiliate_id,
             created_at: DateTime::now(),
             status: LinkStatus::Active,
             flag_reason: None,

@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::api::auth::middleware::{SdkDomain, TenantId};
+use crate::api::auth::middleware::{CallerScope, SdkDomain, TenantId};
 use crate::app::AppState;
 use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload};
 use crate::services::domains::models::DomainRole;
@@ -110,9 +110,10 @@ fn link_error_to_response(err: LinkError) -> Response {
         | LinkError::InvalidSocialPreview(_)
         | LinkError::ThreatDetected(_)
         | LinkError::NoVerifiedDomain
-        | LinkError::EmptyUpdate => StatusCode::BAD_REQUEST,
+        | LinkError::EmptyUpdate
+        | LinkError::AffiliateScopeMismatch => StatusCode::BAD_REQUEST,
         LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
-        LinkError::NotFound => StatusCode::NOT_FOUND,
+        LinkError::NotFound | LinkError::AffiliateNotFound => StatusCode::NOT_FOUND,
         LinkError::QuotaExceeded(_) => unreachable!("handled above"),
         LinkError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
@@ -169,6 +170,7 @@ fn detect_platform(user_agent: &str) -> Platform {
 pub async fn create_link(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(scope): axum::Extension<CallerScope>,
     Json(req): Json<CreateLinkRequest>,
 ) -> Response {
     let Some(ref svc) = state.links_service else {
@@ -179,9 +181,9 @@ pub async fn create_link(
             .into_response();
     };
 
-    // Quota check moved into LinksService::create_link so MCP tool calls hit
-    // the same enforcement path. Don't re-check here.
-    match svc.create_link(tenant.0, req).await {
+    // Quota check + scope/affiliate enforcement live in
+    // `LinksService::create_link` so MCP tool calls hit the same path.
+    match svc.create_link(tenant.0, scope.0.as_ref(), req).await {
         Ok(resp) => (StatusCode::CREATED, Json(json!(resp))).into_response(),
         Err(e) => link_error_to_response(e),
     }
@@ -234,6 +236,7 @@ pub async fn list_links(
 pub async fn get_link(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(scope): axum::Extension<CallerScope>,
     Path(link_id): Path<String>,
 ) -> Response {
     let Some(svc) = &state.links_service else {
@@ -244,7 +247,7 @@ pub async fn get_link(
             .into_response();
     };
 
-    match svc.get_link(&tenant.0, &link_id).await {
+    match svc.get_link(&tenant.0, scope.0.as_ref(), &link_id).await {
         Ok(detail) => Json(json!(detail)).into_response(),
         Err(crate::services::links::service::LinkError::NotFound) => (
             StatusCode::NOT_FOUND,

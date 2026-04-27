@@ -52,6 +52,7 @@ fn make_link(tenant_id: ObjectId, link_id: &str) -> Link {
         ios_store_url: None,
         android_store_url: None,
         metadata: None,
+        affiliate_id: None,
         created_at: DateTime::now(),
         status: LinkStatus::Active,
         flag_reason: None,
@@ -78,6 +79,7 @@ impl LinksRepository for MockLinksRepo {
             ios_store_url: input.ios_store_url,
             android_store_url: input.android_store_url,
             metadata: input.metadata,
+            affiliate_id: input.affiliate_id,
             created_at: DateTime::now(),
             status: LinkStatus::Active,
             flag_reason: None,
@@ -308,6 +310,7 @@ fn make_service(links: Vec<Link>, has_verified_domain: bool) -> LinksService {
     LinksService::new(
         repo,
         Some(domains),
+        None, // no affiliates wired for these tests
         ThreatFeed::new(),
         "https://riftl.ink".to_string(),
         None,
@@ -329,11 +332,12 @@ async fn create_link_generates_id() {
         ios_store_url: None,
         android_store_url: None,
         metadata: None,
+        affiliate_id: None,
         agent_context: None,
         social_preview: None,
     };
 
-    let resp = svc.create_link(tenant_id, req).await.unwrap();
+    let resp = svc.create_link(tenant_id, None, req).await.unwrap();
     assert_eq!(resp.link_id.len(), 8);
     assert!(resp.url.contains(&resp.link_id));
 }
@@ -350,11 +354,12 @@ async fn create_link_custom_id_requires_verified_domain() {
         ios_store_url: None,
         android_store_url: None,
         metadata: None,
+        affiliate_id: None,
         agent_context: None,
         social_preview: None,
     };
 
-    let err = svc.create_link(tenant_id, req).await.unwrap_err();
+    let err = svc.create_link(tenant_id, None, req).await.unwrap_err();
     assert!(matches!(err, LinkError::NoVerifiedDomain));
 }
 
@@ -370,11 +375,12 @@ async fn create_link_custom_id_with_verified_domain() {
         ios_store_url: None,
         android_store_url: None,
         metadata: None,
+        affiliate_id: None,
         agent_context: None,
         social_preview: None,
     };
 
-    let resp = svc.create_link(tenant_id, req).await.unwrap();
+    let resp = svc.create_link(tenant_id, None, req).await.unwrap();
     assert_eq!(resp.link_id, "my-link");
     assert_eq!(resp.url, "https://example.com/my-link");
 }
@@ -391,11 +397,12 @@ async fn create_link_invalid_custom_id() {
         ios_store_url: None,
         android_store_url: None,
         metadata: None,
+        affiliate_id: None,
         agent_context: None,
         social_preview: None,
     };
 
-    let err = svc.create_link(tenant_id, req).await.unwrap_err();
+    let err = svc.create_link(tenant_id, None, req).await.unwrap_err();
     assert!(matches!(err, LinkError::InvalidCustomId(_)));
 }
 
@@ -413,12 +420,13 @@ async fn create_link_duplicate() {
         ios_store_url: None,
         android_store_url: None,
         metadata: None,
+        affiliate_id: None,
         agent_context: None,
         social_preview: None,
     };
 
     // First create should succeed (random ID won't collide with "EXISTING")
-    let resp = svc.create_link(tenant_id, req).await.unwrap();
+    let resp = svc.create_link(tenant_id, None, req).await.unwrap();
     assert_ne!(resp.link_id, "EXISTING");
 }
 
@@ -428,7 +436,7 @@ async fn get_link_existing() {
     let link = make_link(tenant_id, "ABC123");
     let svc = make_service(vec![link], false);
 
-    let detail = svc.get_link(&tenant_id, "ABC123").await.unwrap();
+    let detail = svc.get_link(&tenant_id, None, "ABC123").await.unwrap();
     assert_eq!(detail.link_id, "ABC123");
     assert!(detail.url.contains("ABC123"));
 }
@@ -438,7 +446,7 @@ async fn get_link_not_found() {
     let svc = make_service(vec![], false);
     let tenant_id = ObjectId::new();
 
-    let err = svc.get_link(&tenant_id, "NOPE").await.unwrap_err();
+    let err = svc.get_link(&tenant_id, None, "NOPE").await.unwrap_err();
     assert!(matches!(err, LinkError::NotFound));
 }
 

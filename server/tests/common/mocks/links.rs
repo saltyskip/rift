@@ -43,6 +43,7 @@ impl LinksRepository for MockLinksRepo {
             ios_store_url: input.ios_store_url,
             android_store_url: input.android_store_url,
             metadata: input.metadata,
+            affiliate_id: input.affiliate_id,
             created_at: DateTime::now(),
             status: LinkStatus::Active,
             flag_reason: None,

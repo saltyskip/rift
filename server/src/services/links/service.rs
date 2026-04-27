@@ -8,6 +8,8 @@ use super::models::*;
 use super::repo::LinksRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
+use crate::services::affiliates::repo::AffiliatesRepository;
+use crate::services::auth::secret_keys::repo::KeyScope;
 use crate::services::billing::quota::{QuotaChecker, QuotaError, Resource};
 use crate::services::billing::service::TierResolver;
 use crate::services::domains::models::DomainRole;
@@ -27,6 +29,10 @@ pub enum LinkError {
     NotFound,
     NoVerifiedDomain,
     EmptyUpdate,
+    /// Caller's affiliate scope does not match the requested `affiliate_id`.
+    AffiliateScopeMismatch,
+    /// Caller (full scope) referenced an affiliate that doesn't exist in this tenant.
+    AffiliateNotFound,
     QuotaExceeded(QuotaError),
     Internal(String),
 }
@@ -52,6 +58,11 @@ impl fmt::Display for LinkError {
                 write!(f, "Custom IDs require a verified custom domain")
             }
             Self::EmptyUpdate => write!(f, "No fields to update"),
+            Self::AffiliateScopeMismatch => write!(
+                f,
+                "affiliate_id does not match the affiliate this credential is scoped to"
+            ),
+            Self::AffiliateNotFound => write!(f, "Affiliate not found"),
             Self::QuotaExceeded(e) => write!(f, "{e}"),
             Self::Internal(e) => write!(f, "Internal error: {e}"),
         }
@@ -72,6 +83,8 @@ impl LinkError {
             Self::NotFound => "not_found",
             Self::NoVerifiedDomain => "no_verified_domain",
             Self::EmptyUpdate => "empty_update",
+            Self::AffiliateScopeMismatch => "affiliate_scope_mismatch",
+            Self::AffiliateNotFound => "affiliate_not_found",
             Self::QuotaExceeded(_) => "quota_exceeded",
             Self::Internal(_) => "db_error",
         }
@@ -83,6 +96,12 @@ impl LinkError {
 pub struct LinksService {
     links_repo: Arc<dyn LinksRepository>,
     domains_repo: Option<Arc<dyn DomainsRepository>>,
+    /// Optional so the test harness and reduced-feature builds can boot
+    /// without an affiliates collection. Affiliate-scoped credentials and
+    /// explicit `affiliate_id` values require it; absence is treated as
+    /// "no affiliates configured" → `AffiliateNotFound` for explicit values
+    /// and a graceful pass-through for unscoped/no-affiliate creates.
+    affiliates_repo: Option<Arc<dyn AffiliatesRepository>>,
     threat_feed: ThreatFeed,
     public_url: String,
     quota: Option<Arc<dyn QuotaChecker>>,
@@ -93,6 +112,7 @@ impl LinksService {
     pub fn new(
         links_repo: Arc<dyn LinksRepository>,
         domains_repo: Option<Arc<dyn DomainsRepository>>,
+        affiliates_repo: Option<Arc<dyn AffiliatesRepository>>,
         threat_feed: ThreatFeed,
         public_url: String,
         quota: Option<Arc<dyn QuotaChecker>>,
@@ -101,6 +121,7 @@ impl LinksService {
         Self {
             links_repo,
             domains_repo,
+            affiliates_repo,
             threat_feed,
             public_url,
             quota,
@@ -154,10 +175,11 @@ impl LinksService {
         }
     }
 
-    #[tracing::instrument(skip(self, req))]
+    #[tracing::instrument(skip(self, req, caller_scope))]
     pub async fn create_link(
         &self,
         tenant_id: ObjectId,
+        caller_scope: Option<&KeyScope>,
         req: CreateLinkRequest,
     ) -> Result<CreateLinkResponse, LinkError> {
         // Quota enforcement lives here (service layer) so MCP tool invocations
@@ -166,6 +188,20 @@ impl LinksService {
         if let Some(q) = &self.quota {
             q.check(&tenant_id, Resource::CreateLink).await?;
         }
+
+        // Resolve `affiliate_id` against the caller's scope.
+        //
+        // | caller_scope        | req.affiliate_id     | result                      |
+        // |---------------------|----------------------|-----------------------------|
+        // | Affiliate(A)        | None                 | pin to A                    |
+        // | Affiliate(A)        | Some(A)              | pin to A                    |
+        // | Affiliate(A)        | Some(B) where B != A | AffiliateScopeMismatch (400)|
+        // | Full / None (grand) | Some(B)              | validate B; pin to B        |
+        // | Full / None (grand) | None                 | None (existing behaviour)   |
+        let resolved_affiliate_id = self
+            .resolve_affiliate_id(&tenant_id, caller_scope, req.affiliate_id)
+            .await?;
+
         let has_verified_domain = self.tenant_has_verified_domain(&tenant_id).await;
 
         let link_id = match &req.custom_id {
@@ -235,6 +271,9 @@ impl LinksService {
         if let Some(v) = metadata {
             input = input.metadata(v);
         }
+        if let Some(aff) = resolved_affiliate_id {
+            input = input.affiliate_id(aff);
+        }
         if let Some(ac) = req.agent_context {
             input = input.agent_context(ac);
         }
@@ -269,10 +308,11 @@ impl LinksService {
         })
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, caller_scope))]
     pub async fn get_link(
         &self,
         tenant_id: &ObjectId,
+        caller_scope: Option<&KeyScope>,
         link_id: &str,
     ) -> Result<LinkDetail, LinkError> {
         let link = self
@@ -281,6 +321,15 @@ impl LinksService {
             .await
             .map_err(LinkError::Internal)?
             .ok_or(LinkError::NotFound)?;
+
+        // Affiliate-scoped credentials can only read their own affiliate's
+        // links. Return NotFound (not Forbidden) so the existence of links
+        // belonging to other affiliates isn't disclosed.
+        if let Some(KeyScope::Affiliate { affiliate_id }) = caller_scope {
+            if link.affiliate_id != Some(*affiliate_id) {
+                return Err(LinkError::NotFound);
+            }
+        }
 
         Ok(self.link_to_detail(&link).await)
     }
@@ -424,8 +473,10 @@ impl LinksService {
             return Err(LinkError::NotFound);
         }
 
-        // Re-fetch the updated link.
-        self.get_link(tenant_id, link_id).await
+        // Re-fetch the updated link. The caller's update was already
+        // authorized; passing None here means "no scope check" (treated as
+        // Full for read).
+        self.get_link(tenant_id, None, link_id).await
     }
 
     #[tracing::instrument(skip(self))]
@@ -497,6 +548,7 @@ impl LinksService {
             ios_store_url: link.ios_store_url.clone(),
             android_store_url: link.android_store_url.clone(),
             created_at: link.created_at.try_to_rfc3339_string().unwrap_or_default(),
+            affiliate_id: link.affiliate_id,
             agent_context: link.agent_context.clone(),
             social_preview: link.social_preview.clone(),
         }
@@ -511,6 +563,41 @@ impl LinksService {
             .ok()
             .map(|domains| domains.iter().any(|d| d.verified))
             .unwrap_or(false)
+    }
+
+    /// Resolve the link's `affiliate_id` from the caller's scope and the
+    /// optional value in the request body. See the branch table in
+    /// `create_link` for the full matrix.
+    async fn resolve_affiliate_id(
+        &self,
+        tenant_id: &ObjectId,
+        caller_scope: Option<&KeyScope>,
+        requested: Option<ObjectId>,
+    ) -> Result<Option<ObjectId>, LinkError> {
+        match (caller_scope, requested) {
+            // Affiliate-scoped credential — server pins to scope; reject mismatch.
+            (Some(KeyScope::Affiliate { affiliate_id }), None) => Ok(Some(*affiliate_id)),
+            (Some(KeyScope::Affiliate { affiliate_id }), Some(req)) if req == *affiliate_id => {
+                Ok(Some(*affiliate_id))
+            }
+            (Some(KeyScope::Affiliate { .. }), Some(_)) => Err(LinkError::AffiliateScopeMismatch),
+
+            // Full scope (or pre-migration grandfather) — accept request value
+            // after validating it exists in this tenant.
+            (Some(KeyScope::Full), Some(req)) | (None, Some(req)) => {
+                let repo = self
+                    .affiliates_repo
+                    .as_ref()
+                    .ok_or(LinkError::AffiliateNotFound)?;
+                repo.get_by_id(tenant_id, &req)
+                    .await
+                    .map_err(LinkError::Internal)?
+                    .ok_or(LinkError::AffiliateNotFound)?;
+                Ok(Some(req))
+            }
+
+            (Some(KeyScope::Full), None) | (None, None) => Ok(None),
+        }
     }
 
     pub async fn canonical_url(&self, tenant_id: &ObjectId, link_id: &str) -> String {

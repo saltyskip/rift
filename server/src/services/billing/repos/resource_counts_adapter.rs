@@ -7,6 +7,7 @@ use mongodb::bson::oid::ObjectId;
 use std::sync::Arc;
 
 use super::super::quota::{Resource, ResourceCounts};
+use crate::services::affiliates::repo::AffiliatesRepository;
 use crate::services::auth::users::repo::UsersRepository;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::repo::LinksRepository;
@@ -17,6 +18,7 @@ pub struct RepoResourceCounts {
     pub domains: Arc<dyn DomainsRepository>,
     pub users: Arc<dyn UsersRepository>,
     pub webhooks: Arc<dyn WebhooksRepository>,
+    pub affiliates: Arc<dyn AffiliatesRepository>,
 }
 
 #[async_trait]
@@ -31,6 +33,7 @@ impl ResourceCounts for RepoResourceCounts {
                 .await
                 .map(|n| n as u64),
             Resource::CreateWebhook => self.webhooks.count_by_tenant(tenant_id).await,
+            Resource::CreateAffiliate => self.affiliates.count_by_tenant(tenant_id).await,
             // TrackEvent uses the atomic counter path, not ResourceCounts.
             Resource::TrackEvent => Ok(0),
         }

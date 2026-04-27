@@ -30,7 +30,7 @@ async fn extract_api_key_header(mut req: Request, next: Next) -> Response {
 
 use super::tools::*;
 use crate::services::auth::keys;
-use crate::services::auth::secret_keys::repo::SecretKeysRepository;
+use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::conversions::models::SourceType;
 use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::links::models::{AgentContext, CreateLinkRequest, UpdateLinkRequest};
@@ -90,6 +90,7 @@ impl RiftMcp {
             ios_store_url: input.ios_store_url,
             android_store_url: input.android_store_url,
             metadata: input.metadata,
+            affiliate_id: None,
             agent_context: input.agent_context.map(|ac| AgentContext {
                 action: ac.action,
                 cta: ac.cta,
@@ -98,9 +99,12 @@ impl RiftMcp {
             social_preview: None,
         };
 
+        // MCP tool sessions authenticate as the tenant; treat as full scope.
+        // FUTURE: when MCP grows partner support, source the scope from the
+        // session's credential and pass it through here.
         let resp = self
             .service
-            .create_link(tenant_id, req)
+            .create_link(tenant_id, Some(&KeyScope::Full), req)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -113,9 +117,12 @@ impl RiftMcp {
         Parameters(input): Parameters<GetLinkInput>,
     ) -> Result<String, String> {
         let tenant_id = self.tenant_id()?;
+        // MCP rejects affiliate-scoped keys at init (see initialize), so the
+        // caller is always Full-or-grandfathered. Passing None means "no
+        // scope filter" — equivalent to Full for read.
         let detail = self
             .service
-            .get_link(&tenant_id, &input.link_id)
+            .get_link(&tenant_id, None, &input.link_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -318,6 +325,18 @@ impl ServerHandler for RiftMcp {
             .await
             .map_err(|e| McpError::internal_error(format!("Key lookup failed: {e}"), None))?
             .ok_or_else(|| McpError::invalid_params("Invalid or unverified API key", None))?;
+
+        // Reject affiliate-scoped credentials. The MCP tools (`create_link`,
+        // `get_link`, etc.) don't yet honor partner scope, and silently
+        // granting Full would let a partner create unattributed links via
+        // MCP. When MCP grows partner support, source the scope from the
+        // session here and pass it through to each tool's service call.
+        if matches!(key_doc.scope, Some(KeyScope::Affiliate { .. })) {
+            return Err(McpError::invalid_params(
+                "MCP does not support partner-scoped credentials. Use a full-tenant rl_live_ key.",
+                None,
+            ));
+        }
 
         let tenant_id = key_doc.tenant_id;
         self.tenant_id
