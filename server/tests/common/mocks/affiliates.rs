@@ -64,7 +64,7 @@ impl AffiliatesRepository for MockAffiliatesRepo {
             .cloned()
             .collect();
         // Match production sort: created_at desc.
-        affiliates.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        affiliates.sort_by_key(|a| std::cmp::Reverse(a.created_at));
         Ok(affiliates)
     }
 
