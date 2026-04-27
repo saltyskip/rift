@@ -203,7 +203,7 @@ Log.d("Rift", "Deep link: \${result.androidDeepLink}")`}</CodeBlock>
                     <td className="px-4 py-2.5">Bind the install to a user. Persists + syncs + retries on next launch.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
-                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">trackConversion(type, idempotencyKey, metadata?)</td>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">trackConversion(conversionType, idempotencyKey, metadata?)</td>
                     <td className="px-4 py-2.5 font-mono">Unit (suspend @Throws)</td>
                     <td className="px-4 py-2.5">Fire a conversion event. POSTs to the Rift API via publishable key.</td>
                   </tr>

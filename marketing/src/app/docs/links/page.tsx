@@ -142,9 +142,11 @@ curl -L "https://api.riftl.ink/v1/links/summer-sale/qr.png?size=600&level=H&fgCo
   -H "Authorization: Bearer rl_live_YOUR_KEY" \\
   -o summer-sale.png`}</CodeBlock>
             <p>
-              Use <code>qr.svg</code> instead of <code>qr.png</code> for SVG output. Supported options are
+              Use <code>qr.svg</code> instead of <code>qr.png</code> for SVG output. Supported options:
               <code> logo</code>, <code>size</code>, <code>level</code>, <code>fgColor</code>,
-              <code>bgColor</code>, <code>hideLogo</code>, and <code>margin</code>.
+              <code>bgColor</code>, <code>hideLogo</code>, <code>margin</code>,
+              <code>dotType</code>, <code>cornerSquareType</code>, <code>cornerDotType</code>,
+              <code>shape</code>, <code>dotColor</code>, <code>cornerSquareColor</code>, and <code>cornerDotColor</code>.
             </p>
           </Step>
 
