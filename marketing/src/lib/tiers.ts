@@ -35,6 +35,17 @@ export interface Tier {
   enterprise?: boolean;
 }
 
+function formatTierPrice(price: TierPrice): string {
+  return `${price.price}${price.unit ? ` ${price.unit}` : ""}`;
+}
+
+function formatTierFeatures(tier: Tier): string[] {
+  return [
+    ...(tier.inherits ? [`Everything in ${tier.inherits}`] : []),
+    ...tier.items,
+  ];
+}
+
 export const TIERS: Tier[] = [
   {
     slug: "free",
@@ -104,4 +115,50 @@ export function getTierBySlug(slug: string): Tier | undefined {
 /** True when the given string is one of the paid tier slugs. */
 export function isPaidTierSlug(value: string): value is PaidTierSlug {
   return value === "pro" || value === "business" || value === "scale";
+}
+
+export function buildPricingMarkdown(): string {
+  const intro = [
+    "# Riftl.ink Pricing",
+    "",
+    "Machine-readable pricing reference for Riftl.ink. This document is generated from the same tier data used by the website pricing UI.",
+    "",
+    "## Summary",
+    "",
+    "- Human checkout uses Stripe and monthly billing.",
+    "- Agent checkout is priced in USDC via x402 and is marked coming soon in the UI.",
+    "- Same product limits apply across the human and agent lanes.",
+    "- No surprise overage billing. Upgrade when you need higher limits.",
+    "",
+    "## Tiers",
+    "",
+  ];
+
+  const tierSections = TIERS.flatMap((tier) => [
+    `### ${tier.name} (\`${tier.slug}\`)`,
+    "",
+    `- Description: ${tier.desc}`,
+    `- Human price: ${formatTierPrice(tier.human)}`,
+    `- Agent price: ${formatTierPrice(tier.agent)}`,
+    `- Link limit: ${tier.stats[0]}`,
+    `- Event limit: ${tier.stats[1]}`,
+    `- Domain limit: ${tier.stats[2]}`,
+    `- Recommended: ${tier.accent ? "yes" : "no"}`,
+    `- Enterprise-oriented: ${tier.enterprise ? "yes" : "no"}`,
+    "",
+    "Features:",
+    ...formatTierFeatures(tier).map((item) => `- ${item}`),
+    "",
+  ]);
+
+  const notes = [
+    "## Notes",
+    "",
+    "- The website pricing section is the canonical product surface for plan presentation.",
+    "- This markdown file is intended for AI agents and comparison tooling.",
+    "- For the live pricing UI, visit https://riftl.ink/#pricing",
+    "",
+  ];
+
+  return [...intro, ...tierSections, ...notes].join("\n");
 }
