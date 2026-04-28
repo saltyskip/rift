@@ -24,6 +24,10 @@ const nextConfig: NextConfig = {
         source: "/.well-known/openapi.json",
         destination: `${apiOrigin}/openapi.json`,
       },
+      {
+        source: "/.well-known/api-catalog",
+        destination: "/api-catalog",
+      },
     ];
   },
 };
