@@ -1,7 +1,5 @@
 "use client";
 
-import { motion } from "motion/react";
-
 type ChatMessage = {
   role: "user" | "agent";
   text: string;
@@ -39,11 +37,9 @@ function UserJourneyDemo({ title }: { title: string }) {
         <span className="ml-2 text-[11px] text-[#52525b] font-mono">{title}</span>
       </div>
       <div className="p-5 min-h-[260px] space-y-4">
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.18, delay: 0.04 }}
-          className="rounded-2xl border border-[#27272a] bg-[#101012] p-4"
+        <div
+          className="rounded-2xl border border-[#27272a] bg-[#101012] p-4 animate-page-enter"
+          style={{ animationDelay: "0.04s" }}
         >
           <div className="mb-2 flex items-center justify-between gap-3">
             <div>
@@ -64,24 +60,20 @@ function UserJourneyDemo({ title }: { title: string }) {
           <p className="mt-3 font-mono text-[11px] text-[#71717a]">
             pay.acme.com/inv_2048
           </p>
-        </motion.div>
+        </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.18, delay: 0.1 }}
-          className="flex items-center justify-center"
+        <div
+          className="flex items-center justify-center animate-page-enter"
+          style={{ animationDelay: "0.1s" }}
         >
           <div className="rounded-full border border-[#2dd4bf]/20 bg-[#0c0c0e] px-3 py-1 text-[11px] font-mono text-[#2dd4bf]">
             opens the right app or webpage
           </div>
-        </motion.div>
+        </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.18, delay: 0.16 }}
-          className="grid gap-3 md:grid-cols-2"
+        <div
+          className="grid gap-3 md:grid-cols-2 animate-page-enter"
+          style={{ animationDelay: "0.16s" }}
         >
           <div className="rounded-2xl border border-[#1e1e22] bg-[#111113] p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -143,7 +135,7 @@ function UserJourneyDemo({ title }: { title: string }) {
               </p>
             </div>
           </div>
-        </motion.div>
+        </div>
       </div>
     </div>
   );
@@ -160,12 +152,12 @@ function ChatDemo({ title, messages }: { title: string; messages: ChatMessage[] 
       </div>
       <div className="p-5 min-h-[220px] space-y-3">
         {messages.map((message, i) => (
-          <motion.div
+          <div
             key={`${message.role}-${i}`}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.18, delay: i * 0.08 }}
-            className={`flex ${message.role === "user" ? "justify-start" : "justify-end"}`}
+            className={`flex animate-page-enter ${
+              message.role === "user" ? "justify-start" : "justify-end"
+            }`}
+            style={{ animationDelay: `${i * 0.08}s` }}
           >
             <div
               className={`max-w-[85%] rounded-2xl px-4 py-3 text-[13px] leading-relaxed ${
@@ -196,9 +188,9 @@ function ChatDemo({ title, messages }: { title: string; messages: ChatMessage[] 
                     </p>
                   </div>
                 </div>
-              ) : null}
+                ) : null}
             </div>
-          </motion.div>
+          </div>
         ))}
       </div>
     </div>
