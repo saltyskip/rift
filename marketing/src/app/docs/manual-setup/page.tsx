@@ -3,8 +3,8 @@ import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 import { DocsStep as Step } from "@/components/docs-step";
 
 export const metadata: Metadata = {
-  title: "Manual Setup — Rift Docs",
-  description: "Set up Rift by hand with API calls and manual DNS configuration.",
+  title: "Riftl.ink Manual Setup — Rift Docs",
+  description: "Set up Riftl.ink by hand with API calls and manual DNS configuration.",
   alternates: { canonical: "/docs/manual-setup" },
 };
 
@@ -15,7 +15,7 @@ export default function ManualSetupPage() {
         <p className="mb-3 text-[13px] font-medium uppercase tracking-widest text-[#2dd4bf]">
           Documentation
         </p>
-        <h1 className="mb-4 text-4xl font-bold text-[#fafafa]">Manual Setup</h1>
+        <h1 className="mb-4 text-4xl font-bold text-[#fafafa]">Riftl.ink Manual Setup</h1>
         <p className="text-lg leading-relaxed text-[#71717a]">
           This path is for teams who want to drive Rift with raw API calls and handle DNS
           manually. If you want the guided path, go back to the{" "}

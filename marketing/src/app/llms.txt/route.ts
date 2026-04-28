@@ -5,6 +5,8 @@ const body = `# Riftl.ink (Rift)
 
 > Deep linking and attribution API. Built for humans, ready for agents. One link, two audiences: humans click and get redirected, agents resolve the same URL into structured JSON.
 
+## Product
+
 Riftl.ink is API-first link infrastructure for iOS, Android, and web. Rift handles short links, deep links, deferred deep linking, install attribution, and conversion tracking. Developer resources for Rift are published on \`riftl.ink\` and \`api.riftl.ink\`.
 
 Pricing is usage-based ($0.01/request) with a free tier (100 links, 1,000 clicks/month). No sales calls, no contracts — sign up, get an \`rl_live_\` API key, and POST to \`/v1/links\`.
@@ -16,7 +18,30 @@ Pricing is usage-based ($0.01/request) with a free tier (100 links, 1,000 clicks
 - [API Catalog](${siteUrl}/.well-known/api-catalog): RFC 9727 linkset catalog for Rift APIs
 - [API Reference](${siteUrl}/api-reference): human-readable OpenAPI-backed reference
 - [MCP Endpoint](${apiUrl}/mcp): Rift Model Context Protocol server for agents
+- [MCP Manifest](${siteUrl}/.well-known/mcp.json): MCP Registry-style server metadata for Rift
+- [MCP Docs](${siteUrl}/docs/mcp): how agents should use the Rift MCP server
 - [Health Check](${apiUrl}/health): API status endpoint
+
+## Use Cases
+
+- Create deep links that work for both humans and AI agents
+- Resolve a single link as a browser redirect or as structured JSON
+- Attach machine-readable \`agent_context\` to links
+- Track clicks, installs, attribution, and conversion events
+- Expose link creation and management through MCP tools for LLM clients
+
+## When To Use Rift
+
+- Use Rift when an agent needs to generate or inspect deep links programmatically
+- Use Rift when the same URL must serve browsers and AI clients differently
+- Use Rift when attribution and conversion tracking need to stay tied to the link lifecycle
+- Use Rift MCP for interactive agent workflows inside Claude, ChatGPT, or other MCP hosts
+
+## When Not To Use Rift
+
+- Do not use Rift as a general file store, CMS, or long-form content host
+- Do not use Rift as an OAuth provider or identity platform
+- Do not use Rift as a generic workflow engine unrelated to links, routing, or attribution
 
 ## Docs
 
@@ -42,10 +67,26 @@ Pricing is usage-based ($0.01/request) with a free tier (100 links, 1,000 clicks
 - Client-side SDKs use publishable keys that start with \`pk_live_\`
 - [Publishable Keys](${siteUrl}/docs/publishable-keys): client-side SDK key management
 
+## Agent Workflow
+
+1. Discover the API at [OpenAPI JSON](${siteUrl}/openapi.json) or [API Catalog](${siteUrl}/.well-known/api-catalog)
+2. Authenticate with a Bearer token using an \`rl_live_\` secret key
+3. Create links with \`POST ${apiUrl}/v1/links\`
+4. Resolve links with \`Accept: application/json\` when the caller is an agent
+5. Use MCP at \`${apiUrl}/mcp\` when the host supports MCP tools directly
+
+## Constraints
+
+- Secret keys are server-side credentials and must not be exposed in client code
+- Publishable keys are limited to attribution and conversion endpoints
+- Custom IDs require a verified custom domain
+- Some workflows depend on mobile app setup, domain verification, or webhook receivers outside Rift
+
 ## Integrations
 
 - [Webhooks](${siteUrl}/docs/webhooks): click, attribution, and conversion events
 - [MCP Endpoint](${apiUrl}/mcp): create and manage Rift links from MCP clients
+- [MCP Manifest](${siteUrl}/mcp/server.json): machine-readable MCP server metadata
 - [Apps](${siteUrl}/docs/apps): iOS and Android app association setup
 
 ## Optional

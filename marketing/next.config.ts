@@ -28,6 +28,14 @@ const nextConfig: NextConfig = {
         source: "/.well-known/api-catalog",
         destination: "/api-catalog",
       },
+      {
+        source: "/.well-known/mcp.json",
+        destination: "/mcp-server.json",
+      },
+      {
+        source: "/mcp/server.json",
+        destination: "/mcp-server.json",
+      },
     ];
   },
 };
