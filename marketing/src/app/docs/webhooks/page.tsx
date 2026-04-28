@@ -4,9 +4,9 @@ import { DocsStep as Step } from "@/components/docs-step";
 import { DocsCallout as Callout } from "@/components/docs-callout";
 
 export const metadata: Metadata = {
-  title: "Webhooks — Rift Docs",
+  title: "Riftl.ink Webhooks — Rift Docs",
   description:
-    "Receive real-time notifications for click, attribution, and conversion events via HTTPS webhooks.",
+    "Receive real-time Riftl.ink notifications for click, attribution, and conversion events via HTTPS webhooks.",
   alternates: { canonical: "/docs/webhooks" },
 };
 
@@ -15,7 +15,7 @@ export default function WebhooksPage() {
     <div className="max-w-3xl">
       <div className="mb-12">
         <p className="text-[13px] font-medium text-[#2dd4bf] uppercase tracking-widest mb-3">Tracking</p>
-        <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Webhooks</h1>
+        <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Riftl.ink Webhooks</h1>
         <p className="text-lg text-[#71717a] leading-relaxed">
           Receive real-time notifications when users click your links, when installs are attributed,
           and when conversions fire. Push events to Slack, your CRM, or any analytics pipeline.

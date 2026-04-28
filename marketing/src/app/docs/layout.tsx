@@ -40,7 +40,10 @@ const NAV = [
   },
   {
     group: "Advanced",
-    items: [{ label: "Manual Setup", href: "/docs/manual-setup" }],
+    items: [
+      { label: "Manual Setup", href: "/docs/manual-setup" },
+      { label: "MCP Server", href: "/docs/mcp" },
+    ],
   },
 ];
 

@@ -5,8 +5,8 @@ import { DocsStep as Step } from "@/components/docs-step";
 import { QuickstartOutcomeDiagram } from "@/components/quickstart-outcome-diagram";
 
 export const metadata: Metadata = {
-  title: "Quick Start — Rift Docs",
-  description: "Get your first Rift link live with the CLI in a few minutes.",
+  title: "Riftl.ink Quick Start — Rift Docs",
+  description: "Get your first Riftl.ink deep link live with the CLI in a few minutes.",
   alternates: { canonical: "/docs" },
 };
 
@@ -17,7 +17,7 @@ export default function QuickStartPage() {
         <p className="mb-3 text-[13px] font-medium uppercase tracking-widest text-[#2dd4bf]">
           Documentation
         </p>
-        <h1 className="mb-4 text-4xl font-bold text-[#fafafa]">Quick Start</h1>
+        <h1 className="mb-4 text-4xl font-bold text-[#fafafa]">Riftl.ink Quick Start</h1>
         <p className="text-lg leading-relaxed text-[#71717a]">
           The fastest way to get Rift working is through the CLI. It walks you from account creation
           to branded domains, health checks, and your first real link.

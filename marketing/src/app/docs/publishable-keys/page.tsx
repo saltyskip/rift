@@ -4,8 +4,8 @@ import { DocsStep as Step } from "@/components/docs-step";
 import { DocsCallout as Callout } from "@/components/docs-callout";
 
 export const metadata: Metadata = {
-  title: "Publishable Keys — Rift Docs",
-  description: "Client-safe keys for SDK click tracking and attribution endpoints.",
+  title: "Riftl.ink Publishable Keys — Rift Docs",
+  description: "Client-safe Riftl.ink keys for SDK click tracking and attribution endpoints.",
   alternates: { canonical: "/docs/publishable-keys" },
 };
 
@@ -14,7 +14,7 @@ export default function PublishableKeysPage() {
     <div className="max-w-3xl">
       <div className="mb-12">
         <p className="text-[13px] font-medium text-[#2dd4bf] uppercase tracking-widest mb-3">Getting Started</p>
-        <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Publishable Keys</h1>
+        <h1 className="text-4xl font-bold text-[#fafafa] mb-4">Riftl.ink Publishable Keys</h1>
         <p className="text-lg text-[#71717a] leading-relaxed">
           Client-safe keys for SDK click tracking and attribution. Publishable keys
           (prefix <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">pk_live_</code>)
