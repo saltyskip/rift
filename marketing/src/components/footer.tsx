@@ -5,7 +5,6 @@ const resourceLinks = [
   ["Alternatives", "/alternatives"],
   ["OpenAPI Spec", "/api-reference"],
   ["X / Twitter", "https://x.com/riftlinks"],
-  ["Status", "#"],
 ] as const;
 
 export function Footer() {
@@ -43,8 +42,8 @@ export function Footer() {
                 ...resourceLinks,
               ],
               Legal: [
-                ["Privacy", "#"],
-                ["Terms", "#"],
+                ["Privacy", "/privacy"],
+                ["Terms", "/terms"],
               ],
             }).map(([heading, links]) => (
               <div key={heading}>
