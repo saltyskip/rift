@@ -11,6 +11,25 @@ const withMDX = createMDX({
 
 const nextConfig: NextConfig = {
   pageExtensions: ["ts", "tsx", "md", "mdx"],
+  async rewrites() {
+    const apiOrigin =
+      process.env.NEXT_PUBLIC_API_URL || "https://api.riftl.ink";
+
+    return [
+      {
+        source: "/openapi.json",
+        destination: `${apiOrigin}/openapi.json`,
+      },
+      {
+        source: "/.well-known/openapi.json",
+        destination: `${apiOrigin}/openapi.json`,
+      },
+      {
+        source: "/.well-known/api-catalog",
+        destination: "/api-catalog",
+      },
+    ];
+  },
 };
 
 export default withMDX(nextConfig);
