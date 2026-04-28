@@ -18,10 +18,11 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://riftl.ink";
+const xUrl = "https://x.com/riftlinks";
 const googleSiteVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION;
 const gaMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 
-const title = "Rift — Deep links for humans and agents";
+const title = "Riftl.ink — Deep links for humans and agents";
 const description =
   "One link, two audiences. Humans click and get redirected. Agents resolve and get structured JSON. Track every click, install, and conversion.";
 
@@ -35,7 +36,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     url: siteUrl,
-    siteName: "Rift",
+    siteName: "Riftl.ink",
     title,
     description,
   },
@@ -43,6 +44,8 @@ export const metadata: Metadata = {
     card: "summary",
     title,
     description,
+    site: "@riftlinks",
+    creator: "@riftlinks",
   },
   icons: {
     icon: "/logo.svg",
@@ -57,17 +60,17 @@ export const metadata: Metadata = {
 const organizationJsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
-  name: "Rift",
+  name: "Riftl.ink",
   url: siteUrl,
   logo: `${siteUrl}/logo.svg`,
   description,
-  sameAs: ["https://github.com/saltyskip/rift"],
+  sameAs: ["https://github.com/saltyskip/rift", xUrl],
 };
 
 const softwareJsonLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  name: "Rift",
+  name: "Riftl.ink",
   applicationCategory: "DeveloperApplication",
   operatingSystem: "Web, iOS, Android",
   url: siteUrl,

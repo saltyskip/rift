@@ -1,5 +1,13 @@
 import Image from "next/image";
 
+const resourceLinks = [
+  ["Blog", "/blog"],
+  ["Alternatives", "/alternatives"],
+  ["OpenAPI Spec", "/api-reference"],
+  ["X / Twitter", "https://x.com/riftlinks"],
+  ["Status", "#"],
+] as const;
+
 export function Footer() {
   return (
     <footer className="border-t border-[#222225]">
@@ -15,7 +23,7 @@ export function Footer() {
                 className="invert brightness-0"
                 style={{ filter: "invert(1) sepia(1) saturate(5) hue-rotate(140deg) brightness(0.85)" }}
               />
-              <span className="text-sm font-medium">Rift</span>
+              <span className="text-sm font-medium">Riftl.ink</span>
             </div>
             <p className="text-[13px] text-[#52525b] max-w-[260px] leading-relaxed">
               Deep links for humans and agents.
@@ -32,10 +40,7 @@ export function Footer() {
                 ["Manage billing", "/manage"],
               ],
               Resources: [
-                ["Blog", "/blog"],
-                ["Alternatives", "/alternatives"],
-                ["OpenAPI Spec", "/api-reference"],
-                ["Status", "#"],
+                ...resourceLinks,
               ],
               Legal: [
                 ["Privacy", "#"],
@@ -47,7 +52,14 @@ export function Footer() {
                 <ul className="space-y-2">
                   {(links as string[][]).map(([label, href]) => (
                     <li key={label}>
-                      <a href={href} className="text-[13px] text-[#71717a] hover:text-[#fafafa] transition-colors">{label}</a>
+                      <a
+                        href={href}
+                        className="text-[13px] text-[#71717a] hover:text-[#fafafa] transition-colors"
+                        target={href.startsWith("https://") ? "_blank" : undefined}
+                        rel={href.startsWith("https://") ? "noopener noreferrer" : undefined}
+                      >
+                        {label}
+                      </a>
                     </li>
                   ))}
                 </ul>
@@ -56,7 +68,7 @@ export function Footer() {
           </div>
         </div>
         <div className="gradient-line mt-10 mb-6" />
-        <p className="text-[11px] text-[#3f3f46]">&copy; {new Date().getFullYear()} Rift</p>
+        <p className="text-[11px] text-[#3f3f46]">&copy; {new Date().getFullYear()} Riftl.ink</p>
       </div>
     </footer>
   );

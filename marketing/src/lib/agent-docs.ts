@@ -4,6 +4,7 @@ export const siteUrl =
   process.env.NEXT_PUBLIC_SITE_URL || "https://riftl.ink";
 export const apiUrl =
   process.env.NEXT_PUBLIC_API_URL || "https://api.riftl.ink";
+export const xUrl = "https://x.com/riftlinks";
 
 export function buildDocsLlmsText(): string {
   return [
@@ -20,6 +21,7 @@ export function buildDocsLlmsText(): string {
     `- Conversions: ${siteUrl}/docs/conversions`,
     `- Publishable Keys: ${siteUrl}/docs/publishable-keys`,
     `- MCP Server: ${siteUrl}/docs/mcp`,
+    `- Official X profile: ${xUrl}`,
     "",
     "## When To Use",
     "",
@@ -44,6 +46,7 @@ export function buildApiLlmsText(): string {
     `- MCP Endpoint: ${apiUrl}/mcp`,
     `- MCP Manifest: ${siteUrl}/.well-known/mcp.json`,
     `- Health: ${apiUrl}/health`,
+    `- Official X profile: ${xUrl}`,
     "",
     "## Auth",
     "",
@@ -80,6 +83,7 @@ export function buildLlmsText(): string {
     `- [MCP Manifest](${siteUrl}/.well-known/mcp.json): MCP Registry-style server metadata for Rift`,
     `- [MCP Docs](${siteUrl}/docs/mcp): how agents should use the Rift MCP server`,
     `- [Health Check](${apiUrl}/health): API status endpoint`,
+    `- [Official X Profile](${xUrl}): product announcements and public identity signal`,
     "",
     "## Use Cases",
     "",
