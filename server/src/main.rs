@@ -66,10 +66,30 @@ async fn main() {
     let cfg = Config::from_env();
 
     // Initialise tracing with Sentry layer (respects RUST_LOG env var).
+    // Mirrors the recommended config from
+    // https://docs.sentry.io/platforms/rust/logs/ — ERROR fires both a
+    // Sentry Event and a structured Log; INFO/WARN/DEBUG produce a
+    // breadcrumb plus a Log; TRACE is dropped. Requires the `logs` feature
+    // on the sentry crate and `enable_logs: true` on ClientOptions.
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("rift=info,tower_http=warn,hyper=warn,h2=warn,reqwest=warn,mongodb=warn")
+    });
     tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(env_filter)
         .with(tracing_subscriber::fmt::layer())
-        .with(sentry_tracing::layer())
+        .with(
+            sentry::integrations::tracing::layer().event_filter(|md| match *md.level() {
+                tracing::Level::ERROR => {
+                    sentry::integrations::tracing::EventFilter::Event
+                        | sentry::integrations::tracing::EventFilter::Log
+                }
+                tracing::Level::TRACE => sentry::integrations::tracing::EventFilter::Ignore,
+                _ => {
+                    sentry::integrations::tracing::EventFilter::Breadcrumb
+                        | sentry::integrations::tracing::EventFilter::Log
+                }
+            }),
+        )
         .init();
 
     let cli = Cli::parse();
@@ -150,6 +170,7 @@ async fn run_server(cfg: Config) {
         release: Some(cfg.git_sha.clone().into()),
         environment: Some(cfg.environment.clone().into()),
         traces_sample_rate: 0.2,
+        enable_logs: true,
         send_default_pii: false,
         ..sentry::ClientOptions::default()
     });
@@ -523,8 +544,8 @@ async fn run_server(cfg: Config) {
 
     let app = app
         .layer(RequestBodyLimitLayer::new(64 * 1024))
-        .layer(sentry_tower::SentryHttpLayer::new().enable_transaction())
-        .layer(sentry_tower::NewSentryLayer::new_from_top())
+        .layer(sentry::integrations::tower::SentryHttpLayer::new().enable_transaction())
+        .layer(sentry::integrations::tower::NewSentryLayer::new_from_top())
         .layer(CorsLayer::permissive());
 
     let addr = cfg.bind_addr();

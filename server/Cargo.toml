@@ -21,9 +21,7 @@ uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-sentry = "0.38"
-sentry-tracing = "0.38"
-sentry-tower = { version = "0.38", features = ["http", "axum-matched-path"] }
+sentry = { version = "0.48", features = ["tower-axum-matched-path", "tracing", "logs"] }
 thiserror = "2"
 x402-axum = "1.4"
 x402-chain-eip155 = { version = "1.4", features = ["server", "client"] }
