@@ -69,6 +69,8 @@ pub async fn spawn_app() -> TestApp {
         marketing_url: "http://localhost:0".to_string(),
         free_daily_limit: 5,
         sentry_dsn: String::new(),
+        environment: "test".to_string(),
+        git_sha: "test".to_string(),
         x402_facilitator_url: String::new(),
         x402_recipient: String::new(),
         x402_price_display: "0.01".to_string(),
