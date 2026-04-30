@@ -187,3 +187,58 @@
   pointer-events: none;
   z-index: 1;
 }
+
+.hero-gradient {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(45, 212, 191, 0.18), transparent 34%),
+    radial-gradient(circle at 76% 14%, rgba(167, 139, 250, 0.16), transparent 30%),
+    radial-gradient(circle at 50% 52%, rgba(96, 165, 250, 0.08), transparent 36%),
+    linear-gradient(180deg, rgba(8, 11, 18, 0.92) 0%, rgba(9, 9, 11, 1) 68%);
+}
+
+@keyframes page-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-enter {
+  animation: page-enter 0.5s ease-out both;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  will-change: opacity, transform;
+}
+
+.reveal-visible {
+  animation: page-enter 0.5s ease-out both;
+}
+
+.content-auto-section {
+  content-visibility: auto;
+  contain-intrinsic-size: 900px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-enter,
+  .reveal-visible {
+    animation: none;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+
+  .content-auto-section {
+    content-visibility: visible;
+    contain-intrinsic-size: auto;
+  }
+}

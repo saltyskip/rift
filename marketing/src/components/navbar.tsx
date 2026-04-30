@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion } from "motion/react";
 import Image from "next/image";
+import Link from "next/link";
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -14,11 +14,8 @@ export function Navbar() {
   }, []);
 
   return (
-    <motion.header
-      initial={{ y: -20, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.5, ease: "easeOut" }}
-      className="fixed top-0 z-50 w-full"
+    <header
+      className="fixed top-0 z-50 w-full animate-page-enter"
       style={{
         background: scrolled ? "rgba(9, 9, 11, 0.85)" : "transparent",
         backdropFilter: scrolled ? "blur(16px) saturate(1.5)" : "none",
@@ -27,7 +24,7 @@ export function Navbar() {
       }}
     >
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <a href="/" className="flex items-center gap-0.5">
+        <Link href="/" className="flex items-center gap-0.5">
           <Image
             src="/logo.svg"
             alt="Rift"
@@ -37,7 +34,7 @@ export function Navbar() {
             style={{ filter: "invert(1) sepia(1) saturate(5) hue-rotate(140deg) brightness(0.85)" }}
           />
           <span className="text-base font-semibold tracking-tight">Rift</span>
-        </a>
+        </Link>
 
         <nav className="hidden md:flex items-center gap-8">
           {[
@@ -70,6 +67,6 @@ export function Navbar() {
           </a>
         </div>
       </div>
-    </motion.header>
+    </header>
   );
 }
