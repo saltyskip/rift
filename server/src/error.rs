@@ -40,8 +40,18 @@ impl IntoResponse for AppError {
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
         };
 
+        let message = self.to_string();
+        // sentry-tracing maps `error!` to a Sentry event and `warn!` to a
+        // breadcrumb, so 5xx fires events while 4xx stays as breadcrumbs on
+        // any subsequent error in the same request.
+        if status.is_server_error() {
+            tracing::error!(status = %status.as_u16(), code, %message, "request failed");
+        } else {
+            tracing::warn!(status = %status.as_u16(), code, %message, "request rejected");
+        }
+
         let body = ErrorResponse {
-            error: self.to_string(),
+            error: message,
             code: code.to_string(),
         };
 

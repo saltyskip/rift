@@ -86,7 +86,18 @@ pub async fn auth_gate(
         // Inject tenant identity, key identity, and scope for downstream handlers.
         req.extensions_mut().insert(TenantId(tenant_id));
         req.extensions_mut().insert(AuthKeyId(key_id));
-        req.extensions_mut().insert(CallerScope(scope));
+        req.extensions_mut().insert(CallerScope(scope.clone()));
+
+        // Tag the per-request Sentry hub. NewSentryLayer creates a hub per
+        // request, so this scope mutation is request-local — no leakage.
+        sentry::configure_scope(|s| {
+            s.set_tag("tenant_id", tenant_id.to_string());
+            s.set_tag("key_id", key_id.to_string());
+            s.set_tag("transport", "http");
+            if let Some(KeyScope::Affiliate { .. }) = &scope {
+                s.set_tag("key_scope", "affiliate");
+            }
+        });
 
         let response = next.run(req).await;
         if response.status().is_success() {

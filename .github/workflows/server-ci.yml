@@ -48,7 +48,7 @@ jobs:
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Deploy sandbox
         working-directory: server
-        run: flyctl deploy --config fly.sandbox.toml --remote-only
+        run: flyctl deploy --config fly.sandbox.toml --remote-only --build-arg GIT_SHA=$(git rev-parse --short=12 HEAD)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       - name: Wait for sandbox to be healthy
@@ -69,6 +69,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy server/ --remote-only
+      - run: flyctl deploy server/ --remote-only --build-arg GIT_SHA=$(git rev-parse --short=12 HEAD)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

@@ -27,6 +27,14 @@ pub struct Config {
 
     // ── Sentry ──
     pub sentry_dsn: String,
+    /// Deployment environment tag for Sentry (e.g. `production`, `staging`,
+    /// `development`). Defaults to `development` so misconfigured prod
+    /// surfaces obviously rather than silently labeling local events.
+    pub environment: String,
+    /// Short git SHA of the running build, sourced from the `GIT_SHA` env
+    /// var (set by the Docker build-arg in `Dockerfile`). Used as the Sentry
+    /// release tag. Falls back to `unknown` when the build wasn't tagged.
+    pub git_sha: String,
 
     // ── x402 ──
     pub x402_facilitator_url: String,
@@ -85,6 +93,8 @@ impl Config {
                 .unwrap_or(5),
 
             sentry_dsn: std::env::var("SENTRY_DSN").unwrap_or_default(),
+            environment: std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
+            git_sha: std::env::var("GIT_SHA").unwrap_or_else(|_| "unknown".to_string()),
 
             x402_facilitator_url: std::env::var("X402_FACILITATOR_URL")
                 .unwrap_or_else(|_| "https://facilitator.x402.org".to_string()),

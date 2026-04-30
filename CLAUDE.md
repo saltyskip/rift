@@ -260,6 +260,8 @@ This gives Claude access to `create_link`, `get_link`, `list_links`, `update_lin
 | `HOST` / `PORT` | No | Server bind (default `0.0.0.0:3000`) |
 | `MONGO_URI` / `MONGO_DB` | No | MongoDB (server boots without it, auth disabled) |
 | `SENTRY_DSN` | No | Sentry error tracking (empty = disabled) |
+| `ENVIRONMENT` | No | Sentry environment tag (`production`, `staging`, `development`). Default `development` |
+| `GIT_SHA` | No | Sentry release tag. Set automatically by Docker build-arg (see Deploying) |
 | `RESEND_API_KEY` | No | Email verification via Resend |
 | `RESEND_FROM_EMAIL` | No | Sender address for verification emails (default `Rift <noreply@updates.riftl.ink>`) |
 | `PUBLIC_URL` | No | Base URL for email verification links and landing pages |
@@ -270,3 +272,13 @@ This gives Claude access to `create_link`, `get_link`, `list_links`, `update_lin
 | `X402_DESCRIPTION` | No | Resource description shown to payers |
 | `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | No | Coinbase Developer Platform keys for x402 |
 | `PRIMARY_DOMAIN` | No | Primary domain for link resolution (default `riftl.ink`) |
+
+## Deploying
+
+The server is deployed to Fly via `flyctl deploy`. Pass the current git SHA as a build-arg so Sentry can group errors by release:
+
+```sh
+flyctl deploy --build-arg GIT_SHA=$(git rev-parse --short=12 HEAD)
+```
+
+Without the build-arg, the runtime falls back to `GIT_SHA=unknown` and Sentry reports show `release: unknown`. Set `ENVIRONMENT=production` once via `flyctl secrets set ENVIRONMENT=production --app rift-api`.

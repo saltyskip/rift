@@ -77,6 +77,7 @@ impl RiftMcp {
 #[tool_router]
 impl RiftMcp {
     #[tool(description = "Create a new Rift deep link with platform-specific destinations")]
+    #[tracing::instrument(skip(self, input), fields(tool = "create_link"))]
     async fn create_link(
         &self,
         Parameters(input): Parameters<CreateLinkInput>,
@@ -112,6 +113,7 @@ impl RiftMcp {
     }
 
     #[tool(description = "Get details of a Rift deep link by its ID")]
+    #[tracing::instrument(skip(self), fields(tool = "get_link"))]
     async fn get_link(
         &self,
         Parameters(input): Parameters<GetLinkInput>,
@@ -130,6 +132,7 @@ impl RiftMcp {
     }
 
     #[tool(description = "List your Rift deep links with cursor-based pagination")]
+    #[tracing::instrument(skip(self), fields(tool = "list_links"))]
     async fn list_links(
         &self,
         Parameters(input): Parameters<ListLinksInput>,
@@ -145,6 +148,7 @@ impl RiftMcp {
     }
 
     #[tool(description = "Update an existing Rift deep link's destinations or metadata")]
+    #[tracing::instrument(skip(self, input), fields(tool = "update_link"))]
     async fn update_link(
         &self,
         Parameters(input): Parameters<UpdateLinkInput>,
@@ -185,6 +189,7 @@ impl RiftMcp {
     }
 
     #[tool(description = "Delete a Rift deep link permanently")]
+    #[tracing::instrument(skip(self), fields(tool = "delete_link"))]
     async fn delete_link(
         &self,
         Parameters(input): Parameters<DeleteLinkInput>,
@@ -201,6 +206,7 @@ impl RiftMcp {
     #[tool(
         description = "Create a new conversion tracking source. Returns a webhook URL that your backend POSTs conversion events to. v1 supports source_type \"custom\" only — point your own backend at the returned URL. Conversions are attributed to links via the user_id field in the event payload."
     )]
+    #[tracing::instrument(skip(self), fields(tool = "create_source"))]
     async fn create_source(
         &self,
         Parameters(input): Parameters<CreateSourceInput>,
@@ -238,6 +244,7 @@ impl RiftMcp {
     #[tool(
         description = "List all conversion tracking sources for your tenant. Auto-creates a 'default' custom source if none exist, so the first call always returns at least one usable webhook URL."
     )]
+    #[tracing::instrument(skip(self), fields(tool = "list_sources"))]
     async fn list_sources(
         &self,
         Parameters(_input): Parameters<ListSourcesInput>,
@@ -344,6 +351,10 @@ impl ServerHandler for RiftMcp {
             .map_err(|_| McpError::internal_error("Session already authenticated", None))?;
 
         tracing::info!(%tenant_id, "MCP session authenticated");
+        sentry::configure_scope(|s| {
+            s.set_tag("tenant_id", tenant_id.to_string());
+            s.set_tag("transport", "mcp");
+        });
 
         // Default behavior: store peer info and return server info
         if context.peer.peer_info().is_none() {
