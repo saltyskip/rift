@@ -24,6 +24,7 @@ pub trait TierResolver: Send + Sync {
     async fn retention_bucket_for_tenant(&self, tenant_id: &ObjectId) -> &'static str;
 }
 
+crate::impl_container!(BillingService);
 /// Central entry point for anything that cares about a tenant's billing state.
 /// Every status endpoint, quota check, webhook handler, and admin operation
 /// routes through here so "what plan is this tenant on" has exactly one

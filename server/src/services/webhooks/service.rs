@@ -10,6 +10,7 @@ use super::models::{Webhook, WebhookError, WebhookEventType};
 use super::repo::WebhooksRepository;
 use crate::services::billing::quota::{QuotaChecker, Resource};
 
+crate::impl_container!(WebhooksService);
 pub struct WebhooksService {
     repo: Arc<dyn WebhooksRepository>,
     quota: Option<Arc<dyn QuotaChecker>>,

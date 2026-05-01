@@ -107,6 +107,7 @@ pub trait LinksRepository: Send + Sync {
 
 // ── Repository ──
 
+crate::impl_container!(LinksRepo);
 #[derive(Clone)]
 pub struct LinksRepo {
     links: Collection<Link>,

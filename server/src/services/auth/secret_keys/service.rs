@@ -58,6 +58,7 @@ pub async fn mint_scoped(
 
 // ── Service ──
 
+crate::impl_container!(SecretKeysService);
 pub struct SecretKeysService {
     sk_repo: Arc<dyn SecretKeysRepository>,
     users_repo: Arc<dyn UsersRepository>,

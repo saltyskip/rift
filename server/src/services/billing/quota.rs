@@ -54,6 +54,7 @@ pub trait ResourceCounts: Send + Sync {
     async fn count(&self, tenant_id: &ObjectId, resource: Resource) -> Result<u64, String>;
 }
 
+crate::impl_container!(QuotaService);
 /// The concrete production quota gatekeeper. Injected behind
 /// `Arc<dyn QuotaChecker>` so services don't see the internal fanout.
 pub struct QuotaService {
@@ -227,6 +228,7 @@ fn current_period() -> String {
 // by tests that want to verify "what happens when over limit" without
 // standing up the full counter/billing stack. Gated behind the
 // `test-harness` feature so they don't show up in production builds.
+crate::impl_container!(NoopQuotaChecker);
 #[cfg(any(test, feature = "test-harness"))]
 pub struct NoopQuotaChecker;
 
@@ -238,6 +240,7 @@ impl QuotaChecker for NoopQuotaChecker {
     }
 }
 
+crate::impl_container!(DenyQuotaChecker);
 #[cfg(any(test, feature = "test-harness"))]
 pub struct DenyQuotaChecker {
     pub limit: u64,

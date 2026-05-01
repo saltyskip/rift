@@ -29,6 +29,7 @@ pub trait UsersRepository: Send + Sync {
 
 // ── Repository ──
 
+crate::impl_container!(UsersRepo);
 #[derive(Clone)]
 pub struct UsersRepo {
     users: Collection<UserDoc>,

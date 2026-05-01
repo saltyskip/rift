@@ -30,6 +30,7 @@ pub trait WebhooksRepository: Send + Sync {
     ) -> Result<Vec<Webhook>, String>;
 }
 
+crate::impl_container!(WebhooksRepo);
 #[derive(Clone)]
 pub struct WebhooksRepo {
     webhooks: Collection<Webhook>,

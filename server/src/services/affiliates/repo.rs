@@ -40,6 +40,7 @@ pub trait AffiliatesRepository: Send + Sync {
     ) -> Result<bool, String>;
 }
 
+crate::impl_container!(AffiliatesRepo);
 #[derive(Clone)]
 pub struct AffiliatesRepo {
     affiliates: Collection<Affiliate>,

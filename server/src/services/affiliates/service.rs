@@ -14,6 +14,7 @@ use crate::services::billing::quota::{QuotaChecker, Resource};
 
 // ── Service ──
 
+crate::impl_container!(AffiliatesService);
 pub struct AffiliatesService {
     repo: Arc<dyn AffiliatesRepository>,
     secret_keys_repo: Arc<dyn SecretKeysRepository>,

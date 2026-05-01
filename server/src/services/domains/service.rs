@@ -11,6 +11,7 @@ use super::models::{Domain, DomainError, DomainRole};
 use super::repo::DomainsRepository;
 use crate::services::billing::quota::{QuotaChecker, Resource};
 
+crate::impl_container!(DomainsService);
 pub struct DomainsService {
     repo: Arc<dyn DomainsRepository>,
     quota: Option<Arc<dyn QuotaChecker>>,

@@ -41,6 +41,7 @@ struct CustomPayload {
     metadata: Option<serde_json::Value>,
 }
 
+crate::impl_container!(CustomParser);
 pub struct CustomParser;
 
 impl ConversionParser for CustomParser {

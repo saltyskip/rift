@@ -59,6 +59,7 @@ pub trait TokensRepository: Send + Sync {
 
 // ── Mongo impl ──
 
+crate::impl_container!(TokensRepoMongo);
 #[derive(Clone)]
 pub struct TokensRepoMongo {
     col: Collection<TokenDoc>,

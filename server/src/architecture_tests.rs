@@ -54,28 +54,28 @@ fn is_enforced_file(path: &std::path::Path) -> bool {
     )
 }
 
-/// Names that are allowed inline in implementation files because they are
-/// *implementation containers* (a type whose purpose is to host methods /
-/// trait impls), not data definitions. The codebase uses a consistent suffix
-/// naming convention for these:
+/// Parse an `impl_container!(Name)` marker line and return the type name.
+/// The macro is defined in `crate::lib` and expands to nothing — its sole
+/// purpose is to declare that a `pub` type in this file is an implementation
+/// container (hosts methods / trait impls) and is exempt from this rule.
 ///
-/// - `Service` — service orchestrators (LinksService, DomainsService, …)
-/// - `Repo`    — concrete repository implementations (LinksRepo, …, including `RepoMongo` variants)
-/// - `Parser`  — parser implementations (CustomParser)
-/// - `Dispatcher` — webhook/event dispatchers (RiftWebhookDispatcher)
-/// - `Checker` — trait-impl markers (QuotaChecker types: NoopQuotaChecker, DenyQuotaChecker)
+/// Accepts both forms:
 ///
-/// A type matching one of these suffixes *might* still be data and warrant a
-/// move (e.g. a `pub struct ServiceRequest { ... }` on a slice that doesn't
-/// have a service yet). In practice that hasn't happened — if it does, rename
-/// the type so the suffix accurately describes its role.
-fn is_impl_container(name: &str) -> bool {
-    name.ends_with("Service")
-        || name.ends_with("Repo")
-        || name.ends_with("RepoMongo")
-        || name.ends_with("Parser")
-        || name.ends_with("Dispatcher")
-        || name.ends_with("Checker")
+/// ```ignore
+/// crate::impl_container!(LinksService);
+/// impl_container!(LinksService);
+/// ```
+fn parse_impl_container_marker(line: &str) -> Option<&str> {
+    let line = line.trim_start();
+    let line = line.strip_prefix("crate::").unwrap_or(line);
+    let line = line.strip_prefix("impl_container!(")?;
+    let end = line.find(')')?;
+    let name = &line[..end];
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 fn scan(dir: &std::path::Path, violations: &mut Vec<String>) {
@@ -97,12 +97,19 @@ fn scan(dir: &std::path::Path, violations: &mut Vec<String>) {
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
+
+        // Pre-pass: collect impl_container!() exemptions declared in this file.
+        let exempted: std::collections::HashSet<String> = content
+            .lines()
+            .filter_map(|l| parse_impl_container_marker(l).map(String::from))
+            .collect();
+
         for (line_num, line) in content.lines().enumerate() {
             let trimmed = line.trim_start();
             let Some(name) = parse_pub_type_name(trimmed) else {
                 continue;
             };
-            if is_impl_container(name) {
+            if exempted.contains(name) {
                 continue;
             }
             violations.push(format!(
@@ -174,5 +181,41 @@ mod parser_tests {
         assert_eq!(parse_pub_type_name("pub fn foo() {"), None);
         assert_eq!(parse_pub_type_name("pub const X: u32 = 1;"), None);
         assert_eq!(parse_pub_type_name("pub use foo::Bar;"), None);
+    }
+
+    use super::parse_impl_container_marker;
+
+    #[test]
+    fn marker_with_crate_prefix() {
+        assert_eq!(
+            parse_impl_container_marker("crate::impl_container!(LinksService);"),
+            Some("LinksService")
+        );
+    }
+
+    #[test]
+    fn marker_without_crate_prefix() {
+        assert_eq!(
+            parse_impl_container_marker("impl_container!(LinksRepo);"),
+            Some("LinksRepo")
+        );
+    }
+
+    #[test]
+    fn marker_indented() {
+        assert_eq!(
+            parse_impl_container_marker("    crate::impl_container!(Foo);"),
+            Some("Foo")
+        );
+    }
+
+    #[test]
+    fn marker_rejects_non_macro_lines() {
+        assert_eq!(
+            parse_impl_container_marker("pub struct LinksService {"),
+            None
+        );
+        assert_eq!(parse_impl_container_marker("// just a comment"), None);
+        assert_eq!(parse_impl_container_marker("impl_container!();"), None);
     }
 }

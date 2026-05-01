@@ -10,6 +10,7 @@ use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
 use crate::services::links::repo::LinksRepository;
 
+crate::impl_container!(ConversionsService);
 /// Orchestration layer for conversion ingestion. Keeps route handlers thin per
 /// CLAUDE.md's "thin transport" rule — the handler is ~15 lines (look up source,
 /// parse, delegate here, return status).

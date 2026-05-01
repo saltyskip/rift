@@ -44,6 +44,7 @@ pub trait TenantsRepository: Send + Sync {
 
 // ── Repository ──
 
+crate::impl_container!(TenantsRepo);
 #[derive(Clone)]
 pub struct TenantsRepo {
     tenants: Collection<TenantDoc>,

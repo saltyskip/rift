@@ -20,6 +20,7 @@ use crate::services::domains::repo::DomainsRepository;
 /// threat-feed fan-out, and the size of any single transaction.
 pub const BULK_LINKS_MAX: usize = 100;
 
+crate::impl_container!(LinksService);
 pub struct LinksService {
     links_repo: Arc<dyn LinksRepository>,
     domains_repo: Option<Arc<dyn DomainsRepository>>,

@@ -22,6 +22,7 @@ pub trait SdkKeysRepository: Send + Sync {
 
 // ── Repository ──
 
+crate::impl_container!(SdkKeysRepo);
 #[derive(Clone)]
 pub struct SdkKeysRepo {
     keys: Collection<SdkKeyDoc>,

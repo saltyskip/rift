@@ -48,6 +48,7 @@ pub trait SecretKeysRepository: Send + Sync {
 
 // ── Repository ──
 
+crate::impl_container!(SecretKeysRepo);
 #[derive(Clone)]
 pub struct SecretKeysRepo {
     keys: Collection<SecretKeyDoc>,

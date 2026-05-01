@@ -12,6 +12,7 @@ use crate::services::tokens::{ConsumeOutcome, TokenKind, TokenPurpose, TokenServ
 
 // ── Service ──
 
+crate::impl_container!(UsersService);
 pub struct UsersService {
     tenants_service: Arc<TenantsService>,
     users_repo: Arc<dyn UsersRepository>,

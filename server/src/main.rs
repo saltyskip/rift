@@ -8,6 +8,15 @@ mod mcp;
 mod migrations;
 mod services;
 
+/// Marker macro — see `lib.rs` for the canonical definition. Declared here
+/// too so the bin target (which compiles `services/` independently of the
+/// lib crate) can resolve `crate::impl_container!(...)` calls inside those
+/// shared source files.
+#[macro_export]
+macro_rules! impl_container {
+    ($name:ident) => {};
+}
+
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
