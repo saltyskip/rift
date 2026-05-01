@@ -81,3 +81,32 @@ pub struct VerifyDomainResponse {
     #[schema(example = "active")]
     pub tls: String,
 }
+
+// ── Errors ──
+
+use crate::services::billing::quota::QuotaError;
+
+#[derive(Debug)]
+pub enum DomainError {
+    AlreadyRegistered,
+    AlternateLimit,
+    QuotaExceeded(QuotaError),
+    Internal(String),
+}
+
+impl From<QuotaError> for DomainError {
+    fn from(err: QuotaError) -> Self {
+        DomainError::QuotaExceeded(err)
+    }
+}
+
+impl std::fmt::Display for DomainError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AlreadyRegistered => write!(f, "Domain already registered"),
+            Self::AlternateLimit => write!(f, "Only one alternate domain allowed per team"),
+            Self::QuotaExceeded(e) => write!(f, "{e}"),
+            Self::Internal(e) => write!(f, "Internal error: {e}"),
+        }
+    }
+}

@@ -372,7 +372,7 @@ pub async fn sdk_track_conversion(
             .into_response();
     }
 
-    let parsed = vec![crate::services::conversions::parsers::ParsedConversion {
+    let parsed = vec![crate::services::conversions::models::ParsedConversion {
         user_id: Some(req.user_id),
         conversion_type: req.conversion_type,
         idempotency_key: req.idempotency_key,

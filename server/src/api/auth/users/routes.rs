@@ -8,7 +8,7 @@ use std::sync::Arc;
 use super::models::{InviteUserRequest, InviteUserResponse, ListUsersResponse, UserDetail};
 use crate::api::auth::models::TenantId;
 use crate::app::AppState;
-use crate::services::auth::users::service::UserError;
+use crate::services::auth::users::models::UserError;
 
 // ── Handlers ──
 

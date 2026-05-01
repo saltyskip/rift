@@ -111,3 +111,87 @@ pub struct AffiliateCredentialDetail {
 pub struct ListAffiliateCredentialsResponse {
     pub credentials: Vec<AffiliateCredentialDetail>,
 }
+
+// ── Errors + service helper types ──
+
+use crate::services::auth::secret_keys::models::CreatedKey;
+use crate::services::auth::secret_keys::models::ScopeError;
+use crate::services::billing::quota::QuotaError;
+use std::fmt;
+
+/// Maximum number of active credentials per affiliate. Three covers a
+/// rotation window (old, new, fallback) without enabling unlimited mints
+/// from a compromised tenant key.
+pub const MAX_CREDENTIALS_PER_AFFILIATE: usize = 3;
+
+#[derive(Debug)]
+pub enum AffiliateError {
+    InvalidName(String),
+    InvalidPartnerKey(String),
+    PartnerKeyTaken(String),
+    NotFound,
+    EmptyUpdate,
+    Forbidden,
+    /// Per-affiliate credential cap reached — see `MAX_CREDENTIALS_PER_AFFILIATE`.
+    CredentialLimit,
+    /// Credential to revoke not found for this affiliate.
+    CredentialNotFound,
+    QuotaExceeded(QuotaError),
+    Internal(String),
+}
+
+impl From<QuotaError> for AffiliateError {
+    fn from(err: QuotaError) -> Self {
+        AffiliateError::QuotaExceeded(err)
+    }
+}
+
+impl From<ScopeError> for AffiliateError {
+    fn from(_: ScopeError) -> Self {
+        AffiliateError::Forbidden
+    }
+}
+
+impl fmt::Display for AffiliateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidName(e) => write!(f, "{e}"),
+            Self::InvalidPartnerKey(e) => write!(f, "{e}"),
+            Self::PartnerKeyTaken(k) => write!(f, "partner_key '{k}' is already taken"),
+            Self::NotFound => write!(f, "Affiliate not found"),
+            Self::EmptyUpdate => write!(f, "No fields to update"),
+            Self::Forbidden => write!(f, "Key scope forbids this operation"),
+            Self::CredentialLimit => write!(
+                f,
+                "Maximum of {MAX_CREDENTIALS_PER_AFFILIATE} credentials per affiliate"
+            ),
+            Self::CredentialNotFound => write!(f, "Credential not found"),
+            Self::QuotaExceeded(e) => write!(f, "{e}"),
+            Self::Internal(e) => write!(f, "Internal error: {e}"),
+        }
+    }
+}
+
+impl AffiliateError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::InvalidName(_) => "invalid_name",
+            Self::InvalidPartnerKey(_) => "invalid_partner_key",
+            Self::PartnerKeyTaken(_) => "partner_key_taken",
+            Self::NotFound => "not_found",
+            Self::EmptyUpdate => "empty_update",
+            Self::Forbidden => "forbidden_scope",
+            Self::CredentialLimit => "credential_limit",
+            Self::CredentialNotFound => "credential_not_found",
+            Self::QuotaExceeded(_) => "quota_exceeded",
+            Self::Internal(_) => "db_error",
+        }
+    }
+}
+
+/// Returned from `mint_credential`. The raw key is in `created_key.key`
+/// and must be shown to the caller exactly once.
+pub struct MintedCredential {
+    pub created_key: CreatedKey,
+    pub affiliate_id: mongodb::bson::oid::ObjectId,
+}

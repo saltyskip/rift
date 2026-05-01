@@ -24,8 +24,8 @@ use crate::app::AppState;
 use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload};
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
+use crate::services::links::models::LinkError;
 use crate::services::links::models::*;
-use crate::services::links::service::LinkError;
 
 fn link_error_to_response(err: LinkError) -> Response {
     // QuotaExceeded is a structured 402 — delegate to the shared helper so
@@ -235,7 +235,7 @@ pub async fn get_link(
 
     match svc.get_link(&tenant.0, scope.0.as_ref(), &link_id).await {
         Ok(detail) => Json(json!(detail)).into_response(),
-        Err(crate::services::links::service::LinkError::NotFound) => (
+        Err(crate::services::links::models::LinkError::NotFound) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Link not found", "code": "not_found" })),
         )

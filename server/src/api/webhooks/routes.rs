@@ -76,10 +76,10 @@ pub async fn create_webhook(
             }),
         )
             .into_response(),
-        Err(crate::services::webhooks::service::WebhookError::QuotaExceeded(q)) => {
+        Err(crate::services::webhooks::models::WebhookError::QuotaExceeded(q)) => {
             crate::api::billing::quota_response::to_response(q)
         }
-        Err(crate::services::webhooks::service::WebhookError::Internal(e)) => {
+        Err(crate::services::webhooks::models::WebhookError::Internal(e)) => {
             tracing::error!("Failed to create webhook: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,

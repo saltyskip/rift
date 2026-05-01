@@ -33,10 +33,11 @@ use crate::services::auth::keys;
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::conversions::models::SourceType;
 use crate::services::conversions::repo::ConversionsRepository;
+use crate::services::links::models::LinkError;
 use crate::services::links::models::{
     AgentContext, BulkCreateLinksRequest, BulkLinkTemplate, CreateLinkRequest, UpdateLinkRequest,
 };
-use crate::services::links::service::{LinkError, LinksService};
+use crate::services::links::service::LinksService;
 
 pub struct RiftMcp {
     service: Arc<LinksService>,

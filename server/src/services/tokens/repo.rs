@@ -4,34 +4,9 @@ use async_trait::async_trait;
 use mongodb::bson::{self, doc, oid::ObjectId};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database};
-use serde::{Deserialize, Serialize};
 
+use super::models::{TokenDoc, TokenPurpose};
 use crate::ensure_index;
-use crate::services::tokens::model::TokenPurpose;
-
-/// One row in the `tokens` collection.
-///
-/// - HashKeyed tokens use `_id = sha256(raw)` so lookup is O(1) via the
-///   default `_id` index.
-/// - TupleKeyed tokens use a random ObjectId hex as `_id`; lookup is by
-///   the `(purpose, email)` index and then verified against `token_hash`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenDoc {
-    #[serde(rename = "_id")]
-    pub id: String,
-    pub purpose: TokenPurpose,
-    pub email: String,
-    /// sha256(raw) hex. Stored even on hash-keyed tokens (where it equals
-    /// `_id`) so tuple-keyed consume logic works uniformly.
-    pub token_hash: String,
-    pub metadata: bson::Document,
-    pub attempts: i32,
-    pub max_attempts: i32,
-    pub expires_at: bson::DateTime,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub consumed_at: Option<bson::DateTime>,
-    pub created_at: bson::DateTime,
-}
 
 #[async_trait]
 pub trait TokensRepository: Send + Sync {

@@ -1,7 +1,8 @@
 use super::*;
 use crate::services::domains::repo::DomainsRepository;
+use crate::services::links::models::BulkInsertError;
 use crate::services::links::models::TimeseriesDataPoint;
-use crate::services::links::repo::{BulkInsertError, LinksRepository};
+use crate::services::links::repo::LinksRepository;
 use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
 use std::sync::Mutex;

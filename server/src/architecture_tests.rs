@@ -36,11 +36,46 @@ fn pub_data_types_live_in_models_rs() {
 }
 
 /// Files where `pub` types must NOT appear (must move to sibling `models.rs`).
+///
+/// `pub use` re-exports from `models.rs` are allowed (the parser only matches
+/// `pub struct/enum/type`, not `pub use`), so files here can keep
+/// backwards-compat re-exports while the data definitions live in `models.rs`.
 fn is_enforced_file(path: &std::path::Path) -> bool {
     matches!(
         path.file_name().and_then(|s| s.to_str()),
-        Some("routes.rs") | Some("middleware.rs")
+        Some("routes.rs")
+            | Some("middleware.rs")
+            | Some("service.rs")
+            | Some("repo.rs")
+            | Some("parsers.rs")
+            | Some("scope.rs")
+            | Some("quota.rs")
+            | Some("dispatcher.rs")
     )
+}
+
+/// Names that are allowed inline in implementation files because they are
+/// *implementation containers* (a type whose purpose is to host methods /
+/// trait impls), not data definitions. The codebase uses a consistent suffix
+/// naming convention for these:
+///
+/// - `Service` — service orchestrators (LinksService, DomainsService, …)
+/// - `Repo`    — concrete repository implementations (LinksRepo, …, including `RepoMongo` variants)
+/// - `Parser`  — parser implementations (CustomParser)
+/// - `Dispatcher` — webhook/event dispatchers (RiftWebhookDispatcher)
+/// - `Checker` — trait-impl markers (QuotaChecker types: NoopQuotaChecker, DenyQuotaChecker)
+///
+/// A type matching one of these suffixes *might* still be data and warrant a
+/// move (e.g. a `pub struct ServiceRequest { ... }` on a slice that doesn't
+/// have a service yet). In practice that hasn't happened — if it does, rename
+/// the type so the suffix accurately describes its role.
+fn is_impl_container(name: &str) -> bool {
+    name.ends_with("Service")
+        || name.ends_with("Repo")
+        || name.ends_with("RepoMongo")
+        || name.ends_with("Parser")
+        || name.ends_with("Dispatcher")
+        || name.ends_with("Checker")
 }
 
 fn scan(dir: &std::path::Path, violations: &mut Vec<String>) {
@@ -67,6 +102,9 @@ fn scan(dir: &std::path::Path, violations: &mut Vec<String>) {
             let Some(name) = parse_pub_type_name(trimmed) else {
                 continue;
             };
+            if is_impl_container(name) {
+                continue;
+            }
             violations.push(format!(
                 "  {}:{} — pub type `{}`",
                 path.strip_prefix(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default())

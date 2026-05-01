@@ -10,19 +10,9 @@ use crate::ensure_index;
 use mongodb::bson::Document;
 
 use super::models::{
-    Attribution, ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus, TimeseriesDataPoint,
+    Attribution, BulkInsertError, ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus,
+    TimeseriesDataPoint,
 };
-
-/// Outcome of an atomic bulk insert. `DuplicateLinkIds` carries the input
-/// indices that collided with the unique `(tenant_id, link_id)` index — the
-/// service maps these back to per-row `link_id_taken` errors so the caller
-/// learns every conflict in one round trip. The transaction is rolled back
-/// before this is returned, so no partial inserts persist.
-#[derive(Debug)]
-pub enum BulkInsertError {
-    DuplicateLinkIds(Vec<usize>),
-    Internal(String),
-}
 
 // ── Trait ──
 

@@ -11,8 +11,8 @@ use super::models::{
 };
 use crate::api::auth::models::{AuthKeyId, TenantId};
 use crate::app::AppState;
-use crate::services::auth::secret_keys::service::SecretKeyError;
-use crate::services::auth::users::service::UserError;
+use crate::services::auth::secret_keys::models::SecretKeyError;
+use crate::services::auth::users::models::UserError;
 
 // ── Signup / Verify handlers ──
 

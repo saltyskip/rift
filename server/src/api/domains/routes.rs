@@ -64,24 +64,24 @@ pub async fn create_domain(
         .await
     {
         Ok(d) => d,
-        Err(crate::services::domains::service::DomainError::QuotaExceeded(q)) => {
+        Err(crate::services::domains::models::DomainError::QuotaExceeded(q)) => {
             return crate::api::billing::quota_response::to_response(q);
         }
-        Err(crate::services::domains::service::DomainError::AlreadyRegistered) => {
+        Err(crate::services::domains::models::DomainError::AlreadyRegistered) => {
             return (
                 StatusCode::CONFLICT,
                 Json(json!({ "error": "Domain already registered", "code": "domain_taken" })),
             )
                 .into_response();
         }
-        Err(crate::services::domains::service::DomainError::AlternateLimit) => {
+        Err(crate::services::domains::models::DomainError::AlternateLimit) => {
             return (
                 StatusCode::CONFLICT,
                 Json(json!({ "error": "Only one alternate domain allowed per team", "code": "alternate_limit" })),
             )
                 .into_response();
         }
-        Err(crate::services::domains::service::DomainError::Internal(e)) => {
+        Err(crate::services::domains::models::DomainError::Internal(e)) => {
             tracing::error!("Failed to create domain: {e}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,

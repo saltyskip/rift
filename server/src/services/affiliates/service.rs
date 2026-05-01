@@ -1,86 +1,16 @@
 use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
-use std::fmt;
 use std::sync::Arc;
 
-use super::models::{Affiliate, AffiliateStatus, UpdateAffiliateRequest};
+use super::models::{
+    Affiliate, AffiliateError, AffiliateStatus, MintedCredential, UpdateAffiliateRequest,
+    MAX_CREDENTIALS_PER_AFFILIATE,
+};
 use super::repo::AffiliatesRepository;
-use crate::services::auth::scope::{require_full, ScopeError};
+use crate::services::auth::scope::require_full;
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
-use crate::services::auth::secret_keys::service::{mint_scoped, CreatedKey};
-use crate::services::billing::quota::{QuotaChecker, QuotaError, Resource};
-
-// ── Error ──
-
-/// Maximum number of active credentials per affiliate. Three covers a
-/// rotation window (old, new, fallback) without enabling unlimited mints
-/// from a compromised tenant key.
-pub const MAX_CREDENTIALS_PER_AFFILIATE: usize = 3;
-
-#[derive(Debug)]
-pub enum AffiliateError {
-    InvalidName(String),
-    InvalidPartnerKey(String),
-    PartnerKeyTaken(String),
-    NotFound,
-    EmptyUpdate,
-    Forbidden,
-    /// Per-affiliate credential cap reached — see `MAX_CREDENTIALS_PER_AFFILIATE`.
-    CredentialLimit,
-    /// Credential to revoke not found for this affiliate.
-    CredentialNotFound,
-    QuotaExceeded(QuotaError),
-    Internal(String),
-}
-
-impl From<QuotaError> for AffiliateError {
-    fn from(err: QuotaError) -> Self {
-        AffiliateError::QuotaExceeded(err)
-    }
-}
-
-impl From<ScopeError> for AffiliateError {
-    fn from(_: ScopeError) -> Self {
-        AffiliateError::Forbidden
-    }
-}
-
-impl fmt::Display for AffiliateError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidName(e) => write!(f, "{e}"),
-            Self::InvalidPartnerKey(e) => write!(f, "{e}"),
-            Self::PartnerKeyTaken(k) => write!(f, "partner_key '{k}' is already taken"),
-            Self::NotFound => write!(f, "Affiliate not found"),
-            Self::EmptyUpdate => write!(f, "No fields to update"),
-            Self::Forbidden => write!(f, "Key scope forbids this operation"),
-            Self::CredentialLimit => write!(
-                f,
-                "Maximum of {MAX_CREDENTIALS_PER_AFFILIATE} credentials per affiliate"
-            ),
-            Self::CredentialNotFound => write!(f, "Credential not found"),
-            Self::QuotaExceeded(e) => write!(f, "{e}"),
-            Self::Internal(e) => write!(f, "Internal error: {e}"),
-        }
-    }
-}
-
-impl AffiliateError {
-    pub fn code(&self) -> &'static str {
-        match self {
-            Self::InvalidName(_) => "invalid_name",
-            Self::InvalidPartnerKey(_) => "invalid_partner_key",
-            Self::PartnerKeyTaken(_) => "partner_key_taken",
-            Self::NotFound => "not_found",
-            Self::EmptyUpdate => "empty_update",
-            Self::Forbidden => "forbidden_scope",
-            Self::CredentialLimit => "credential_limit",
-            Self::CredentialNotFound => "credential_not_found",
-            Self::QuotaExceeded(_) => "quota_exceeded",
-            Self::Internal(_) => "db_error",
-        }
-    }
-}
+use crate::services::auth::secret_keys::service::mint_scoped;
+use crate::services::billing::quota::{QuotaChecker, Resource};
 
 // ── Service ──
 
@@ -88,13 +18,6 @@ pub struct AffiliatesService {
     repo: Arc<dyn AffiliatesRepository>,
     secret_keys_repo: Arc<dyn SecretKeysRepository>,
     quota: Option<Arc<dyn QuotaChecker>>,
-}
-
-/// Returned from `mint_credential`. The raw key is in `created_key.key`
-/// and must be shown to the caller exactly once.
-pub struct MintedCredential {
-    pub created_key: CreatedKey,
-    pub affiliate_id: ObjectId,
 }
 
 impl AffiliatesService {

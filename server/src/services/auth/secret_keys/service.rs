@@ -1,89 +1,12 @@
 use mongodb::bson::{doc, oid::ObjectId};
-use std::fmt;
 use std::sync::Arc;
 
-use super::repo::{KeyScope, SecretKeyDoc, SecretKeysRepository};
+use super::models::{CreatedKey, KeyDetail, KeyScope, SecretKeyDoc, SecretKeyError};
+use super::repo::SecretKeysRepository;
 use crate::core::email;
 use crate::services::auth::keys;
 use crate::services::auth::users::repo::UsersRepository;
 use crate::services::tokens::{ConsumeOutcome, TokenKind, TokenPurpose, TokenService, TokenSpec};
-
-// ── Error ──
-
-#[derive(Debug)]
-pub enum SecretKeyError {
-    UserNotMember,
-    UserUnverified,
-    KeyLimit,
-    RequestPending,
-    TooManyAttempts,
-    InvalidCode,
-    LastKey,
-    SelfDelete,
-    NotFound,
-    EmailFailed(String),
-    Internal(String),
-}
-
-impl fmt::Display for SecretKeyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UserNotMember => write!(f, "Email is not a member of this team"),
-            Self::UserUnverified => write!(f, "User has not verified their email"),
-            Self::KeyLimit => write!(f, "Maximum of 5 secret keys per team"),
-            Self::RequestPending => write!(
-                f,
-                "A key creation request is already pending. Check your email or wait 15 minutes."
-            ),
-            Self::TooManyAttempts => write!(f, "Too many attempts. Request a new code."),
-            Self::InvalidCode => write!(f, "Invalid or expired confirmation code"),
-            Self::LastKey => write!(f, "Cannot delete your only secret key"),
-            Self::SelfDelete => {
-                write!(
-                    f,
-                    "Cannot delete the key you are currently authenticated with"
-                )
-            }
-            Self::NotFound => write!(f, "Secret key not found"),
-            Self::EmailFailed(e) => write!(f, "Failed to send confirmation email: {e}"),
-            Self::Internal(e) => write!(f, "Internal error: {e}"),
-        }
-    }
-}
-
-impl SecretKeyError {
-    pub fn code(&self) -> &'static str {
-        match self {
-            Self::UserNotMember => "not_a_member",
-            Self::UserUnverified => "user_unverified",
-            Self::KeyLimit => "key_limit",
-            Self::RequestPending => "request_pending",
-            Self::TooManyAttempts => "too_many_attempts",
-            Self::InvalidCode => "invalid_code",
-            Self::LastKey => "last_key",
-            Self::SelfDelete => "self_delete",
-            Self::NotFound => "not_found",
-            Self::EmailFailed(_) => "email_error",
-            Self::Internal(_) => "db_error",
-        }
-    }
-}
-
-// ── Response types ──
-
-pub struct CreatedKey {
-    pub id: ObjectId,
-    pub key: String,
-    pub key_prefix: String,
-    pub created_at: mongodb::bson::DateTime,
-}
-
-pub struct KeyDetail {
-    pub id: ObjectId,
-    pub key_prefix: String,
-    pub created_by: ObjectId,
-    pub created_at: mongodb::bson::DateTime,
-}
 
 // ── Shared primitive: mint a new secret key for an existing tenant ──
 //

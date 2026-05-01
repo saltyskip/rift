@@ -1,92 +1,14 @@
 use mongodb::bson::{doc, oid::ObjectId};
-use std::fmt;
 use std::sync::Arc;
 
-use super::repo::{UserDoc, UsersRepository};
+use super::models::{InviteResult, SignupResult, UserDetail, UserDoc, UserError, VerifyResult};
+use super::repo::UsersRepository;
 use crate::core::email;
 use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::mint_for_tenant;
 use crate::services::auth::tenants::service::TenantsService;
-use crate::services::billing::quota::{QuotaChecker, QuotaError, Resource};
+use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::tokens::{ConsumeOutcome, TokenKind, TokenPurpose, TokenService, TokenSpec};
-
-// ── Error ──
-
-#[derive(Debug)]
-pub enum UserError {
-    InvalidEmail,
-    EmailExists,
-    UserExists,
-    LastUser,
-    NotFound,
-    QuotaExceeded(QuotaError),
-    EmailFailed(String),
-    Internal(String),
-}
-
-impl From<QuotaError> for UserError {
-    fn from(err: QuotaError) -> Self {
-        UserError::QuotaExceeded(err)
-    }
-}
-
-impl fmt::Display for UserError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidEmail => write!(f, "Invalid email address"),
-            Self::EmailExists => write!(
-                f,
-                "Email already registered. Use key rotation to get a new key, or contact support."
-            ),
-            Self::UserExists => write!(f, "User already exists on this team"),
-            Self::LastUser => write!(f, "Cannot remove the last verified user on this team"),
-            Self::NotFound => write!(f, "User not found"),
-            Self::QuotaExceeded(e) => write!(f, "{e}"),
-            Self::EmailFailed(e) => write!(f, "Failed to send email: {e}"),
-            Self::Internal(e) => write!(f, "Internal error: {e}"),
-        }
-    }
-}
-
-impl UserError {
-    pub fn code(&self) -> &'static str {
-        match self {
-            Self::InvalidEmail => "invalid_email",
-            Self::EmailExists => "email_exists",
-            Self::UserExists => "user_exists",
-            Self::LastUser => "last_user",
-            Self::NotFound => "not_found",
-            Self::QuotaExceeded(_) => "quota_exceeded",
-            Self::EmailFailed(_) => "email_error",
-            Self::Internal(_) => "db_error",
-        }
-    }
-}
-
-// ── Response types ──
-
-pub struct SignupResult;
-
-pub struct VerifyResult {
-    pub tenant_id: ObjectId,
-    pub email: String,
-    /// Only set for owner verification — the full key shown once.
-    pub key: Option<String>,
-    pub key_prefix: Option<String>,
-}
-
-pub struct InviteResult {
-    pub user_id: ObjectId,
-    pub email: String,
-}
-
-pub struct UserDetail {
-    pub id: ObjectId,
-    pub email: String,
-    pub verified: bool,
-    pub is_owner: bool,
-    pub created_at: mongodb::bson::DateTime,
-}
 
 // ── Service ──
 
