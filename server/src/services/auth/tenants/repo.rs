@@ -205,6 +205,9 @@ impl TenantsRepository for TenantsRepo {
         update: SubscriptionUpdate,
     ) -> Result<bool, String> {
         let mut set_doc = mongodb::bson::Document::new();
+
+        // Fallible bson encoding — kept as separate statements so `?` lifts
+        // the error inline. These three need it; the rest don't.
         if let Some(tier) = update.plan_tier {
             set_doc.insert(
                 "plan_tier",
@@ -220,18 +223,31 @@ impl TenantsRepository for TenantsRepo {
         if let Some(status) = update.status {
             set_doc.insert("status", bson::to_bson(&status).map_err(|e| e.to_string())?);
         }
-        if let Some(start) = update.current_period_start {
-            set_doc.insert("current_period_start", start);
-        }
-        if let Some(end) = update.current_period_end {
-            set_doc.insert("current_period_end", end);
-        }
-        if let Some(cust) = update.stripe_customer_id {
-            set_doc.insert("stripe_customer_id", cust);
-        }
-        if let Some(sub) = update.stripe_subscription_id {
-            set_doc.insert("stripe_subscription_id", sub);
-        }
+
+        // Infallible fields fold into one filter_map.
+        use mongodb::bson::Bson;
+        set_doc.extend(
+            [
+                (
+                    "current_period_start",
+                    update.current_period_start.map(Bson::DateTime),
+                ),
+                (
+                    "current_period_end",
+                    update.current_period_end.map(Bson::DateTime),
+                ),
+                (
+                    "stripe_customer_id",
+                    update.stripe_customer_id.map(Bson::String),
+                ),
+                (
+                    "stripe_subscription_id",
+                    update.stripe_subscription_id.map(Bson::String),
+                ),
+            ]
+            .into_iter()
+            .filter_map(|(k, v)| v.map(|b| (k.to_string(), b))),
+        );
         if set_doc.is_empty() {
             return Ok(true);
         }

@@ -84,6 +84,7 @@ Post-install events (signups, purchases, deposits) flow through a **sources** ab
 - Use `filter_map` to combine filtering and transformation
 - Flatten with `?` operator, `.ok()`, `.and_then()` chains
 - Use `let-else` for early returns
+- Three or more `if let` statements in a row applying parallel logic is a smell — there's almost always a flatter form: a struct literal (when each branch sets one field of the same struct), `.map()` / `.and_then()` (when transforming `Option<A>` → `Option<B>`), `filter_map` (when conditionally building a `Vec`), or `match` (when conditions overlap). `if let` is for *one* conditional unwrap with a side effect, not a substitute for declarative construction.
 - All route handlers must have `#[tracing::instrument]` for Sentry visibility
 - `ErrorResponse` lives in `error.rs` and is shared across all slices
 

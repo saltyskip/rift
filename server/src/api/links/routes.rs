@@ -1477,28 +1477,31 @@ fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
                 .map(action_to_schema_type)
                 .unwrap_or("ViewAction");
 
-            let mut entry_points = Vec::new();
-            if let Some(dl) = &ctx.link.ios_deep_link {
-                entry_points.push(json!({
-                    "@type": "EntryPoint",
-                    "urlTemplate": dl,
-                    "actionPlatform": "http://schema.org/IOSPlatform"
-                }));
-            }
-            if let Some(dl) = &ctx.link.android_deep_link {
-                entry_points.push(json!({
-                    "@type": "EntryPoint",
-                    "urlTemplate": dl,
-                    "actionPlatform": "http://schema.org/AndroidPlatform"
-                }));
-            }
-            if let Some(url) = &ctx.link.web_url {
-                entry_points.push(json!({
-                    "@type": "EntryPoint",
-                    "urlTemplate": url,
-                    "actionPlatform": "http://schema.org/DesktopWebPlatform"
-                }));
-            }
+            let entry_points: Vec<_> = [
+                (
+                    ctx.link.ios_deep_link.as_deref(),
+                    "http://schema.org/IOSPlatform",
+                ),
+                (
+                    ctx.link.android_deep_link.as_deref(),
+                    "http://schema.org/AndroidPlatform",
+                ),
+                (
+                    ctx.link.web_url.as_deref(),
+                    "http://schema.org/DesktopWebPlatform",
+                ),
+            ]
+            .into_iter()
+            .filter_map(|(opt, platform)| {
+                opt.map(|url| {
+                    json!({
+                        "@type": "EntryPoint",
+                        "urlTemplate": url,
+                        "actionPlatform": platform,
+                    })
+                })
+            })
+            .collect();
 
             let mut action = json!({
                 "@context": "https://schema.org",
@@ -2135,22 +2138,16 @@ fn build_agent_panel(ctx: &LandingPageContext) -> String {
     }
 
     // Destinations
-    let mut dests = Vec::new();
-    if let Some(v) = &link.ios_deep_link {
-        dests.push(("iOS", v.as_str()));
-    }
-    if let Some(v) = &link.android_deep_link {
-        dests.push(("Android", v.as_str()));
-    }
-    if let Some(v) = &link.web_url {
-        dests.push(("Web", v.as_str()));
-    }
-    if let Some(v) = &link.ios_store_url {
-        dests.push(("App Store", v.as_str()));
-    }
-    if let Some(v) = &link.android_store_url {
-        dests.push(("Play Store", v.as_str()));
-    }
+    let dests: Vec<(&str, &str)> = [
+        ("iOS", link.ios_deep_link.as_deref()),
+        ("Android", link.android_deep_link.as_deref()),
+        ("Web", link.web_url.as_deref()),
+        ("App Store", link.ios_store_url.as_deref()),
+        ("Play Store", link.android_store_url.as_deref()),
+    ]
+    .into_iter()
+    .filter_map(|(label, opt)| opt.map(|v| (label, v)))
+    .collect();
     if !dests.is_empty() {
         html.push_str(r#"<div class="dest-section"><div class="dest-header">Destinations</div>"#);
         for (label, url) in &dests {
