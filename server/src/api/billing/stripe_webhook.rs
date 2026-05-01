@@ -90,39 +90,6 @@ struct StripeInvoice {
     billing_reason: Option<String>,
 }
 
-// ── Tenant resolution ──
-
-fn tenant_id_from_metadata(meta: &serde_json::Map<String, Value>) -> Option<ObjectId> {
-    meta.get("tenant_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| ObjectId::parse_str(s).ok())
-}
-
-fn price_id_to_tier(state: &AppState, price_id: &str) -> Option<PlanTier> {
-    if price_id == state.config.stripe_price_id_pro {
-        Some(PlanTier::Pro)
-    } else if price_id == state.config.stripe_price_id_business {
-        Some(PlanTier::Business)
-    } else if price_id == state.config.stripe_price_id_scale {
-        Some(PlanTier::Scale)
-    } else {
-        None
-    }
-}
-
-fn map_status(stripe_status: &str) -> SubscriptionStatus {
-    match stripe_status {
-        "active" | "trialing" => SubscriptionStatus::Active,
-        "past_due" | "unpaid" => SubscriptionStatus::PastDue,
-        "canceled" | "incomplete_expired" | "incomplete" => SubscriptionStatus::Canceled,
-        _ => SubscriptionStatus::Active,
-    }
-}
-
-fn secs_to_bson_dt(secs: i64) -> bson::DateTime {
-    bson::DateTime::from_millis(secs.saturating_mul(1000))
-}
-
 // ── Route handler ──
 //
 // Deliberately NOT annotated with `#[utoipa::path]`. The body is raw bytes
@@ -449,4 +416,37 @@ async fn try_resolve_tenant(
     }
     let found = tenants.find_by_stripe_customer_id(customer_id).await?;
     Ok(found.and_then(|t| t.id))
+}
+
+// ── Helpers ──
+
+fn tenant_id_from_metadata(meta: &serde_json::Map<String, Value>) -> Option<ObjectId> {
+    meta.get("tenant_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| ObjectId::parse_str(s).ok())
+}
+
+fn price_id_to_tier(state: &AppState, price_id: &str) -> Option<PlanTier> {
+    if price_id == state.config.stripe_price_id_pro {
+        Some(PlanTier::Pro)
+    } else if price_id == state.config.stripe_price_id_business {
+        Some(PlanTier::Business)
+    } else if price_id == state.config.stripe_price_id_scale {
+        Some(PlanTier::Scale)
+    } else {
+        None
+    }
+}
+
+fn map_status(stripe_status: &str) -> SubscriptionStatus {
+    match stripe_status {
+        "active" | "trialing" => SubscriptionStatus::Active,
+        "past_due" | "unpaid" => SubscriptionStatus::PastDue,
+        "canceled" | "incomplete_expired" | "incomplete" => SubscriptionStatus::Canceled,
+        _ => SubscriptionStatus::Active,
+    }
+}
+
+fn secs_to_bson_dt(secs: i64) -> bson::DateTime {
+    bson::DateTime::from_millis(secs.saturating_mul(1000))
 }

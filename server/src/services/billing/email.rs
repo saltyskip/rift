@@ -7,14 +7,6 @@
 use crate::core::email;
 use crate::services::billing::handoff::BillingTier;
 
-fn tier_label(tier: BillingTier) -> &'static str {
-    match tier {
-        BillingTier::Pro => "Pro",
-        BillingTier::Business => "Business",
-        BillingTier::Scale => "Scale",
-    }
-}
-
 /// Magic link for starting or upgrading a subscription.
 pub async fn send_magic_link_subscribe(
     resend_api_key: &str,
@@ -99,4 +91,14 @@ pub async fn send_welcome(
     );
 
     email::send_email(resend_api_key, from, to, &subject, &html).await
+}
+
+// ── Helpers ──
+
+fn tier_label(tier: BillingTier) -> &'static str {
+    match tier {
+        BillingTier::Pro => "Pro",
+        BillingTier::Business => "Business",
+        BillingTier::Scale => "Scale",
+    }
 }

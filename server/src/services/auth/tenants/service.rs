@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use super::repo::{TenantDoc, TenantsRepository};
 
+crate::impl_container!(TenantsService);
 /// Tenant lifecycle primitives shared across signup (and later billing / agent)
 /// flows. Keeps credential-specific concerns (email owners, wallet credentials,
 /// secret keys) out of the tenant layer.

@@ -1,30 +1,18 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use mongodb::bson::{self, doc, oid::ObjectId};
+use mongodb::bson::{self, doc};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database};
-use serde::{Deserialize, Serialize};
 
+pub use super::models::UsageDoc;
 use crate::ensure_index;
 
-// ── Document ──
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UsageDoc {
-    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
-    pub api_key_id: Option<ObjectId>,
-    pub ip: String,
-    pub endpoint: String,
-    pub ts: bson::DateTime,
+pub fn now_bson() -> bson::DateTime {
+    to_bson_dt(Utc::now())
 }
 
 fn to_bson_dt(dt: DateTime<Utc>) -> bson::DateTime {
     bson::DateTime::from_millis(dt.timestamp_millis())
-}
-
-pub fn now_bson() -> bson::DateTime {
-    to_bson_dt(Utc::now())
 }
 
 // ── Trait ──
@@ -37,6 +25,7 @@ pub trait UsageRepository: Send + Sync {
 
 // ── Repository ──
 
+crate::impl_container!(UsageRepo);
 #[derive(Clone)]
 pub struct UsageRepo {
     usage: Collection<UsageDoc>,

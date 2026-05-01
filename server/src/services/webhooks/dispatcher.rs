@@ -13,6 +13,7 @@ use crate::core::webhook_dispatcher::{
 
 type HmacSha256 = Hmac<Sha256>;
 
+crate::impl_container!(RiftWebhookDispatcher);
 pub struct RiftWebhookDispatcher {
     repo: Arc<dyn WebhooksRepository>,
     http: reqwest::Client,

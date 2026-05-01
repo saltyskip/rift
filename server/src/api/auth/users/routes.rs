@@ -2,52 +2,13 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
 use mongodb::bson::oid::ObjectId;
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
-use utoipa::ToSchema;
 
-use crate::api::auth::middleware::TenantId;
+use super::models::{InviteUserRequest, InviteUserResponse, ListUsersResponse, UserDetail};
+use crate::api::auth::models::TenantId;
 use crate::app::AppState;
-use crate::services::auth::users::service::UserError;
-
-// ── Request / Response types ──
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct InviteUserRequest {
-    /// Email address of the user to invite.
-    #[schema(example = "alice@example.com")]
-    pub email: String,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct InviteUserResponse {
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    pub id: String,
-    #[schema(example = "alice@example.com")]
-    pub email: String,
-    #[schema(example = "verification_sent")]
-    pub status: String,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct UserDetail {
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    pub id: String,
-    #[schema(example = "alice@example.com")]
-    pub email: String,
-    #[schema(example = true)]
-    pub verified: bool,
-    #[schema(example = false)]
-    pub is_owner: bool,
-    #[schema(example = "2025-06-15T10:30:00Z")]
-    pub created_at: String,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ListUsersResponse {
-    pub users: Vec<UserDetail>,
-}
+use crate::services::auth::users::models::UserError;
 
 // ── Handlers ──
 

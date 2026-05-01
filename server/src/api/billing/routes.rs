@@ -1,63 +1,22 @@
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect, Response};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::api::auth::middleware::TenantId;
+use super::models::{
+    BillingStatusResponse, CheckoutQuery, CheckoutSessionResponse, LimitsView, MagicLinkGoQuery,
+    MagicLinkRequest, MagicLinkResponse, PortalSessionResponse,
+};
+use crate::api::auth::models::TenantId;
 use crate::app::AppState;
-use crate::services::auth::tenants::repo::{BillingMethod, PlanTier, SubscriptionStatus};
+use crate::services::auth::tenants::repo::{BillingMethod, PlanTier};
 use crate::services::billing::handoff::{BillingHandoffError, HandoffOutcome};
 use crate::services::billing::limits::limits_for;
 use crate::services::billing::models::{BillingError, BillingStatus};
 use crate::services::billing::stripe_client::{
     cancel_subscription_at_period_end, create_checkout_session, create_portal_session, StripeError,
 };
-
-/// Slim JSON shape for the status endpoint. Rendered from `BillingStatus` so
-/// the external contract stays stable if we add internal fields later.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct BillingStatusResponse {
-    pub plan_tier: PlanTier,
-    pub effective_tier: PlanTier,
-    pub comp_active: bool,
-    pub billing_method: BillingMethod,
-    pub status: SubscriptionStatus,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub current_period_end: Option<i64>,
-    pub limits: LimitsView,
-}
-
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct LimitsView {
-    pub max_links: Option<u64>,
-    pub max_events_per_month: Option<u64>,
-    pub max_domains: Option<u64>,
-    pub max_team_members: Option<u64>,
-    pub max_webhooks: Option<u64>,
-    pub analytics_retention: &'static str,
-}
-
-fn render(status: BillingStatus) -> BillingStatusResponse {
-    let limits = limits_for(status.effective_tier);
-    BillingStatusResponse {
-        plan_tier: status.plan_tier,
-        effective_tier: status.effective_tier,
-        comp_active: status.comp_active,
-        billing_method: status.billing_method,
-        status: status.status,
-        current_period_end: status.current_period_end.map(|d| d.timestamp_millis()),
-        limits: LimitsView {
-            max_links: limits.max_links,
-            max_events_per_month: limits.max_events_per_month,
-            max_domains: limits.max_domains,
-            max_team_members: limits.max_team_members,
-            max_webhooks: limits.max_webhooks,
-            analytics_retention: limits.retention_bucket,
-        },
-    }
-}
 
 #[utoipa::path(
     get,
@@ -102,27 +61,6 @@ pub async fn get_billing_status(
 }
 
 // ── POST /v1/billing/stripe/checkout — start Stripe Checkout for a paid tier ──
-
-#[derive(Debug, Deserialize, utoipa::IntoParams)]
-pub struct CheckoutQuery {
-    /// Target tier. One of: pro, business, scale.
-    #[param(example = "pro")]
-    pub tier: String,
-}
-
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct CheckoutSessionResponse {
-    pub checkout_url: String,
-}
-
-fn parse_paid_tier(s: &str) -> Option<PlanTier> {
-    match s {
-        "pro" => Some(PlanTier::Pro),
-        "business" => Some(PlanTier::Business),
-        "scale" => Some(PlanTier::Scale),
-        _ => None,
-    }
-}
 
 #[utoipa::path(
     post,
@@ -203,40 +141,6 @@ pub async fn create_stripe_checkout(
 
 // ── POST /v1/billing/magic-link — public, rate-limited ──
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct MagicLinkRequest {
-    /// Email to send the magic link to. Always returns 200 regardless of
-    /// whether an account exists — prevents enumeration.
-    #[schema(example = "you@company.com")]
-    pub email: String,
-    /// One of: `subscribe`, `portal`. Determines the flow on redemption.
-    #[schema(example = "subscribe")]
-    pub intent: String,
-    /// Required when `intent` is `subscribe`. One of: `pro`, `business`, `scale`.
-    #[schema(example = "pro")]
-    pub tier: Option<String>,
-}
-
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct MagicLinkResponse {
-    /// Always `"sent"`. Never indicates whether the email actually dispatched —
-    /// prevents account enumeration via timing or error signals.
-    pub status: &'static str,
-}
-
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    // In production we run behind Fly's proxy which sets X-Forwarded-For.
-    // Local dev without the header falls back to a single shared bucket,
-    // which is fine for a dev machine.
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "local".to_string())
-}
-
 #[utoipa::path(
     post,
     path = "/v1/billing/magic-link",
@@ -287,11 +191,6 @@ pub async fn create_magic_link(
 
 // ── GET /v1/billing/go — redeem magic link → Stripe redirect ──
 
-#[derive(Debug, Deserialize)]
-pub struct MagicLinkGoQuery {
-    pub token: String,
-}
-
 #[tracing::instrument(skip(state))]
 pub async fn redeem_magic_link(
     State(state): State<Arc<AppState>>,
@@ -319,11 +218,6 @@ pub async fn redeem_magic_link(
 }
 
 // ── POST /v1/billing/stripe/portal — Stripe Billing Portal for current tenant ──
-
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct PortalSessionResponse {
-    pub portal_url: String,
-}
 
 #[utoipa::path(
     post,
@@ -542,4 +436,48 @@ pub async fn cancel_subscription(
         )
             .into_response(),
     }
+}
+
+// ── Helpers ──
+
+fn render(status: BillingStatus) -> BillingStatusResponse {
+    let limits = limits_for(status.effective_tier);
+    BillingStatusResponse {
+        plan_tier: status.plan_tier,
+        effective_tier: status.effective_tier,
+        comp_active: status.comp_active,
+        billing_method: status.billing_method,
+        status: status.status,
+        current_period_end: status.current_period_end.map(|d| d.timestamp_millis()),
+        limits: LimitsView {
+            max_links: limits.max_links,
+            max_events_per_month: limits.max_events_per_month,
+            max_domains: limits.max_domains,
+            max_team_members: limits.max_team_members,
+            max_webhooks: limits.max_webhooks,
+            analytics_retention: limits.retention_bucket,
+        },
+    }
+}
+
+fn parse_paid_tier(s: &str) -> Option<PlanTier> {
+    match s {
+        "pro" => Some(PlanTier::Pro),
+        "business" => Some(PlanTier::Business),
+        "scale" => Some(PlanTier::Scale),
+        _ => None,
+    }
+}
+
+fn extract_client_ip(headers: &HeaderMap) -> String {
+    // In production we run behind Fly's proxy which sets X-Forwarded-For.
+    // Local dev without the header falls back to a single shared bucket,
+    // which is fine for a dev machine.
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "local".to_string())
 }

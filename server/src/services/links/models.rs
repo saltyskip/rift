@@ -600,3 +600,124 @@ pub struct TimeseriesResponse {
     pub to: String,
     pub data: Vec<TimeseriesDataPoint>,
 }
+
+// ── Errors ──
+
+use crate::services::billing::quota::QuotaError;
+use std::fmt;
+
+#[derive(Debug)]
+pub enum LinkError {
+    InvalidCustomId(String),
+    InvalidUrl(String),
+    InvalidMetadata(String),
+    InvalidAgentContext(String),
+    InvalidSocialPreview(String),
+    ThreatDetected(String),
+    LinkIdTaken(String),
+    NotFound,
+    NoVerifiedDomain,
+    EmptyUpdate,
+    /// Caller's affiliate scope does not match the requested `affiliate_id`.
+    AffiliateScopeMismatch,
+    /// Caller (full scope) referenced an affiliate that doesn't exist in this tenant.
+    AffiliateNotFound,
+    QuotaExceeded(QuotaError),
+    Internal(String),
+    // ── Bulk-create only ──
+    BatchTooLarge {
+        max: usize,
+        got: usize,
+    },
+    BatchEmpty,
+    /// Both `custom_ids` and `count` were set; only one is allowed.
+    BatchModeAmbiguous,
+    /// Neither `custom_ids` nor `count` was set; one is required.
+    BatchModeMissing,
+    /// One or more rows failed validation. Full list returned to the caller
+    /// so every problem can be fixed in one pass.
+    BatchValidationFailed(Vec<BatchItemError>),
+}
+
+impl From<QuotaError> for LinkError {
+    fn from(err: QuotaError) -> Self {
+        LinkError::QuotaExceeded(err)
+    }
+}
+
+impl fmt::Display for LinkError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidCustomId(e) => write!(f, "{e}"),
+            Self::InvalidUrl(e) => write!(f, "{e}"),
+            Self::InvalidMetadata(e) => write!(f, "{e}"),
+            Self::InvalidAgentContext(e) => write!(f, "{e}"),
+            Self::InvalidSocialPreview(e) => write!(f, "{e}"),
+            Self::ThreatDetected(e) => write!(f, "{e}"),
+            Self::LinkIdTaken(id) => write!(f, "'{id}' is already taken"),
+            Self::NotFound => write!(f, "Link not found"),
+            Self::NoVerifiedDomain => {
+                write!(f, "Custom IDs require a verified custom domain")
+            }
+            Self::EmptyUpdate => write!(f, "No fields to update"),
+            Self::AffiliateScopeMismatch => write!(
+                f,
+                "affiliate_id does not match the affiliate this credential is scoped to"
+            ),
+            Self::AffiliateNotFound => write!(f, "Affiliate not found"),
+            Self::QuotaExceeded(e) => write!(f, "{e}"),
+            Self::Internal(e) => write!(f, "Internal error: {e}"),
+            Self::BatchTooLarge { max, got } => {
+                write!(f, "Batch too large: {got} items (max {max})")
+            }
+            Self::BatchEmpty => write!(f, "Batch is empty"),
+            Self::BatchModeAmbiguous => {
+                write!(f, "Specify exactly one of `custom_ids` or `count`")
+            }
+            Self::BatchModeMissing => {
+                write!(f, "One of `custom_ids` or `count` is required")
+            }
+            Self::BatchValidationFailed(errs) => {
+                write!(f, "{} item(s) failed validation", errs.len())
+            }
+        }
+    }
+}
+
+impl LinkError {
+    /// Machine-readable error code for API responses.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::InvalidCustomId(_) => "invalid_custom_id",
+            Self::InvalidUrl(_) => "invalid_url",
+            Self::InvalidMetadata(_) => "invalid_metadata",
+            Self::InvalidAgentContext(_) => "invalid_agent_context",
+            Self::InvalidSocialPreview(_) => "invalid_social_preview",
+            Self::ThreatDetected(_) => "threat_detected",
+            Self::LinkIdTaken(_) => "link_id_taken",
+            Self::NotFound => "not_found",
+            Self::NoVerifiedDomain => "no_verified_domain",
+            Self::EmptyUpdate => "empty_update",
+            Self::AffiliateScopeMismatch => "affiliate_scope_mismatch",
+            Self::AffiliateNotFound => "affiliate_not_found",
+            Self::QuotaExceeded(_) => "quota_exceeded",
+            Self::Internal(_) => "db_error",
+            Self::BatchTooLarge { .. } => "batch_too_large",
+            Self::BatchEmpty => "batch_empty",
+            Self::BatchModeAmbiguous => "batch_mode_ambiguous",
+            Self::BatchModeMissing => "batch_mode_missing",
+            Self::BatchValidationFailed(_) => "invalid_batch",
+        }
+    }
+}
+
+/// Outcome of an atomic bulk insert. `DuplicateLinkIds` carries the input
+/// indices that collided with the unique `(tenant_id, link_id)` index — the
+/// service maps these back to per-row `link_id_taken` errors so the caller
+/// learns every conflict in one round trip. The transaction is rolled back
+/// before this is returned, so no partial inserts persist.
+#[derive(Debug)]
+pub enum BulkInsertError {
+    DuplicateLinkIds(Vec<usize>),
+    Internal(String),
+}

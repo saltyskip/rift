@@ -1,4 +1,5 @@
 pub mod middleware;
+pub mod models;
 pub mod publishable_keys;
 pub mod secret_keys;
 pub mod users;

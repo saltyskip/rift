@@ -74,3 +74,28 @@ pub struct UpdateWebhookRequest {
     #[schema(example = false)]
     pub active: bool,
 }
+
+// ── Errors ──
+
+use crate::services::billing::quota::QuotaError;
+
+#[derive(Debug)]
+pub enum WebhookError {
+    QuotaExceeded(QuotaError),
+    Internal(String),
+}
+
+impl From<QuotaError> for WebhookError {
+    fn from(err: QuotaError) -> Self {
+        WebhookError::QuotaExceeded(err)
+    }
+}
+
+impl std::fmt::Display for WebhookError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::QuotaExceeded(e) => write!(f, "{e}"),
+            Self::Internal(e) => write!(f, "Internal error: {e}"),
+        }
+    }
+}

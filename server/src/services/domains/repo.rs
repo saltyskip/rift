@@ -38,6 +38,7 @@ pub trait DomainsRepository: Send + Sync {
 
 // ── Repository ──
 
+crate::impl_container!(DomainsRepo);
 #[derive(Clone)]
 pub struct DomainsRepo {
     domains: Collection<Domain>,

@@ -13,21 +13,8 @@
 //! `None` is grandfathered to `Full` for the migration window only. A
 //! follow-up PR will flip this to deny.
 
+use crate::services::auth::secret_keys::models::ScopeError;
 use crate::services::auth::secret_keys::repo::KeyScope;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScopeError {
-    /// Caller's scope is not authorized for this operation.
-    Forbidden,
-}
-
-impl std::fmt::Display for ScopeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Forbidden => write!(f, "key scope forbids this operation"),
-        }
-    }
-}
 
 /// Require the caller to have full tenant access.
 ///

@@ -6,31 +6,11 @@
 use mongodb::bson::oid::ObjectId;
 use std::sync::Arc;
 
-use super::models::{Webhook, WebhookEventType};
+use super::models::{Webhook, WebhookError, WebhookEventType};
 use super::repo::WebhooksRepository;
-use crate::services::billing::quota::{QuotaChecker, QuotaError, Resource};
+use crate::services::billing::quota::{QuotaChecker, Resource};
 
-#[derive(Debug)]
-pub enum WebhookError {
-    QuotaExceeded(QuotaError),
-    Internal(String),
-}
-
-impl From<QuotaError> for WebhookError {
-    fn from(err: QuotaError) -> Self {
-        WebhookError::QuotaExceeded(err)
-    }
-}
-
-impl std::fmt::Display for WebhookError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::QuotaExceeded(e) => write!(f, "{e}"),
-            Self::Internal(e) => write!(f, "Internal error: {e}"),
-        }
-    }
-}
-
+crate::impl_container!(WebhooksService);
 pub struct WebhooksService {
     repo: Arc<dyn WebhooksRepository>,
     quota: Option<Arc<dyn QuotaChecker>>,

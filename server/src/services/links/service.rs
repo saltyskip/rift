@@ -1,126 +1,18 @@
 use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
-use std::fmt;
 use std::sync::Arc;
 use uuid::Uuid;
 
 use super::models::*;
-use super::repo::{BulkInsertError, LinksRepository};
+use super::repo::LinksRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
 use crate::services::affiliates::repo::AffiliatesRepository;
 use crate::services::auth::secret_keys::repo::KeyScope;
-use crate::services::billing::quota::{QuotaChecker, QuotaError, Resource};
+use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
-
-// ── Error ──
-
-#[derive(Debug)]
-pub enum LinkError {
-    InvalidCustomId(String),
-    InvalidUrl(String),
-    InvalidMetadata(String),
-    InvalidAgentContext(String),
-    InvalidSocialPreview(String),
-    ThreatDetected(String),
-    LinkIdTaken(String),
-    NotFound,
-    NoVerifiedDomain,
-    EmptyUpdate,
-    /// Caller's affiliate scope does not match the requested `affiliate_id`.
-    AffiliateScopeMismatch,
-    /// Caller (full scope) referenced an affiliate that doesn't exist in this tenant.
-    AffiliateNotFound,
-    QuotaExceeded(QuotaError),
-    Internal(String),
-    // ── Bulk-create only ──
-    BatchTooLarge {
-        max: usize,
-        got: usize,
-    },
-    BatchEmpty,
-    /// Both `custom_ids` and `count` were set; only one is allowed.
-    BatchModeAmbiguous,
-    /// Neither `custom_ids` nor `count` was set; one is required.
-    BatchModeMissing,
-    /// One or more rows failed validation. Full list returned to the caller
-    /// so every problem can be fixed in one pass.
-    BatchValidationFailed(Vec<BatchItemError>),
-}
-
-impl From<QuotaError> for LinkError {
-    fn from(err: QuotaError) -> Self {
-        LinkError::QuotaExceeded(err)
-    }
-}
-
-impl fmt::Display for LinkError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidCustomId(e) => write!(f, "{e}"),
-            Self::InvalidUrl(e) => write!(f, "{e}"),
-            Self::InvalidMetadata(e) => write!(f, "{e}"),
-            Self::InvalidAgentContext(e) => write!(f, "{e}"),
-            Self::InvalidSocialPreview(e) => write!(f, "{e}"),
-            Self::ThreatDetected(e) => write!(f, "{e}"),
-            Self::LinkIdTaken(id) => write!(f, "'{id}' is already taken"),
-            Self::NotFound => write!(f, "Link not found"),
-            Self::NoVerifiedDomain => {
-                write!(f, "Custom IDs require a verified custom domain")
-            }
-            Self::EmptyUpdate => write!(f, "No fields to update"),
-            Self::AffiliateScopeMismatch => write!(
-                f,
-                "affiliate_id does not match the affiliate this credential is scoped to"
-            ),
-            Self::AffiliateNotFound => write!(f, "Affiliate not found"),
-            Self::QuotaExceeded(e) => write!(f, "{e}"),
-            Self::Internal(e) => write!(f, "Internal error: {e}"),
-            Self::BatchTooLarge { max, got } => {
-                write!(f, "Batch too large: {got} items (max {max})")
-            }
-            Self::BatchEmpty => write!(f, "Batch is empty"),
-            Self::BatchModeAmbiguous => {
-                write!(f, "Specify exactly one of `custom_ids` or `count`")
-            }
-            Self::BatchModeMissing => {
-                write!(f, "One of `custom_ids` or `count` is required")
-            }
-            Self::BatchValidationFailed(errs) => {
-                write!(f, "{} item(s) failed validation", errs.len())
-            }
-        }
-    }
-}
-
-impl LinkError {
-    /// Machine-readable error code for API responses.
-    pub fn code(&self) -> &'static str {
-        match self {
-            Self::InvalidCustomId(_) => "invalid_custom_id",
-            Self::InvalidUrl(_) => "invalid_url",
-            Self::InvalidMetadata(_) => "invalid_metadata",
-            Self::InvalidAgentContext(_) => "invalid_agent_context",
-            Self::InvalidSocialPreview(_) => "invalid_social_preview",
-            Self::ThreatDetected(_) => "threat_detected",
-            Self::LinkIdTaken(_) => "link_id_taken",
-            Self::NotFound => "not_found",
-            Self::NoVerifiedDomain => "no_verified_domain",
-            Self::EmptyUpdate => "empty_update",
-            Self::AffiliateScopeMismatch => "affiliate_scope_mismatch",
-            Self::AffiliateNotFound => "affiliate_not_found",
-            Self::QuotaExceeded(_) => "quota_exceeded",
-            Self::Internal(_) => "db_error",
-            Self::BatchTooLarge { .. } => "batch_too_large",
-            Self::BatchEmpty => "batch_empty",
-            Self::BatchModeAmbiguous => "batch_mode_ambiguous",
-            Self::BatchModeMissing => "batch_mode_missing",
-            Self::BatchValidationFailed(_) => "invalid_batch",
-        }
-    }
-}
 
 // ── Service ──
 
@@ -128,6 +20,7 @@ impl LinkError {
 /// threat-feed fan-out, and the size of any single transaction.
 pub const BULK_LINKS_MAX: usize = 100;
 
+crate::impl_container!(LinksService);
 pub struct LinksService {
     links_repo: Arc<dyn LinksRepository>,
     domains_repo: Option<Arc<dyn DomainsRepository>>,

@@ -6,35 +6,13 @@ use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::api::auth::middleware::TenantId;
+use super::models::SdkConversionRequest;
+use crate::api::auth::models::TenantId;
 use crate::app::AppState;
 use crate::services::conversions::models::{
     CreateSourceRequest, CreateSourceResponse, ListSourcesResponse, Source, SourceDetail,
 };
 use crate::services::conversions::parsers;
-
-// ── Helpers ──
-
-fn webhook_url_for(state: &AppState, url_token: &str) -> String {
-    format!(
-        "{}/w/{}",
-        state.config.public_url.trim_end_matches('/'),
-        url_token
-    )
-}
-
-fn to_detail(state: &AppState, source: &Source) -> SourceDetail {
-    SourceDetail {
-        id: source.id.to_hex(),
-        name: source.name.clone(),
-        source_type: source.source_type.clone(),
-        webhook_url: webhook_url_for(state, &source.url_token),
-        created_at: source
-            .created_at
-            .try_to_rfc3339_string()
-            .unwrap_or_default(),
-    }
-}
 
 // ── POST /v1/sources — Create a source ──
 
@@ -371,7 +349,7 @@ pub async fn sdk_track_conversion(
             .into_response();
     }
 
-    let parsed = vec![crate::services::conversions::parsers::ParsedConversion {
+    let parsed = vec![crate::services::conversions::models::ParsedConversion {
         user_id: Some(req.user_id),
         conversion_type: req.conversion_type,
         idempotency_key: req.idempotency_key,
@@ -393,19 +371,25 @@ pub async fn sdk_track_conversion(
     .into_response()
 }
 
-/// Request body for the SDK conversion endpoint.
-#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
-pub struct SdkConversionRequest {
-    /// The user ID (must match a previously bound user via setUserId).
-    #[schema(example = "usr_abc123")]
-    pub user_id: String,
-    /// Conversion type (free-form, e.g. "spot_trade", "perps_trade", "swap").
-    #[serde(rename = "type")]
-    #[schema(example = "spot_trade")]
-    pub conversion_type: String,
-    /// Idempotency key to prevent double-counting (e.g. order ID, tx hash).
-    #[schema(example = "order-12345")]
-    pub idempotency_key: Option<String>,
-    /// Arbitrary metadata (max 1KB). Stored verbatim, forwarded on outbound webhooks.
-    pub metadata: Option<serde_json::Value>,
+// ── Helpers ──
+
+fn webhook_url_for(state: &AppState, url_token: &str) -> String {
+    format!(
+        "{}/w/{}",
+        state.config.public_url.trim_end_matches('/'),
+        url_token
+    )
+}
+
+fn to_detail(state: &AppState, source: &Source) -> SourceDetail {
+    SourceDetail {
+        id: source.id.to_hex(),
+        name: source.name.clone(),
+        source_type: source.source_type.clone(),
+        webhook_url: webhook_url_for(state, &source.url_token),
+        created_at: source
+            .created_at
+            .try_to_rfc3339_string()
+            .unwrap_or_default(),
+    }
 }

@@ -3,9 +3,10 @@
 use std::sync::Arc;
 
 use crate::services::auth::keys;
-use crate::services::tokens::model::{ConsumeOutcome, TokenKind, TokenPurpose, TokenSpec};
+use crate::services::tokens::models::{ConsumeOutcome, TokenKind, TokenPurpose, TokenSpec};
 use crate::services::tokens::repo::{new_token_doc, random_doc_id, TokensRepository};
 
+crate::impl_container!(TokenService);
 pub struct TokenService {
     repo: Arc<dyn TokensRepository>,
 }
@@ -138,8 +139,7 @@ impl TokenService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::tokens::model::{TokenKind, TokenPurpose, TokenSpec};
-    use crate::services::tokens::repo::TokenDoc;
+    use crate::services::tokens::models::{TokenDoc, TokenKind, TokenPurpose, TokenSpec};
     use async_trait::async_trait;
     use mongodb::bson::{self, doc};
     use std::sync::Mutex;

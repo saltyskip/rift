@@ -2,14 +2,15 @@ use std::sync::Arc;
 
 use mongodb::bson::{oid::ObjectId, DateTime};
 
+use super::models::ParsedConversion;
 use super::models::{ConversionEvent, ConversionMeta, IngestResult, Source};
-use super::parsers::ParsedConversion;
 use super::repo::ConversionsRepository;
 use crate::core::webhook_dispatcher::{ConversionEventPayload, WebhookDispatcher};
 use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
 use crate::services::links::repo::LinksRepository;
 
+crate::impl_container!(ConversionsService);
 /// Orchestration layer for conversion ingestion. Keeps route handlers thin per
 /// CLAUDE.md's "thin transport" rule — the handler is ~15 lines (look up source,
 /// parse, delegate here, return status).

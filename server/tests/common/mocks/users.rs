@@ -2,7 +2,8 @@ use async_trait::async_trait;
 use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
-use rift::services::auth::users::repo::{UserDoc, UsersRepository};
+use rift::services::auth::users::models::UserDoc;
+use rift::services::auth::users::repo::UsersRepository;
 
 #[derive(Default)]
 pub struct MockUsersRepo {

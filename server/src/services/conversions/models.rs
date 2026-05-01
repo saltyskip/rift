@@ -148,3 +148,43 @@ pub struct IngestResult {
     pub unattributed: usize,
     pub failed: usize,
 }
+
+// ── Parser output / errors ──
+
+/// Normalized conversion event produced by a parser, before dedup / attribution /
+/// storage. Parsers return `Vec<ParsedConversion>` so that future batch-style
+/// integrations (e.g. a webhook that unpacks multiple line items) fit the same trait.
+#[derive(Debug, Clone)]
+pub struct ParsedConversion {
+    pub user_id: Option<String>,
+    pub conversion_type: String,
+
+    /// Optional idempotency key for exactly-once semantics.
+    ///
+    /// Contract:
+    /// - Scoped per tenant — two tenants can use the same key without collision
+    /// - Unique within a 30-day window — after TTL expiry, keys may be reused
+    /// - Opaque to Rift — any string ≤256 chars, not parsed or validated
+    /// - Typical values: Stripe invoice ID, RevenueCat event ID, DB transaction
+    ///   UUID, on-chain tx hash
+    /// - Collision behavior: Rift silently drops the duplicate and returns 200
+    ///   (keeps caller retry logic happy), does not double-count
+    /// - Optional: if None, every call counts (caller accepts double-count risk)
+    pub idempotency_key: Option<String>,
+
+    pub metadata: Option<mongodb::bson::Document>,
+    /// If None, the service defaults to `DateTime::now()`.
+    pub occurred_at: Option<mongodb::bson::DateTime>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ParseError {
+    #[error("invalid payload: {0}")]
+    InvalidPayload(String),
+    #[error("missing required field: {0}")]
+    MissingField(&'static str),
+    #[error("metadata too large: {0} bytes (max 1024)")]
+    MetadataTooLarge(usize),
+    #[error("idempotency key too long: {0} chars (max 256)")]
+    IdempotencyKeyTooLong(usize),
+}

@@ -6,7 +6,7 @@ use mongodb::bson::DateTime;
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::api::auth::middleware::TenantId;
+use crate::api::auth::models::TenantId;
 use crate::app::AppState;
 use crate::services::auth::keys;
 use crate::services::auth::publishable_keys::models::*;

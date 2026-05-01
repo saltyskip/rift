@@ -71,6 +71,7 @@ pub trait ConversionsRepository: Send + Sync {
 
 // ── Repository ──
 
+crate::impl_container!(ConversionsRepo);
 #[derive(Clone)]
 pub struct ConversionsRepo {
     sources: Collection<Source>,

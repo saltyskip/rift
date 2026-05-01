@@ -1,23 +1,10 @@
 use async_trait::async_trait;
-use mongodb::bson::{self, doc, oid::ObjectId};
+use mongodb::bson::{doc, oid::ObjectId};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database};
-use serde::{Deserialize, Serialize};
 
+use super::models::UserDoc;
 use crate::ensure_index;
-
-// ── Document ──
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserDoc {
-    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
-    pub tenant_id: ObjectId,
-    pub email: String,
-    pub verified: bool,
-    pub is_owner: bool,
-    pub created_at: bson::DateTime,
-}
 
 // ── Trait ──
 
@@ -42,6 +29,7 @@ pub trait UsersRepository: Send + Sync {
 
 // ── Repository ──
 
+crate::impl_container!(UsersRepo);
 #[derive(Clone)]
 pub struct UsersRepo {
     users: Collection<UserDoc>,

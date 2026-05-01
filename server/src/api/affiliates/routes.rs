@@ -5,10 +5,9 @@ use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::api::auth::middleware::{AuthKeyId, CallerScope, TenantId};
+use crate::api::auth::models::{AuthKeyId, CallerScope, TenantId};
 use crate::app::AppState;
 use crate::services::affiliates::models::*;
-use crate::services::affiliates::service::AffiliateError;
 
 // ── Affiliate CRUD ──
 

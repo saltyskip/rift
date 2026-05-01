@@ -18,159 +18,14 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde::Deserialize;
-
-use crate::api::auth::middleware::{CallerScope, SdkDomain, TenantId};
+use super::models::{QrCodeQuery, ResolveQuery};
+use crate::api::auth::models::{CallerScope, SdkDomain, TenantId};
 use crate::app::AppState;
 use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload};
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
+use crate::services::links::models::LinkError;
 use crate::services::links::models::*;
-use crate::services::links::service::LinkError;
-
-// ── Resolve Query Params ──
-
-#[derive(Debug, Deserialize)]
-pub struct ResolveQuery {
-    #[serde(default)]
-    pub redirect: Option<String>,
-}
-
-#[derive(Debug, Deserialize, utoipa::IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct QrCodeQuery {
-    /// Logo image URL to center in the QR code.
-    pub logo: Option<String>,
-    /// Output size in pixels. Defaults to 600.
-    #[param(example = 600)]
-    pub size: Option<u32>,
-    /// QR error correction level. One of L, M, Q, H. Defaults to L (or H when a logo is set).
-    #[param(example = "H")]
-    pub level: Option<String>,
-    /// Foreground color hex value applied to dots, eye frames, and eye pupils when their
-    /// per-component color is not set. Defaults to #000000.
-    #[serde(rename = "fgColor")]
-    #[param(example = "#111827")]
-    pub fg_color: Option<String>,
-    /// Background color hex value. Defaults to #FFFFFF.
-    #[serde(rename = "bgColor")]
-    #[param(example = "#FFFFFF")]
-    pub bg_color: Option<String>,
-    /// Ignore the logo URL when true.
-    #[serde(default, rename = "hideLogo")]
-    pub hide_logo: bool,
-    /// Margin around the QR code in modules. Defaults to 2.
-    #[param(example = 2)]
-    pub margin: Option<u32>,
-    /// Deprecated compatibility flag. If false and margin is absent, margin becomes 0.
-    #[serde(rename = "includeMargin")]
-    pub include_margin: Option<bool>,
-    /// Shape of the inner dots. One of `square`, `dots`, `rounded`, `classy`,
-    /// `classy-rounded`, `extra-rounded`. Defaults to `rounded`.
-    #[serde(rename = "dotType")]
-    #[param(example = "rounded")]
-    pub dot_type: Option<String>,
-    /// Shape of the three large positioning "eye" frames. One of `square`, `dot`,
-    /// `extra-rounded`. Defaults to `extra-rounded`.
-    #[serde(rename = "cornerSquareType")]
-    #[param(example = "extra-rounded")]
-    pub corner_square_type: Option<String>,
-    /// Shape of the pupil inside each eye frame. One of `dot`, `square`. Defaults to `dot`.
-    #[serde(rename = "cornerDotType")]
-    #[param(example = "dot")]
-    pub corner_dot_type: Option<String>,
-    /// Overall canvas shape. One of `square`, `circle`. Defaults to `square`.
-    #[param(example = "square")]
-    pub shape: Option<String>,
-    /// Override color for the inner dots only. Defaults to `fgColor`.
-    #[serde(rename = "dotColor")]
-    #[param(example = "#0d9488")]
-    pub dot_color: Option<String>,
-    /// Override color for the eye frames only. Defaults to `fgColor`.
-    #[serde(rename = "cornerSquareColor")]
-    #[param(example = "#111827")]
-    pub corner_square_color: Option<String>,
-    /// Override color for the eye pupils only. Defaults to `fgColor`.
-    #[serde(rename = "cornerDotColor")]
-    #[param(example = "#111827")]
-    pub corner_dot_color: Option<String>,
-}
-
-fn link_error_to_response(err: LinkError) -> Response {
-    // QuotaExceeded is a structured 402 — delegate to the shared helper so
-    // the body shape stays consistent across every enforcement path.
-    if let LinkError::QuotaExceeded(q) = err {
-        return crate::api::billing::quota_response::to_response(q);
-    }
-    // BatchValidationFailed carries a per-row error list — return the full
-    // array so the caller can fix every issue in one pass.
-    if let LinkError::BatchValidationFailed(errors) = err {
-        let count = errors.len();
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error": format!("{count} item(s) failed validation"),
-                "code": "invalid_batch",
-                "errors": errors,
-            })),
-        )
-            .into_response();
-    }
-    let status = match &err {
-        LinkError::InvalidCustomId(_)
-        | LinkError::InvalidUrl(_)
-        | LinkError::InvalidMetadata(_)
-        | LinkError::InvalidAgentContext(_)
-        | LinkError::InvalidSocialPreview(_)
-        | LinkError::ThreatDetected(_)
-        | LinkError::NoVerifiedDomain
-        | LinkError::EmptyUpdate
-        | LinkError::AffiliateScopeMismatch
-        | LinkError::BatchTooLarge { .. }
-        | LinkError::BatchEmpty
-        | LinkError::BatchModeAmbiguous
-        | LinkError::BatchModeMissing => StatusCode::BAD_REQUEST,
-        LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
-        LinkError::NotFound | LinkError::AffiliateNotFound => StatusCode::NOT_FOUND,
-        LinkError::QuotaExceeded(_) | LinkError::BatchValidationFailed(_) => {
-            unreachable!("handled above")
-        }
-        LinkError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    let code = err.code();
-    let message = err.to_string();
-    (status, Json(json!({ "error": message, "code": code }))).into_response()
-}
-
-// ── Platform Detection ──
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Platform {
-    Ios,
-    Android,
-    Other,
-}
-
-impl Platform {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Platform::Ios => "ios",
-            Platform::Android => "android",
-            Platform::Other => "other",
-        }
-    }
-}
-
-fn detect_platform(user_agent: &str) -> Platform {
-    let ua = user_agent.to_lowercase();
-    if ua.contains("iphone") || ua.contains("ipad") || ua.contains("ipod") {
-        Platform::Ios
-    } else if ua.contains("android") {
-        Platform::Android
-    } else {
-        Platform::Other
-    }
-}
 
 // ── POST /v1/links — Create a new deep link (authenticated) ──
 
@@ -304,7 +159,7 @@ pub async fn get_link(
 
     match svc.get_link(&tenant.0, scope.0.as_ref(), &link_id).await {
         Ok(detail) => Json(json!(detail)).into_response(),
-        Err(crate::services::links::service::LinkError::NotFound) => (
+        Err(crate::services::links::models::LinkError::NotFound) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Link not found", "code": "not_found" })),
         )
@@ -2085,6 +1940,80 @@ fn render_qr(
 }
 
 // ── Helpers ──
+
+fn link_error_to_response(err: LinkError) -> Response {
+    // QuotaExceeded is a structured 402 — delegate to the shared helper so
+    // the body shape stays consistent across every enforcement path.
+    if let LinkError::QuotaExceeded(q) = err {
+        return crate::api::billing::quota_response::to_response(q);
+    }
+    // BatchValidationFailed carries a per-row error list — return the full
+    // array so the caller can fix every issue in one pass.
+    if let LinkError::BatchValidationFailed(errors) = err {
+        let count = errors.len();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": format!("{count} item(s) failed validation"),
+                "code": "invalid_batch",
+                "errors": errors,
+            })),
+        )
+            .into_response();
+    }
+    let status = match &err {
+        LinkError::InvalidCustomId(_)
+        | LinkError::InvalidUrl(_)
+        | LinkError::InvalidMetadata(_)
+        | LinkError::InvalidAgentContext(_)
+        | LinkError::InvalidSocialPreview(_)
+        | LinkError::ThreatDetected(_)
+        | LinkError::NoVerifiedDomain
+        | LinkError::EmptyUpdate
+        | LinkError::AffiliateScopeMismatch
+        | LinkError::BatchTooLarge { .. }
+        | LinkError::BatchEmpty
+        | LinkError::BatchModeAmbiguous
+        | LinkError::BatchModeMissing => StatusCode::BAD_REQUEST,
+        LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
+        LinkError::NotFound | LinkError::AffiliateNotFound => StatusCode::NOT_FOUND,
+        LinkError::QuotaExceeded(_) | LinkError::BatchValidationFailed(_) => {
+            unreachable!("handled above")
+        }
+        LinkError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    let code = err.code();
+    let message = err.to_string();
+    (status, Json(json!({ "error": message, "code": code }))).into_response()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Platform {
+    Ios,
+    Android,
+    Other,
+}
+
+impl Platform {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Platform::Ios => "ios",
+            Platform::Android => "android",
+            Platform::Other => "other",
+        }
+    }
+}
+
+fn detect_platform(user_agent: &str) -> Platform {
+    let ua = user_agent.to_lowercase();
+    if ua.contains("iphone") || ua.contains("ipad") || ua.contains("ipod") {
+        Platform::Ios
+    } else if ua.contains("android") {
+        Platform::Android
+    } else {
+        Platform::Other
+    }
+}
 
 fn is_valid_link_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')

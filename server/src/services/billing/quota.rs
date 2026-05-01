@@ -8,6 +8,12 @@ use super::models::BillingError;
 use super::repos::event_counters::EventCountersRepository;
 use super::service::TierResolver;
 
+// Re-export quota data types from models.rs so existing callers (which import
+// via `services::billing::quota::{...}`) keep compiling. The data types have
+// moved to `models.rs` per the strict pub-types-in-models rule; the
+// implementation containers (QuotaService, traits, etc.) stay here.
+pub use super::models::{EnforcementMode, QuotaError, Resource};
+
 /// The quota decision surface used by every service that creates a resource
 /// or tracks an event.
 ///
@@ -40,69 +46,6 @@ pub trait QuotaChecker: Send + Sync {
     }
 }
 
-/// Quotable resource categories. Each maps to a specific enforcement path.
-/// `TrackEvent` covers both click and conversion writes — they share the
-/// `max_events_per_month` limit on the pricing page.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Resource {
-    CreateLink,
-    TrackEvent,
-    CreateDomain,
-    InviteTeamMember,
-    CreateWebhook,
-    CreateAffiliate,
-}
-
-impl Resource {
-    pub fn code(&self) -> &'static str {
-        match self {
-            Self::CreateLink => "create_link",
-            Self::TrackEvent => "track_event",
-            Self::CreateDomain => "create_domain",
-            Self::InviteTeamMember => "invite_team_member",
-            Self::CreateWebhook => "create_webhook",
-            Self::CreateAffiliate => "create_affiliate",
-        }
-    }
-}
-
-/// Outcome of a quota check. In Phase A-1 (log-only) we log `Exceeded` and
-/// continue; Phase A-2 will return it as a `402 Payment Required` to clients.
-#[derive(Debug)]
-pub enum QuotaError {
-    Exceeded {
-        resource: Resource,
-        limit: u64,
-        current: u64,
-    },
-    Billing(BillingError),
-}
-
-impl std::fmt::Display for QuotaError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Exceeded {
-                resource,
-                limit,
-                current,
-            } => write!(
-                f,
-                "quota exceeded on {} ({}/{})",
-                resource.code(),
-                current,
-                limit
-            ),
-            Self::Billing(e) => write!(f, "billing error: {e}"),
-        }
-    }
-}
-
-impl From<BillingError> for QuotaError {
-    fn from(err: BillingError) -> Self {
-        QuotaError::Billing(err)
-    }
-}
-
 /// Per-resource counter for "things already owned by this tenant" — used by
 /// `QuotaService::check` to decide whether a new create is allowed. Each
 /// existing repo already has (or gets) a `count_by_tenant` for exactly this.
@@ -111,30 +54,7 @@ pub trait ResourceCounts: Send + Sync {
     async fn count(&self, tenant_id: &ObjectId, resource: Resource) -> Result<u64, String>;
 }
 
-/// Whether quota checks hard-reject or just log the would-be rejection.
-///
-/// `LogOnly` is the safe default — every code path calls `QuotaService::check`
-/// but it always returns `Ok(())`, emitting `tracing::warn!` when a tenant
-/// would have been rejected. `Enforce` flips `QuotaError::Exceeded` into a
-/// real error the caller maps to `402 Payment Required`.
-///
-/// Controlled by `QUOTA_ENFORCEMENT=enforce` (default: log_only).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnforcementMode {
-    LogOnly,
-    Enforce,
-}
-
-impl EnforcementMode {
-    pub fn from_env_str(s: &str) -> Self {
-        if s.eq_ignore_ascii_case("enforce") {
-            Self::Enforce
-        } else {
-            Self::LogOnly
-        }
-    }
-}
-
+crate::impl_container!(QuotaService);
 /// The concrete production quota gatekeeper. Injected behind
 /// `Arc<dyn QuotaChecker>` so services don't see the internal fanout.
 pub struct QuotaService {
@@ -308,6 +228,7 @@ fn current_period() -> String {
 // by tests that want to verify "what happens when over limit" without
 // standing up the full counter/billing stack. Gated behind the
 // `test-harness` feature so they don't show up in production builds.
+crate::impl_container!(NoopQuotaChecker);
 #[cfg(any(test, feature = "test-harness"))]
 pub struct NoopQuotaChecker;
 
@@ -319,6 +240,7 @@ impl QuotaChecker for NoopQuotaChecker {
     }
 }
 
+crate::impl_container!(DenyQuotaChecker);
 #[cfg(any(test, feature = "test-harness"))]
 pub struct DenyQuotaChecker {
     pub limit: u64,

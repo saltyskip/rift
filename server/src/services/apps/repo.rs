@@ -23,6 +23,7 @@ pub trait AppsRepository: Send + Sync {
 
 // ── Repository ──
 
+crate::impl_container!(AppsRepo);
 #[derive(Clone)]
 pub struct AppsRepo {
     apps: Collection<App>,

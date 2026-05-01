@@ -2,7 +2,8 @@ use async_trait::async_trait;
 use mongodb::bson;
 use std::sync::Mutex;
 
-use rift::services::tokens::repo::{TokenDoc, TokensRepository};
+use rift::services::tokens::models::TokenDoc;
+use rift::services::tokens::repo::TokensRepository;
 use rift::services::tokens::TokenPurpose;
 
 /// In-memory TokensRepository for integration tests. Mirrors the
