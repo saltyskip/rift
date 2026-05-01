@@ -6,6 +6,7 @@ use x402_types::proto::{self, VerifyRequest};
 
 const CDP_HOST: &str = "api.cdp.coinbase.com";
 
+crate::impl_container!(CdpFacilitator);
 #[derive(Clone)]
 pub struct CdpFacilitator {
     api_key_id: String,

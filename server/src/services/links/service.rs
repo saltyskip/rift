@@ -729,13 +729,6 @@ impl LinksService {
     }
 }
 
-/// Serialize any `Serialize` value to a Bson `Document`, dropping the value
-/// silently on failure. Used by `update_link` to fold optional struct fields
-/// (metadata, agent_context, social_preview) into the `$set` payload.
-fn to_doc_value<T: serde::Serialize>(v: &T) -> Option<mongodb::bson::Document> {
-    mongodb::bson::to_document(v).ok()
-}
-
 pub fn build_canonical_link_url(
     public_url: &str,
     link_id: &str,
@@ -881,6 +874,13 @@ fn validate_social_preview(social_preview: &Option<SocialPreview>) -> Result<(),
     }
 
     Ok(())
+}
+
+/// Serialize any `Serialize` value to a Bson `Document`, dropping the value
+/// silently on failure. Used by `update_link` to fold optional struct fields
+/// (metadata, agent_context, social_preview) into the `$set` payload.
+fn to_doc_value<T: serde::Serialize>(v: &T) -> Option<mongodb::bson::Document> {
+    mongodb::bson::to_document(v).ok()
 }
 
 #[cfg(test)]

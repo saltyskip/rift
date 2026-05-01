@@ -196,20 +196,6 @@ use crate::app::AppState;
 )]
 struct ApiDoc;
 
-async fn serve_rift_js() -> impl axum::response::IntoResponse {
-    (
-        axum::http::StatusCode::OK,
-        [
-            (
-                axum::http::header::CONTENT_TYPE,
-                "application/javascript; charset=utf-8",
-            ),
-            (axum::http::header::CACHE_CONTROL, "public, max-age=3600"),
-        ],
-        include_str!("../sdk/rift.js"),
-    )
-}
-
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     let mut spec = ApiDoc::openapi();
 
@@ -249,4 +235,20 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(billing::router(state.clone()))
         .merge(openapi_json)
         .merge(sdk)
+}
+
+// ── Helpers ──
+
+async fn serve_rift_js() -> impl axum::response::IntoResponse {
+    (
+        axum::http::StatusCode::OK,
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=3600"),
+        ],
+        include_str!("../sdk/rift.js"),
+    )
 }

@@ -13,6 +13,7 @@ use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::repo::LinksRepository;
 use crate::services::webhooks::repo::WebhooksRepository;
 
+crate::impl_container!(RepoResourceCounts);
 pub struct RepoResourceCounts {
     pub links: Arc<dyn LinksRepository>,
     pub domains: Arc<dyn DomainsRepository>,
