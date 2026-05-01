@@ -12,22 +12,6 @@ use rmcp::transport::StreamableHttpService;
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler};
 use std::sync::{Arc, OnceLock};
 
-/// API key extracted from HTTP `x-api-key` header, injected by middleware.
-#[derive(Debug, Clone)]
-struct McpApiKey(String);
-
-async fn extract_api_key_header(mut req: Request, next: Next) -> Response {
-    let key = req
-        .headers()
-        .get("x-api-key")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    if let Some(key) = key {
-        req.extensions_mut().insert(McpApiKey(key));
-    }
-    next.run(req).await
-}
-
 use super::tools::*;
 use crate::services::auth::keys;
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
@@ -442,4 +426,22 @@ pub fn mcp_router(
     axum::Router::new()
         .nest_service("/mcp", service)
         .layer(axum::middleware::from_fn(extract_api_key_header))
+}
+
+// ── Helpers ──
+
+/// API key extracted from HTTP `x-api-key` header, injected by middleware.
+#[derive(Debug, Clone)]
+struct McpApiKey(String);
+
+async fn extract_api_key_header(mut req: Request, next: Next) -> Response {
+    let key = req
+        .headers()
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    if let Some(key) = key {
+        req.extensions_mut().insert(McpApiKey(key));
+    }
+    next.run(req).await
 }

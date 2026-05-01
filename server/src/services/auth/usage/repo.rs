@@ -7,12 +7,12 @@ use mongodb::{Collection, Database};
 pub use super::models::UsageDoc;
 use crate::ensure_index;
 
-fn to_bson_dt(dt: DateTime<Utc>) -> bson::DateTime {
-    bson::DateTime::from_millis(dt.timestamp_millis())
-}
-
 pub fn now_bson() -> bson::DateTime {
     to_bson_dt(Utc::now())
+}
+
+fn to_bson_dt(dt: DateTime<Utc>) -> bson::DateTime {
+    bson::DateTime::from_millis(dt.timestamp_millis())
 }
 
 // ── Trait ──

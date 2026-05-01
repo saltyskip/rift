@@ -7,38 +7,6 @@ const BLOCKED_SCHEMES: &[&str] = &["javascript", "data", "vbscript", "blob", "fi
 
 const STORE_HOSTS: &[&str] = &["apps.apple.com", "itunes.apple.com", "play.google.com"];
 
-fn is_private_ip(ip: &IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            v4.is_private()
-                || v4.is_loopback()
-                || v4.is_link_local()
-                || v4.is_broadcast()
-                || v4.is_unspecified()
-                // CGNAT range 100.64.0.0/10
-                || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64)
-                // AWS metadata endpoint
-                || (v4.octets()[0] == 169 && v4.octets()[1] == 254)
-        }
-        IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified(),
-    }
-}
-
-fn check_host_not_private(parsed: &Url) -> Result<(), String> {
-    let Some(host) = parsed.host_str() else {
-        return Err("URL must have a host".into());
-    };
-    if host == "localhost" || host == "127.0.0.1" || host == "[::1]" {
-        return Err("URLs pointing to localhost are not allowed".into());
-    }
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        if is_private_ip(&ip) {
-            return Err("URLs pointing to private/reserved IP ranges are not allowed".into());
-        }
-    }
-    Ok(())
-}
-
 /// Validate a web-facing URL (web_url). Must be http or https, no private IPs.
 pub fn validate_web_url(s: &str) -> Result<(), String> {
     if s.len() > MAX_URL_LEN {
@@ -123,11 +91,6 @@ const VALID_ACTIONS: &[&str] = &[
     "open",
 ];
 
-fn contains_injection(s: &str) -> bool {
-    let lower = s.to_lowercase();
-    INJECTION_PATTERNS.iter().any(|p| lower.contains(p))
-}
-
 pub fn validate_agent_action(s: &str) -> Result<(), String> {
     if !VALID_ACTIONS.contains(&s) {
         Err(format!(
@@ -158,6 +121,45 @@ pub fn validate_agent_description(s: &str) -> Result<(), String> {
         return Err("Description contains disallowed content".into());
     }
     Ok(())
+}
+
+// ── Helpers ──
+
+fn is_private_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_unspecified()
+                // CGNAT range 100.64.0.0/10
+                || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64)
+                // AWS metadata endpoint
+                || (v4.octets()[0] == 169 && v4.octets()[1] == 254)
+        }
+        IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified(),
+    }
+}
+
+fn check_host_not_private(parsed: &Url) -> Result<(), String> {
+    let Some(host) = parsed.host_str() else {
+        return Err("URL must have a host".into());
+    };
+    if host == "localhost" || host == "127.0.0.1" || host == "[::1]" {
+        return Err("URLs pointing to localhost are not allowed".into());
+    }
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if is_private_ip(&ip) {
+            return Err("URLs pointing to private/reserved IP ranges are not allowed".into());
+        }
+    }
+    Ok(())
+}
+
+fn contains_injection(s: &str) -> bool {
+    let lower = s.to_lowercase();
+    INJECTION_PATTERNS.iter().any(|p| lower.contains(p))
 }
 
 #[cfg(test)]

@@ -87,10 +87,6 @@ impl TokensRepoMongo {
     }
 }
 
-fn bson_now() -> bson::DateTime {
-    bson::DateTime::now()
-}
-
 #[async_trait]
 impl TokensRepository for TokensRepoMongo {
     async fn insert(&self, doc: &TokenDoc) -> Result<(), String> {
@@ -236,4 +232,10 @@ pub fn new_token_doc(
 /// where the raw code is too short to use as a primary key.
 pub fn random_doc_id() -> String {
     ObjectId::new().to_hex()
+}
+
+// ── Private helpers ──
+
+fn bson_now() -> bson::DateTime {
+    bson::DateTime::now()
 }
