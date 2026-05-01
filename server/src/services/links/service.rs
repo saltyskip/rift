@@ -410,7 +410,8 @@ impl LinksService {
         let metadata_doc = req
             .template
             .metadata
-            .and_then(|v| mongodb::bson::to_document(&v).ok());
+            .as_ref()
+            .and_then(|v| mongodb::bson::to_document(v).ok());
 
         // 5. Resolve the list of link_ids and collect any per-row errors.
         let mut item_errors: Vec<BatchItemError> = Vec::new();
@@ -492,39 +493,27 @@ impl LinksService {
                 .await?;
         }
 
-        // 8. Build inputs and insert atomically.
+        // 8. Build inputs and insert atomically. The builder methods on
+        // `CreateLinkInput` are designed for the single-create path where
+        // each field is fed in separately — for bulk we already have the
+        // template as `Option<T>` fields, so we construct the struct
+        // directly instead of unwrap-then-rewrap through the builder.
+        let template = &req.template;
         let inputs: Vec<CreateLinkInput> = link_ids
             .iter()
-            .map(|id| {
-                let mut input = CreateLinkInput::new(tenant_id, id.clone());
-                if let Some(v) = req.template.ios_deep_link.clone() {
-                    input = input.ios_deep_link(v);
-                }
-                if let Some(v) = req.template.android_deep_link.clone() {
-                    input = input.android_deep_link(v);
-                }
-                if let Some(v) = req.template.web_url.clone() {
-                    input = input.web_url(v);
-                }
-                if let Some(v) = req.template.ios_store_url.clone() {
-                    input = input.ios_store_url(v);
-                }
-                if let Some(v) = req.template.android_store_url.clone() {
-                    input = input.android_store_url(v);
-                }
-                if let Some(v) = metadata_doc.clone() {
-                    input = input.metadata(v);
-                }
-                if let Some(aff) = resolved_affiliate_id {
-                    input = input.affiliate_id(aff);
-                }
-                if let Some(ac) = req.template.agent_context.clone() {
-                    input = input.agent_context(ac);
-                }
-                if let Some(sp) = req.template.social_preview.clone() {
-                    input = input.social_preview(sp);
-                }
-                input
+            .map(|id| CreateLinkInput {
+                tenant_id,
+                link_id: id.clone(),
+                ios_deep_link: template.ios_deep_link.clone(),
+                android_deep_link: template.android_deep_link.clone(),
+                web_url: template.web_url.clone(),
+                ios_store_url: template.ios_store_url.clone(),
+                android_store_url: template.android_store_url.clone(),
+                metadata: metadata_doc.clone(),
+                affiliate_id: resolved_affiliate_id,
+                expires_at: None,
+                agent_context: template.agent_context.clone(),
+                social_preview: template.social_preview.clone(),
             })
             .collect();
 
