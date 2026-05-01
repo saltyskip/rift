@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use mongodb::bson::{doc, Document};
 use mongodb::Database;
 
+crate::impl_container!(M002BillingFoundation);
 /// Backfills billing fields on existing tenants so the server can read them
 /// after the Plan A rollout. Every existing tenant ends up with:
 ///   plan_tier:      "free"   (the baseline, if comp ever expires)

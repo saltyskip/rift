@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use mongodb::bson::{doc, Document};
 use mongodb::Database;
 
+crate::impl_container!(M004SecretKeyScopeBackfill);
 pub struct M004SecretKeyScopeBackfill;
 
 #[async_trait]

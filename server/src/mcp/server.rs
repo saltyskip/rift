@@ -23,6 +23,7 @@ use crate::services::links::models::{
 };
 use crate::services::links::service::LinksService;
 
+crate::impl_container!(RiftMcp);
 pub struct RiftMcp {
     service: Arc<LinksService>,
     secret_keys_repo: Arc<dyn SecretKeysRepository>,

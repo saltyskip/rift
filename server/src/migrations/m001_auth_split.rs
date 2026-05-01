@@ -3,6 +3,7 @@ use futures::TryStreamExt;
 use mongodb::bson::{doc, oid::ObjectId, DateTime, Document};
 use mongodb::Database;
 
+crate::impl_container!(M001AuthSplit);
 pub struct M001AuthSplit;
 
 #[async_trait]
