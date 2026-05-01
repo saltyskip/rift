@@ -12,7 +12,7 @@ use rmcp::transport::StreamableHttpService;
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler};
 use std::sync::{Arc, OnceLock};
 
-use super::tools::*;
+use super::models::*;
 use crate::services::auth::keys;
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::conversions::models::SourceType;

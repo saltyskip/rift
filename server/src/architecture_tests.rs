@@ -80,66 +80,59 @@ fn stepdown_rule_at_depth_zero() {
 /// inherit enforcement automatically — the previous allowlist quietly
 /// missed them.
 ///
-/// Skipped:
+/// Skipped by name:
 /// - `models.rs` — the destination of the pub-types-in-models rule
 /// - `architecture_tests.rs` — this file (don't scan ourselves)
 /// - `lib.rs` / `main.rs` — crate roots, contain macro defs and the like
 /// - `*_tests.rs` — sibling test files, exempt from style rules
+///
+/// Skipped by path (singleton config/state holders): see
+/// `SINGLETON_CONTAINER_FILES`.
 fn is_enforced_file(path: &std::path::Path) -> bool {
     let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
         return false;
     };
-    !matches!(
+    if matches!(
         name,
         "models.rs" | "architecture_tests.rs" | "lib.rs" | "main.rs"
-    ) && !name.ends_with("_tests.rs")
+    ) || name.ends_with("_tests.rs")
+    {
+        return false;
+    }
+    !is_singleton_container_file(path)
 }
 
-/// Files with **known pub-data-type violations** that haven't been
-/// migrated yet. Flipping `is_enforced_file` to a denylist exposed
-/// pre-existing inline `pub` data types in these files. Each entry is
-/// debt to clean up — extract the data types to the appropriate
-/// `models.rs` and remove the file from this list.
+/// Files that hold a single top-level singleton struct (env-loaded config,
+/// app dependency container) whose entire purpose is the field list itself.
 ///
-/// The stepdown rule and impl_container rule still apply to these
-/// files. Only the pub-types-in-models check is suppressed.
+/// These don't fit either category the rule was designed for:
+/// - **Not a DTO/document** — never serialized over the wire or to disk;
+///   constructed once at startup. Splitting fields into a sibling
+///   `models.rs` adds a hop without helping consistency.
+/// - **Not an `impl_container!`** — that marker is for services/repos/
+///   parsers/dispatchers whose struct exists to host their own `impl`
+///   block of behavior. `Config` has only `from_env()`. `AppState` is a
+///   bag of dependencies with no methods of its own.
 ///
-/// **Do not add new entries.** If you're tempted to add a file here,
-/// instead extract the data types it carries to a sibling `models.rs`.
-const PUB_TYPES_CLEANUP_BACKLOG: &[&str] = &[
-    // TODO: Config (env-loaded settings) — needs core/models.rs or accept as
-    // top-level data location.
-    "src/core/config.rs",
-    // TODO: ClickEventPayload, AttributionEventPayload, ConversionEventPayload,
-    // WebhookPayload — extract to a new core/models.rs (these are shared event
-    // payload shapes used across services).
-    "src/core/webhook_dispatcher.rs",
-    // TODO: ErrorResponse, AppError — top-level shared error types. Either
-    // create error/models.rs or formally accept top-level error.rs as a
-    // models-shaped file.
-    "src/error.rs",
-    // TODO: rename mcp/tools.rs → mcp/models.rs (the file holds MCP tool input
-    // DTOs, fits the models pattern by purpose).
-    "src/mcp/tools.rs",
-    // TODO: AppState — single-struct top-level file. Either create app/models.rs
-    // or formally accept this as a models-shaped file.
-    "src/app.rs",
-    // TODO: BillingIntent, BillingTier, BillingHandoffError, HandoffOutcome,
-    // BillingHandoffConfig — extract to services/billing/models.rs.
-    // BillingHandoffService is an impl container (needs impl_container! marker).
-    "src/services/billing/handoff.rs",
-    // TODO: StripeConfig, StripeError, CheckoutSession, HandoffCheckoutOpts,
-    // PortalSession, WebhookVerifyError — extract to services/billing/models.rs.
-    "src/services/billing/stripe_client.rs",
-    // TODO: PlanLimits → services/billing/models.rs.
-    "src/services/billing/limits.rs",
-    // TODO: EventCounterDoc → services/billing/models.rs. EventCountersRepo is
-    // an impl container (needs impl_container! marker).
-    "src/services/billing/repos/event_counters.rs",
-    // TODO: StripeDedupDoc → services/billing/models.rs. StripeWebhookDedupRepo
-    // is an impl container (needs impl_container! marker).
-    "src/services/billing/repos/stripe_webhook_dedup.rs",
-];
+/// Listing them here (rather than abusing `impl_container!`) keeps the
+/// marker honest and makes the exemption easy to audit.
+const SINGLETON_CONTAINER_FILES: &[&str] = &["src/app.rs", "src/core/config.rs"];
+
+fn is_singleton_container_file(path: &std::path::Path) -> bool {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
+    let rel = path.strip_prefix(&manifest_dir).unwrap_or(path);
+    let rel_str = rel.to_string_lossy().replace('\\', "/");
+    SINGLETON_CONTAINER_FILES
+        .iter()
+        .any(|entry| rel_str == *entry)
+}
+
+/// Files with **known pub-data-type violations** that haven't been migrated
+/// yet. Empty: the backlog was cleared in PR #118. New entries should not be
+/// added here — instead, extract the data types that motivated the entry to
+/// a sibling `models.rs`. Kept as a 0-element const so the pattern is
+/// available if future migrations need a temporary holding pen.
+const PUB_TYPES_CLEANUP_BACKLOG: &[&str] = &[];
 
 /// Whether `path` is on the cleanup backlog (suppress pub-types check only).
 fn is_cleanup_backlog(path: &std::path::Path) -> bool {

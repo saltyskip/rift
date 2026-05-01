@@ -1,17 +1,6 @@
 use crate::services::auth::tenants::repo::PlanTier;
 
-/// Per-tier quantitative limits. `None` means unlimited.
-#[derive(Debug, Clone, Copy)]
-pub struct PlanLimits {
-    pub max_links: Option<u64>,
-    pub max_events_per_month: Option<u64>,
-    pub max_domains: Option<u64>,
-    pub max_team_members: Option<u64>,
-    pub max_webhooks: Option<u64>,
-    pub max_affiliates: Option<u64>,
-    /// Retention bucket string written into event metaField for partial TTL.
-    pub retention_bucket: &'static str,
-}
+pub use super::models::PlanLimits;
 
 /// Canonical limits table. Matches the pricing page committed in PR #91.
 ///
