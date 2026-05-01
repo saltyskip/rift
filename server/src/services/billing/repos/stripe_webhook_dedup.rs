@@ -10,16 +10,9 @@ use mongodb::bson::{self, doc};
 use mongodb::error::ErrorKind;
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database};
-use serde::{Deserialize, Serialize};
 
 use crate::ensure_index;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StripeDedupDoc {
-    #[serde(rename = "_id")]
-    pub event_id: String,
-    pub inserted_at: bson::DateTime,
-}
+pub use crate::services::billing::models::StripeDedupDoc;
 
 /// Try to record a Stripe event as processed. Returns `Ok(true)` if this is
 /// the first time we've seen the event (the caller should then apply it),
@@ -29,6 +22,7 @@ pub trait StripeWebhookDedupRepository: Send + Sync {
     async fn mark_processed(&self, event_id: &str) -> Result<bool, String>;
 }
 
+crate::impl_container!(StripeWebhookDedupRepo);
 #[derive(Clone)]
 pub struct StripeWebhookDedupRepo {
     col: Collection<StripeDedupDoc>,

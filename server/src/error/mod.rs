@@ -1,35 +1,10 @@
+pub mod models;
+
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use serde::Serialize;
-use utoipa::ToSchema;
 
-/// Error response returned on failures.
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ErrorResponse {
-    /// Human-readable error message.
-    #[schema(example = "Not found: link with id 'abc123' does not exist")]
-    pub error: String,
-    /// Machine-readable error code.
-    #[schema(example = "not_found")]
-    pub code: String,
-}
-
-#[derive(Debug, thiserror::Error)]
-#[allow(dead_code)]
-pub enum AppError {
-    #[error("Bad request: {0}")]
-    BadRequest(String),
-
-    #[error("Not found: {0}")]
-    NotFound(String),
-
-    #[error("Not implemented: {0}")]
-    NotImplemented(String),
-
-    #[error("Internal server error: {0}")]
-    Internal(String),
-}
+pub use models::{AppError, ErrorResponse};
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
