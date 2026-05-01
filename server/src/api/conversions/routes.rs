@@ -14,29 +14,6 @@ use crate::services::conversions::models::{
 };
 use crate::services::conversions::parsers;
 
-// ── Helpers ──
-
-fn webhook_url_for(state: &AppState, url_token: &str) -> String {
-    format!(
-        "{}/w/{}",
-        state.config.public_url.trim_end_matches('/'),
-        url_token
-    )
-}
-
-fn to_detail(state: &AppState, source: &Source) -> SourceDetail {
-    SourceDetail {
-        id: source.id.to_hex(),
-        name: source.name.clone(),
-        source_type: source.source_type.clone(),
-        webhook_url: webhook_url_for(state, &source.url_token),
-        created_at: source
-            .created_at
-            .try_to_rfc3339_string()
-            .unwrap_or_default(),
-    }
-}
-
 // ── POST /v1/sources — Create a source ──
 
 #[utoipa::path(
@@ -392,4 +369,27 @@ pub async fn sdk_track_conversion(
         "failed": result.failed,
     }))
     .into_response()
+}
+
+// ── Helpers ──
+
+fn webhook_url_for(state: &AppState, url_token: &str) -> String {
+    format!(
+        "{}/w/{}",
+        state.config.public_url.trim_end_matches('/'),
+        url_token
+    )
+}
+
+fn to_detail(state: &AppState, source: &Source) -> SourceDetail {
+    SourceDetail {
+        id: source.id.to_hex(),
+        name: source.name.clone(),
+        source_type: source.source_type.clone(),
+        webhook_url: webhook_url_for(state, &source.url_token),
+        created_at: source
+            .created_at
+            .try_to_rfc3339_string()
+            .unwrap_or_default(),
+    }
 }

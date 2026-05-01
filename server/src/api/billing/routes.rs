@@ -18,26 +18,6 @@ use crate::services::billing::stripe_client::{
     cancel_subscription_at_period_end, create_checkout_session, create_portal_session, StripeError,
 };
 
-fn render(status: BillingStatus) -> BillingStatusResponse {
-    let limits = limits_for(status.effective_tier);
-    BillingStatusResponse {
-        plan_tier: status.plan_tier,
-        effective_tier: status.effective_tier,
-        comp_active: status.comp_active,
-        billing_method: status.billing_method,
-        status: status.status,
-        current_period_end: status.current_period_end.map(|d| d.timestamp_millis()),
-        limits: LimitsView {
-            max_links: limits.max_links,
-            max_events_per_month: limits.max_events_per_month,
-            max_domains: limits.max_domains,
-            max_team_members: limits.max_team_members,
-            max_webhooks: limits.max_webhooks,
-            analytics_retention: limits.retention_bucket,
-        },
-    }
-}
-
 #[utoipa::path(
     get,
     path = "/v1/billing/status",
@@ -81,15 +61,6 @@ pub async fn get_billing_status(
 }
 
 // ── POST /v1/billing/stripe/checkout — start Stripe Checkout for a paid tier ──
-
-fn parse_paid_tier(s: &str) -> Option<PlanTier> {
-    match s {
-        "pro" => Some(PlanTier::Pro),
-        "business" => Some(PlanTier::Business),
-        "scale" => Some(PlanTier::Scale),
-        _ => None,
-    }
-}
 
 #[utoipa::path(
     post,
@@ -169,19 +140,6 @@ pub async fn create_stripe_checkout(
 }
 
 // ── POST /v1/billing/magic-link — public, rate-limited ──
-
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    // In production we run behind Fly's proxy which sets X-Forwarded-For.
-    // Local dev without the header falls back to a single shared bucket,
-    // which is fine for a dev machine.
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "local".to_string())
-}
 
 #[utoipa::path(
     post,
@@ -478,4 +436,48 @@ pub async fn cancel_subscription(
         )
             .into_response(),
     }
+}
+
+// ── Helpers ──
+
+fn render(status: BillingStatus) -> BillingStatusResponse {
+    let limits = limits_for(status.effective_tier);
+    BillingStatusResponse {
+        plan_tier: status.plan_tier,
+        effective_tier: status.effective_tier,
+        comp_active: status.comp_active,
+        billing_method: status.billing_method,
+        status: status.status,
+        current_period_end: status.current_period_end.map(|d| d.timestamp_millis()),
+        limits: LimitsView {
+            max_links: limits.max_links,
+            max_events_per_month: limits.max_events_per_month,
+            max_domains: limits.max_domains,
+            max_team_members: limits.max_team_members,
+            max_webhooks: limits.max_webhooks,
+            analytics_retention: limits.retention_bucket,
+        },
+    }
+}
+
+fn parse_paid_tier(s: &str) -> Option<PlanTier> {
+    match s {
+        "pro" => Some(PlanTier::Pro),
+        "business" => Some(PlanTier::Business),
+        "scale" => Some(PlanTier::Scale),
+        _ => None,
+    }
+}
+
+fn extract_client_ip(headers: &HeaderMap) -> String {
+    // In production we run behind Fly's proxy which sets X-Forwarded-For.
+    // Local dev without the header falls back to a single shared bucket,
+    // which is fine for a dev machine.
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "local".to_string())
 }

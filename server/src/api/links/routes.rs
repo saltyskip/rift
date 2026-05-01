@@ -27,82 +27,6 @@ use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::models::LinkError;
 use crate::services::links::models::*;
 
-fn link_error_to_response(err: LinkError) -> Response {
-    // QuotaExceeded is a structured 402 — delegate to the shared helper so
-    // the body shape stays consistent across every enforcement path.
-    if let LinkError::QuotaExceeded(q) = err {
-        return crate::api::billing::quota_response::to_response(q);
-    }
-    // BatchValidationFailed carries a per-row error list — return the full
-    // array so the caller can fix every issue in one pass.
-    if let LinkError::BatchValidationFailed(errors) = err {
-        let count = errors.len();
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error": format!("{count} item(s) failed validation"),
-                "code": "invalid_batch",
-                "errors": errors,
-            })),
-        )
-            .into_response();
-    }
-    let status = match &err {
-        LinkError::InvalidCustomId(_)
-        | LinkError::InvalidUrl(_)
-        | LinkError::InvalidMetadata(_)
-        | LinkError::InvalidAgentContext(_)
-        | LinkError::InvalidSocialPreview(_)
-        | LinkError::ThreatDetected(_)
-        | LinkError::NoVerifiedDomain
-        | LinkError::EmptyUpdate
-        | LinkError::AffiliateScopeMismatch
-        | LinkError::BatchTooLarge { .. }
-        | LinkError::BatchEmpty
-        | LinkError::BatchModeAmbiguous
-        | LinkError::BatchModeMissing => StatusCode::BAD_REQUEST,
-        LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
-        LinkError::NotFound | LinkError::AffiliateNotFound => StatusCode::NOT_FOUND,
-        LinkError::QuotaExceeded(_) | LinkError::BatchValidationFailed(_) => {
-            unreachable!("handled above")
-        }
-        LinkError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    let code = err.code();
-    let message = err.to_string();
-    (status, Json(json!({ "error": message, "code": code }))).into_response()
-}
-
-// ── Platform Detection ──
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Platform {
-    Ios,
-    Android,
-    Other,
-}
-
-impl Platform {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Platform::Ios => "ios",
-            Platform::Android => "android",
-            Platform::Other => "other",
-        }
-    }
-}
-
-fn detect_platform(user_agent: &str) -> Platform {
-    let ua = user_agent.to_lowercase();
-    if ua.contains("iphone") || ua.contains("ipad") || ua.contains("ipod") {
-        Platform::Ios
-    } else if ua.contains("android") {
-        Platform::Android
-    } else {
-        Platform::Other
-    }
-}
-
 // ── POST /v1/links — Create a new deep link (authenticated) ──
 
 #[utoipa::path(
@@ -2013,6 +1937,80 @@ fn render_qr(
 }
 
 // ── Helpers ──
+
+fn link_error_to_response(err: LinkError) -> Response {
+    // QuotaExceeded is a structured 402 — delegate to the shared helper so
+    // the body shape stays consistent across every enforcement path.
+    if let LinkError::QuotaExceeded(q) = err {
+        return crate::api::billing::quota_response::to_response(q);
+    }
+    // BatchValidationFailed carries a per-row error list — return the full
+    // array so the caller can fix every issue in one pass.
+    if let LinkError::BatchValidationFailed(errors) = err {
+        let count = errors.len();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": format!("{count} item(s) failed validation"),
+                "code": "invalid_batch",
+                "errors": errors,
+            })),
+        )
+            .into_response();
+    }
+    let status = match &err {
+        LinkError::InvalidCustomId(_)
+        | LinkError::InvalidUrl(_)
+        | LinkError::InvalidMetadata(_)
+        | LinkError::InvalidAgentContext(_)
+        | LinkError::InvalidSocialPreview(_)
+        | LinkError::ThreatDetected(_)
+        | LinkError::NoVerifiedDomain
+        | LinkError::EmptyUpdate
+        | LinkError::AffiliateScopeMismatch
+        | LinkError::BatchTooLarge { .. }
+        | LinkError::BatchEmpty
+        | LinkError::BatchModeAmbiguous
+        | LinkError::BatchModeMissing => StatusCode::BAD_REQUEST,
+        LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
+        LinkError::NotFound | LinkError::AffiliateNotFound => StatusCode::NOT_FOUND,
+        LinkError::QuotaExceeded(_) | LinkError::BatchValidationFailed(_) => {
+            unreachable!("handled above")
+        }
+        LinkError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    let code = err.code();
+    let message = err.to_string();
+    (status, Json(json!({ "error": message, "code": code }))).into_response()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Platform {
+    Ios,
+    Android,
+    Other,
+}
+
+impl Platform {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Platform::Ios => "ios",
+            Platform::Android => "android",
+            Platform::Other => "other",
+        }
+    }
+}
+
+fn detect_platform(user_agent: &str) -> Platform {
+    let ua = user_agent.to_lowercase();
+    if ua.contains("iphone") || ua.contains("ipad") || ua.contains("ipod") {
+        Platform::Ios
+    } else if ua.contains("android") {
+        Platform::Android
+    } else {
+        Platform::Other
+    }
+}
 
 fn is_valid_link_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
