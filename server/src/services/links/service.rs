@@ -259,20 +259,17 @@ impl LinksService {
         });
         let expires_at = expires_at_dt.map(|dt| dt.try_to_rfc3339_string().unwrap_or_default());
 
-        let input = CreateLinkInput {
-            tenant_id,
-            link_id: link_id.clone(),
-            ios_deep_link: req.ios_deep_link,
-            android_deep_link: req.android_deep_link,
-            web_url: req.web_url,
-            ios_store_url: req.ios_store_url,
-            android_store_url: req.android_store_url,
-            metadata,
-            affiliate_id: resolved_affiliate_id,
-            expires_at: expires_at_dt,
-            agent_context: req.agent_context,
-            social_preview: req.social_preview,
-        };
+        let input = CreateLinkInput::new(tenant_id, link_id.clone())
+            .ios_deep_link(req.ios_deep_link)
+            .android_deep_link(req.android_deep_link)
+            .web_url(req.web_url)
+            .ios_store_url(req.ios_store_url)
+            .android_store_url(req.android_store_url)
+            .metadata(metadata)
+            .affiliate_id(resolved_affiliate_id)
+            .expires_at(expires_at_dt)
+            .agent_context(req.agent_context)
+            .social_preview(req.social_preview);
 
         self.links_repo.create_link(input).await.map_err(|e| {
             if e.contains("E11000") {
