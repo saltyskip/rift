@@ -953,7 +953,6 @@ pub async fn get_link_timeseries(
     }
 }
 
-
 // ── GET /llms.txt — Machine-readable link context for LLMs ──
 
 #[tracing::instrument]
