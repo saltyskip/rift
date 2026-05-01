@@ -158,6 +158,16 @@ pub struct CreateLinkInput {
     pub social_preview: Option<SocialPreview>,
 }
 
+/// Fluent builder for `CreateLinkInput`. Setters accept `Option<T>` directly
+/// so callers can propagate optionality from a request struct without
+/// `if let` chains at the call site:
+///
+/// ```ignore
+/// CreateLinkInput::new(tenant_id, link_id)
+///     .web_url(req.web_url)
+///     .ios_deep_link(req.ios_deep_link)
+///     .metadata(metadata_doc)
+/// ```
 impl CreateLinkInput {
     pub fn new(tenant_id: ObjectId, link_id: String) -> Self {
         Self {
@@ -176,53 +186,53 @@ impl CreateLinkInput {
         }
     }
 
-    pub fn affiliate_id(mut self, v: ObjectId) -> Self {
-        self.affiliate_id = Some(v);
+    pub fn ios_deep_link(mut self, v: Option<String>) -> Self {
+        self.ios_deep_link = v;
         self
     }
 
-    pub fn expires_at(mut self, v: DateTime) -> Self {
-        self.expires_at = Some(v);
+    pub fn android_deep_link(mut self, v: Option<String>) -> Self {
+        self.android_deep_link = v;
         self
     }
 
-    pub fn ios_deep_link(mut self, v: impl Into<String>) -> Self {
-        self.ios_deep_link = Some(v.into());
+    pub fn web_url(mut self, v: Option<String>) -> Self {
+        self.web_url = v;
         self
     }
 
-    pub fn android_deep_link(mut self, v: impl Into<String>) -> Self {
-        self.android_deep_link = Some(v.into());
+    pub fn ios_store_url(mut self, v: Option<String>) -> Self {
+        self.ios_store_url = v;
         self
     }
 
-    pub fn web_url(mut self, v: impl Into<String>) -> Self {
-        self.web_url = Some(v.into());
+    pub fn android_store_url(mut self, v: Option<String>) -> Self {
+        self.android_store_url = v;
         self
     }
 
-    pub fn ios_store_url(mut self, v: impl Into<String>) -> Self {
-        self.ios_store_url = Some(v.into());
+    pub fn metadata(mut self, v: Option<Document>) -> Self {
+        self.metadata = v;
         self
     }
 
-    pub fn android_store_url(mut self, v: impl Into<String>) -> Self {
-        self.android_store_url = Some(v.into());
+    pub fn affiliate_id(mut self, v: Option<ObjectId>) -> Self {
+        self.affiliate_id = v;
         self
     }
 
-    pub fn metadata(mut self, v: Document) -> Self {
-        self.metadata = Some(v);
+    pub fn expires_at(mut self, v: Option<DateTime>) -> Self {
+        self.expires_at = v;
         self
     }
 
-    pub fn agent_context(mut self, v: AgentContext) -> Self {
-        self.agent_context = Some(v);
+    pub fn agent_context(mut self, v: Option<AgentContext>) -> Self {
+        self.agent_context = v;
         self
     }
 
-    pub fn social_preview(mut self, v: SocialPreview) -> Self {
-        self.social_preview = Some(v);
+    pub fn social_preview(mut self, v: Option<SocialPreview>) -> Self {
+        self.social_preview = v;
         self
     }
 }

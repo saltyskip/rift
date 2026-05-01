@@ -287,44 +287,24 @@ impl LinksService {
             .metadata
             .and_then(|v| mongodb::bson::to_document(&v).ok());
 
-        let mut input = CreateLinkInput::new(tenant_id, link_id.clone());
-        if let Some(v) = req.ios_deep_link {
-            input = input.ios_deep_link(v);
-        }
-        if let Some(v) = req.android_deep_link {
-            input = input.android_deep_link(v);
-        }
-        if let Some(v) = req.web_url {
-            input = input.web_url(v);
-        }
-        if let Some(v) = req.ios_store_url {
-            input = input.ios_store_url(v);
-        }
-        if let Some(v) = req.android_store_url {
-            input = input.android_store_url(v);
-        }
-        if let Some(v) = metadata {
-            input = input.metadata(v);
-        }
-        if let Some(aff) = resolved_affiliate_id {
-            input = input.affiliate_id(aff);
-        }
-        if let Some(ac) = req.agent_context {
-            input = input.agent_context(ac);
-        }
-        if let Some(sp) = req.social_preview {
-            input = input.social_preview(sp);
-        }
-
         // Links without a verified custom domain expire after 30 days.
-        let expires_at = if !has_verified_domain {
+        let expires_at_dt = (!has_verified_domain).then(|| {
             let thirty_days_ms = 30 * 24 * 60 * 60 * 1000_i64;
-            let expiry = DateTime::from_millis(DateTime::now().timestamp_millis() + thirty_days_ms);
-            input = input.expires_at(expiry);
-            Some(expiry.try_to_rfc3339_string().unwrap_or_default())
-        } else {
-            None
-        };
+            DateTime::from_millis(DateTime::now().timestamp_millis() + thirty_days_ms)
+        });
+        let expires_at = expires_at_dt.map(|dt| dt.try_to_rfc3339_string().unwrap_or_default());
+
+        let input = CreateLinkInput::new(tenant_id, link_id.clone())
+            .ios_deep_link(req.ios_deep_link)
+            .android_deep_link(req.android_deep_link)
+            .web_url(req.web_url)
+            .ios_store_url(req.ios_store_url)
+            .android_store_url(req.android_store_url)
+            .metadata(metadata)
+            .affiliate_id(resolved_affiliate_id)
+            .expires_at(expires_at_dt)
+            .agent_context(req.agent_context)
+            .social_preview(req.social_preview);
 
         self.links_repo.create_link(input).await.map_err(|e| {
             if e.contains("E11000") {
@@ -676,30 +656,35 @@ impl LinksService {
             }
         }
 
-        if let Some(v) = &req.web_url {
-            update.insert("web_url", v.clone());
-        }
-        if let Some(v) = &req.ios_store_url {
-            update.insert("ios_store_url", v.clone());
-        }
-        if let Some(v) = &req.android_store_url {
-            update.insert("android_store_url", v.clone());
-        }
-        if let Some(v) = &req.metadata {
-            if let Ok(doc) = mongodb::bson::to_document(v) {
-                update.insert("metadata", doc);
-            }
-        }
-        if let Some(ref ac) = req.agent_context {
-            if let Ok(doc) = mongodb::bson::to_document(ac) {
-                update.insert("agent_context", doc);
-            }
-        }
-        if let Some(ref sp) = req.social_preview {
-            if let Ok(doc) = mongodb::bson::to_document(sp) {
-                update.insert("social_preview", doc);
-            }
-        }
+        // String fields and serializable structs share the same shape:
+        // "if Some, insert into the $set doc". Flatten both into one filter_map
+        // chain so the parallel branches collapse to data + a single insert.
+        use mongodb::bson::Bson;
+        let string_fields = [
+            ("web_url", req.web_url.as_ref()),
+            ("ios_store_url", req.ios_store_url.as_ref()),
+            ("android_store_url", req.android_store_url.as_ref()),
+        ]
+        .into_iter()
+        .filter_map(|(k, v)| v.map(|s| (k.to_string(), Bson::String(s.clone()))));
+
+        // bson::to_document errors silently drop the field — preserves the
+        // pre-refactor behavior. Validation has already gated bad input.
+        let doc_fields = [
+            ("metadata", req.metadata.as_ref().and_then(to_doc_value)),
+            (
+                "agent_context",
+                req.agent_context.as_ref().and_then(to_doc_value),
+            ),
+            (
+                "social_preview",
+                req.social_preview.as_ref().and_then(to_doc_value),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(k, v)| v.map(|d| (k.to_string(), Bson::Document(d))));
+
+        update.extend(string_fields.chain(doc_fields));
 
         if update.is_empty() && unset.is_empty() {
             return Err(LinkError::EmptyUpdate);
@@ -849,6 +834,13 @@ impl LinksService {
         let domain = resolve_verified_primary_domain(self.domains_repo.as_deref(), tenant_id).await;
         build_canonical_link_url(&self.public_url, link_id, domain.as_deref())
     }
+}
+
+/// Serialize any `Serialize` value to a Bson `Document`, dropping the value
+/// silently on failure. Used by `update_link` to fold optional struct fields
+/// (metadata, agent_context, social_preview) into the `$set` payload.
+fn to_doc_value<T: serde::Serialize>(v: &T) -> Option<mongodb::bson::Document> {
+    mongodb::bson::to_document(v).ok()
 }
 
 pub fn build_canonical_link_url(
