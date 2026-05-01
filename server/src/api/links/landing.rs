@@ -7,19 +7,7 @@ use serde_json::json;
 use super::routes::{html_escape, urlencoding, Platform};
 use crate::services::links::models::{AgentContext, Link, SocialPreview};
 
-fn action_to_schema_type(action: &str) -> &'static str {
-    match action {
-        "purchase" => "BuyAction",
-        "subscribe" => "SubscribeAction",
-        "signup" => "RegisterAction",
-        "download" => "DownloadAction",
-        "read" => "ReadAction",
-        "book" => "ReserveAction",
-        _ => "ViewAction",
-    }
-}
-
-// ── Smart Landing Page ──
+// ── Public surface ──
 
 pub(crate) struct LandingPageContext<'a> {
     pub platform: Platform,
@@ -34,26 +22,6 @@ pub(crate) struct LandingPageContext<'a> {
     pub tenant_domain: Option<&'a str>,
     pub tenant_verified: bool,
     pub alternate_domain: Option<&'a str>,
-}
-
-/// Legacy fallback: before `social_preview` existed, customers used `metadata.{title,description,image}`
-/// for OG tags. Read those keys when the link has no `social_preview` so existing links don't silently
-/// lose their previews on deploy.
-fn social_preview_from_metadata(
-    metadata: Option<&mongodb::bson::Document>,
-) -> Option<SocialPreview> {
-    let meta = metadata?;
-    let title = meta.get_str("title").ok().map(str::to_string);
-    let description = meta.get_str("description").ok().map(str::to_string);
-    let image_url = meta.get_str("image").ok().map(str::to_string);
-    if title.is_none() && description.is_none() && image_url.is_none() {
-        return None;
-    }
-    Some(SocialPreview {
-        title,
-        description,
-        image_url,
-    })
 }
 
 pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
@@ -385,6 +353,40 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         web_url_js = web_url_js,
         alternate_url_js = alternate_url_js,
     )
+}
+
+// ── Helpers ──
+
+fn action_to_schema_type(action: &str) -> &'static str {
+    match action {
+        "purchase" => "BuyAction",
+        "subscribe" => "SubscribeAction",
+        "signup" => "RegisterAction",
+        "download" => "DownloadAction",
+        "read" => "ReadAction",
+        "book" => "ReserveAction",
+        _ => "ViewAction",
+    }
+}
+
+/// Legacy fallback: before `social_preview` existed, customers used `metadata.{title,description,image}`
+/// for OG tags. Read those keys when the link has no `social_preview` so existing links don't silently
+/// lose their previews on deploy.
+fn social_preview_from_metadata(
+    metadata: Option<&mongodb::bson::Document>,
+) -> Option<SocialPreview> {
+    let meta = metadata?;
+    let title = meta.get_str("title").ok().map(str::to_string);
+    let description = meta.get_str("description").ok().map(str::to_string);
+    let image_url = meta.get_str("image").ok().map(str::to_string);
+    if title.is_none() && description.is_none() && image_url.is_none() {
+        return None;
+    }
+    Some(SocialPreview {
+        title,
+        description,
+        image_url,
+    })
 }
 
 fn js_escape(s: &str) -> String {
