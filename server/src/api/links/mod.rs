@@ -13,6 +13,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     // Authenticated routes (link management) — rl_live_ auth_gate injects TenantId.
     let authenticated = Router::new()
         .route("/v1/links", post(routes::create_link))
+        .route("/v1/links/bulk", post(routes::create_links_bulk))
         .route("/v1/links", get(routes::list_links))
         .route("/v1/links/{link_id}/stats", get(routes::get_link_stats))
         .route("/v1/links/{link_id}/qr.{format}", get(routes::get_link_qr))

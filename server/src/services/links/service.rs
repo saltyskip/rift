@@ -5,7 +5,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use super::models::*;
-use super::repo::LinksRepository;
+use super::repo::{BulkInsertError, LinksRepository};
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
 use crate::services::affiliates::repo::AffiliatesRepository;
@@ -35,6 +35,19 @@ pub enum LinkError {
     AffiliateNotFound,
     QuotaExceeded(QuotaError),
     Internal(String),
+    // ── Bulk-create only ──
+    BatchTooLarge {
+        max: usize,
+        got: usize,
+    },
+    BatchEmpty,
+    /// Both `custom_ids` and `count` were set; only one is allowed.
+    BatchModeAmbiguous,
+    /// Neither `custom_ids` nor `count` was set; one is required.
+    BatchModeMissing,
+    /// One or more rows failed validation. Full list returned to the caller
+    /// so every problem can be fixed in one pass.
+    BatchValidationFailed(Vec<BatchItemError>),
 }
 
 impl From<QuotaError> for LinkError {
@@ -65,6 +78,19 @@ impl fmt::Display for LinkError {
             Self::AffiliateNotFound => write!(f, "Affiliate not found"),
             Self::QuotaExceeded(e) => write!(f, "{e}"),
             Self::Internal(e) => write!(f, "Internal error: {e}"),
+            Self::BatchTooLarge { max, got } => {
+                write!(f, "Batch too large: {got} items (max {max})")
+            }
+            Self::BatchEmpty => write!(f, "Batch is empty"),
+            Self::BatchModeAmbiguous => {
+                write!(f, "Specify exactly one of `custom_ids` or `count`")
+            }
+            Self::BatchModeMissing => {
+                write!(f, "One of `custom_ids` or `count` is required")
+            }
+            Self::BatchValidationFailed(errs) => {
+                write!(f, "{} item(s) failed validation", errs.len())
+            }
         }
     }
 }
@@ -87,11 +113,20 @@ impl LinkError {
             Self::AffiliateNotFound => "affiliate_not_found",
             Self::QuotaExceeded(_) => "quota_exceeded",
             Self::Internal(_) => "db_error",
+            Self::BatchTooLarge { .. } => "batch_too_large",
+            Self::BatchEmpty => "batch_empty",
+            Self::BatchModeAmbiguous => "batch_mode_ambiguous",
+            Self::BatchModeMissing => "batch_mode_missing",
+            Self::BatchValidationFailed(_) => "invalid_batch",
         }
     }
 }
 
 // ── Service ──
+
+/// Maximum number of links per `POST /v1/links/bulk` request. Caps memory,
+/// threat-feed fan-out, and the size of any single transaction.
+pub const BULK_LINKS_MAX: usize = 100;
 
 pub struct LinksService {
     links_repo: Arc<dyn LinksRepository>,
@@ -306,6 +341,216 @@ impl LinksService {
             url,
             expires_at,
         })
+    }
+
+    /// Atomically create up to `BULK_LINKS_MAX` links sharing one template.
+    /// Either every row is inserted or none — a transaction wraps the
+    /// underlying `insert_many` so a race that takes one of our chosen
+    /// `custom_ids` rolls back the whole batch and surfaces as a per-row
+    /// `link_id_taken` validation error.
+    ///
+    /// Gated on a verified custom domain (the bulk endpoint is intended for
+    /// customers running campaigns under their own domain). Quota is
+    /// pre-checked once via `check_n` so the batch is one decision rather
+    /// than failing mid-loop.
+    #[tracing::instrument(skip(self, req, caller_scope))]
+    pub async fn create_links_bulk(
+        &self,
+        tenant_id: ObjectId,
+        caller_scope: Option<&KeyScope>,
+        req: BulkCreateLinksRequest,
+    ) -> Result<BulkCreateLinksResponse, LinkError> {
+        // 1. Mode — exactly one of custom_ids / count.
+        let mode_ids = req.custom_ids.as_deref();
+        let mode_count = req.count;
+        let n = match (mode_ids, mode_count) {
+            (Some(_), Some(_)) => return Err(LinkError::BatchModeAmbiguous),
+            (None, None) => return Err(LinkError::BatchModeMissing),
+            (Some(ids), None) => ids.len(),
+            (None, Some(c)) => c as usize,
+        };
+        if n == 0 {
+            return Err(LinkError::BatchEmpty);
+        }
+        if n > BULK_LINKS_MAX {
+            return Err(LinkError::BatchTooLarge {
+                max: BULK_LINKS_MAX,
+                got: n,
+            });
+        }
+
+        // 2. Verified-domain gate.
+        if !self.tenant_has_verified_domain(&tenant_id).await {
+            return Err(LinkError::NoVerifiedDomain);
+        }
+
+        // 3. Affiliate resolution — once for the whole batch.
+        let resolved_affiliate_id = self
+            .resolve_affiliate_id(&tenant_id, caller_scope, req.template.affiliate_id)
+            .await?;
+
+        // 4. Template validation (URL, threat, metadata, agent, social).
+        validate_link_urls(
+            req.template.web_url.as_deref(),
+            req.template.ios_deep_link.as_deref(),
+            req.template.android_deep_link.as_deref(),
+            req.template.ios_store_url.as_deref(),
+            req.template.android_store_url.as_deref(),
+        )?;
+        if let Some(ref web_url) = req.template.web_url {
+            if let Some(reason) = self.threat_feed.check_url(web_url).await {
+                return Err(LinkError::ThreatDetected(reason));
+            }
+        }
+        validate_agent_context(&req.template.agent_context)?;
+        validate_social_preview(&req.template.social_preview)?;
+        if let Some(ref meta) = req.template.metadata {
+            validation::validate_metadata(meta).map_err(LinkError::InvalidMetadata)?;
+        }
+        let metadata_doc = req
+            .template
+            .metadata
+            .as_ref()
+            .and_then(|v| mongodb::bson::to_document(v).ok());
+
+        // 5. Resolve the list of link_ids and collect any per-row errors.
+        let mut item_errors: Vec<BatchItemError> = Vec::new();
+        let link_ids: Vec<String> = match (req.custom_ids, req.count) {
+            (Some(ids), _) => {
+                let mut seen: std::collections::HashMap<String, usize> =
+                    std::collections::HashMap::new();
+                for (i, id) in ids.iter().enumerate() {
+                    if let Err(LinkError::InvalidCustomId(msg)) = validate_custom_id(id) {
+                        item_errors.push(BatchItemError {
+                            index: i,
+                            custom_id: Some(id.clone()),
+                            code: "invalid_custom_id".to_string(),
+                            message: msg,
+                        });
+                        continue;
+                    }
+                    if let Some(prev) = seen.insert(id.clone(), i) {
+                        item_errors.push(BatchItemError {
+                            index: i,
+                            custom_id: Some(id.clone()),
+                            code: "duplicate_custom_id_in_batch".to_string(),
+                            message: format!("'{id}' appears at indices {prev} and {i}"),
+                        });
+                    }
+                }
+                ids
+            }
+            (None, Some(_)) => {
+                let mut generated: Vec<String> = Vec::with_capacity(n);
+                let mut seen: std::collections::HashSet<String> =
+                    std::collections::HashSet::with_capacity(n);
+                while generated.len() < n {
+                    let id = generate_link_id();
+                    if seen.insert(id.clone()) {
+                        generated.push(id);
+                    }
+                    // 8-char uppercase alphanumerics from a UUID — collision
+                    // odds are astronomical; the dedupe is purely defensive.
+                }
+                generated
+            }
+            (None, None) => unreachable!("mode guarded above"),
+        };
+
+        // 6. Pre-check uniqueness against the DB (one query for all ids).
+        if !link_ids.is_empty() {
+            for (i, id) in link_ids.iter().enumerate() {
+                // Skip rows that already failed format validation — their
+                // index is already in `item_errors`.
+                if item_errors.iter().any(|e| e.index == i) {
+                    continue;
+                }
+                if self
+                    .links_repo
+                    .find_link_by_tenant_and_id(&tenant_id, id)
+                    .await
+                    .map_err(LinkError::Internal)?
+                    .is_some()
+                {
+                    item_errors.push(BatchItemError {
+                        index: i,
+                        custom_id: Some(id.clone()),
+                        code: "link_id_taken".to_string(),
+                        message: format!("'{id}' is already taken"),
+                    });
+                }
+            }
+        }
+
+        if !item_errors.is_empty() {
+            item_errors.sort_by_key(|e| e.index);
+            return Err(LinkError::BatchValidationFailed(item_errors));
+        }
+
+        // 7. Quota gate for the whole batch.
+        if let Some(q) = &self.quota {
+            q.check_n(&tenant_id, Resource::CreateLink, n as u64)
+                .await?;
+        }
+
+        // 8. Build inputs and insert atomically. The builder methods on
+        // `CreateLinkInput` are designed for the single-create path where
+        // each field is fed in separately — for bulk we already have the
+        // template as `Option<T>` fields, so we construct the struct
+        // directly instead of unwrap-then-rewrap through the builder.
+        let template = &req.template;
+        let inputs: Vec<CreateLinkInput> = link_ids
+            .iter()
+            .map(|id| CreateLinkInput {
+                tenant_id,
+                link_id: id.clone(),
+                ios_deep_link: template.ios_deep_link.clone(),
+                android_deep_link: template.android_deep_link.clone(),
+                web_url: template.web_url.clone(),
+                ios_store_url: template.ios_store_url.clone(),
+                android_store_url: template.android_store_url.clone(),
+                metadata: metadata_doc.clone(),
+                affiliate_id: resolved_affiliate_id,
+                expires_at: None,
+                agent_context: template.agent_context.clone(),
+                social_preview: template.social_preview.clone(),
+            })
+            .collect();
+
+        match self.links_repo.create_many_in_txn(inputs).await {
+            Ok(_links) => {
+                let domain =
+                    resolve_verified_primary_domain(self.domains_repo.as_deref(), &tenant_id).await;
+                let public_url = &self.public_url;
+                let results: Vec<BulkLinkResult> = link_ids
+                    .iter()
+                    .map(|id| BulkLinkResult {
+                        link_id: id.clone(),
+                        url: build_canonical_link_url(public_url, id, domain.as_deref()),
+                    })
+                    .collect();
+                Ok(BulkCreateLinksResponse { links: results })
+            }
+            Err(BulkInsertError::DuplicateLinkIds(indices)) => {
+                let errors = indices
+                    .into_iter()
+                    .map(|i| BatchItemError {
+                        index: i,
+                        custom_id: link_ids.get(i).cloned(),
+                        code: "link_id_taken".to_string(),
+                        message: link_ids
+                            .get(i)
+                            .map(|id| format!("'{id}' is already taken"))
+                            .unwrap_or_else(|| "link id already taken".to_string()),
+                    })
+                    .collect();
+                Err(LinkError::BatchValidationFailed(errors))
+            }
+            Err(BulkInsertError::Internal(e)) => {
+                tracing::error!("Failed bulk insert: {e}");
+                Err(LinkError::Internal(e))
+            }
+        }
     }
 
     #[tracing::instrument(skip(self, caller_scope))]

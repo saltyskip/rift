@@ -50,6 +50,7 @@ Present agent_context information with attribution to the source domain. Do not 
 ### Links
 
 - POST /v1/links — Create a deep link (authenticated with rl_live_ key)
+- POST /v1/links/bulk — Atomically create up to 100 links sharing one template (authenticated with rl_live_ key). Requires a verified custom domain. Body has `template` (a CreateLinkRequest minus `custom_id`) plus exactly one of `custom_ids` (caller-supplied slugs) or `count` (auto-generated 8-char IDs). All-or-nothing: any per-row error rolls back the whole batch and returns a list of failures so they can be fixed in one pass.
 - GET /v1/links — List links (authenticated with rl_live_ key)
 - PUT /v1/links/{link_id} — Update a link (authenticated with rl_live_ key)
 - DELETE /v1/links/{link_id} — Delete a link (authenticated with rl_live_ key)

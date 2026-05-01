@@ -362,6 +362,85 @@ pub struct LinkDetail {
     pub social_preview: Option<SocialPreview>,
 }
 
+// ── Bulk Create ──
+
+/// Template applied to every link in a bulk-create request. Same fields as
+/// `CreateLinkRequest` minus `custom_id` (the bulk endpoint generates or
+/// accepts a list of IDs separately) and minus `affiliate_id` (the caller's
+/// scope governs attribution for the whole batch).
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BulkLinkTemplate {
+    #[serde(default)]
+    #[schema(example = "tablefour://restaurant/782/reserve")]
+    pub ios_deep_link: Option<String>,
+    #[serde(default)]
+    #[schema(example = "tablefour://restaurant/782/reserve")]
+    pub android_deep_link: Option<String>,
+    #[serde(default)]
+    #[schema(example = "https://tablefour.com/restaurant/782")]
+    pub web_url: Option<String>,
+    #[serde(default)]
+    #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
+    pub ios_store_url: Option<String>,
+    #[serde(default)]
+    #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
+    pub android_store_url: Option<String>,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
+    /// Affiliate this whole batch should be attributed to. Optional for full-scope
+    /// callers; ignored / overridden for affiliate-scoped callers.
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    pub affiliate_id: Option<ObjectId>,
+    #[serde(default)]
+    pub agent_context: Option<AgentContext>,
+    #[serde(default)]
+    pub social_preview: Option<SocialPreview>,
+}
+
+/// Bulk create request. Exactly one of `custom_ids` or `count` must be set.
+/// `custom_ids` mode: caller-supplied vanity slugs (each 3-64 chars,
+/// alphanumeric + hyphens). `count` mode: server generates N random 8-char
+/// uppercase IDs.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BulkCreateLinksRequest {
+    pub template: BulkLinkTemplate,
+    #[serde(default)]
+    pub custom_ids: Option<Vec<String>>,
+    #[serde(default)]
+    #[schema(example = 50)]
+    pub count: Option<u32>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BulkLinkResult {
+    #[schema(example = "partner-acme")]
+    pub link_id: String,
+    #[schema(example = "https://go.acme.com/partner-acme")]
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BulkCreateLinksResponse {
+    pub links: Vec<BulkLinkResult>,
+}
+
+/// Per-row failure surfaced when a batch is rejected without inserting
+/// anything. The full list is returned in one response so the caller can fix
+/// every problem in one pass and retry.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct BatchItemError {
+    #[schema(example = 4)]
+    pub index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "promo-2")]
+    pub custom_id: Option<String>,
+    #[schema(example = "link_id_taken")]
+    pub code: String,
+    #[schema(example = "'promo-2' is already taken")]
+    pub message: String,
+}
+
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct ListLinksQuery {
     /// Maximum number of links to return (1-100, default 50).
