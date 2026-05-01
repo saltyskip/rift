@@ -1,5 +1,6 @@
 pub mod affiliates;
 pub mod apps;
+pub mod attribution;
 pub mod auth;
 pub mod billing;
 pub mod conversions;
@@ -59,10 +60,11 @@ use crate::app::AppState;
         links::routes::delete_link,
         links::routes::resolve_link,
         links::routes::resolve_link_custom,
-        // Attribution — click tracking, install reporting, timeseries
-        links::routes::attribution_click,
-        links::routes::attribution_report,
-        links::routes::link_attribution,
+        // Attribution — click tracking, install reporting, identify
+        attribution::routes::attribution_click,
+        attribution::routes::attribution_report,
+        attribution::routes::link_attribution,
+        // Link timeseries (lives in links since it's link-scoped analytics)
         links::routes::get_link_timeseries,
         // Webhooks — event notifications
         webhooks::routes::create_webhook,
@@ -238,6 +240,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     health::router()
         .merge(auth::router(state.clone()))
         .merge(links::router(state.clone()))
+        .merge(attribution::router(state.clone()))
         .merge(domains::router(state.clone()))
         .merge(apps::router(state.clone()))
         .merge(webhooks::router(state.clone()))
