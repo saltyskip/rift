@@ -1,43 +1,23 @@
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect, Response};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::api::auth::middleware::TenantId;
+use super::models::{
+    BillingStatusResponse, CheckoutSessionResponse, LimitsView, MagicLinkRequest,
+    MagicLinkResponse, PortalSessionResponse,
+};
+use crate::api::auth::models::TenantId;
 use crate::app::AppState;
-use crate::services::auth::tenants::repo::{BillingMethod, PlanTier, SubscriptionStatus};
+use crate::services::auth::tenants::repo::{BillingMethod, PlanTier};
 use crate::services::billing::handoff::{BillingHandoffError, HandoffOutcome};
 use crate::services::billing::limits::limits_for;
 use crate::services::billing::models::{BillingError, BillingStatus};
 use crate::services::billing::stripe_client::{
     cancel_subscription_at_period_end, create_checkout_session, create_portal_session, StripeError,
 };
-
-/// Slim JSON shape for the status endpoint. Rendered from `BillingStatus` so
-/// the external contract stays stable if we add internal fields later.
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct BillingStatusResponse {
-    pub plan_tier: PlanTier,
-    pub effective_tier: PlanTier,
-    pub comp_active: bool,
-    pub billing_method: BillingMethod,
-    pub status: SubscriptionStatus,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub current_period_end: Option<i64>,
-    pub limits: LimitsView,
-}
-
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct LimitsView {
-    pub max_links: Option<u64>,
-    pub max_events_per_month: Option<u64>,
-    pub max_domains: Option<u64>,
-    pub max_team_members: Option<u64>,
-    pub max_webhooks: Option<u64>,
-    pub analytics_retention: &'static str,
-}
 
 fn render(status: BillingStatus) -> BillingStatusResponse {
     let limits = limits_for(status.effective_tier);
@@ -108,11 +88,6 @@ pub struct CheckoutQuery {
     /// Target tier. One of: pro, business, scale.
     #[param(example = "pro")]
     pub tier: String,
-}
-
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct CheckoutSessionResponse {
-    pub checkout_url: String,
 }
 
 fn parse_paid_tier(s: &str) -> Option<PlanTier> {
@@ -202,27 +177,6 @@ pub async fn create_stripe_checkout(
 }
 
 // ── POST /v1/billing/magic-link — public, rate-limited ──
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct MagicLinkRequest {
-    /// Email to send the magic link to. Always returns 200 regardless of
-    /// whether an account exists — prevents enumeration.
-    #[schema(example = "you@company.com")]
-    pub email: String,
-    /// One of: `subscribe`, `portal`. Determines the flow on redemption.
-    #[schema(example = "subscribe")]
-    pub intent: String,
-    /// Required when `intent` is `subscribe`. One of: `pro`, `business`, `scale`.
-    #[schema(example = "pro")]
-    pub tier: Option<String>,
-}
-
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct MagicLinkResponse {
-    /// Always `"sent"`. Never indicates whether the email actually dispatched —
-    /// prevents account enumeration via timing or error signals.
-    pub status: &'static str,
-}
 
 fn extract_client_ip(headers: &HeaderMap) -> String {
     // In production we run behind Fly's proxy which sets X-Forwarded-For.
@@ -319,11 +273,6 @@ pub async fn redeem_magic_link(
 }
 
 // ── POST /v1/billing/stripe/portal — Stripe Billing Portal for current tenant ──
-
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct PortalSessionResponse {
-    pub portal_url: String,
-}
 
 #[utoipa::path(
     post,

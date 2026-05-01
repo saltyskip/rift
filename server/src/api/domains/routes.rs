@@ -4,7 +4,7 @@ use axum::response::{IntoResponse, Json, Response};
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::api::auth::middleware::TenantId;
+use crate::api::auth::models::TenantId;
 use crate::app::AppState;
 use crate::services::domains::models::*;
 

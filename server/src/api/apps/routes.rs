@@ -5,7 +5,7 @@ use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::api::auth::middleware::TenantId;
+use crate::api::auth::models::TenantId;
 use crate::app::AppState;
 use crate::services::apps::models::*;
 

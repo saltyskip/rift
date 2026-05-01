@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::api::auth::middleware::{CallerScope, SdkDomain, TenantId};
+use crate::api::auth::models::{CallerScope, SdkDomain, TenantId};
 use crate::app::AppState;
 use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload};
 use crate::services::domains::models::DomainRole;

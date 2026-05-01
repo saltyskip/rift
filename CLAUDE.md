@@ -84,6 +84,7 @@ Post-install events (signups, purchases, deposits) flow through a **sources** ab
 - Use `filter_map` to combine filtering and transformation
 - Flatten with `?` operator, `.ok()`, `.and_then()` chains
 - Use `let-else` for early returns
+- **`pub` data types live in sibling `models.rs` files, never inline in implementation files.** Implementation files (`routes.rs`, `service.rs`, `middleware.rs`, `repo.rs`) hold logic; `pub` data types — request/response DTOs, database documents, error enums, axum extension newtypes, anything other modules can import — go in `models.rs` next to the implementation that owns them. The codebase is largely AI-generated; this rule is intentionally strict (every `pub` data type, no judgment calls) so consistency holds across many small contributions. The only exception is **truly private types** (no `pub`, used only within a single file as implementation detail) — those stay inline. Service/repo *implementation containers* (`pub struct LinksService { ... }`, `pub struct LinksRepo { ... }`) are not data types and stay in their implementation file. When extracting, update OpenAPI `components(schemas(...))` registrations in `api/mod.rs` to point at the new path.
 - All route handlers must have `#[tracing::instrument]` for Sentry visibility
 - `ErrorResponse` lives in `error.rs` and is shared across all slices
 
