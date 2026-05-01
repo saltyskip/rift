@@ -83,6 +83,29 @@ pub struct AgentContextInput {
     pub description: Option<String>,
 }
 
+/// Input for the `create_links` MCP tool — atomically create up to 100 links sharing one template.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateLinksInput {
+    /// Template applied to every link in the batch.
+    pub template: BulkLinkTemplateInput,
+    /// Caller-supplied vanity slugs. Mutually exclusive with `count`.
+    pub custom_ids: Option<Vec<String>>,
+    /// Number of auto-generated 8-char IDs to mint. Mutually exclusive with `custom_ids`.
+    pub count: Option<u32>,
+}
+
+/// Template applied to every row of a `create_links` call.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BulkLinkTemplateInput {
+    pub ios_deep_link: Option<String>,
+    pub android_deep_link: Option<String>,
+    pub web_url: Option<String>,
+    pub ios_store_url: Option<String>,
+    pub android_store_url: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub agent_context: Option<AgentContextInput>,
+}
+
 /// Input for the `create_source` MCP tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateSourceInput {

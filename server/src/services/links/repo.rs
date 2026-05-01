@@ -13,11 +13,32 @@ use super::models::{
     Attribution, ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus, TimeseriesDataPoint,
 };
 
+/// Outcome of an atomic bulk insert. `DuplicateLinkIds` carries the input
+/// indices that collided with the unique `(tenant_id, link_id)` index — the
+/// service maps these back to per-row `link_id_taken` errors so the caller
+/// learns every conflict in one round trip. The transaction is rolled back
+/// before this is returned, so no partial inserts persist.
+#[derive(Debug)]
+pub enum BulkInsertError {
+    DuplicateLinkIds(Vec<usize>),
+    Internal(String),
+}
+
 // ── Trait ──
 
 #[async_trait]
 pub trait LinksRepository: Send + Sync {
     async fn create_link(&self, input: CreateLinkInput) -> Result<Link, String>;
+
+    /// Insert a batch of links atomically. Either every input becomes a row
+    /// or none do — the Mongo impl wraps the insert in a transaction so a
+    /// race with a concurrent single-create that takes one of our ids
+    /// surfaces as `DuplicateLinkIds(indices)` after rollback, never as a
+    /// partial success.
+    async fn create_many_in_txn(
+        &self,
+        inputs: Vec<CreateLinkInput>,
+    ) -> Result<Vec<Link>, BulkInsertError>;
 
     async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String>;
 
@@ -246,30 +267,59 @@ async fn invalidate_link_cache(tenant_id: &ObjectId, link_id: &str) {
 #[async_trait]
 impl LinksRepository for LinksRepo {
     async fn create_link(&self, input: CreateLinkInput) -> Result<Link, String> {
-        let link = Link {
-            id: ObjectId::new(),
-            tenant_id: input.tenant_id,
-            link_id: input.link_id,
-            ios_deep_link: input.ios_deep_link,
-            android_deep_link: input.android_deep_link,
-            web_url: input.web_url,
-            ios_store_url: input.ios_store_url,
-            android_store_url: input.android_store_url,
-            metadata: input.metadata,
-            affiliate_id: input.affiliate_id,
-            created_at: DateTime::now(),
-            status: LinkStatus::Active,
-            flag_reason: None,
-            expires_at: input.expires_at,
-            agent_context: input.agent_context,
-            social_preview: input.social_preview,
-        };
+        let link = build_link(input);
         self.links
             .insert_one(&link)
             .await
             .map_err(|e| e.to_string())?;
         invalidate_link_cache(&link.tenant_id, &link.link_id).await;
         Ok(link)
+    }
+
+    async fn create_many_in_txn(
+        &self,
+        inputs: Vec<CreateLinkInput>,
+    ) -> Result<Vec<Link>, BulkInsertError> {
+        if inputs.is_empty() {
+            return Ok(vec![]);
+        }
+        let docs: Vec<Link> = inputs.into_iter().map(build_link).collect();
+
+        let mut session = self
+            .links
+            .client()
+            .start_session()
+            .await
+            .map_err(|e| BulkInsertError::Internal(e.to_string()))?;
+
+        session
+            .start_transaction()
+            .await
+            .map_err(|e| BulkInsertError::Internal(e.to_string()))?;
+
+        let result = self.links.insert_many(&docs).session(&mut session).await;
+
+        match result {
+            Ok(_) => {
+                session
+                    .commit_transaction()
+                    .await
+                    .map_err(|e| BulkInsertError::Internal(e.to_string()))?;
+                for d in &docs {
+                    invalidate_link_cache(&d.tenant_id, &d.link_id).await;
+                }
+                Ok(docs)
+            }
+            Err(e) => {
+                let _ = session.abort_transaction().await;
+                let dup_indices = parse_duplicate_indices(&e);
+                if !dup_indices.is_empty() {
+                    Err(BulkInsertError::DuplicateLinkIds(dup_indices))
+                } else {
+                    Err(BulkInsertError::Internal(e.to_string()))
+                }
+            }
+        }
     }
 
     async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String> {
@@ -520,4 +570,42 @@ impl LinksRepository for LinksRepo {
             .await
             .map_err(|e| e.to_string())
     }
+}
+
+fn build_link(input: CreateLinkInput) -> Link {
+    Link {
+        id: ObjectId::new(),
+        tenant_id: input.tenant_id,
+        link_id: input.link_id,
+        ios_deep_link: input.ios_deep_link,
+        android_deep_link: input.android_deep_link,
+        web_url: input.web_url,
+        ios_store_url: input.ios_store_url,
+        android_store_url: input.android_store_url,
+        metadata: input.metadata,
+        affiliate_id: input.affiliate_id,
+        created_at: DateTime::now(),
+        status: LinkStatus::Active,
+        flag_reason: None,
+        expires_at: input.expires_at,
+        agent_context: input.agent_context,
+        social_preview: input.social_preview,
+    }
+}
+
+/// Map a Mongo `insert_many` failure to the input indices that hit a
+/// duplicate-key (E11000). Returns an empty vec for any other error so the
+/// caller can surface it as `Internal`.
+fn parse_duplicate_indices(err: &mongodb::error::Error) -> Vec<usize> {
+    use mongodb::error::ErrorKind;
+    if let ErrorKind::InsertMany(insert_many_error) = &*err.kind {
+        if let Some(write_errors) = &insert_many_error.write_errors {
+            return write_errors
+                .iter()
+                .filter(|e| e.code == 11000)
+                .map(|e| e.index)
+                .collect();
+        }
+    }
+    Vec::new()
 }

@@ -1,7 +1,7 @@
 use super::*;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::models::TimeseriesDataPoint;
-use crate::services::links::repo::LinksRepository;
+use crate::services::links::repo::{BulkInsertError, LinksRepository};
 use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
 use std::sync::Mutex;
@@ -89,6 +89,62 @@ impl LinksRepository for MockLinksRepo {
         };
         links.push(link.clone());
         Ok(link)
+    }
+
+    async fn create_many_in_txn(
+        &self,
+        inputs: Vec<CreateLinkInput>,
+    ) -> Result<Vec<Link>, BulkInsertError> {
+        let mut links = self.links.lock().unwrap();
+        let mut dupes: Vec<usize> = Vec::new();
+        for (i, input) in inputs.iter().enumerate() {
+            if links
+                .iter()
+                .any(|l| l.tenant_id == input.tenant_id && l.link_id == input.link_id)
+            {
+                dupes.push(i);
+            }
+        }
+        // Also catch duplicates within the batch itself (defensive — service
+        // layer pre-rejects these, but the contract is "atomic").
+        for i in 0..inputs.len() {
+            for j in (i + 1)..inputs.len() {
+                if inputs[i].tenant_id == inputs[j].tenant_id
+                    && inputs[i].link_id == inputs[j].link_id
+                    && !dupes.contains(&j)
+                {
+                    dupes.push(j);
+                }
+            }
+        }
+        if !dupes.is_empty() {
+            dupes.sort();
+            return Err(BulkInsertError::DuplicateLinkIds(dupes));
+        }
+        let now = DateTime::now();
+        let new_links: Vec<Link> = inputs
+            .into_iter()
+            .map(|input| Link {
+                id: ObjectId::new(),
+                tenant_id: input.tenant_id,
+                link_id: input.link_id,
+                ios_deep_link: input.ios_deep_link,
+                android_deep_link: input.android_deep_link,
+                web_url: input.web_url,
+                ios_store_url: input.ios_store_url,
+                android_store_url: input.android_store_url,
+                metadata: input.metadata,
+                affiliate_id: input.affiliate_id,
+                created_at: now,
+                status: LinkStatus::Active,
+                flag_reason: None,
+                expires_at: input.expires_at,
+                agent_context: input.agent_context,
+                social_preview: input.social_preview,
+            })
+            .collect();
+        links.extend(new_links.iter().cloned());
+        Ok(new_links)
     }
 
     async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String> {
@@ -571,4 +627,220 @@ async fn delete_link_not_found() {
 
     let err = svc.delete_link(&tenant_id, "NOPE").await.unwrap_err();
     assert!(matches!(err, LinkError::NotFound));
+}
+
+// ── Bulk create tests ──
+
+fn empty_bulk_template() -> BulkLinkTemplate {
+    BulkLinkTemplate {
+        ios_deep_link: None,
+        android_deep_link: None,
+        web_url: Some("https://example.com".to_string()),
+        ios_store_url: None,
+        android_store_url: None,
+        metadata: None,
+        affiliate_id: None,
+        agent_context: None,
+        social_preview: None,
+    }
+}
+
+#[tokio::test]
+async fn bulk_empty_returns_batch_empty() {
+    let svc = make_service(vec![], true);
+    let req = BulkCreateLinksRequest {
+        template: empty_bulk_template(),
+        custom_ids: Some(vec![]),
+        count: None,
+    };
+    let err = svc
+        .create_links_bulk(ObjectId::new(), None, req)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, LinkError::BatchEmpty));
+}
+
+#[tokio::test]
+async fn bulk_too_large_returns_batch_too_large() {
+    let svc = make_service(vec![], true);
+    let req = BulkCreateLinksRequest {
+        template: empty_bulk_template(),
+        custom_ids: None,
+        count: Some(101),
+    };
+    let err = svc
+        .create_links_bulk(ObjectId::new(), None, req)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        LinkError::BatchTooLarge { max: 100, got: 101 }
+    ));
+}
+
+#[tokio::test]
+async fn bulk_both_modes_returns_ambiguous() {
+    let svc = make_service(vec![], true);
+    let req = BulkCreateLinksRequest {
+        template: empty_bulk_template(),
+        custom_ids: Some(vec!["a".to_string()]),
+        count: Some(5),
+    };
+    let err = svc
+        .create_links_bulk(ObjectId::new(), None, req)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, LinkError::BatchModeAmbiguous));
+}
+
+#[tokio::test]
+async fn bulk_neither_mode_returns_missing() {
+    let svc = make_service(vec![], true);
+    let req = BulkCreateLinksRequest {
+        template: empty_bulk_template(),
+        custom_ids: None,
+        count: None,
+    };
+    let err = svc
+        .create_links_bulk(ObjectId::new(), None, req)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, LinkError::BatchModeMissing));
+}
+
+#[tokio::test]
+async fn bulk_no_verified_domain_rejects() {
+    let svc = make_service(vec![], false);
+    let req = BulkCreateLinksRequest {
+        template: empty_bulk_template(),
+        custom_ids: None,
+        count: Some(3),
+    };
+    let err = svc
+        .create_links_bulk(ObjectId::new(), None, req)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, LinkError::NoVerifiedDomain));
+}
+
+#[tokio::test]
+async fn bulk_template_invalid_url_returns_template_error() {
+    let svc = make_service(vec![], true);
+    let mut template = empty_bulk_template();
+    template.web_url = Some("not a url".to_string());
+    let req = BulkCreateLinksRequest {
+        template,
+        custom_ids: None,
+        count: Some(3),
+    };
+    let err = svc
+        .create_links_bulk(ObjectId::new(), None, req)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, LinkError::InvalidUrl(_)));
+}
+
+#[tokio::test]
+async fn bulk_invalid_custom_id_returns_per_row_error() {
+    let svc = make_service(vec![], true);
+    let req = BulkCreateLinksRequest {
+        template: empty_bulk_template(),
+        custom_ids: Some(vec!["good-id".to_string(), "ab".to_string()]),
+        count: None,
+    };
+    let err = svc
+        .create_links_bulk(ObjectId::new(), None, req)
+        .await
+        .unwrap_err();
+    let LinkError::BatchValidationFailed(errs) = err else {
+        panic!("expected BatchValidationFailed");
+    };
+    assert_eq!(errs.len(), 1);
+    assert_eq!(errs[0].index, 1);
+    assert_eq!(errs[0].code, "invalid_custom_id");
+}
+
+#[tokio::test]
+async fn bulk_duplicate_custom_id_within_batch() {
+    let svc = make_service(vec![], true);
+    let req = BulkCreateLinksRequest {
+        template: empty_bulk_template(),
+        custom_ids: Some(vec![
+            "promo-1".to_string(),
+            "promo-2".to_string(),
+            "promo-1".to_string(),
+        ]),
+        count: None,
+    };
+    let err = svc
+        .create_links_bulk(ObjectId::new(), None, req)
+        .await
+        .unwrap_err();
+    let LinkError::BatchValidationFailed(errs) = err else {
+        panic!("expected BatchValidationFailed");
+    };
+    assert!(errs
+        .iter()
+        .any(|e| e.code == "duplicate_custom_id_in_batch"));
+}
+
+#[tokio::test]
+async fn bulk_existing_custom_id_returns_link_id_taken() {
+    let tenant_id = ObjectId::new();
+    let existing = make_link(tenant_id, "promo-2");
+    let svc = make_service(vec![existing], true);
+    let req = BulkCreateLinksRequest {
+        template: empty_bulk_template(),
+        custom_ids: Some(vec![
+            "promo-1".to_string(),
+            "promo-2".to_string(),
+            "promo-3".to_string(),
+        ]),
+        count: None,
+    };
+    let err = svc
+        .create_links_bulk(tenant_id, None, req)
+        .await
+        .unwrap_err();
+    let LinkError::BatchValidationFailed(errs) = err else {
+        panic!("expected BatchValidationFailed");
+    };
+    assert_eq!(errs.len(), 1);
+    assert_eq!(errs[0].index, 1);
+    assert_eq!(errs[0].code, "link_id_taken");
+}
+
+#[tokio::test]
+async fn bulk_count_mode_happy_path() {
+    let svc = make_service(vec![], true);
+    let req = BulkCreateLinksRequest {
+        template: empty_bulk_template(),
+        custom_ids: None,
+        count: Some(10),
+    };
+    let resp = svc
+        .create_links_bulk(ObjectId::new(), None, req)
+        .await
+        .unwrap();
+    assert_eq!(resp.links.len(), 10);
+    let ids: std::collections::HashSet<_> = resp.links.iter().map(|l| &l.link_id).collect();
+    assert_eq!(ids.len(), 10, "auto-generated ids must be unique");
+}
+
+#[tokio::test]
+async fn bulk_custom_ids_mode_happy_path() {
+    let svc = make_service(vec![], true);
+    let ids = vec!["partner-acme".to_string(), "partner-globex".to_string()];
+    let req = BulkCreateLinksRequest {
+        template: empty_bulk_template(),
+        custom_ids: Some(ids.clone()),
+        count: None,
+    };
+    let resp = svc
+        .create_links_bulk(ObjectId::new(), None, req)
+        .await
+        .unwrap();
+    assert_eq!(resp.links.len(), 2);
+    assert_eq!(resp.links[0].link_id, ids[0]);
+    assert_eq!(resp.links[1].link_id, ids[1]);
 }

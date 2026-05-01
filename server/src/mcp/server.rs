@@ -33,8 +33,10 @@ use crate::services::auth::keys;
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::conversions::models::SourceType;
 use crate::services::conversions::repo::ConversionsRepository;
-use crate::services::links::models::{AgentContext, CreateLinkRequest, UpdateLinkRequest};
-use crate::services::links::service::LinksService;
+use crate::services::links::models::{
+    AgentContext, BulkCreateLinksRequest, BulkLinkTemplate, CreateLinkRequest, UpdateLinkRequest,
+};
+use crate::services::links::service::{LinkError, LinksService};
 
 pub struct RiftMcp {
     service: Arc<LinksService>,
@@ -110,6 +112,58 @@ impl RiftMcp {
             .map_err(|e| e.to_string())?;
 
         Ok(format!("Created link: {}\nURL: {}", resp.link_id, resp.url))
+    }
+
+    #[tool(
+        description = "Atomically create up to 100 Rift deep links sharing one template. Provide either `custom_ids` (caller-supplied slugs) or `count` (auto-generated). Requires a verified custom domain. Returns all created links or an error listing every per-row problem so they can be fixed in one pass."
+    )]
+    #[tracing::instrument(skip(self, input), fields(tool = "create_links"))]
+    async fn create_links(
+        &self,
+        Parameters(input): Parameters<CreateLinksInput>,
+    ) -> Result<String, String> {
+        let tenant_id = self.tenant_id()?;
+        let req = BulkCreateLinksRequest {
+            template: BulkLinkTemplate {
+                ios_deep_link: input.template.ios_deep_link,
+                android_deep_link: input.template.android_deep_link,
+                web_url: input.template.web_url,
+                ios_store_url: input.template.ios_store_url,
+                android_store_url: input.template.android_store_url,
+                metadata: input.template.metadata,
+                affiliate_id: None,
+                agent_context: input.template.agent_context.map(|ac| AgentContext {
+                    action: ac.action,
+                    cta: ac.cta,
+                    description: ac.description,
+                }),
+                social_preview: None,
+            },
+            custom_ids: input.custom_ids,
+            count: input.count,
+        };
+
+        match self
+            .service
+            .create_links_bulk(tenant_id, Some(&KeyScope::Full), req)
+            .await
+        {
+            Ok(resp) => serde_json::to_string_pretty(&resp).map_err(|e| e.to_string()),
+            Err(LinkError::BatchValidationFailed(errors)) => {
+                // Render the per-row failures as a bullet list so the model
+                // can self-correct in the next call.
+                let lines: Vec<String> = errors
+                    .iter()
+                    .map(|e| format!("  - index {}: {} ({})", e.index, e.message, e.code,))
+                    .collect();
+                Err(format!(
+                    "{} item(s) failed validation:\n{}",
+                    errors.len(),
+                    lines.join("\n")
+                ))
+            }
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     #[tool(description = "Get details of a Rift deep link by its ID")]

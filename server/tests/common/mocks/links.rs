@@ -7,7 +7,7 @@ use rift::services::links::models::{
     Attribution as RealAttribution, ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus,
     TimeseriesDataPoint,
 };
-use rift::services::links::repo::LinksRepository;
+use rift::services::links::repo::{BulkInsertError, LinksRepository};
 
 struct Attribution {
     tenant_id: ObjectId,
@@ -53,6 +53,60 @@ impl LinksRepository for MockLinksRepo {
         };
         links.push(link.clone());
         Ok(link)
+    }
+
+    async fn create_many_in_txn(
+        &self,
+        inputs: Vec<CreateLinkInput>,
+    ) -> Result<Vec<Link>, BulkInsertError> {
+        let mut links = self.links.lock().unwrap();
+        let mut dupes: Vec<usize> = Vec::new();
+        for (i, input) in inputs.iter().enumerate() {
+            if links
+                .iter()
+                .any(|l| l.tenant_id == input.tenant_id && l.link_id == input.link_id)
+            {
+                dupes.push(i);
+            }
+        }
+        for i in 0..inputs.len() {
+            for j in (i + 1)..inputs.len() {
+                if inputs[i].tenant_id == inputs[j].tenant_id
+                    && inputs[i].link_id == inputs[j].link_id
+                    && !dupes.contains(&j)
+                {
+                    dupes.push(j);
+                }
+            }
+        }
+        if !dupes.is_empty() {
+            dupes.sort();
+            return Err(BulkInsertError::DuplicateLinkIds(dupes));
+        }
+        let now = DateTime::now();
+        let new_links: Vec<Link> = inputs
+            .into_iter()
+            .map(|input| Link {
+                id: ObjectId::new(),
+                tenant_id: input.tenant_id,
+                link_id: input.link_id,
+                ios_deep_link: input.ios_deep_link,
+                android_deep_link: input.android_deep_link,
+                web_url: input.web_url,
+                ios_store_url: input.ios_store_url,
+                android_store_url: input.android_store_url,
+                metadata: input.metadata,
+                affiliate_id: input.affiliate_id,
+                created_at: now,
+                status: LinkStatus::Active,
+                flag_reason: None,
+                expires_at: input.expires_at,
+                agent_context: input.agent_context,
+                social_preview: input.social_preview,
+            })
+            .collect();
+        links.extend(new_links.iter().cloned());
+        Ok(new_links)
     }
 
     async fn find_link_by_id(&self, link_id: &str) -> Result<Option<Link>, String> {

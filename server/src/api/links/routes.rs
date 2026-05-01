@@ -102,6 +102,20 @@ fn link_error_to_response(err: LinkError) -> Response {
     if let LinkError::QuotaExceeded(q) = err {
         return crate::api::billing::quota_response::to_response(q);
     }
+    // BatchValidationFailed carries a per-row error list — return the full
+    // array so the caller can fix every issue in one pass.
+    if let LinkError::BatchValidationFailed(errors) = err {
+        let count = errors.len();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": format!("{count} item(s) failed validation"),
+                "code": "invalid_batch",
+                "errors": errors,
+            })),
+        )
+            .into_response();
+    }
     let status = match &err {
         LinkError::InvalidCustomId(_)
         | LinkError::InvalidUrl(_)
@@ -111,10 +125,16 @@ fn link_error_to_response(err: LinkError) -> Response {
         | LinkError::ThreatDetected(_)
         | LinkError::NoVerifiedDomain
         | LinkError::EmptyUpdate
-        | LinkError::AffiliateScopeMismatch => StatusCode::BAD_REQUEST,
+        | LinkError::AffiliateScopeMismatch
+        | LinkError::BatchTooLarge { .. }
+        | LinkError::BatchEmpty
+        | LinkError::BatchModeAmbiguous
+        | LinkError::BatchModeMissing => StatusCode::BAD_REQUEST,
         LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
         LinkError::NotFound | LinkError::AffiliateNotFound => StatusCode::NOT_FOUND,
-        LinkError::QuotaExceeded(_) => unreachable!("handled above"),
+        LinkError::QuotaExceeded(_) | LinkError::BatchValidationFailed(_) => {
+            unreachable!("handled above")
+        }
         LinkError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     let code = err.code();
@@ -184,6 +204,41 @@ pub async fn create_link(
     // Quota check + scope/affiliate enforcement live in
     // `LinksService::create_link` so MCP tool calls hit the same path.
     match svc.create_link(tenant.0, scope.0.as_ref(), req).await {
+        Ok(resp) => (StatusCode::CREATED, Json(json!(resp))).into_response(),
+        Err(e) => link_error_to_response(e),
+    }
+}
+
+// ── POST /v1/links/bulk — Atomically create up to 100 links sharing one template ──
+
+#[utoipa::path(
+    post,
+    path = "/v1/links/bulk",
+    tag = "Links",
+    request_body = BulkCreateLinksRequest,
+    responses(
+        (status = 201, description = "All links created", body = BulkCreateLinksResponse),
+        (status = 400, description = "Invalid batch", body = crate::error::ErrorResponse),
+        (status = 402, description = "Quota exceeded"),
+    ),
+    security(("api_key" = []), ("x402" = [])),
+)]
+#[tracing::instrument(skip(state, req))]
+pub async fn create_links_bulk(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(scope): axum::Extension<CallerScope>,
+    Json(req): Json<BulkCreateLinksRequest>,
+) -> Response {
+    let Some(ref svc) = state.links_service else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Database not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    match svc.create_links_bulk(tenant.0, scope.0.as_ref(), req).await {
         Ok(resp) => (StatusCode::CREATED, Json(json!(resp))).into_response(),
         Err(e) => link_error_to_response(e),
     }

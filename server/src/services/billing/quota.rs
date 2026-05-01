@@ -21,6 +21,23 @@ use super::service::TierResolver;
 #[async_trait]
 pub trait QuotaChecker: Send + Sync {
     async fn check(&self, tenant_id: &ObjectId, resource: Resource) -> Result<(), QuotaError>;
+
+    /// Pre-check whether `n` units of `resource` would fit. Used by bulk
+    /// operations (e.g. `POST /v1/links/bulk`) so the whole batch is gated
+    /// by a single decision rather than failing partway through. The default
+    /// impl falls back to N single-unit `check` calls — production
+    /// `QuotaService` overrides with one comparison.
+    async fn check_n(
+        &self,
+        tenant_id: &ObjectId,
+        resource: Resource,
+        n: u64,
+    ) -> Result<(), QuotaError> {
+        for _ in 0..n {
+            self.check(tenant_id, resource).await?;
+        }
+        Ok(())
+    }
 }
 
 /// Quotable resource categories. Each maps to a specific enforcement path.
@@ -208,6 +225,63 @@ impl QuotaChecker for QuotaService {
             }
         }
         Ok(())
+    }
+
+    async fn check_n(
+        &self,
+        tenant_id: &ObjectId,
+        resource: Resource,
+        n: u64,
+    ) -> Result<(), QuotaError> {
+        if n == 0 {
+            return Ok(());
+        }
+        // TrackEvent has its own atomic counter path; bulk pre-check isn't
+        // a use case for it today. Fall back to per-unit checks.
+        if matches!(resource, Resource::TrackEvent) {
+            for _ in 0..n {
+                self.check(tenant_id, resource).await?;
+            }
+            return Ok(());
+        }
+
+        let tier = self.billing.effective_tier(tenant_id).await?;
+        let limits = limits_for(tier);
+        let max = match limit_for_resource(&limits, resource) {
+            Some(m) => m,
+            None => return Ok(()), // unlimited
+        };
+
+        let current = self
+            .resource_counts
+            .count(tenant_id, resource)
+            .await
+            .map_err(|e| QuotaError::Billing(BillingError::Internal(e)))?;
+
+        if current.saturating_add(n) <= max {
+            return Ok(());
+        }
+
+        let err = QuotaError::Exceeded {
+            resource,
+            limit: max,
+            current,
+        };
+        match self.mode {
+            EnforcementMode::LogOnly => {
+                tracing::warn!(
+                    quota_error = %err,
+                    batch_size = n,
+                    mode = "log_only",
+                    "quota_check_n_would_reject"
+                );
+                Ok(())
+            }
+            EnforcementMode::Enforce => {
+                tracing::info!(quota_error = %err, batch_size = n, mode = "enforce", "quota_n_rejected");
+                Err(err)
+            }
+        }
     }
 }
 
