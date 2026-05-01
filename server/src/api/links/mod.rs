@@ -1,4 +1,6 @@
+pub mod landing;
 pub mod models;
+pub mod qr;
 pub mod routes;
 
 use axum::middleware;
