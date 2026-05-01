@@ -3,21 +3,9 @@ use mongodb::bson::{self, doc, oid::ObjectId};
 use mongodb::error::ErrorKind;
 use mongodb::options::{FindOneAndUpdateOptions, IndexOptions, ReturnDocument};
 use mongodb::{Collection, Database};
-use serde::{Deserialize, Serialize};
 
 use crate::ensure_index;
-
-// ── Document ──
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EventCounterDoc {
-    #[serde(rename = "_id")]
-    pub id: String,
-    pub tenant_id: ObjectId,
-    pub period: String, // e.g. "2026-04"
-    pub count: i64,
-    pub created_at: bson::DateTime,
-}
+pub use crate::services::billing::models::EventCounterDoc;
 
 // ── Trait ──
 
@@ -40,6 +28,7 @@ pub trait EventCountersRepository: Send + Sync {
 
 // ── MongoDB impl ──
 
+crate::impl_container!(EventCountersRepo);
 #[derive(Clone)]
 pub struct EventCountersRepo {
     counters: Collection<EventCounterDoc>,
