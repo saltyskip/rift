@@ -6,19 +6,16 @@
 /// for `routes.rs` and `middleware.rs` files.
 ///
 /// Implementation files (route handlers, middleware) hold logic; their
-/// `pub struct` / `pub enum` definitions belong in a sibling `models.rs`.
-/// This test scans `src/api/` and `src/services/` for offenders and fails
-/// with a list of violations + the rule.
-///
-/// **Carve-outs (allowed inline):**
-/// - `*Query` types — pure URL-param decoders, no domain meaning
-/// - Names listed in `ALLOWED_INLINE_NAMES` below
+/// `pub struct` / `pub enum` / `pub type` definitions belong in a sibling
+/// `models.rs`. The rule is **strict by design** — no carve-outs, no
+/// "this one is transport-only" judgment calls. Strict means consistent
+/// across many small AI-generated contributions.
 ///
 /// **Scope:** currently enforced in `routes.rs` and `middleware.rs` only.
-/// Future PRs will extend to `service.rs` (errors) and `repo.rs` (DB docs)
-/// per CLAUDE.md's strict rule. The check stays narrow until each phase
-/// of the cleanup lands so existing inline definitions don't fail this
-/// test mid-migration.
+/// Future PRs will extend to `service.rs` (errors), `repo.rs` (DB docs),
+/// and other implementation files per CLAUDE.md's strict rule. The check
+/// stays narrow until each phase of the cleanup lands so existing inline
+/// definitions don't fail this test mid-migration.
 #[test]
 fn pub_data_types_live_in_models_rs() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
@@ -29,11 +26,9 @@ fn pub_data_types_live_in_models_rs() {
 
     if !violations.is_empty() {
         panic!(
-            "\nFound {} `pub` data type(s) defined inline in `routes.rs` or `middleware.rs`:\n\n{}\n\n\
+            "\nFound {} `pub` data type(s) defined inline in an enforced file:\n\n{}\n\n\
              Per CLAUDE.md Style Guidelines: `pub` data types live in sibling `models.rs` files.\n\
-             Move each violation to the matching `models.rs` and import via `use super::models::...;`.\n\n\
-             If the type is a transport-only URL-param decoder, name it `*Query` to match the carve-out,\n\
-             or add it to ALLOWED_INLINE_NAMES in this test with a justification.\n",
+             Move each violation to the matching `models.rs` and import via `use super::models::...;`.\n",
             violations.len(),
             violations.join("\n")
         );
@@ -46,19 +41,6 @@ fn is_enforced_file(path: &std::path::Path) -> bool {
         path.file_name().and_then(|s| s.to_str()),
         Some("routes.rs") | Some("middleware.rs")
     )
-}
-
-/// Specific names that are allowed to remain inline despite being `pub`.
-/// Keep this list short and add a comment for each entry.
-const ALLOWED_INLINE_NAMES: &[&str] = &[
-    // (none currently — `*Query` carve-out below covers all current cases)
-];
-
-/// `*Query` types are pure axum `Query<T>` URL-param decoders — transport
-/// plumbing with no domain meaning. They have no consumer outside the HTTP
-/// transport layer, so the "would this exist in MCP?" test fails for them.
-fn is_carved_out(name: &str) -> bool {
-    name.ends_with("Query") || ALLOWED_INLINE_NAMES.contains(&name)
 }
 
 fn scan(dir: &std::path::Path, violations: &mut Vec<String>) {
@@ -85,9 +67,6 @@ fn scan(dir: &std::path::Path, violations: &mut Vec<String>) {
             let Some(name) = parse_pub_type_name(trimmed) else {
                 continue;
             };
-            if is_carved_out(name) {
-                continue;
-            }
             violations.push(format!(
                 "  {}:{} — pub type `{}`",
                 path.strip_prefix(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default())

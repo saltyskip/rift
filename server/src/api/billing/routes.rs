@@ -1,13 +1,12 @@
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect, Response};
-use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 
 use super::models::{
-    BillingStatusResponse, CheckoutSessionResponse, LimitsView, MagicLinkRequest,
-    MagicLinkResponse, PortalSessionResponse,
+    BillingStatusResponse, CheckoutQuery, CheckoutSessionResponse, LimitsView, MagicLinkGoQuery,
+    MagicLinkRequest, MagicLinkResponse, PortalSessionResponse,
 };
 use crate::api::auth::models::TenantId;
 use crate::app::AppState;
@@ -82,13 +81,6 @@ pub async fn get_billing_status(
 }
 
 // ── POST /v1/billing/stripe/checkout — start Stripe Checkout for a paid tier ──
-
-#[derive(Debug, Deserialize, utoipa::IntoParams)]
-pub struct CheckoutQuery {
-    /// Target tier. One of: pro, business, scale.
-    #[param(example = "pro")]
-    pub tier: String,
-}
 
 fn parse_paid_tier(s: &str) -> Option<PlanTier> {
     match s {
@@ -240,11 +232,6 @@ pub async fn create_magic_link(
 }
 
 // ── GET /v1/billing/go — redeem magic link → Stripe redirect ──
-
-#[derive(Debug, Deserialize)]
-pub struct MagicLinkGoQuery {
-    pub token: String,
-}
 
 #[tracing::instrument(skip(state))]
 pub async fn redeem_magic_link(

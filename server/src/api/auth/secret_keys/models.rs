@@ -1,4 +1,4 @@
-//! Request / response DTOs for `api/auth/secret_keys/routes.rs`.
+//! Request / response DTOs and query decoders for `api/auth/secret_keys/routes.rs`.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -8,6 +8,11 @@ use utoipa::ToSchema;
 #[derive(Deserialize, ToSchema)]
 pub struct SignupRequest {
     pub email: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct VerifyQuery {
+    pub token: String,
 }
 
 #[derive(Serialize, ToSchema)]

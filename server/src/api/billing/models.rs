@@ -1,9 +1,21 @@
-//! Request / response DTOs for `api/billing/routes.rs`.
+//! Request / response DTOs and query decoders for `api/billing/routes.rs`.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::services::auth::tenants::repo::{BillingMethod, PlanTier, SubscriptionStatus};
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct CheckoutQuery {
+    /// Target tier. One of: pro, business, scale.
+    #[param(example = "pro")]
+    pub tier: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MagicLinkGoQuery {
+    pub token: String,
+}
 
 /// Slim JSON shape for the status endpoint. Rendered from `BillingStatus` so
 /// the external contract stays stable if we add internal fields later.

@@ -2,25 +2,17 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
 use mongodb::bson::oid::ObjectId;
-use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use super::models::{
     ConfirmCreateKeyRequest, CreateKeyResponse, ListSecretKeysResponse, RequestCreateKeyRequest,
-    SecretKeyDetail, SignupRequest, SignupResponse,
+    SecretKeyDetail, SignupRequest, SignupResponse, VerifyQuery,
 };
 use crate::api::auth::models::{AuthKeyId, TenantId};
 use crate::app::AppState;
 use crate::services::auth::secret_keys::service::SecretKeyError;
 use crate::services::auth::users::service::UserError;
-
-// VerifyQuery stays inline — pure URL-param decoder, transport-only.
-#[derive(Deserialize, ToSchema)]
-pub struct VerifyQuery {
-    pub token: String,
-}
 
 // ── Signup / Verify handlers ──
 
