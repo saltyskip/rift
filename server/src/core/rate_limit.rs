@@ -8,6 +8,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 
+crate::impl_container!(RateLimiter);
 /// In-memory token bucket rate limiter keyed by IP.
 pub struct RateLimiter {
     buckets: DashMap<String, Bucket>,

@@ -6,6 +6,7 @@ use url::Url;
 
 const FEED_TIMEOUT: Duration = Duration::from_secs(30);
 
+crate::impl_container!(ThreatFeed);
 /// In-memory threat intelligence, populated from free feeds.
 /// Checks both exact URLs (malware) and domains (phishing).
 #[derive(Clone, Default)]

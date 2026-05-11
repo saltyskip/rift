@@ -130,20 +130,27 @@ impl WebhookDispatcher for RiftWebhookDispatcher {
     }
 }
 
-// ── Cached webhook lookup ──
-//
-// Short-TTL cache keyed on (tenant_id_hex, event_type). Invalidation is purely
-// time-based — 60 seconds of staleness is an acceptable trade for killing the
-// per-event DB query hot path. A webhook newly created or toggled off will
-// start or stop receiving events within 60 seconds.
-//
-// The cache is in-process and per-instance; multiple server instances each have
-// their own cache, which is fine because the underlying query is cheap and the
-// cache is purely an optimization.
-//
-// `Err` results are NOT cached (via `result = true`) so transient DB errors are
-// retried on the next event rather than stuck for a minute.
+pub(crate) fn compute_hmac(secret: &str, body: &str) -> String {
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
+    mac.update(body.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
 
+// ── Helpers ──
+
+// Cached webhook lookup. Short-TTL cache keyed on (tenant_id_hex,
+// event_type). Invalidation is purely time-based — 60 seconds of
+// staleness is an acceptable trade for killing the per-event DB query
+// hot path. A webhook newly created or toggled off will start or stop
+// receiving events within 60 seconds.
+//
+// The cache is in-process and per-instance; multiple server instances
+// each have their own cache, which is fine because the underlying
+// query is cheap and the cache is purely an optimization.
+//
+// `Err` results are NOT cached (via `result = true`) so transient DB
+// errors are retried on the next event rather than stuck for a minute.
 #[cached::proc_macro::cached(
     ty = "cached::TimedCache<(String, String), Vec<Webhook>>",
     create = "{ cached::TimedCache::with_lifespan(60) }",
@@ -156,13 +163,6 @@ async fn cached_find_active_for_event(
     event_type: WebhookEventType,
 ) -> Result<Vec<Webhook>, String> {
     repo.find_active_for_event(&tenant_oid, &event_type).await
-}
-
-pub(crate) fn compute_hmac(secret: &str, body: &str) -> String {
-    let mut mac =
-        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
-    mac.update(body.as_bytes());
-    hex::encode(mac.finalize().into_bytes())
 }
 
 async fn deliver_with_retry(http: &reqwest::Client, url: &str, body: &str, signature: &str) {
