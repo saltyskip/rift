@@ -1,0 +1,104 @@
+name: IndexNow submit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'marketing/src/app/**/page.tsx'
+      - 'marketing/src/app/**/page.mdx'
+      - 'marketing/content/blog/**/*.mdx'
+      - 'marketing/src/lib/competitors.ts'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Map changed files to URLs and submit
+        env:
+          INDEXNOW_KEY: 0b8d2eed624e40e3adc98876c72051eb
+          HOST: riftl.ink
+        run: |
+          set -euo pipefail
+
+          changed=$(git diff --name-only HEAD^ HEAD)
+          echo "Changed files:"
+          echo "$changed"
+
+          declare -a urls=()
+
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              marketing/src/app/page.tsx)
+                urls+=("https://$HOST/") ;;
+              marketing/src/app/alternatives/page.tsx)
+                urls+=("https://$HOST/alternatives") ;;
+              marketing/src/app/api-reference/page.tsx)
+                urls+=("https://$HOST/api-reference") ;;
+              marketing/src/app/blog/page.tsx)
+                urls+=("https://$HOST/blog") ;;
+              marketing/src/app/docs/page.tsx)
+                urls+=("https://$HOST/docs") ;;
+              marketing/src/app/docs/*/page.tsx)
+                sub="${f#marketing/src/app/docs/}"
+                sub="${sub%/page.tsx}"
+                urls+=("https://$HOST/docs/$sub") ;;
+              marketing/src/app/tools/audit/page.tsx)
+                urls+=("https://$HOST/tools/audit") ;;
+              marketing/content/blog/*.mdx)
+                slug="${f#marketing/content/blog/}"
+                slug="${slug%.mdx}"
+                urls+=("https://$HOST/blog/$slug") ;;
+              marketing/src/lib/competitors.ts)
+                urls+=("https://$HOST/alternatives")
+                while IFS= read -r slug; do
+                  urls+=("https://$HOST/alternatives/$slug")
+                done < <(grep -E '^\s*slug: "[^"]+"' marketing/src/lib/competitors.ts \
+                         | sed -E 's/.*"([^"]+)".*/\1/')
+                ;;
+            esac
+          done <<< "$changed"
+
+          if [ ${#urls[@]} -eq 0 ]; then
+            echo "No indexable URL changes; skipping IndexNow submission."
+            exit 0
+          fi
+
+          # Dedupe while preserving order isn't needed; IndexNow doesn't care.
+          mapfile -t urls < <(printf '%s\n' "${urls[@]}" | sort -u)
+
+          echo "Submitting ${#urls[@]} URL(s):"
+          printf '  %s\n' "${urls[@]}"
+
+          payload=$(jq -n \
+            --arg host "$HOST" \
+            --arg key "$INDEXNOW_KEY" \
+            --arg keyLocation "https://$HOST/$INDEXNOW_KEY.txt" \
+            --argjson urlList "$(printf '%s\n' "${urls[@]}" | jq -R . | jq -s .)" \
+            '{host: $host, key: $key, keyLocation: $keyLocation, urlList: $urlList}')
+
+          echo "Payload:"
+          echo "$payload"
+
+          http_code=$(curl -sS -o /tmp/indexnow-resp.txt -w '%{http_code}' \
+            -X POST 'https://api.indexnow.org/IndexNow' \
+            -H 'Content-Type: application/json; charset=utf-8' \
+            --data-binary "$payload")
+
+          echo "Response (HTTP $http_code):"
+          cat /tmp/indexnow-resp.txt
+          echo
+
+          case "$http_code" in
+            200|202) echo "IndexNow accepted submission." ;;
+            *) echo "::error::IndexNow returned HTTP $http_code"; exit 1 ;;
+          esac
