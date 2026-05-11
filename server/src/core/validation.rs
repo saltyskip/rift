@@ -62,6 +62,20 @@ pub fn validate_hex_color(s: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate and normalize an email address. Returns the trimmed/lowercased form.
+///
+/// Parsing is delegated to the `email_address` crate (RFC 5321/5322). We require
+/// at least two sub-domains (i.e. a TLD) to reject single-label addresses like
+/// `a@b` that the RFC technically permits but no public-Internet inbox accepts.
+/// We lowercase the output because the rest of the system treats addresses as
+/// case-insensitive (DB unique index, lookups).
+pub fn validate_email(s: &str) -> Result<String, String> {
+    let opts = email_address::Options::default().with_required_tld();
+    email_address::EmailAddress::parse_with_options(s.trim(), opts)
+        .map(|e| e.to_string().to_lowercase())
+        .map_err(|e| e.to_string())
+}
+
 /// Validate metadata size (max 4KB serialized).
 pub fn validate_metadata(v: &serde_json::Value) -> Result<(), String> {
     let serialized = serde_json::to_string(v).unwrap_or_default();
