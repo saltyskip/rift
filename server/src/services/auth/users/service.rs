@@ -4,6 +4,7 @@ use std::sync::Arc;
 use super::models::{InviteResult, SignupResult, UserDetail, UserDoc, UserError, VerifyResult};
 use super::repo::UsersRepository;
 use crate::core::email;
+use crate::core::validation::validate_email;
 use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::mint_for_tenant;
 use crate::services::auth::tenants::service::TenantsService;
@@ -88,10 +89,7 @@ impl UsersService {
         &self,
         email: &str,
     ) -> Result<(ObjectId, ObjectId), UserError> {
-        let email = email.trim().to_lowercase();
-        if !email.contains('@') || email.len() < 5 {
-            return Err(UserError::InvalidEmail);
-        }
+        let email = validate_email(email).map_err(|_| UserError::InvalidEmail)?;
 
         let tenant_id = self
             .tenants_service
@@ -125,11 +123,7 @@ impl UsersService {
         resend_api_key: &str,
         resend_from_email: &str,
     ) -> Result<SignupResult, UserError> {
-        let email = email.trim().to_lowercase();
-
-        if !email.contains('@') || email.len() < 5 {
-            return Err(UserError::InvalidEmail);
-        }
+        let email = validate_email(email).map_err(|_| UserError::InvalidEmail)?;
 
         // Check if already exists
         if let Some(existing) = self
@@ -236,11 +230,7 @@ impl UsersService {
         resend_api_key: &str,
         resend_from_email: &str,
     ) -> Result<InviteResult, UserError> {
-        let email = email.trim().to_lowercase();
-
-        if !email.contains('@') || email.len() < 5 {
-            return Err(UserError::InvalidEmail);
-        }
+        let email = validate_email(email).map_err(|_| UserError::InvalidEmail)?;
 
         if self
             .users_repo

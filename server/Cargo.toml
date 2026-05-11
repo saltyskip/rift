@@ -50,6 +50,7 @@ clap = { version = "4", features = ["derive"] }
 cached = { version = "0.54", features = ["async"] }
 dashmap = "6"
 url = "2"
+email_address = "0.2"
 hmac = "0.12"
 futures = "0.3"
 rmcp = { version = "1.2", features = ["server", "transport-streamable-http-server"], optional = true }

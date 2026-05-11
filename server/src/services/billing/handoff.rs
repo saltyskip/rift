@@ -16,6 +16,7 @@ use mongodb::bson::doc;
 use serde::Deserialize;
 
 use crate::core::rate_limit::RateLimiter;
+use crate::core::validation::validate_email;
 use crate::services::auth::tenants::repo::{PlanTier, TenantsRepository};
 use crate::services::billing::email as billing_email;
 use crate::services::billing::stripe_client::{
@@ -160,13 +161,10 @@ impl BillingHandoffService {
             return Err(BillingHandoffError::RateLimited);
         }
 
-        let email = email_raw.trim().to_lowercase();
-        if !email.contains('@') || email.len() < 5 {
-            return Err(BillingHandoffError::Invalid {
-                code: "invalid_email",
-                message: "Invalid email".to_string(),
-            });
-        }
+        let email = validate_email(email_raw).map_err(|_| BillingHandoffError::Invalid {
+            code: "invalid_email",
+            message: "Invalid email".to_string(),
+        })?;
 
         let intent = parse_intent(intent_raw)?;
         let tier = parse_subscribe_tier(intent, tier_raw)?;
