@@ -12,6 +12,11 @@ pub enum WebhookEventType {
     /// Fired when a conversion event is ingested via a source webhook.
     /// Carries a stable `event_id` so customer handlers can dedup on retries.
     Conversion,
+    /// Fired when `PUT /v1/attribution/identify` successfully binds an
+    /// install to a user and a prior attribution exists. Payload carries the
+    /// resolved triple `{user_id, link_id, link_metadata}` so receivers can
+    /// react (grant entitlements, etc.) without a follow-up Link lookup.
+    Identify,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
