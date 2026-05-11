@@ -22,8 +22,6 @@ server/          Rust + Axum API server (MongoDB, Sentry)
 client/mobile/   Swift/Kotlin mobile SDK via UniFFI
 sdk/web/         TypeScript web SDK (ESM/CJS/IIFE)
 marketing/       Next.js documentation and marketing site
-worker/          Cloudflare Worker for custom domain routing (legacy, optional)
-worker-slack/    Cloudflare Worker for Slack webhook proxy
 ```
 
 The server separates **domain logic** (`services/`) from **transport layers** (`api/` for HTTP, `mcp/` for MCP protocol). Both transports share the same services, repos, and models. `AppState` lives in `app.rs`.
