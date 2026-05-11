@@ -308,7 +308,9 @@ async fn fire_identify_event(
         Ok(Some(a)) => a,
         Ok(None) => {
             tracing::warn!(
-                user_id, install_id, "identify webhook: attribution vanished post-bind"
+                user_id,
+                install_id,
+                "identify webhook: attribution vanished post-bind"
             );
             return;
         }
