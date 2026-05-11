@@ -19,7 +19,7 @@ use crate::services::conversions::parsers;
 #[utoipa::path(
     post,
     path = "/v1/sources",
-    tag = "Conversions",
+    tag = "Sources",
     request_body = CreateSourceRequest,
     responses(
         (status = 201, description = "Source created", body = CreateSourceResponse),
@@ -92,7 +92,7 @@ pub async fn create_source(
 #[utoipa::path(
     get,
     path = "/v1/sources",
-    tag = "Conversions",
+    tag = "Sources",
     responses(
         (status = 200, description = "List of sources", body = ListSourcesResponse),
     ),
@@ -148,7 +148,7 @@ pub async fn list_sources(
 #[utoipa::path(
     get,
     path = "/v1/sources/{id}",
-    tag = "Conversions",
+    tag = "Sources",
     params(("id" = String, Path, description = "Source ID")),
     responses(
         (status = 200, description = "Source detail", body = SourceDetail),
@@ -201,7 +201,7 @@ pub async fn get_source(
 #[utoipa::path(
     delete,
     path = "/v1/sources/{id}",
-    tag = "Conversions",
+    tag = "Sources",
     params(("id" = String, Path, description = "Source ID")),
     responses(
         (status = 204, description = "Deleted"),
@@ -314,7 +314,7 @@ pub async fn receive_webhook(
 #[utoipa::path(
     post,
     path = "/v1/attribution/convert",
-    tag = "Conversions",
+    tag = "Attribution",
     request_body = SdkConversionRequest,
     responses(
         (status = 200, description = "Event processed"),

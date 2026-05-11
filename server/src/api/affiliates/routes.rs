@@ -172,11 +172,10 @@ pub async fn delete_affiliate(
 
 // ── Affiliate credentials (scoped rl_live_… keys) ──
 
-/// Mint a new partner-scoped `rl_live_…` API key for this affiliate.
-///
-/// The key is returned ONCE in `api_key`. Store it out-of-band — Rift never
-/// reveals it again. The caller's key must have full tenant scope; affiliate
-/// keys cannot mint additional credentials.
+// Mint a new partner-scoped rl_live_… API key for this affiliate.
+// The key is returned ONCE in `api_key`. Store it out-of-band — Rift never
+// reveals it again. The caller's key must have full tenant scope; affiliate
+// keys cannot mint additional credentials.
 #[utoipa::path(
     post,
     path = "/v1/affiliates/{affiliate_id}/credentials",
