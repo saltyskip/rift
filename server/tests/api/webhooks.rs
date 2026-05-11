@@ -265,6 +265,100 @@ async fn attribution_dispatches_webhook() {
 }
 
 #[tokio::test]
+async fn identify_dispatches_webhook_with_link_metadata() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    // Create a link with bonus-campaign metadata. The receiver dispatch
+    // contract is: whatever was on `Link.metadata` at fire time is
+    // serialized verbatim into the `identify` event payload.
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "welcome-link",
+            "web_url": "https://example.com",
+            "metadata": {
+                "bonus_type": "welcome",
+                "bonus_amount_usdc": 10,
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    // Establish the prior attribution that identify will bind to.
+    app.client
+        .post(app.url("/v1/attribution/install"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "link_id": "welcome-link",
+            "install_id": "install-id-7",
+            "app_version": "1.0.0"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Bind the install to a user — this is the moment the `identify`
+    // event should fire.
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/identify"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "install-id-7",
+            "user_id": "user-abc",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let events = app.webhook_dispatcher.identify_payloads.lock().unwrap();
+    assert_eq!(events.len(), 1, "expected exactly one identify event");
+    let evt = &events[0];
+    assert_eq!(evt.tenant_id, tenant_id.to_hex());
+    assert_eq!(evt.user_id, "user-abc");
+    assert_eq!(evt.link_id, "welcome-link");
+    assert_eq!(evt.install_id, "install-id-7");
+
+    let metadata = evt
+        .link_metadata
+        .as_ref()
+        .expect("link_metadata should be populated from Link.metadata");
+    assert_eq!(metadata["bonus_type"], "welcome");
+    assert_eq!(metadata["bonus_amount_usdc"], 10);
+}
+
+#[tokio::test]
+async fn identify_without_prior_attribution_does_not_dispatch() {
+    let app = common::spawn_app().await;
+    let (_, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/identify"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "never-installed",
+            "user_id": "user-xyz",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+
+    let events = app.webhook_dispatcher.identify_payloads.lock().unwrap();
+    assert_eq!(events.len(), 0);
+}
+
+#[tokio::test]
 async fn patch_webhook_toggles_active() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;

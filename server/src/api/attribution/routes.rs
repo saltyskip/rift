@@ -15,7 +15,9 @@ use std::sync::Arc;
 use crate::api::auth::models::{SdkDomain, TenantId};
 use crate::api::links::routes::{check_link_resolvable, detect_platform, Platform};
 use crate::app::AppState;
-use crate::core::webhook_dispatcher::{AttributionEventPayload, ClickEventPayload};
+use crate::core::webhook_dispatcher::{
+    AttributionEventPayload, ClickEventPayload, IdentifyEventPayload,
+};
 use crate::services::links::models::{
     AttributionReportRequest, AttributionResponse, ClickRequest, LinkAttributionRequest,
 };
@@ -261,7 +263,15 @@ pub async fn link_attribution(
         .await;
 
     match linked {
-        Ok(true) => Json(json!({ "success": true })).into_response(),
+        Ok(true) => {
+            // Fire the `identify` webhook so receivers can react to the
+            // newly-bound (user_id, link_id) pair (e.g. credit the user for
+            // a welcome bonus campaign). Failures here are non-fatal — the
+            // attribution bind already succeeded and is the load-bearing
+            // outcome; webhook dispatch is best-effort.
+            fire_identify_event(&state, &tenant.0, &req.install_id, &req.user_id).await;
+            Json(json!({ "success": true })).into_response()
+        }
         Ok(false) => (
             StatusCode::NOT_FOUND,
             Json(
@@ -278,4 +288,67 @@ pub async fn link_attribution(
                 .into_response()
         }
     }
+}
+
+/// Resolve the attribution + link, then dispatch the `identify` webhook with
+/// the full `{user_id, link_id, link_metadata}` triple. Logs and returns on
+/// any anomaly — the attribution write has already committed, so a missing
+/// link or absent metadata is a soft warning, not an error path.
+async fn fire_identify_event(
+    state: &Arc<AppState>,
+    tenant_id: &mongodb::bson::oid::ObjectId,
+    install_id: &str,
+    user_id: &str,
+) {
+    let (Some(repo), Some(dispatcher)) = (&state.links_repo, &state.webhook_dispatcher) else {
+        return;
+    };
+
+    let attribution = match repo.find_attribution_by_user(tenant_id, user_id).await {
+        Ok(Some(a)) => a,
+        Ok(None) => {
+            tracing::warn!(
+                user_id,
+                install_id,
+                "identify webhook: attribution vanished post-bind"
+            );
+            return;
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "identify webhook: failed to look up attribution");
+            return;
+        }
+    };
+
+    let link = match repo
+        .find_link_by_tenant_and_id(tenant_id, &attribution.link_id)
+        .await
+    {
+        Ok(Some(l)) => l,
+        Ok(None) => {
+            tracing::warn!(
+                link_id = %attribution.link_id,
+                "identify webhook: link missing for attribution"
+            );
+            return;
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "identify webhook: failed to load link");
+            return;
+        }
+    };
+
+    let link_metadata = link
+        .metadata
+        .as_ref()
+        .and_then(|d| serde_json::to_value(d).ok());
+
+    dispatcher.dispatch_identify(IdentifyEventPayload {
+        tenant_id: tenant_id.to_hex(),
+        user_id: user_id.to_string(),
+        link_id: attribution.link_id,
+        install_id: install_id.to_string(),
+        link_metadata,
+        timestamp: Utc::now().to_rfc3339(),
+    });
 }

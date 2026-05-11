@@ -7,8 +7,8 @@ use sha2::Sha256;
 use super::models::{Webhook, WebhookEventType};
 use super::repo::WebhooksRepository;
 use crate::core::webhook_dispatcher::{
-    AttributionEventPayload, ClickEventPayload, ConversionEventPayload, WebhookDispatcher,
-    WebhookPayload,
+    AttributionEventPayload, ClickEventPayload, ConversionEventPayload, IdentifyEventPayload,
+    WebhookDispatcher, WebhookPayload,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -123,6 +123,18 @@ impl WebhookDispatcher for RiftWebhookDispatcher {
         self.dispatch_event(
             WebhookEventType::Conversion,
             "conversion",
+            tenant_id,
+            timestamp,
+            payload,
+        );
+    }
+
+    fn dispatch_identify(&self, payload: IdentifyEventPayload) {
+        let tenant_id = payload.tenant_id.clone();
+        let timestamp = payload.timestamp.clone();
+        self.dispatch_event(
+            WebhookEventType::Identify,
+            "identify",
             tenant_id,
             timestamp,
             payload,
