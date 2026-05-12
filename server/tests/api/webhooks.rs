@@ -359,6 +359,77 @@ async fn identify_without_prior_attribution_does_not_dispatch() {
 }
 
 #[tokio::test]
+async fn identify_idempotent_rebind_does_not_refire_webhook() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "welcome-rebind",
+            "web_url": "https://example.com",
+            "metadata": { "bonus_type": "welcome", "bonus_amount_usdc": 10 }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/attribution/install"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "link_id": "welcome-rebind",
+            "install_id": "install-rebind-1",
+            "app_version": "1.0.0"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // First identify → real bind, webhook fires.
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/identify"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "install-rebind-1",
+            "user_id": "user-rebind",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Second identify with the SAME install_id + user_id — SDK retries on
+    // launch. Bind is a no-op; the webhook must NOT re-fire, otherwise
+    // receivers (e.g. welcome-bonus crediting) double-grant on every
+    // launch the SDK decides to re-sync.
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/identify"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "install-rebind-1",
+            "user_id": "user-rebind",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let events = app.webhook_dispatcher.identify_payloads.lock().unwrap();
+    assert_eq!(
+        events.len(),
+        1,
+        "idempotent rebind must not re-fire the identify webhook"
+    );
+}
+
+#[tokio::test]
 async fn patch_webhook_toggles_active() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;

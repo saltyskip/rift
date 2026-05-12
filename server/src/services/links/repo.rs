@@ -10,8 +10,8 @@ use crate::ensure_index;
 use mongodb::bson::Document;
 
 use super::models::{
-    Attribution, BulkInsertError, ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus,
-    TimeseriesDataPoint,
+    Attribution, BindOutcome, BulkInsertError, ClickEvent, ClickMeta, CreateLinkInput, Link,
+    LinkStatus, TimeseriesDataPoint,
 };
 
 // ── Trait ──
@@ -91,7 +91,7 @@ pub trait LinksRepository: Send + Sync {
         tenant_id: &ObjectId,
         install_id: &str,
         user_id: &str,
-    ) -> Result<bool, String>;
+    ) -> Result<BindOutcome, String>;
 
     async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
 
@@ -524,10 +524,18 @@ impl LinksRepository for LinksRepo {
         tenant_id: &ObjectId,
         install_id: &str,
         user_id: &str,
-    ) -> Result<bool, String> {
-        let result = self
+    ) -> Result<BindOutcome, String> {
+        // `find_one_and_update` with `ReturnDocument::Before` lets us
+        // distinguish a new bind from an idempotent rebind in a single
+        // roundtrip: if `before.user_id == Some(user_id)`, this was a no-op
+        // and the webhook should NOT fire. The post-update state is
+        // trivially the Before doc with `user_id` overwritten to the
+        // incoming value, so we construct it in-memory instead of paying
+        // for a second query.
+        use mongodb::options::ReturnDocument;
+        let before = self
             .attributions
-            .update_one(
+            .find_one_and_update(
                 doc! {
                     "tenant_id": tenant_id,
                     "install_id": install_id,
@@ -539,9 +547,22 @@ impl LinksRepository for LinksRepo {
                 },
                 doc! { "$set": { "user_id": user_id } },
             )
+            .return_document(ReturnDocument::Before)
             .await
             .map_err(|e| e.to_string())?;
-        Ok(result.modified_count > 0 || result.matched_count > 0)
+
+        let Some(mut attribution) = before else {
+            return Ok(BindOutcome::NotFound);
+        };
+
+        let was_already_bound = attribution.user_id.as_deref() == Some(user_id);
+        attribution.user_id = Some(user_id.to_string());
+
+        Ok(if was_already_bound {
+            BindOutcome::AlreadyBound(attribution)
+        } else {
+            BindOutcome::NewBind(attribution)
+        })
     }
 
     async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
