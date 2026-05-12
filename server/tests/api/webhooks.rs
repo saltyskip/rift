@@ -407,3 +407,96 @@ async fn patch_webhook_toggles_active() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["active"], true);
 }
+
+#[tokio::test]
+async fn patch_webhook_replaces_events() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    // Create with one event.
+    let resp = app
+        .client
+        .post(app.url("/v1/webhooks"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "url": "https://example.com/webhook",
+            "events": ["click"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let webhook_id = body["id"].as_str().unwrap().to_string();
+
+    // Patch the event list — add identify + attribution, drop click.
+    let resp = app
+        .client
+        .patch(app.url(&format!("/v1/webhooks/{webhook_id}")))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "events": ["identify", "attribution"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["events"],
+        serde_json::json!(["identify", "attribution"])
+    );
+
+    // Patch with both `active` and `events` in one call.
+    let resp = app
+        .client
+        .patch(app.url(&format!("/v1/webhooks/{webhook_id}")))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "active": false, "events": ["conversion"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["active"], false);
+    assert_eq!(body["events"], serde_json::json!(["conversion"]));
+}
+
+#[tokio::test]
+async fn patch_webhook_rejects_empty_body() {
+    let app = common::spawn_app().await;
+    let (key, _) = common::seed_api_key(&app).await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/webhooks"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "url": "https://example.com/webhook",
+            "events": ["click"]
+        }))
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let webhook_id = body["id"].as_str().unwrap().to_string();
+
+    // No fields → 400.
+    let resp = app
+        .client
+        .patch(app.url(&format!("/v1/webhooks/{webhook_id}")))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+
+    // Empty events array → 400.
+    let resp = app
+        .client
+        .patch(app.url(&format!("/v1/webhooks/{webhook_id}")))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({ "events": [] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+}

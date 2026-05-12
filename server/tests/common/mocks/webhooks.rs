@@ -54,21 +54,28 @@ impl WebhooksRepository for MockWebhooksRepo {
         Ok(webhooks.len() < len_before)
     }
 
-    async fn set_active(
+    async fn update_webhook(
         &self,
         tenant_id: &ObjectId,
         webhook_id: &ObjectId,
-        active: bool,
+        active: Option<bool>,
+        events: Option<Vec<WebhookEventType>>,
     ) -> Result<bool, String> {
         let mut webhooks = self.webhooks.lock().unwrap();
-        if let Some(w) = webhooks
+        match webhooks
             .iter_mut()
             .find(|w| &w.tenant_id == tenant_id && &w.id == webhook_id)
         {
-            w.active = active;
-            Ok(true)
-        } else {
-            Ok(false)
+            Some(w) => {
+                if let Some(a) = active {
+                    w.active = a;
+                }
+                if let Some(e) = events {
+                    w.events = e;
+                }
+                Ok(true)
+            }
+            None => Ok(false),
         }
     }
 
