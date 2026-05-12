@@ -140,6 +140,29 @@ pub struct Attribution {
     pub attributed_at: DateTime,
 }
 
+/// Result of `LinksRepository::link_attribution_to_user`.
+///
+/// Distinguishes a real state change (`NewBind` — webhook should fire) from an
+/// idempotent replay where the install was already bound to this same user
+/// (`AlreadyBound` — no fire, otherwise subscribers double-credit). The
+/// returned `Attribution` reflects the post-update state so the caller can
+/// build the outbound payload without a second query.
+#[derive(Debug, Clone)]
+pub enum BindOutcome {
+    /// The bind changed state — `user_id` was previously absent or null and we
+    /// just set it. Fire the `identify` webhook.
+    NewBind(Attribution),
+    /// `install_id` was already bound to this same `user_id`. The route still
+    /// returns 200 but the webhook is suppressed. The Attribution is carried
+    /// for symmetry / future use even though the current handler doesn't read
+    /// it (silenced via `_` pattern).
+    #[allow(dead_code)]
+    AlreadyBound(Attribution),
+    /// No attribution matched. Either the `install_id` is unknown for this
+    /// tenant, or it's already bound to a different user — both surface as 404.
+    NotFound,
+}
+
 // ── Internal Types ──
 
 /// Parameters for creating a new link (passed to repository).

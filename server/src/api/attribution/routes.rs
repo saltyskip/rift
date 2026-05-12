@@ -19,7 +19,8 @@ use crate::core::webhook_dispatcher::{
     AttributionEventPayload, ClickEventPayload, IdentifyEventPayload,
 };
 use crate::services::links::models::{
-    AttributionReportRequest, AttributionResponse, ClickRequest, LinkAttributionRequest,
+    Attribution, AttributionReportRequest, AttributionResponse, BindOutcome, ClickRequest,
+    LinkAttributionRequest,
 };
 
 // ── POST /v1/attribution/click — SDK-authenticated click ──
@@ -258,21 +259,32 @@ pub async fn link_attribution(
             .into_response();
     };
 
-    let linked = repo
+    let outcome = repo
         .link_attribution_to_user(&tenant.0, &req.install_id, &req.user_id)
         .await;
 
-    match linked {
-        Ok(true) => {
-            // Fire the `identify` webhook so receivers can react to the
-            // newly-bound (user_id, link_id) pair (e.g. credit the user for
-            // a welcome bonus campaign). Failures here are non-fatal — the
-            // attribution bind already succeeded and is the load-bearing
-            // outcome; webhook dispatch is best-effort.
-            fire_identify_event(&state, &tenant.0, &req.install_id, &req.user_id).await;
+    match outcome {
+        Ok(BindOutcome::NewBind(attribution)) => {
+            // First-time bind for this install — fire the `identify` webhook
+            // so subscribers can react (credit the user for a welcome bonus
+            // campaign, etc.). Failures inside the fire-site are non-fatal:
+            // the bind already committed; webhook dispatch is best-effort.
+            fire_identify_event(&state, attribution).await;
             Json(json!({ "success": true })).into_response()
         }
-        Ok(false) => (
+        Ok(BindOutcome::AlreadyBound(_)) => {
+            // Idempotent replay — install was already bound to this same
+            // user_id. Return 200 (desired end state holds) but
+            // intentionally skip the webhook so subscribers don't
+            // double-fulfill credits / entitlements on SDK auto-retry.
+            tracing::debug!(
+                install_id = %req.install_id,
+                user_id = %req.user_id,
+                "identify already bound to this user; skipping webhook"
+            );
+            Json(json!({ "success": true })).into_response()
+        }
+        Ok(BindOutcome::NotFound) => (
             StatusCode::NOT_FOUND,
             Json(
                 json!({ "error": "No attribution found for this install_id", "code": "not_found" }),
@@ -290,38 +302,17 @@ pub async fn link_attribution(
     }
 }
 
-/// Resolve the attribution + link, then dispatch the `identify` webhook with
-/// the full `{user_id, link_id, link_metadata}` triple. Logs and returns on
-/// any anomaly — the attribution write has already committed, so a missing
-/// link or absent metadata is a soft warning, not an error path.
-async fn fire_identify_event(
-    state: &Arc<AppState>,
-    tenant_id: &mongodb::bson::oid::ObjectId,
-    install_id: &str,
-    user_id: &str,
-) {
+/// Load the link, then dispatch the `identify` webhook with the full
+/// `{user_id, link_id, link_metadata}` triple. The bind has already
+/// committed, so any anomaly here (missing link, etc.) is a soft warning
+/// rather than an error path.
+async fn fire_identify_event(state: &Arc<AppState>, attribution: Attribution) {
     let (Some(repo), Some(dispatcher)) = (&state.links_repo, &state.webhook_dispatcher) else {
         return;
     };
 
-    let attribution = match repo.find_attribution_by_user(tenant_id, user_id).await {
-        Ok(Some(a)) => a,
-        Ok(None) => {
-            tracing::warn!(
-                user_id,
-                install_id,
-                "identify webhook: attribution vanished post-bind"
-            );
-            return;
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "identify webhook: failed to look up attribution");
-            return;
-        }
-    };
-
     let link = match repo
-        .find_link_by_tenant_and_id(tenant_id, &attribution.link_id)
+        .find_link_by_tenant_and_id(&attribution.tenant_id, &attribution.link_id)
         .await
     {
         Ok(Some(l)) => l,
@@ -343,11 +334,16 @@ async fn fire_identify_event(
         .as_ref()
         .and_then(|d| serde_json::to_value(d).ok());
 
+    // `user_id` is always `Some` here — `BindOutcome::NewBind` is
+    // constructed post-update with `user_id` set. Defensive default keeps
+    // the contract local rather than panicking on a future refactor.
+    let user_id = attribution.user_id.clone().unwrap_or_default();
+
     dispatcher.dispatch_identify(IdentifyEventPayload {
-        tenant_id: tenant_id.to_hex(),
-        user_id: user_id.to_string(),
+        tenant_id: attribution.tenant_id.to_hex(),
+        user_id,
         link_id: attribution.link_id,
-        install_id: install_id.to_string(),
+        install_id: attribution.install_id,
         link_metadata,
         timestamp: Utc::now().to_rfc3339(),
     });

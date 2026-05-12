@@ -5,8 +5,8 @@ use std::sync::Mutex;
 
 use rift::services::links::models::BulkInsertError;
 use rift::services::links::models::{
-    Attribution as RealAttribution, ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus,
-    TimeseriesDataPoint,
+    Attribution as RealAttribution, BindOutcome, ClickEvent, ClickMeta, CreateLinkInput, Link,
+    LinkStatus, TimeseriesDataPoint,
 };
 use rift::services::links::repo::LinksRepository;
 
@@ -307,25 +307,35 @@ impl LinksRepository for MockLinksRepo {
         tenant_id: &ObjectId,
         install_id: &str,
         user_id: &str,
-    ) -> Result<bool, String> {
-        // Mirrors the real repo's re-bind protection: only update when user_id
-        // is None or already matches the new value. Never overwrite a different
-        // user_id with this method.
+    ) -> Result<BindOutcome, String> {
+        // Mirrors the real repo: distinguishes a fresh bind from an
+        // idempotent rebind so callers (the identify-webhook fire-site)
+        // can suppress the webhook in the idempotent case.
         let mut attrs = self.attributions.lock().unwrap();
-        if let Some(attr) = attrs
+        let Some(attr) = attrs
             .iter_mut()
             .find(|a| &a.tenant_id == tenant_id && a.install_id == install_id)
-        {
-            match attr.user_id.as_deref() {
-                None => {
-                    attr.user_id = Some(user_id.to_string());
-                    Ok(true)
-                }
-                Some(existing) if existing == user_id => Ok(true),
-                Some(_) => Ok(false),
+        else {
+            return Ok(BindOutcome::NotFound);
+        };
+
+        let real = |attr: &Attribution| RealAttribution {
+            id: ObjectId::new(),
+            tenant_id: attr.tenant_id,
+            link_id: attr.link_id.clone(),
+            install_id: attr.install_id.clone(),
+            user_id: Some(user_id.to_string()),
+            app_version: String::new(),
+            attributed_at: DateTime::now(),
+        };
+
+        match attr.user_id.as_deref() {
+            None => {
+                attr.user_id = Some(user_id.to_string());
+                Ok(BindOutcome::NewBind(real(attr)))
             }
-        } else {
-            Ok(false)
+            Some(existing) if existing == user_id => Ok(BindOutcome::AlreadyBound(real(attr))),
+            Some(_) => Ok(BindOutcome::NotFound),
         }
     }
 

@@ -271,11 +271,20 @@ impl LinksRepository for MockLinksRepo {
 
     async fn link_attribution_to_user(
         &self,
-        _tenant_id: &ObjectId,
-        _install_id: &str,
-        _user_id: &str,
-    ) -> Result<bool, String> {
-        Ok(true)
+        tenant_id: &ObjectId,
+        install_id: &str,
+        user_id: &str,
+    ) -> Result<crate::services::links::models::BindOutcome, String> {
+        use crate::services::links::models::{Attribution, BindOutcome};
+        Ok(BindOutcome::NewBind(Attribution {
+            id: ObjectId::new(),
+            tenant_id: *tenant_id,
+            link_id: String::new(),
+            install_id: install_id.to_string(),
+            user_id: Some(user_id.to_string()),
+            app_version: String::new(),
+            attributed_at: mongodb::bson::DateTime::now(),
+        }))
     }
 
     async fn count_attributions(
