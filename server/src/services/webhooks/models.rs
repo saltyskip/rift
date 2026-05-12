@@ -76,8 +76,14 @@ pub struct ListWebhooksResponse {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateWebhookRequest {
+    /// Enable / disable delivery. Omit to leave unchanged.
+    #[serde(default)]
     #[schema(example = false)]
-    pub active: bool,
+    pub active: Option<bool>,
+    /// Replace the subscribed event types. Omit to leave unchanged; pass
+    /// an empty array to reject (must subscribe to at least one event).
+    #[serde(default)]
+    pub events: Option<Vec<WebhookEventType>>,
 }
 
 // ── Errors ──

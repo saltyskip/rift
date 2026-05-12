@@ -223,7 +223,33 @@ pub async fn patch_webhook(
             .into_response();
     };
 
-    match repo.set_active(&tenant.0, &oid, req.active).await {
+    if req.active.is_none() && req.events.is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "must specify at least one of `active` or `events`",
+                "code": "bad_request"
+            })),
+        )
+            .into_response();
+    }
+    if let Some(events) = req.events.as_ref() {
+        if events.is_empty() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "events must contain at least one entry",
+                    "code": "bad_request"
+                })),
+            )
+                .into_response();
+        }
+    }
+
+    match repo
+        .update_webhook(&tenant.0, &oid, req.active, req.events)
+        .await
+    {
         Ok(true) => {
             // Fetch updated webhook to return.
             let webhooks = repo.list_by_tenant(&tenant.0).await.unwrap_or_default();

@@ -17,11 +17,16 @@ pub trait WebhooksRepository: Send + Sync {
         tenant_id: &ObjectId,
         webhook_id: &ObjectId,
     ) -> Result<bool, String>;
-    async fn set_active(
+    /// Patch one or more mutable fields. `Some` overwrites; `None` leaves
+    /// the field unchanged. Returns `true` when the webhook existed for
+    /// this tenant (even if no fields were actually different — the
+    /// "matched but unchanged" case is success for an idempotent PATCH).
+    async fn update_webhook(
         &self,
         tenant_id: &ObjectId,
         webhook_id: &ObjectId,
-        active: bool,
+        active: Option<bool>,
+        events: Option<Vec<WebhookEventType>>,
     ) -> Result<bool, String>;
     async fn find_active_for_event(
         &self,
@@ -96,17 +101,38 @@ impl WebhooksRepository for WebhooksRepo {
         Ok(result.deleted_count > 0)
     }
 
-    async fn set_active(
+    async fn update_webhook(
         &self,
         tenant_id: &ObjectId,
         webhook_id: &ObjectId,
-        active: bool,
+        active: Option<bool>,
+        events: Option<Vec<WebhookEventType>>,
     ) -> Result<bool, String> {
+        let mut set_doc = mongodb::bson::Document::new();
+        if let Some(a) = active {
+            set_doc.insert("active", a);
+        }
+        if let Some(e) = events {
+            let bson = mongodb::bson::to_bson(&e).map_err(|err| err.to_string())?;
+            set_doc.insert("events", bson);
+        }
+        // No-op patches still need to confirm the webhook exists so the
+        // route can return 404 vs 200 correctly. Use find_one in that
+        // case; otherwise issue the $set.
+        if set_doc.is_empty() {
+            let exists = self
+                .webhooks
+                .find_one(doc! { "_id": webhook_id, "tenant_id": tenant_id })
+                .await
+                .map_err(|e| e.to_string())?
+                .is_some();
+            return Ok(exists);
+        }
         let result = self
             .webhooks
             .update_one(
                 doc! { "_id": webhook_id, "tenant_id": tenant_id },
-                doc! { "$set": { "active": active } },
+                doc! { "$set": set_doc },
             )
             .await
             .map_err(|e| e.to_string())?;
