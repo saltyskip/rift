@@ -223,11 +223,11 @@ pub async fn patch_webhook(
             .into_response();
     };
 
-    if req.active.is_none() && req.events.is_none() {
+    if req.active.is_none() && req.events.is_none() && req.url.is_none() {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({
-                "error": "must specify at least one of `active` or `events`",
+                "error": "must specify at least one of `active`, `events`, or `url`",
                 "code": "bad_request"
             })),
         )
@@ -245,9 +245,18 @@ pub async fn patch_webhook(
                 .into_response();
         }
     }
+    if let Some(url) = req.url.as_ref() {
+        if let Err(e) = validate_webhook_url(url) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": e, "code": "invalid_url" })),
+            )
+                .into_response();
+        }
+    }
 
     match repo
-        .update_webhook(&tenant.0, &oid, req.active, req.events)
+        .update_webhook(&tenant.0, &oid, req.active, req.events, req.url)
         .await
     {
         Ok(true) => {

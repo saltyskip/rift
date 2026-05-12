@@ -27,6 +27,7 @@ pub trait WebhooksRepository: Send + Sync {
         webhook_id: &ObjectId,
         active: Option<bool>,
         events: Option<Vec<WebhookEventType>>,
+        url: Option<String>,
     ) -> Result<bool, String>;
     async fn find_active_for_event(
         &self,
@@ -107,6 +108,7 @@ impl WebhooksRepository for WebhooksRepo {
         webhook_id: &ObjectId,
         active: Option<bool>,
         events: Option<Vec<WebhookEventType>>,
+        url: Option<String>,
     ) -> Result<bool, String> {
         let mut set_doc = mongodb::bson::Document::new();
         if let Some(a) = active {
@@ -115,6 +117,9 @@ impl WebhooksRepository for WebhooksRepo {
         if let Some(e) = events {
             let bson = mongodb::bson::to_bson(&e).map_err(|err| err.to_string())?;
             set_doc.insert("events", bson);
+        }
+        if let Some(u) = url {
+            set_doc.insert("url", u);
         }
         // No-op patches still need to confirm the webhook exists so the
         // route can return 404 vs 200 correctly. Use find_one in that

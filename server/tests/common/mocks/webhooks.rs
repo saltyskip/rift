@@ -60,6 +60,7 @@ impl WebhooksRepository for MockWebhooksRepo {
         webhook_id: &ObjectId,
         active: Option<bool>,
         events: Option<Vec<WebhookEventType>>,
+        url: Option<String>,
     ) -> Result<bool, String> {
         let mut webhooks = self.webhooks.lock().unwrap();
         match webhooks
@@ -72,6 +73,9 @@ impl WebhooksRepository for MockWebhooksRepo {
                 }
                 if let Some(e) = events {
                     w.events = e;
+                }
+                if let Some(u) = url {
+                    w.url = u;
                 }
                 Ok(true)
             }
