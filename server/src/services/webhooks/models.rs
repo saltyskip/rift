@@ -84,6 +84,13 @@ pub struct UpdateWebhookRequest {
     /// an empty array to reject (must subscribe to at least one event).
     #[serde(default)]
     pub events: Option<Vec<WebhookEventType>>,
+    /// Replace the delivery URL. Must be HTTPS with a host. Omit to leave
+    /// unchanged. The signing secret is NOT rotated — patching URL keeps
+    /// the existing secret intact, which is the whole point versus
+    /// delete + recreate.
+    #[serde(default)]
+    #[schema(example = "https://api.example.com/webhooks/rift")]
+    pub url: Option<String>,
 }
 
 // ── Errors ──
