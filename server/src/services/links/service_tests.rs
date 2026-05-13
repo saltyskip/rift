@@ -295,6 +295,10 @@ impl LinksRepository for MockLinksRepo {
         Ok(0)
     }
 
+    async fn count_identifies(&self, _tenant_id: &ObjectId, _link_id: &str) -> Result<u64, String> {
+        Ok(0)
+    }
+
     async fn find_attribution_by_user(
         &self,
         _tenant_id: &ObjectId,

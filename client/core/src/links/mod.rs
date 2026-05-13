@@ -62,7 +62,8 @@ pub struct LinkStatsResponse {
     pub link_id: String,
     pub click_count: u64,
     pub install_count: u64,
-    pub conversion_rate: f64,
+    pub identify_count: u64,
+    pub convert_count: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

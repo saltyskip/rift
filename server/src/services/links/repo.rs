@@ -95,6 +95,11 @@ pub trait LinksRepository: Send + Sync {
 
     async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
 
+    /// Count attribution rows for `(tenant, link)` whose `user_id` has been
+    /// bound — i.e. installs that progressed through `PUT /v1/attribution/identify`.
+    /// `identify_count` in the stats response.
+    async fn count_identifies(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
+
     /// Find the Attribution record for a given `user_id` within a tenant. Used
     /// by the conversion ingestion path to resolve `user_id → link_id` so events
     /// can be attributed back to the link that drove the install.
@@ -568,6 +573,20 @@ impl LinksRepository for LinksRepo {
     async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
         self.attributions
             .count_documents(doc! { "tenant_id": tenant_id, "link_id": link_id })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn count_identifies(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
+        // `user_id` is unset at install time and `$set` populated by
+        // `link_attribution_to_user`. Rows with a non-null `user_id` are
+        // exactly the installs that completed identify.
+        self.attributions
+            .count_documents(doc! {
+                "tenant_id": tenant_id,
+                "link_id": link_id,
+                "user_id": { "$ne": null },
+            })
             .await
             .map_err(|e| e.to_string())
     }
