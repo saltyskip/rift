@@ -482,7 +482,8 @@ lifecycleScope.launch {
   "link_id": "summer-sale",
   "click_count": 1234,
   "install_count": 89,
-  "conversion_rate": 0.072,
+  "identify_count": 73,
+  "convert_count": 61,
   "conversions": [
     { "conversion_type": "deposit", "count": 19 },
     { "conversion_type": "signup", "count": 42 }

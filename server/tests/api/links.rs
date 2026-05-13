@@ -645,6 +645,102 @@ async fn get_link_stats() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["link_id"], "stats-test");
     assert_eq!(body["click_count"], 1);
+    // Counters present and at expected baseline for a fresh link.
+    assert_eq!(body["install_count"], 0);
+    assert_eq!(body["identify_count"], 0);
+    assert_eq!(body["convert_count"], 0);
+    // `conversion_rate` was removed — make sure it doesn't sneak back.
+    assert!(
+        body.get("conversion_rate").is_none(),
+        "conversion_rate should be gone from the stats response"
+    );
+}
+
+#[tokio::test]
+async fn stats_counts_installs_identifies_and_converts_independently() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+    let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    // Create link.
+    let resp = app
+        .client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "funnel-test",
+            "web_url": "https://example.com"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+
+    // Two installs.
+    for install_id in ["install-a", "install-b"] {
+        let resp = app
+            .client
+            .post(app.url("/v1/attribution/install"))
+            .header("Authorization", format!("Bearer {sdk_key}"))
+            .json(&serde_json::json!({
+                "link_id": "funnel-test",
+                "install_id": install_id,
+                "app_version": "1.0.0",
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+    }
+
+    // Only one of them identifies.
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/identify"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "install-a",
+            "user_id": "usr_a",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    // Idempotent re-identify must not double-count.
+    let resp = app
+        .client
+        .put(app.url("/v1/attribution/identify"))
+        .header("Authorization", format!("Bearer {sdk_key}"))
+        .json(&serde_json::json!({
+            "install_id": "install-a",
+            "user_id": "usr_a",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let resp = app
+        .client
+        .get(app.url("/v1/links/funnel-test/stats"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["install_count"], 2, "two installs were reported");
+    assert_eq!(
+        body["identify_count"], 1,
+        "only one install was bound to a user (idempotent rebind doesn't double-count)"
+    );
+    assert_eq!(
+        body["convert_count"], 0,
+        "no conversions fired in this test"
+    );
 }
 
 #[tokio::test]

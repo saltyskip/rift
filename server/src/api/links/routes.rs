@@ -276,16 +276,15 @@ pub async fn get_link_stats(
         .count_attributions(&tenant.0, &link_id)
         .await
         .unwrap_or(0);
-    let conversion_rate = if click_count > 0 {
-        install_count as f64 / click_count as f64
-    } else {
-        0.0
-    };
+    let identify_count = repo
+        .count_identifies(&tenant.0, &link_id)
+        .await
+        .unwrap_or(0);
 
     // Conversions are optional — if the repo isn't configured (no DB) or the
     // aggregation fails, return an empty list rather than failing the whole
-    // stats response. The click/install counters above are the load-bearing
-    // fields; conversions are additive.
+    // stats response. The counters above are the load-bearing fields;
+    // conversions are additive.
     let conversions = if let Some(conv_repo) = &state.conversions_repo {
         conv_repo
             .get_conversion_counts_for_link(&tenant.0, &link_id)
@@ -294,12 +293,14 @@ pub async fn get_link_stats(
     } else {
         Vec::new()
     };
+    let convert_count: u64 = conversions.iter().map(|c| c.count).sum();
 
     Json(json!({
         "link_id": link_id,
         "click_count": click_count,
         "install_count": install_count,
-        "conversion_rate": conversion_rate,
+        "identify_count": identify_count,
+        "convert_count": convert_count,
         "conversions": conversions,
     }))
     .into_response()

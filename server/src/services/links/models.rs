@@ -512,9 +512,16 @@ pub struct LinkStatsResponse {
     pub click_count: u64,
     #[schema(example = 312)]
     pub install_count: u64,
-    #[schema(example = 21.97)]
-    pub conversion_rate: f64,
-    /// Aggregated conversion counts and sums per type. Empty when conversion
+    /// Installs that progressed through `PUT /v1/attribution/identify` — i.e.
+    /// the user_id is bound to the install. `identify` is the deterministic
+    /// join in the attribution funnel.
+    #[schema(example = 198)]
+    pub identify_count: u64,
+    /// Sum of conversion events across all types for this link. The
+    /// per-type breakdown lives in `conversions`.
+    #[schema(example = 47)]
+    pub convert_count: u64,
+    /// Aggregated conversion counts per type. Empty when conversion
     /// tracking is not configured or no events have been recorded.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub conversions: Vec<crate::services::conversions::models::ConversionDetail>,

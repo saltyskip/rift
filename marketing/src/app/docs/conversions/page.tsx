@@ -227,7 +227,8 @@ rift.setUserId("usr_abc123")`}</CodeBlock>
   "link_id": "summer-sale",
   "click_count": 1420,
   "install_count": 340,
-  "conversion_rate": 0.239,
+  "identify_count": 198,
+  "convert_count": 110,
   "conversions": [
     { "conversion_type": "deposit", "count": 19 },
     { "conversion_type": "signup", "count": 91 }
