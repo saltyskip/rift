@@ -231,7 +231,7 @@ pub async fn delete_link(
     }
 }
 
-// ── GET /v1/links/{link_id}/stats — Conversion stats (authenticated) ──
+// ── GET /v1/links/{link_id}/stats — Funnel stats: click / install / identify / convert ──
 
 #[utoipa::path(
     get,
