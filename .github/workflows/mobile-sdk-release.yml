@@ -187,33 +187,20 @@ jobs:
           mv artifacts/ios-sdk.tar.gz "artifacts/rift-ios-sdk-${TAG}.tar.gz"
           mv artifacts/android-sdk.tar.gz "artifacts/rift-android-sdk-${TAG}.tar.gz"
 
-      - name: Create GitHub Release
-        if: steps.version.outputs.release_exists != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: "Rift Mobile SDK ${{ steps.version.outputs.tag }}"
-          make_latest: false
-          body: |
-            ## Rift Mobile SDK Release
-
-            ### iOS (Swift Package Manager)
-            Add `https://github.com/saltyskip/rift` as a Swift package in Xcode. It will resolve automatically.
-
-            ### iOS (Manual)
-            Download `rift-ios-sdk-${{ steps.version.outputs.tag }}.tar.gz`, extract, and add as a local Swift package.
-
-            ### Android (Gradle)
-            Download `rift-android-sdk-${{ steps.version.outputs.tag }}.tar.gz`, extract into your project.
-            Contains: jniLibs (arm64-v8a, armeabi-v7a, x86, x86_64), Kotlin bindings, `build.gradle.kts`
-          files: |
-            artifacts/rift-ios-sdk-${{ steps.version.outputs.tag }}.tar.gz
-            artifacts/rift-android-sdk-${{ steps.version.outputs.tag }}.tar.gz
-            artifacts/rift_ffiFFI.xcframework.zip
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+      # IMPORTANT — order matters here. Both the release tag and the SPM
+      # semver tag must point at the commit that has the URL+checksum
+      # baked into `Package.swift`. Otherwise SPM consumers who pin by
+      # the release tag get a Package.swift that still references the
+      # PREVIOUS release's xcframework URL, and the binary they download
+      # at resolve time produces a UniFFI `apiChecksumMismatch` because
+      # the symbol checksums in the new Swift bindings don't match the
+      # old binary.
+      #
+      # Sequence:
+      #   1. Update Package.swift + Swift sources, commit, push.
+      #   2. Create release with `target_commitish` set to the post-
+      #      commit SHA so the release tag attaches there.
+      #   3. Create the semver tag at the same SHA.
       - name: Update Package.swift and Swift sources
         id: package
         if: steps.version.outputs.release_exists != 'true'
@@ -239,6 +226,36 @@ jobs:
           git commit -m "Update Package.swift and Swift sources for ${TAG}" || echo "No changes"
           git push
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.release_exists != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          # Anchor the release tag to the commit that contains the
+          # URL+checksum update — NOT the workflow's checkout HEAD.
+          target_commitish: ${{ steps.package.outputs.sha }}
+          name: "Rift Mobile SDK ${{ steps.version.outputs.tag }}"
+          make_latest: false
+          body: |
+            ## Rift Mobile SDK Release
+
+            ### iOS (Swift Package Manager)
+            Add `https://github.com/saltyskip/rift` as a Swift package in Xcode. It will resolve automatically.
+
+            ### iOS (Manual)
+            Download `rift-ios-sdk-${{ steps.version.outputs.tag }}.tar.gz`, extract, and add as a local Swift package.
+
+            ### Android (Gradle)
+            Download `rift-android-sdk-${{ steps.version.outputs.tag }}.tar.gz`, extract into your project.
+            Contains: jniLibs (arm64-v8a, armeabi-v7a, x86, x86_64), Kotlin bindings, `build.gradle.kts`
+          files: |
+            artifacts/rift-ios-sdk-${{ steps.version.outputs.tag }}.tar.gz
+            artifacts/rift-android-sdk-${{ steps.version.outputs.tag }}.tar.gz
+            artifacts/rift_ffiFFI.xcframework.zip
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
