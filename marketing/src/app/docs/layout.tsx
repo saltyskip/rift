@@ -33,7 +33,7 @@ const NAV = [
     items: [
       { label: "iOS SDK", href: "/docs/ios-sdk" },
       { label: "Android SDK", href: "/docs/android-sdk" },
-      { label: "Attribution", href: "/docs/attribution" },
+      { label: "Lifecycle", href: "/docs/lifecycle" },
       { label: "Conversions", href: "/docs/conversions" },
       { label: "Webhooks", href: "/docs/webhooks" },
     ],

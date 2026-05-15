@@ -1,0 +1,4 @@
+module rift_ffiFFI {
+    header "rift_ffiFFI.h"
+    export *
+}

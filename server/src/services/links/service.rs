@@ -103,6 +103,43 @@ impl LinksService {
         }
     }
 
+    /// Record a `/lifecycle/attribute` event. Runs the `TrackEvent` quota
+    /// gate, resolves the tenant's retention bucket, then delegates to the
+    /// repository (which inserts the immutable time-series event and
+    /// upserts the install's first-touch state in one logical step).
+    ///
+    /// Returned `AttributeOutcome` distinguishes first-touch from retouch;
+    /// both carry the install row so the route handler can build the
+    /// outbound webhook payload (including `user_id` if already bound).
+    pub async fn record_attribute_event(
+        &self,
+        tenant_id: ObjectId,
+        link_id: &str,
+        install_id: &str,
+        app_version: &str,
+    ) -> Result<AttributeOutcome, String> {
+        if let Some(q) = &self.quota {
+            if let Err(e) = q.check(&tenant_id, Resource::TrackEvent).await {
+                tracing::info!(error = %e, "attribute_track_quota_skipped");
+            }
+        }
+
+        let retention_bucket = match &self.tiers {
+            Some(b) => b.retention_bucket_for_tenant(&tenant_id).await.to_string(),
+            None => "30d".to_string(),
+        };
+
+        self.links_repo
+            .record_attribute_event(
+                tenant_id,
+                link_id,
+                install_id,
+                app_version,
+                retention_bucket,
+            )
+            .await
+    }
+
     #[tracing::instrument(skip(self, req, caller_scope))]
     pub async fn create_link(
         &self,

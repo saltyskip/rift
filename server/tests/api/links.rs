@@ -681,7 +681,7 @@ async fn stats_counts_installs_identifies_and_converts_independently() {
     for install_id in ["install-a", "install-b"] {
         let resp = app
             .client
-            .post(app.url("/v1/attribution/install"))
+            .post(app.url("/v1/lifecycle/attribute"))
             .header("Authorization", format!("Bearer {sdk_key}"))
             .json(&serde_json::json!({
                 "link_id": "funnel-test",
@@ -697,7 +697,7 @@ async fn stats_counts_installs_identifies_and_converts_independently() {
     // Only one of them identifies.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-a",
@@ -711,7 +711,7 @@ async fn stats_counts_installs_identifies_and_converts_independently() {
     // Idempotent re-identify must not double-count.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-a",

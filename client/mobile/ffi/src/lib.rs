@@ -106,7 +106,7 @@ pub struct RiftConfig {
     pub base_url: Option<String>,
     /// Log level: "trace", "debug", "info", "warn", "error". Default: "info".
     pub log_level: Option<String>,
-    /// App version string (e.g. "1.2.3"). Used by `report_attribution_for_link()`.
+    /// App version string (e.g. "1.2.3"). Used by `attribute_link()`.
     /// If None, defaults to "unknown". The native convenience constructors
     /// auto-populate this from `Bundle.main` (iOS) or `PackageManager` (Android).
     pub app_version: Option<String>,
@@ -269,9 +269,7 @@ impl RiftSdk {
         }
 
         let install_id = self.get_or_create_install_id()?;
-        self.client
-            .link_attribution(install_id, user_id.clone())
-            .await?;
+        self.client.identify(install_id, user_id.clone()).await?;
 
         // Re-read user_id to guard against a race where set_user_id("usr_new")
         // overwrote storage while this background retry for "usr_old" was
@@ -315,7 +313,7 @@ impl RiftSdk {
 #[uniffi::export(async_runtime = "tokio")]
 impl RiftSdk {
     /// Fire a conversion event. Reads the bound `user_id` from storage and
-    /// POSTs to the Rift API at `/v1/attribution/convert` using the publishable key.
+    /// POSTs to the Rift API at `/v1/lifecycle/convert` using the publishable key.
     /// The server dedupes via `idempotency_key`.
     ///
     /// If no `user_id` is bound, logs a warning and returns (the event won't
@@ -345,7 +343,7 @@ impl RiftSdk {
         }
 
         let url = format!(
-            "{}/v1/attribution/convert",
+            "{}/v1/lifecycle/convert",
             self.api_base_url.trim_end_matches('/')
         );
         let http = reqwest::Client::new();
@@ -405,7 +403,7 @@ impl RiftSdk {
         // (network), leave unsynced so the next launch retries. On permanent
         // failure (404 = re-bind protection, 400 = bad request), clear the
         // unsynced state to prevent infinite retry loops.
-        match self.client.link_attribution(install_id, user_id).await {
+        match self.client.identify(install_id, user_id).await {
             Ok(_) => {
                 self.storage
                     .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
@@ -418,7 +416,7 @@ impl RiftSdk {
                 // pending state so we don't retry on every launch.
                 tracing::warn!(
                     status,
-                    "link_attribution permanently rejected; clearing pending state"
+                    "identify permanently rejected; clearing pending state"
                 );
                 self.storage
                     .remove(STORAGE_KEY_USER_ID.to_string())
@@ -432,7 +430,7 @@ impl RiftSdk {
                 })
             }
             Err(e) => {
-                tracing::warn!(error = ?e, "link_attribution failed; will retry on next launch");
+                tracing::warn!(error = ?e, "identify failed; will retry on next launch");
                 Err(e.into())
             }
         }
@@ -456,7 +454,7 @@ impl RiftSdk {
         })
     }
 
-    pub async fn report_attribution(
+    pub async fn attribute(
         &self,
         link_id: String,
         install_id: String,
@@ -464,11 +462,11 @@ impl RiftSdk {
     ) -> Result<bool, RiftError> {
         tracing::debug!(
             has_tokio_runtime = tokio::runtime::Handle::try_current().is_ok(),
-            "Tokio runtime check in report_attribution()"
+            "Tokio runtime check in attribute()"
         );
         Ok(self
             .client
-            .report_attribution(link_id, install_id, app_version)
+            .attribute(link_id, install_id, app_version)
             .await?)
     }
 
@@ -485,13 +483,13 @@ impl RiftSdk {
         })
     }
 
-    /// Simplified attribution reporting — uses the SDK's internal install_id
-    /// and the `app_version` from config. One argument instead of three.
-    pub async fn report_attribution_for_link(&self, link_id: String) -> Result<bool, RiftError> {
+    /// One-argument attribute call — uses the SDK's internal install_id
+    /// and the `app_version` from config. The preferred Swift-facing API.
+    pub async fn attribute_link(&self, link_id: String) -> Result<bool, RiftError> {
         let install_id = self.get_or_create_install_id()?;
         Ok(self
             .client
-            .report_attribution(link_id, install_id, self.app_version.clone())
+            .attribute(link_id, install_id, self.app_version.clone())
             .await?)
     }
 
@@ -516,7 +514,7 @@ impl RiftSdk {
         };
 
         // Report attribution (fire-and-forget on failure — don't block navigation).
-        if let Err(e) = self.report_attribution_for_link(link_id.clone()).await {
+        if let Err(e) = self.attribute_link(link_id.clone()).await {
             tracing::warn!(error = ?e, "deferred deep link attribution failed");
         }
 

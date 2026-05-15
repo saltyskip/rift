@@ -489,6 +489,14 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 public protocol RiftSdkProtocol: AnyObject, Sendable {
     
+    func attribute(linkId: String, installId: String, appVersion: String) async throws  -> Bool
+    
+    /**
+     * One-argument attribute call — uses the SDK's internal install_id
+     * and the `app_version` from config. The preferred Swift-facing API.
+     */
+    func attributeLink(linkId: String) async throws  -> Bool
+    
     /**
      * One-call deferred deep linking. Parses the clipboard text for a Rift
      * link, reports attribution if found, and returns the link data for
@@ -518,14 +526,6 @@ public protocol RiftSdkProtocol: AnyObject, Sendable {
      */
     func installId() throws  -> String
     
-    func reportAttribution(linkId: String, installId: String, appVersion: String) async throws  -> Bool
-    
-    /**
-     * Simplified attribution reporting — uses the SDK's internal install_id
-     * and the `app_version` from config. One argument instead of three.
-     */
-    func reportAttributionForLink(linkId: String) async throws  -> Bool
-    
     /**
      * Bind the current install to a user ID. Persists locally first, then
      * fires the server call. If the server call fails, the binding is kept
@@ -537,7 +537,7 @@ public protocol RiftSdkProtocol: AnyObject, Sendable {
     
     /**
      * Fire a conversion event. Reads the bound `user_id` from storage and
-     * POSTs to the Rift API at `/v1/attribution/convert` using the publishable key.
+     * POSTs to the Rift API at `/v1/lifecycle/convert` using the publishable key.
      * The server dedupes via `idempotency_key`.
      *
      * If no `user_id` is bound, logs a warning and returns (the event won't
@@ -614,6 +614,44 @@ public convenience init(config: RiftConfig, storage: RiftStorage) {
 
     
 
+    
+open func attribute(linkId: String, installId: String, appVersion: String)async throws  -> Bool  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_rift_ffi_fn_method_riftsdk_attribute(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(linkId),FfiConverterString.lower(installId),FfiConverterString.lower(appVersion)
+                )
+            },
+            pollFunc: ffi_rift_ffi_rust_future_poll_i8,
+            completeFunc: ffi_rift_ffi_rust_future_complete_i8,
+            freeFunc: ffi_rift_ffi_rust_future_free_i8,
+            liftFunc: FfiConverterBool.lift,
+            errorHandler: FfiConverterTypeRiftError_lift
+        )
+}
+    
+    /**
+     * One-argument attribute call — uses the SDK's internal install_id
+     * and the `app_version` from config. The preferred Swift-facing API.
+     */
+open func attributeLink(linkId: String)async throws  -> Bool  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_rift_ffi_fn_method_riftsdk_attribute_link(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(linkId)
+                )
+            },
+            pollFunc: ffi_rift_ffi_rust_future_poll_i8,
+            completeFunc: ffi_rift_ffi_rust_future_complete_i8,
+            freeFunc: ffi_rift_ffi_rust_future_free_i8,
+            liftFunc: FfiConverterBool.lift,
+            errorHandler: FfiConverterTypeRiftError_lift
+        )
+}
     
     /**
      * One-call deferred deep linking. Parses the clipboard text for a Rift
@@ -698,44 +736,6 @@ open func installId()throws  -> String  {
 })
 }
     
-open func reportAttribution(linkId: String, installId: String, appVersion: String)async throws  -> Bool  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_rift_ffi_fn_method_riftsdk_report_attribution(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(linkId),FfiConverterString.lower(installId),FfiConverterString.lower(appVersion)
-                )
-            },
-            pollFunc: ffi_rift_ffi_rust_future_poll_i8,
-            completeFunc: ffi_rift_ffi_rust_future_complete_i8,
-            freeFunc: ffi_rift_ffi_rust_future_free_i8,
-            liftFunc: FfiConverterBool.lift,
-            errorHandler: FfiConverterTypeRiftError_lift
-        )
-}
-    
-    /**
-     * Simplified attribution reporting — uses the SDK's internal install_id
-     * and the `app_version` from config. One argument instead of three.
-     */
-open func reportAttributionForLink(linkId: String)async throws  -> Bool  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_rift_ffi_fn_method_riftsdk_report_attribution_for_link(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(linkId)
-                )
-            },
-            pollFunc: ffi_rift_ffi_rust_future_poll_i8,
-            completeFunc: ffi_rift_ffi_rust_future_complete_i8,
-            freeFunc: ffi_rift_ffi_rust_future_free_i8,
-            liftFunc: FfiConverterBool.lift,
-            errorHandler: FfiConverterTypeRiftError_lift
-        )
-}
-    
     /**
      * Bind the current install to a user ID. Persists locally first, then
      * fires the server call. If the server call fails, the binding is kept
@@ -762,7 +762,7 @@ open func setUserId(userId: String)async throws   {
     
     /**
      * Fire a conversion event. Reads the bound `user_id` from storage and
-     * POSTs to the Rift API at `/v1/attribution/convert` using the publishable key.
+     * POSTs to the Rift API at `/v1/lifecycle/convert` using the publishable key.
      * The server dedupes via `idempotency_key`.
      *
      * If no `user_id` is bound, logs a warning and returns (the event won't
@@ -1471,7 +1471,7 @@ public struct RiftConfig {
      */
     public var logLevel: String?
     /**
-     * App version string (e.g. "1.2.3"). Used by `report_attribution_for_link()`.
+     * App version string (e.g. "1.2.3"). Used by `attribute_link()`.
      * If None, defaults to "unknown". The native convenience constructors
      * auto-populate this from `Bundle.main` (iOS) or `PackageManager` (Android).
      */
@@ -1484,7 +1484,7 @@ public struct RiftConfig {
          * Log level: "trace", "debug", "info", "warn", "error". Default: "info".
          */logLevel: String?, 
         /**
-         * App version string (e.g. "1.2.3"). Used by `report_attribution_for_link()`.
+         * App version string (e.g. "1.2.3"). Used by `attribute_link()`.
          * If None, defaults to "unknown". The native convenience constructors
          * auto-populate this from `Bundle.main` (iOS) or `PackageManager` (Android).
          */appVersion: String?) {
@@ -1917,6 +1917,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_rift_ffi_checksum_func_parse_referrer_link() != 54616) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_rift_ffi_checksum_method_riftsdk_attribute() != 2882) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_rift_ffi_checksum_method_riftsdk_attribute_link() != 59039) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_rift_ffi_checksum_method_riftsdk_check_deferred_deep_link() != 6149) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1932,16 +1938,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_rift_ffi_checksum_method_riftsdk_install_id() != 33647) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rift_ffi_checksum_method_riftsdk_report_attribution() != 16163) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_rift_ffi_checksum_method_riftsdk_report_attribution_for_link() != 47552) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_rift_ffi_checksum_method_riftsdk_set_user_id() != 19064) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rift_ffi_checksum_method_riftsdk_track_conversion() != 52068) {
+    if (uniffi_rift_ffi_checksum_method_riftsdk_track_conversion() != 45745) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_rift_ffi_checksum_method_riftstorage_get() != 22749) {

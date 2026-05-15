@@ -11,7 +11,7 @@ async fn create_webhook_returns_201() {
         .header("Authorization", format!("Bearer {key}"))
         .json(&serde_json::json!({
             "url": "https://example.com/webhook",
-            "events": ["click", "attribution"]
+            "events": ["click", "attribute"]
         }))
         .send()
         .await
@@ -223,7 +223,7 @@ async fn click_dispatches_webhook() {
 }
 
 #[tokio::test]
-async fn attribution_dispatches_webhook() {
+async fn attribute_dispatches_webhook() {
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;
     common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
@@ -243,9 +243,9 @@ async fn attribution_dispatches_webhook() {
     // Seed an SDK key for the tenant.
     let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
 
-    // Report attribution via SDK-authenticated endpoint.
+    // Report attribute via SDK-authenticated endpoint.
     app.client
-        .post(app.url("/v1/attribution/install"))
+        .post(app.url("/v1/lifecycle/attribute"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "link_id": "webhook-attr",
@@ -256,8 +256,8 @@ async fn attribution_dispatches_webhook() {
         .await
         .unwrap();
 
-    // Check the mock dispatcher captured the attribution.
-    let attrs = app.webhook_dispatcher.attribution_payloads.lock().unwrap();
+    // Check the mock dispatcher captured the attribute event.
+    let attrs = app.webhook_dispatcher.attribute_payloads.lock().unwrap();
     assert_eq!(attrs.len(), 1);
     assert_eq!(attrs[0].link_id, "webhook-attr");
     assert_eq!(attrs[0].install_id, "install-123");
@@ -292,7 +292,7 @@ async fn identify_dispatches_webhook_with_link_metadata() {
 
     // Establish the prior attribution that identify will bind to.
     app.client
-        .post(app.url("/v1/attribution/install"))
+        .post(app.url("/v1/lifecycle/attribute"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "link_id": "welcome-link",
@@ -307,7 +307,7 @@ async fn identify_dispatches_webhook_with_link_metadata() {
     // event should fire.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-id-7",
@@ -343,7 +343,7 @@ async fn identify_without_prior_attribution_does_not_dispatch() {
 
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "never-installed",
@@ -379,7 +379,7 @@ async fn identify_idempotent_rebind_does_not_refire_webhook() {
     let sdk_key = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
 
     app.client
-        .post(app.url("/v1/attribution/install"))
+        .post(app.url("/v1/lifecycle/attribute"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "link_id": "welcome-rebind",
@@ -393,7 +393,7 @@ async fn identify_idempotent_rebind_does_not_refire_webhook() {
     // First identify → real bind, webhook fires.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-rebind-1",
@@ -410,7 +410,7 @@ async fn identify_idempotent_rebind_does_not_refire_webhook() {
     // launch the SDK decides to re-sync.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-rebind-1",
@@ -504,16 +504,13 @@ async fn patch_webhook_replaces_events() {
         .client
         .patch(app.url(&format!("/v1/webhooks/{webhook_id}")))
         .header("Authorization", format!("Bearer {key}"))
-        .json(&serde_json::json!({ "events": ["identify", "attribution"] }))
+        .json(&serde_json::json!({ "events": ["identify", "attribute"] }))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(
-        body["events"],
-        serde_json::json!(["identify", "attribution"])
-    );
+    assert_eq!(body["events"], serde_json::json!(["identify", "attribute"]));
 
     // Patch with both `active` and `events` in one call.
     let resp = app

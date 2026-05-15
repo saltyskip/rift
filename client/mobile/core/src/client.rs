@@ -27,7 +27,7 @@ impl RiftClient {
         })
     }
 
-    pub async fn report_attribution(
+    pub async fn attribute(
         &self,
         link_id: String,
         install_id: String,
@@ -35,20 +35,20 @@ impl RiftClient {
     ) -> Result<bool, RiftError> {
         let result = self
             .inner
-            .report_attribution(link_id, install_id, app_version)
+            .attribute(link_id, install_id, app_version)
             .await
             .map_err(map_error)?;
         Ok(result.success)
     }
 
-    pub async fn link_attribution(
+    pub async fn identify(
         &self,
         install_id: String,
         user_id: String,
     ) -> Result<bool, RiftError> {
         let result = self
             .inner
-            .link_attribution(install_id, user_id)
+            .identify(install_id, user_id)
             .await
             .map_err(map_error)?;
         Ok(result.success)

@@ -16,11 +16,23 @@ pub struct ClickEventPayload {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct AttributionEventPayload {
+pub struct AttributeEventPayload {
     pub tenant_id: String,
     pub link_id: String,
     pub install_id: String,
     pub app_version: String,
+    /// User id at fire time. `Some` when the install was already
+    /// identified (re-attribution by an existing user — the
+    /// existing-install campaign path). `None` for fresh installs that
+    /// haven't completed `identify` yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    /// Snapshot of `Link.metadata` at fire time. Free-form JSON; receivers
+    /// agree on schema with the campaign creator (e.g. `{bonus_type,
+    /// bonus_amount_usdc}`). Absent when the attributed link has no
+    /// metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_metadata: Option<serde_json::Value>,
     pub timestamp: String,
 }
 

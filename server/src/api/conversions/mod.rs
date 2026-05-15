@@ -22,10 +22,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     // Mobile SDKs use this instead of the webhook URL so they don't need
     // a separate source URL in the binary.
     let sdk = Router::new()
-        .route(
-            "/v1/attribution/convert",
-            post(routes::sdk_track_conversion),
-        )
+        .route("/v1/lifecycle/convert", post(routes::sdk_track_conversion))
         .layer(middleware::from_fn_with_state(state, sdk_auth_gate));
 
     // Public webhook receiver — auth is the opaque url_token in the URL.

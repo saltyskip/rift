@@ -97,17 +97,17 @@ impl ConversionsService {
                 }
             }
 
-            // 2. Attribution lookup — need user_id → Attribution → link_id.
-            // Conversions without a matching attribution are counted as
+            // 2. Attribution lookup — need user_id → Install → first_link_id.
+            // Conversions without a matching install are counted as
             // "unattributed" and dropped (not counted in stats).
             let link_id = match &event.user_id {
                 Some(uid) => self
                     .links_repo
-                    .find_attribution_by_user(&tenant_id, uid)
+                    .find_install_by_user(&tenant_id, uid)
                     .await
                     .ok()
                     .flatten()
-                    .map(|a| a.link_id),
+                    .map(|i| i.first_link_id),
                 None => None,
             };
             let Some(link_id) = link_id else {

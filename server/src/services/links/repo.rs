@@ -10,8 +10,8 @@ use crate::ensure_index;
 use mongodb::bson::Document;
 
 use super::models::{
-    Attribution, BindOutcome, BulkInsertError, ClickEvent, ClickMeta, CreateLinkInput, Link,
-    LinkStatus, TimeseriesDataPoint,
+    AttributeOutcome, AttributionEvent, AttributionEventMeta, BulkInsertError, ClickEvent,
+    ClickMeta, CreateLinkInput, IdentifyOutcome, Install, Link, LinkStatus, TimeseriesDataPoint,
 };
 
 // ── Trait ──
@@ -78,36 +78,57 @@ pub trait LinksRepository: Send + Sync {
         to: DateTime,
     ) -> Result<Vec<TimeseriesDataPoint>, String>;
 
-    async fn upsert_attribution(
+    /// Record a `/lifecycle/attribute` call. Appends an immutable event to
+    /// the `attribution_events` time-series collection AND upserts the
+    /// install's first-touch state in `installs`. `installs.first_link_id`
+    /// is set only on insert, so subsequent `attribute` calls for the same
+    /// install append to the event log but preserve the original
+    /// first-touch attribution.
+    ///
+    /// Returns `FirstTouch` on insert (`installs` row didn't exist), or
+    /// `Retouch` on every subsequent call. Both carry the install row
+    /// (with `user_id` if already bound) so the caller can build the
+    /// outbound webhook payload without a second query.
+    async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
         link_id: &str,
         install_id: &str,
         app_version: &str,
-    ) -> Result<(), String>;
+        retention_bucket: String,
+    ) -> Result<AttributeOutcome, String>;
 
-    async fn link_attribution_to_user(
+    /// Bind `user_id` onto the install's row in `installs`. Idempotent
+    /// at the same `(install_id, user_id)` pair (returns `AlreadyBound`).
+    async fn identify_install(
         &self,
         tenant_id: &ObjectId,
         install_id: &str,
         user_id: &str,
-    ) -> Result<BindOutcome, String>;
+    ) -> Result<IdentifyOutcome, String>;
 
-    async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
+    /// Count distinct installs first-attributed to this link.
+    async fn count_installs_by_first_link(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+    ) -> Result<u64, String>;
 
-    /// Count attribution rows for `(tenant, link)` whose `user_id` has been
-    /// bound — i.e. installs that progressed through `PUT /v1/attribution/identify`.
-    /// `identify_count` in the stats response.
+    /// Count installs first-attributed to this link whose `user_id` is
+    /// bound — i.e. installs that progressed through
+    /// `PUT /v1/lifecycle/identify`. `identify_count` in the stats
+    /// response.
     async fn count_identifies(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
 
-    /// Find the Attribution record for a given `user_id` within a tenant. Used
-    /// by the conversion ingestion path to resolve `user_id → link_id` so events
-    /// can be attributed back to the link that drove the install.
-    async fn find_attribution_by_user(
+    /// Find the install for a given `user_id` within a tenant. Used by
+    /// the conversion ingestion path to resolve `user_id → first_link_id`
+    /// so events can be attributed back to the link that drove the
+    /// install.
+    async fn find_install_by_user(
         &self,
         tenant_id: &ObjectId,
         user_id: &str,
-    ) -> Result<Option<Attribution>, String>;
+    ) -> Result<Option<Install>, String>;
 }
 
 // ── Repository ──
@@ -117,23 +138,28 @@ crate::impl_container!(LinksRepo);
 pub struct LinksRepo {
     links: Collection<Link>,
     click_events: Collection<ClickEvent>,
-    attributions: Collection<Attribution>,
+    /// Materialized first-touch + user_id binding per `(tenant_id,
+    /// install_id)`. Mutable. Source of truth for stats counts and
+    /// `user_id → link_id` conversion lookups.
+    installs: Collection<Install>,
+    /// Immutable time-series log of every `/lifecycle/attribute` call.
+    /// Time-bucketed analytics + tier-based retention; never mutated.
+    attribution_events: Collection<AttributionEvent>,
 }
 
 impl LinksRepo {
     pub async fn new(database: &Database) -> Self {
         let links = database.collection::<Link>("links");
-        let attributions = database.collection::<Attribution>("attributions");
 
-        // Create time series collection for click events (idempotent — errors if exists).
-        let ts_opts = TimeseriesOptions::builder()
+        // Click events — time series, minute granularity.
+        let click_ts_opts = TimeseriesOptions::builder()
             .time_field("clicked_at".to_string())
             .meta_field(Some("meta".to_string()))
             .granularity(Some(TimeseriesGranularity::Minutes))
             .build();
         if let Err(e) = database
             .create_collection("click_events")
-            .timeseries(ts_opts)
+            .timeseries(click_ts_opts)
             .await
         {
             // NamespaceExists (code 48) is expected on subsequent startups.
@@ -144,17 +170,48 @@ impl LinksRepo {
         }
         let click_events = database.collection::<ClickEvent>("click_events");
 
-        // Per-tier retention via partial TTL indexes on the timeField. Each
-        // index applies expireAfterSeconds only to events whose metaField
-        // `retention_bucket` matches. Events are stamped at insert and keep
-        // their bucket forever — a tier downgrade does not retroactively
-        // shrink historical retention (nor does an upgrade extend it).
+        // Attribution events — time series, minute granularity. Same
+        // meta-field convention as click_events so the retention TTL
+        // helper applies unchanged.
+        let attr_ts_opts = TimeseriesOptions::builder()
+            .time_field("timestamp".to_string())
+            .meta_field(Some("meta".to_string()))
+            .granularity(Some(TimeseriesGranularity::Minutes))
+            .build();
+        if let Err(e) = database
+            .create_collection("attribution_events")
+            .timeseries(attr_ts_opts)
+            .await
+        {
+            let err_str = e.to_string();
+            if !err_str.contains("already exists") && !err_str.contains("48") {
+                tracing::error!("Failed to create attribution_events time series collection: {e}");
+            }
+        }
+        let attribution_events = database.collection::<AttributionEvent>("attribution_events");
+
+        // Per-tier retention via partial TTL indexes on the timeField for
+        // both time-series collections. Events are stamped at insert and
+        // keep their bucket forever — tier downgrades don't retroactively
+        // shrink historical retention.
         crate::services::billing::retention::ensure_retention_ttl_indexes(
             &click_events,
             "clicked_at",
             "meta",
         )
         .await;
+        crate::services::billing::retention::ensure_retention_ttl_indexes(
+            &attribution_events,
+            "timestamp",
+            "meta",
+        )
+        .await;
+
+        // `installs` is a regular (non-time-series) collection because we
+        // need to mutate `user_id` after insert — time-series rows are
+        // immutable. The time-series `attribution_events` is the
+        // append-only event log; `installs` is the mutable projection.
+        let installs = database.collection::<Install>("installs");
 
         // Drop the old global unique index if it exists (replaced by compound index).
         let _ = links.drop_index("link_id_unique").await;
@@ -165,44 +222,37 @@ impl LinksRepo {
             IndexOptions::builder().unique(true).build(),
             "tenant_link_id_unique"
         );
-
-        // Non-unique index on link_id for public resolution via /r/{link_id}.
         ensure_index!(links, doc! { "link_id": 1 }, "link_id_lookup");
-
-        // Affiliate-scoped lookups: "list/find this tenant's links by affiliate".
-        // Sparse-friendly without a partial filter — Mongo indexes nullable
-        // fields at the index leaf so unattributed links don't bloat the
-        // ratio relevant to affiliate queries.
         ensure_index!(
             links,
             doc! { "tenant_id": 1, "affiliate_id": 1 },
             "links_tenant_affiliate"
         );
 
-        // The default _id index covers cursor-based pagination (sorted by _id desc).
-        // ObjectIds are monotonically increasing, so _id order matches creation order.
-
         ensure_index!(
-            attributions,
+            installs,
             doc! { "tenant_id": 1, "install_id": 1 },
             IndexOptions::builder().unique(true).build(),
-            "attr_tenant_install_unique"
+            "installs_tenant_install_unique"
         );
+        // Stats: count distinct installs first-attributed to a link.
         ensure_index!(
-            attributions,
-            doc! { "tenant_id": 1, "link_id": 1 },
-            "attr_tenant_link"
+            installs,
+            doc! { "tenant_id": 1, "first_link_id": 1 },
+            "installs_tenant_first_link"
         );
+        // Conversion lookup: user_id → install (→ first_link_id).
         ensure_index!(
-            attributions,
+            installs,
             doc! { "tenant_id": 1, "user_id": 1 },
-            "attr_tenant_user"
+            "installs_tenant_user"
         );
 
         LinksRepo {
             links,
             click_events,
-            attributions,
+            installs,
+            attribution_events,
         }
     }
 }
@@ -497,49 +547,95 @@ impl LinksRepository for LinksRepo {
         Ok(results)
     }
 
-    async fn upsert_attribution(
+    async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
         link_id: &str,
         install_id: &str,
         app_version: &str,
-    ) -> Result<(), String> {
-        self.attributions
-            .update_one(
+        retention_bucket: String,
+    ) -> Result<AttributeOutcome, String> {
+        // Step 1: try to insert a fresh install row. `$setOnInsert` keeps
+        // first-touch attribution stable across re-attributions. On insert
+        // we capture `installs.first_link_id = link_id`; on no-op (row
+        // already exists) the existing first_link_id stays.
+        use mongodb::options::ReturnDocument;
+        let now = DateTime::now();
+
+        let install = self
+            .installs
+            .find_one_and_update(
                 doc! { "tenant_id": &tenant_id, "install_id": install_id },
                 doc! {
                     "$setOnInsert": {
                         "_id": ObjectId::new(),
                         "tenant_id": &tenant_id,
-                        "link_id": link_id,
                         "install_id": install_id,
-                        "app_version": app_version,
-                        "attributed_at": DateTime::now(),
+                        "first_link_id": link_id,
+                        "first_app_version": app_version,
+                        "first_attributed_at": now,
                     }
                 },
             )
             .upsert(true)
+            .return_document(ReturnDocument::Before)
             .await
             .map_err(|e| e.to_string())?;
-        Ok(())
+
+        let is_first_touch = install.is_none();
+        // Resolved post-update install. On first-touch we construct it
+        // in-memory rather than re-query; on retouch we use the Before doc
+        // (it's unchanged because $setOnInsert is a no-op).
+        let install = install.unwrap_or_else(|| Install {
+            id: ObjectId::new(), // not authoritative — we never use this in retouch path
+            tenant_id,
+            install_id: install_id.to_string(),
+            first_link_id: link_id.to_string(),
+            first_app_version: app_version.to_string(),
+            first_attributed_at: now,
+            user_id: None,
+            identified_at: None,
+        });
+
+        // Step 2: append an immutable event to the time series. Includes
+        // the install's current user_id so downstream subscribers can
+        // act on existing-install re-attribution without a second roundtrip.
+        let event = AttributionEvent {
+            timestamp: now,
+            meta: AttributionEventMeta {
+                tenant_id,
+                install_id: install_id.to_string(),
+                retention_bucket,
+            },
+            link_id: link_id.to_string(),
+            app_version: app_version.to_string(),
+            user_id: install.user_id.clone(),
+        };
+        self.attribution_events
+            .insert_one(&event)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(if is_first_touch {
+            AttributeOutcome::FirstTouch(install)
+        } else {
+            AttributeOutcome::Retouch(install)
+        })
     }
 
-    async fn link_attribution_to_user(
+    async fn identify_install(
         &self,
         tenant_id: &ObjectId,
         install_id: &str,
         user_id: &str,
-    ) -> Result<BindOutcome, String> {
+    ) -> Result<IdentifyOutcome, String> {
         // `find_one_and_update` with `ReturnDocument::Before` lets us
         // distinguish a new bind from an idempotent rebind in a single
         // roundtrip: if `before.user_id == Some(user_id)`, this was a no-op
-        // and the webhook should NOT fire. The post-update state is
-        // trivially the Before doc with `user_id` overwritten to the
-        // incoming value, so we construct it in-memory instead of paying
-        // for a second query.
+        // and the webhook should NOT fire.
         use mongodb::options::ReturnDocument;
         let before = self
-            .attributions
+            .installs
             .find_one_and_update(
                 doc! {
                     "tenant_id": tenant_id,
@@ -550,53 +646,56 @@ impl LinksRepository for LinksRepo {
                         { "user_id": user_id },
                     ]
                 },
-                doc! { "$set": { "user_id": user_id } },
+                doc! { "$set": { "user_id": user_id, "identified_at": DateTime::now() } },
             )
             .return_document(ReturnDocument::Before)
             .await
             .map_err(|e| e.to_string())?;
 
-        let Some(mut attribution) = before else {
-            return Ok(BindOutcome::NotFound);
+        let Some(mut install) = before else {
+            return Ok(IdentifyOutcome::NotFound);
         };
 
-        let was_already_bound = attribution.user_id.as_deref() == Some(user_id);
-        attribution.user_id = Some(user_id.to_string());
+        let was_already_bound = install.user_id.as_deref() == Some(user_id);
+        install.user_id = Some(user_id.to_string());
+        install.identified_at = Some(DateTime::now());
 
         Ok(if was_already_bound {
-            BindOutcome::AlreadyBound(attribution)
+            IdentifyOutcome::AlreadyBound(install)
         } else {
-            BindOutcome::NewBind(attribution)
+            IdentifyOutcome::NewBind(install)
         })
     }
 
-    async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
-        self.attributions
-            .count_documents(doc! { "tenant_id": tenant_id, "link_id": link_id })
+    async fn count_installs_by_first_link(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+    ) -> Result<u64, String> {
+        self.installs
+            .count_documents(doc! { "tenant_id": tenant_id, "first_link_id": link_id })
             .await
             .map_err(|e| e.to_string())
     }
 
     async fn count_identifies(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
-        // `user_id` is unset at install time and `$set` populated by
-        // `link_attribution_to_user`. Rows with a non-null `user_id` are
-        // exactly the installs that completed identify.
-        self.attributions
+        // Identify-completed installs first-attributed to this link.
+        self.installs
             .count_documents(doc! {
                 "tenant_id": tenant_id,
-                "link_id": link_id,
+                "first_link_id": link_id,
                 "user_id": { "$ne": null },
             })
             .await
             .map_err(|e| e.to_string())
     }
 
-    async fn find_attribution_by_user(
+    async fn find_install_by_user(
         &self,
         tenant_id: &ObjectId,
         user_id: &str,
-    ) -> Result<Option<Attribution>, String> {
-        self.attributions
+    ) -> Result<Option<Install>, String> {
+        self.installs
             .find_one(doc! { "tenant_id": tenant_id, "user_id": user_id })
             .await
             .map_err(|e| e.to_string())
