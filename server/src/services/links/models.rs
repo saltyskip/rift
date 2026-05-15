@@ -560,8 +560,20 @@ pub struct IdentifyRequest {
     pub user_id: String,
 }
 
+/// Response from `POST /v1/lifecycle/attribute`. Today: `{success}` only.
+/// Forward room: `event_id` (stable id customers can dedup against),
+/// `is_first_touch` (signal whether `installs` row was newly inserted).
 #[derive(Debug, Serialize, ToSchema)]
-pub struct LifecycleResponse {
+pub struct AttributeResponse {
+    #[schema(example = true)]
+    pub success: bool,
+}
+
+/// Response from `PUT /v1/lifecycle/identify`. Today: `{success}` only.
+/// Forward room: `prior_attributions` (anonymous events just linked to
+/// this user_id), `bound_at` (server-side timestamp of the binding).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct IdentifyResponse {
     #[schema(example = true)]
     pub success: bool,
 }

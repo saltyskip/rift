@@ -131,8 +131,10 @@ pub struct AttributeRequest {
     pub app_version: String,
 }
 
+/// Response from `POST /v1/lifecycle/attribute`. See server-side
+/// `AttributeResponse` for forward-compat fields landing here over time.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LifecycleResponse {
+pub struct AttributeResponse {
     pub success: bool,
 }
 
@@ -140,6 +142,13 @@ pub struct LifecycleResponse {
 pub struct IdentifyRequest {
     pub install_id: String,
     pub user_id: String,
+}
+
+/// Response from `PUT /v1/lifecycle/identify`. See server-side
+/// `IdentifyResponse` for forward-compat fields landing here over time.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IdentifyResponse {
+    pub success: bool,
 }
 
 impl RiftClient {
@@ -238,7 +247,7 @@ impl RiftClient {
         link_id: impl Into<String>,
         install_id: impl Into<String>,
         app_version: impl Into<String>,
-    ) -> Result<LifecycleResponse, RiftClientError> {
+    ) -> Result<AttributeResponse, RiftClientError> {
         self.post(
             "/v1/lifecycle/attribute",
             &AttributeRequest {
@@ -260,7 +269,7 @@ impl RiftClient {
         &self,
         install_id: impl Into<String>,
         user_id: impl Into<String>,
-    ) -> Result<LifecycleResponse, RiftClientError> {
+    ) -> Result<IdentifyResponse, RiftClientError> {
         self.put(
             "/v1/lifecycle/identify",
             &IdentifyRequest {
