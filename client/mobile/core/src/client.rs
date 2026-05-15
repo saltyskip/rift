@@ -41,11 +41,7 @@ impl RiftClient {
         Ok(result.success)
     }
 
-    pub async fn identify(
-        &self,
-        install_id: String,
-        user_id: String,
-    ) -> Result<bool, RiftError> {
+    pub async fn identify(&self, install_id: String, user_id: String) -> Result<bool, RiftError> {
         let result = self
             .inner
             .identify(install_id, user_id)
