@@ -107,6 +107,8 @@ fun checkDeferredDeepLink() {
     "cta": "Get 50% Off"
   },
   "_rift_meta": {
+    "context": "This is a Rift deep link...",
+    "source": "tenant_asserted",
     "status": "active",
     "tenant_domain": "go.yourcompany.com",
     "tenant_verified": true
