@@ -15,13 +15,24 @@ target/
 worker/.wrangler/
 worker-slack/.wrangler/
 
-# SDK build artifacts (binaries, headers, Android)
+# SDK build artifacts (binaries, headers, Android).
+#
+# `Package.swift` pulls the xcframework from a GitHub release URL
+# (`binaryTarget(url:)`), so the local dist/ binaries are only needed
+# for local development — they're produced by `build_xcframework.sh`
+# and uploaded to the release artifact by CI on tag.
+#
+# Swift sources (`rift_ffi.swift`, `KeychainStorage.swift`) are NOT
+# ignored — SPM needs them in the repo for package resolution.
+client/mobile/dist/ios/rift_ffiFFI.xcframework/
+client/mobile/dist/ios/headers/
+client/mobile/dist/android/jniLibs/
+client/mobile/dist/android/kotlin/
+# Legacy paths (kept for older worktrees that may still have them):
 sdk/mobile/dist/ios/RiftSDK.xcframework
 sdk/mobile/dist/ios/headers/
 sdk/mobile/dist/android/jniLibs/
 sdk/mobile/dist/android/kotlin/
-# Note: sdk/mobile/dist/ios/Sources/RiftSDK/*.swift is NOT ignored —
-# SPM needs these Swift sources in the repo for package resolution.
 
 # Preview / temp files
 preview-*.html
