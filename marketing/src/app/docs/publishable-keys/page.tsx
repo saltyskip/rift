@@ -36,10 +36,10 @@ export default function PublishableKeysPage() {
             are designed for client-side use. They can only call the attribution endpoints:
           </p>
           <ul className="list-disc pl-5 space-y-1 text-[15px] text-[#a1a1aa]">
-            <li><code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/click</code> &mdash; record a click</li>
-            <li><code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/install</code> &mdash; report an install attribution</li>
-            <li><code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">PUT /v1/attribution/identify</code> &mdash; bind a user to an install</li>
-            <li><code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/convert</code> &mdash; track a conversion event</li>
+            <li><code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/lifecycle/click</code> &mdash; record a click</li>
+            <li><code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/lifecycle/attribute</code> &mdash; report an install attribution</li>
+            <li><code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">PUT /v1/lifecycle/identify</code> &mdash; bind a user to an install</li>
+            <li><code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/lifecycle/convert</code> &mdash; track a conversion event</li>
           </ul>
           <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
             Each publishable key is bound to a verified custom domain. This scopes all lookups to your tenant.

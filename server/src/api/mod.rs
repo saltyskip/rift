@@ -1,11 +1,11 @@
 pub mod affiliates;
 pub mod apps;
-pub mod attribution;
 pub mod auth;
 pub mod billing;
 pub mod conversions;
 pub mod domains;
 pub mod health;
+pub mod lifecycle;
 pub mod links;
 pub mod webhooks;
 
@@ -60,10 +60,10 @@ use crate::app::AppState;
         links::routes::delete_link,
         links::routes::resolve_link,
         links::routes::resolve_link_custom,
-        // Attribution — click tracking, install reporting, identify
-        attribution::routes::attribution_click,
-        attribution::routes::attribution_report,
-        attribution::routes::link_attribution,
+        // Lifecycle — funnel verbs called by the SDKs in user-journey order
+        lifecycle::routes::lifecycle_click,
+        lifecycle::routes::lifecycle_attribute,
+        lifecycle::routes::lifecycle_identify,
         // Link timeseries (lives in links since it's link-scoped analytics)
         links::routes::get_link_timeseries,
         // Webhooks — event notifications
@@ -117,9 +117,10 @@ use crate::app::AppState;
         crate::services::links::models::ResolvedLink,
         crate::services::links::models::RiftMeta,
         crate::services::links::models::ClickRequest,
-        crate::services::links::models::AttributionReportRequest,
-        crate::services::links::models::LinkAttributionRequest,
-        crate::services::links::models::AttributionResponse,
+        crate::services::links::models::AttributeRequest,
+        crate::services::links::models::IdentifyRequest,
+        crate::services::links::models::AttributeResponse,
+        crate::services::links::models::IdentifyResponse,
         crate::services::links::models::AgentContext,
         crate::services::links::models::SocialPreview,
         crate::services::links::models::TimeseriesDataPoint,
@@ -186,8 +187,8 @@ use crate::app::AppState;
         (name = "Domains", description = "Custom domain setup and verification"),
         (name = "Apps", description = "App configuration and association files (AASA / Asset Links)"),
         (name = "Links", description = "Create, list, update, delete, and resolve deep links"),
-        (name = "Attribution", description = "Funnel event ingestion — clicks, installs, identifies, and conversions"),
-        (name = "Webhooks", description = "Real-time event notifications for clicks, attributions, and conversions"),
+        (name = "Lifecycle", description = "Funnel event ingestion — click, attribute, identify, convert"),
+        (name = "Webhooks", description = "Real-time event notifications for clicks, attributes, identifies, and conversions"),
         (name = "Sources", description = "Configured webhook receivers that produce conversion events"),
         (name = "Affiliates", description = "Named partners with scoped credentials that mint links pinned to their affiliate"),
         (name = "Billing", description = "Plan status, upgrades, and subscription lifecycle"),
@@ -207,7 +208,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 serde_json::json!([
                     { "name": "Authentication", "tags": ["Signup", "Secret Keys", "Publishable Keys", "Team Members"] },
                     { "name": "Configuration", "tags": ["Domains", "Apps"] },
-                    { "name": "Links", "tags": ["Links", "Attribution"] },
+                    { "name": "Links", "tags": ["Links", "Lifecycle"] },
                     { "name": "Integrations", "tags": ["Webhooks", "Sources", "Affiliates"] },
                     { "name": "Billing", "tags": ["Billing"] },
                     { "name": "System", "tags": ["System"] },
@@ -226,7 +227,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     health::router()
         .merge(auth::router(state.clone()))
         .merge(links::router(state.clone()))
-        .merge(attribution::router(state.clone()))
+        .merge(lifecycle::router(state.clone()))
         .merge(domains::router(state.clone()))
         .merge(apps::router(state.clone()))
         .merge(webhooks::router(state.clone()))

@@ -259,35 +259,47 @@ impl LinksRepository for MockLinksRepo {
         Ok(vec![])
     }
 
-    async fn upsert_attribution(
+    async fn record_attribute_event(
         &self,
-        _tenant_id: ObjectId,
-        _link_id: &str,
-        _install_id: &str,
-        _app_version: &str,
-    ) -> Result<(), String> {
-        Ok(())
+        tenant_id: ObjectId,
+        link_id: &str,
+        install_id: &str,
+        app_version: &str,
+        _retention_bucket: String,
+    ) -> Result<crate::services::links::models::AttributeOutcome, String> {
+        use crate::services::links::models::{AttributeOutcome, Install};
+        Ok(AttributeOutcome::FirstTouch(Install {
+            id: ObjectId::new(),
+            tenant_id,
+            install_id: install_id.to_string(),
+            first_link_id: link_id.to_string(),
+            first_app_version: app_version.to_string(),
+            first_attributed_at: mongodb::bson::DateTime::now(),
+            user_id: None,
+            identified_at: None,
+        }))
     }
 
-    async fn link_attribution_to_user(
+    async fn identify_install(
         &self,
         tenant_id: &ObjectId,
         install_id: &str,
         user_id: &str,
-    ) -> Result<crate::services::links::models::BindOutcome, String> {
-        use crate::services::links::models::{Attribution, BindOutcome};
-        Ok(BindOutcome::NewBind(Attribution {
+    ) -> Result<crate::services::links::models::IdentifyOutcome, String> {
+        use crate::services::links::models::{IdentifyOutcome, Install};
+        Ok(IdentifyOutcome::NewBind(Install {
             id: ObjectId::new(),
             tenant_id: *tenant_id,
-            link_id: String::new(),
             install_id: install_id.to_string(),
+            first_link_id: String::new(),
+            first_app_version: String::new(),
+            first_attributed_at: mongodb::bson::DateTime::now(),
             user_id: Some(user_id.to_string()),
-            app_version: String::new(),
-            attributed_at: mongodb::bson::DateTime::now(),
+            identified_at: Some(mongodb::bson::DateTime::now()),
         }))
     }
 
-    async fn count_attributions(
+    async fn count_installs_by_first_link(
         &self,
         _tenant_id: &ObjectId,
         _link_id: &str,
@@ -299,11 +311,11 @@ impl LinksRepository for MockLinksRepo {
         Ok(0)
     }
 
-    async fn find_attribution_by_user(
+    async fn find_install_by_user(
         &self,
         _tenant_id: &ObjectId,
         _user_id: &str,
-    ) -> Result<Option<Attribution>, String> {
+    ) -> Result<Option<crate::services::links::models::Install>, String> {
         Ok(None)
     }
 }

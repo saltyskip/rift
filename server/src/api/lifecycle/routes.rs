@@ -1,9 +1,10 @@
-//! SDK-authenticated attribution endpoints.
+//! SDK-authenticated lifecycle endpoints.
 //!
-//! The attribution data domain itself is part of the links service
-//! (`Attribution` documents live alongside `Link` in `services/links/`),
-//! but the `/v1/attribution/*` URL surface and the `pk_live_` SDK auth
-//! gate make this its own transport slice.
+//! Three verbs of the growth funnel — `click`, `attribute`, `identify` —
+//! plus the matching webhooks. The data lives in the `links` service
+//! (`Install` + `AttributionEvent` documents), but the `/v1/lifecycle/*`
+//! URL surface and the `pk_live_` SDK auth gate make this its own
+//! transport slice.
 
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -16,19 +17,19 @@ use crate::api::auth::models::{SdkDomain, TenantId};
 use crate::api::links::routes::{check_link_resolvable, detect_platform, Platform};
 use crate::app::AppState;
 use crate::core::webhook_dispatcher::{
-    AttributionEventPayload, ClickEventPayload, IdentifyEventPayload,
+    AttributeEventPayload, ClickEventPayload, IdentifyEventPayload,
 };
 use crate::services::links::models::{
-    Attribution, AttributionReportRequest, AttributionResponse, BindOutcome, ClickRequest,
-    LinkAttributionRequest,
+    AttributeOutcome, AttributeRequest, ClickRequest, IdentifyOutcome, IdentifyRequest, Install,
+    Link,
 };
 
-// ── POST /v1/attribution/click — SDK-authenticated click ──
+// ── POST /v1/lifecycle/click — SDK-authenticated click ──
 
 #[utoipa::path(
     post,
-    path = "/v1/attribution/click",
-    tag = "Attribution",
+    path = "/v1/lifecycle/click",
+    tag = "Lifecycle",
     request_body = ClickRequest,
     responses(
         (status = 200, description = "Click recorded, link data returned"),
@@ -39,7 +40,7 @@ use crate::services::links::models::{
     security(("api_key" = [])),
 )]
 #[tracing::instrument(skip(state, headers))]
-pub async fn attribution_click(
+pub async fn lifecycle_click(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
     axum::Extension(sdk_domain): axum::Extension<SdkDomain>,
@@ -64,7 +65,6 @@ pub async fn attribution_click(
             .into_response();
     };
 
-    // Tenant-scoped lookup via the SDK key's tenant.
     let link = repo
         .find_link_by_tenant_and_id(&tenant.0, &req.link_id)
         .await
@@ -138,15 +138,16 @@ pub async fn attribution_click(
     }))
     .into_response()
 }
-// ── POST /v1/attribution/install — SDK-authenticated attribution report ──
+
+// ── POST /v1/lifecycle/attribute — Attribute a link touch to an install ──
 
 #[utoipa::path(
     post,
-    path = "/v1/attribution/install",
-    tag = "Attribution",
-    request_body = AttributionReportRequest,
+    path = "/v1/lifecycle/attribute",
+    tag = "Lifecycle",
+    request_body = AttributeRequest,
     responses(
-        (status = 200, description = "Attribution recorded"),
+        (status = 200, description = "Attribution event recorded"),
         (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
         (status = 401, description = "Unauthorized", body = crate::error::ErrorResponse),
         (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
@@ -154,10 +155,10 @@ pub async fn attribution_click(
     security(("api_key" = [])),
 )]
 #[tracing::instrument(skip(state))]
-pub async fn attribution_report(
+pub async fn lifecycle_attribute(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Json(req): Json<AttributionReportRequest>,
+    Json(req): Json<AttributeRequest>,
 ) -> Response {
     if req.link_id.is_empty() || req.install_id.is_empty() {
         return (
@@ -189,8 +190,16 @@ pub async fn attribution_report(
             .into_response();
     };
 
-    if let Err(e) = repo
-        .upsert_attribution(
+    let Some(svc) = &state.links_service else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Service not configured", "code": "no_service" })),
+        )
+            .into_response();
+    };
+
+    let outcome = match svc
+        .record_attribute_event(
             link.tenant_id,
             &req.link_id,
             &req.install_id,
@@ -198,27 +207,44 @@ pub async fn attribution_report(
         )
         .await
     {
-        tracing::error!("Failed to upsert attribution: {e}");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "Internal error", "code": "db_error" })),
-        )
-            .into_response();
-    }
+        Ok(o) => o,
+        Err(e) => {
+            tracing::error!("Failed to record attribute event: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response();
+        }
+    };
 
+    // Every `attribute` call fires the webhook. `user_id` is populated when
+    // the install was already identified (existing-install re-attribution
+    // path) — that's how downstream subscribers credit a teammate who
+    // clicks a campaign link without reinstalling.
     if let Some(dispatcher) = &state.webhook_dispatcher {
-        dispatcher.dispatch_attribution(AttributionEventPayload {
+        let install = match &outcome {
+            AttributeOutcome::FirstTouch(i) | AttributeOutcome::Retouch(i) => i,
+        };
+        let link_metadata = link
+            .metadata
+            .as_ref()
+            .and_then(|d| serde_json::to_value(d).ok());
+        dispatcher.dispatch_attribute(AttributeEventPayload {
             tenant_id: link.tenant_id.to_hex(),
             link_id: req.link_id.clone(),
             install_id: req.install_id.clone(),
             app_version: req.app_version.clone(),
+            user_id: install.user_id.clone(),
+            link_metadata,
             timestamp: Utc::now().to_rfc3339(),
         });
     }
 
     Json(json!({ "success": true })).into_response()
 }
-// ── PUT /v1/attribution/identify — Link attribution to user (SDK-authenticated) ──
+
+// ── PUT /v1/lifecycle/identify — Bind install to user (SDK-authenticated) ──
 //
 // SDK-authenticated (pk_live_) because the install_id is opaque and only
 // lives in the mobile SDK; no flow produces the inputs a backend would need
@@ -226,22 +252,22 @@ pub async fn attribution_report(
 
 #[utoipa::path(
     put,
-    path = "/v1/attribution/identify",
-    tag = "Attribution",
-    request_body = LinkAttributionRequest,
+    path = "/v1/lifecycle/identify",
+    tag = "Lifecycle",
+    request_body = IdentifyRequest,
     responses(
-        (status = 200, description = "Attribution linked", body = AttributionResponse),
+        (status = 200, description = "Install bound to user"),
         (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
         (status = 401, description = "Unauthorized", body = crate::error::ErrorResponse),
-        (status = 404, description = "No attribution found for this install_id", body = crate::error::ErrorResponse),
+        (status = 404, description = "No install found for this install_id", body = crate::error::ErrorResponse),
     ),
     security(("api_key" = [])),
 )]
 #[tracing::instrument(skip(state))]
-pub async fn link_attribution(
+pub async fn lifecycle_identify(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Json(req): Json<LinkAttributionRequest>,
+    Json(req): Json<IdentifyRequest>,
 ) -> Response {
     if req.install_id.is_empty() || req.user_id.is_empty() {
         return (
@@ -260,19 +286,20 @@ pub async fn link_attribution(
     };
 
     let outcome = repo
-        .link_attribution_to_user(&tenant.0, &req.install_id, &req.user_id)
+        .identify_install(&tenant.0, &req.install_id, &req.user_id)
         .await;
 
     match outcome {
-        Ok(BindOutcome::NewBind(attribution)) => {
-            // First-time bind for this install — fire the `identify` webhook
-            // so subscribers can react (credit the user for a welcome bonus
-            // campaign, etc.). Failures inside the fire-site are non-fatal:
-            // the bind already committed; webhook dispatch is best-effort.
-            fire_identify_event(&state, attribution).await;
+        Ok(IdentifyOutcome::NewBind(install)) => {
+            // First-time bind for this install — fire the `identify`
+            // webhook so subscribers can react (credit the user for a
+            // welcome bonus campaign, etc.). Failures inside the fire-site
+            // are non-fatal: the bind already committed; webhook dispatch
+            // is best-effort.
+            fire_identify_event(&state, install).await;
             Json(json!({ "success": true })).into_response()
         }
-        Ok(BindOutcome::AlreadyBound(_)) => {
+        Ok(IdentifyOutcome::AlreadyBound(_)) => {
             // Idempotent replay — install was already bound to this same
             // user_id. Return 200 (desired end state holds) but
             // intentionally skip the webhook so subscribers don't
@@ -284,15 +311,13 @@ pub async fn link_attribution(
             );
             Json(json!({ "success": true })).into_response()
         }
-        Ok(BindOutcome::NotFound) => (
+        Ok(IdentifyOutcome::NotFound) => (
             StatusCode::NOT_FOUND,
-            Json(
-                json!({ "error": "No attribution found for this install_id", "code": "not_found" }),
-            ),
+            Json(json!({ "error": "No install found for this install_id", "code": "not_found" })),
         )
             .into_response(),
         Err(e) => {
-            tracing::error!("Failed to link attribution: {e}");
+            tracing::error!("Failed to identify install: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": "Internal error", "code": "db_error" })),
@@ -306,20 +331,20 @@ pub async fn link_attribution(
 /// `{user_id, link_id, link_metadata}` triple. The bind has already
 /// committed, so any anomaly here (missing link, etc.) is a soft warning
 /// rather than an error path.
-async fn fire_identify_event(state: &Arc<AppState>, attribution: Attribution) {
+async fn fire_identify_event(state: &Arc<AppState>, install: Install) {
     let (Some(repo), Some(dispatcher)) = (&state.links_repo, &state.webhook_dispatcher) else {
         return;
     };
 
-    let link = match repo
-        .find_link_by_tenant_and_id(&attribution.tenant_id, &attribution.link_id)
+    let link: Link = match repo
+        .find_link_by_tenant_and_id(&install.tenant_id, &install.first_link_id)
         .await
     {
         Ok(Some(l)) => l,
         Ok(None) => {
             tracing::warn!(
-                link_id = %attribution.link_id,
-                "identify webhook: link missing for attribution"
+                link_id = %install.first_link_id,
+                "identify webhook: link missing for install"
             );
             return;
         }
@@ -334,16 +359,16 @@ async fn fire_identify_event(state: &Arc<AppState>, attribution: Attribution) {
         .as_ref()
         .and_then(|d| serde_json::to_value(d).ok());
 
-    // `user_id` is always `Some` here — `BindOutcome::NewBind` is
+    // `user_id` is always `Some` here — `IdentifyOutcome::NewBind` is
     // constructed post-update with `user_id` set. Defensive default keeps
     // the contract local rather than panicking on a future refactor.
-    let user_id = attribution.user_id.clone().unwrap_or_default();
+    let user_id = install.user_id.clone().unwrap_or_default();
 
     dispatcher.dispatch_identify(IdentifyEventPayload {
-        tenant_id: attribution.tenant_id.to_hex(),
+        tenant_id: install.tenant_id.to_hex(),
         user_id,
-        link_id: attribution.link_id,
-        install_id: attribution.install_id,
+        link_id: install.first_link_id,
+        install_id: install.install_id,
         link_metadata,
         timestamp: Utc::now().to_rfc3339(),
     });

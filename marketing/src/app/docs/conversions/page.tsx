@@ -77,7 +77,7 @@ export default function ConversionsPage() {
               Before you can attribute conversions, call{" "}
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">setUserId</code>{" "}
               wherever you handle your user session. See the{" "}
-              <a href="/docs/attribution" className="text-[#2dd4bf] hover:underline">Attribution</a>{" "}
+              <a href="/docs/lifecycle" className="text-[#2dd4bf] hover:underline">Lifecycle</a>{" "}
               docs for the full pattern.
             </p>
             <CodeBlock lang="swift">{`// iOS
@@ -91,7 +91,7 @@ rift.setUserId(userId = currentUser.id)`}</CodeBlock>
               Call <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">trackConversion</code>{" "}
               whenever a user does something worth counting. The SDK reads the bound user,
               authenticates with your publishable key, and POSTs to{" "}
-              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/convert</code>.
+              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/lifecycle/convert</code>.
             </p>
             <CodeBlock lang="swift">{`// iOS — on trade completion, purchase, signup:
 try await rift.trackConversion(
@@ -160,7 +160,7 @@ rift.trackConversion(
               Before you can attribute conversions, each user needs an attribution record
               linking them back to the install that originally drove them. The mobile SDK
               handles this in one line — see the{" "}
-              <a href="/docs/attribution" className="text-[#2dd4bf] hover:underline">
+              <a href="/docs/lifecycle" className="text-[#2dd4bf] hover:underline">
                 Attribution
               </a>{" "}
               doc for the full pattern:

@@ -276,7 +276,7 @@ console.log(link._rift_meta);    // { status, tenant_domain, ... }`}</CodeBlock>
             <li>
               When the user clicks the link, the SDK detects it matches your domain and auto-fires a{" "}
               <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">sendBeacon</code> to{" "}
-              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/click</code>{" "}
+              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/lifecycle/click</code>{" "}
               to record the click. This is fire-and-forget and does not block navigation.
             </li>
             <li>

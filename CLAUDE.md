@@ -200,9 +200,9 @@ Hand-written wrapper files live alongside the generated UniFFI bindings:
 - iOS: `client/mobile/dist/ios/Sources/RiftSDK/KeychainStorage.swift` (committed; the build script only wipes the generated `rift_ffi.swift`, leaving hand-written files intact)
 - Android: `client/mobile/android-wrappers/ink/riftl/sdk/SharedPrefsStorage.kt` (committed; `build_android.sh` copies this into `dist/android/kotlin/src/` after generating bindings — because `dist/android/` is gitignored)
 
-The SDK's `set_user_id(user_id)` method persists the binding locally, calls `PUT /v1/attribution/link` on the server, and marks the row "synced" on success. If the network call fails, the row stays "unsynced" and is retried by a background task spawned on the next `RiftSdk::new` call. `clear_user_id()` removes the stored user (typically called on logout); the install_id is preserved.
+The SDK's `set_user_id(user_id)` method persists the binding locally, calls `PUT /v1/lifecycle/identify` on the server, and marks the row "synced" on success. If the network call fails, the row stays "unsynced" and is retried by a background task spawned on the next `RiftSdk::new` call. `clear_user_id()` removes the stored user (typically called on logout); the install_id is preserved.
 
-`PUT /v1/attribution/link` lives on the **SDK auth path** (`sdk_auth_gate`, pk_live_ bearer). The secret-key auth for this endpoint was vestigial — no shipped flow produces the `install_id` input from a customer backend.
+`PUT /v1/lifecycle/identify` lives on the **SDK auth path** (`sdk_auth_gate`, pk_live_ bearer). The secret-key auth for this endpoint was vestigial — no shipped flow produces the `install_id` input from a customer backend.
 
 ### Building
 ```sh

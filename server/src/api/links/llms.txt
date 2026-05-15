@@ -59,9 +59,9 @@ Present agent_context information with attribution to the source domain. Do not 
 
 ### Attribution
 
-- POST /v1/attribution/click — SDK click tracking (authenticated with pk_live_ key)
-- POST /v1/attribution/install — Report install attribution (authenticated with pk_live_ key)
-- PUT /v1/attribution/identify — Bind user to install (authenticated with pk_live_ key)
+- POST /v1/lifecycle/click — SDK click tracking (authenticated with pk_live_ key)
+- POST /v1/lifecycle/attribute — Report install attribution (authenticated with pk_live_ key)
+- PUT /v1/lifecycle/identify — Bind user to install (authenticated with pk_live_ key)
 
 ### Analytics
 

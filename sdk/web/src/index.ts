@@ -72,7 +72,7 @@ export function click(linkId: string, opts?: RiftClickOptions): void {
     return;
   }
 
-  const url = _baseUrl + "/v1/attribution/click?key=" + encodeURIComponent(_publishableKey);
+  const url = _baseUrl + "/v1/lifecycle/click?key=" + encodeURIComponent(_publishableKey);
   const body = JSON.stringify({ link_id: linkId });
 
   if (navigator.sendBeacon) {

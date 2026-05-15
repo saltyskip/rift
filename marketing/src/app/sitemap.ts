@@ -12,7 +12,7 @@ const staticRoutes = [
   "/docs",
   "/docs/android-sdk",
   "/docs/apps",
-  "/docs/attribution",
+  "/docs/lifecycle",
   "/docs/conversions",
   "/docs/deferred",
   "/docs/domains",

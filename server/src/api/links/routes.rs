@@ -273,7 +273,7 @@ pub async fn get_link_stats(
 
     let click_count = repo.count_clicks(&tenant.0, &link_id).await.unwrap_or(0);
     let install_count = repo
-        .count_attributions(&tenant.0, &link_id)
+        .count_installs_by_first_link(&tenant.0, &link_id)
         .await
         .unwrap_or(0);
     let identify_count = repo

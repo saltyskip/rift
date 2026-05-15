@@ -158,7 +158,7 @@ async fn attribution_click_with_valid_key() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/click"))
+        .post(app.url("/v1/lifecycle/click"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .header(
             "User-Agent",
@@ -183,7 +183,7 @@ async fn attribution_click_without_key_returns_401() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/click"))
+        .post(app.url("/v1/lifecycle/click"))
         .json(&serde_json::json!({ "link_id": "any" }))
         .send()
         .await
@@ -214,7 +214,7 @@ async fn attribution_report_with_valid_key() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/install"))
+        .post(app.url("/v1/lifecycle/attribute"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "link_id": "attr-report",
@@ -236,7 +236,7 @@ async fn attribution_report_without_key_returns_401() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/install"))
+        .post(app.url("/v1/lifecycle/attribute"))
         .json(&serde_json::json!({
             "link_id": "any",
             "install_id": "test",
@@ -251,7 +251,7 @@ async fn attribution_report_without_key_returns_401() {
 
 // ── Attribution Link Tests ──
 //
-// PUT /v1/attribution/identify lives on the SDK-auth path (pk_live_) because
+// PUT /v1/lifecycle/identify lives on the SDK-auth path (pk_live_) because
 // install_id is opaque and only lives in the mobile SDK. These tests verify
 // the auth move and preserve the existing behavior of the handler.
 
@@ -263,7 +263,7 @@ async fn report_attribution_for_test(
 ) {
     let resp = app
         .client
-        .post(app.url("/v1/attribution/install"))
+        .post(app.url("/v1/lifecycle/attribute"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "link_id": link_id,
@@ -300,7 +300,7 @@ async fn attribution_link_binds_user_with_sdk_key() {
     // Bind the install to a user with the SDK key.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-abc",
@@ -338,7 +338,7 @@ async fn attribution_link_is_idempotent_with_sdk_key() {
     // First bind.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-idem",
@@ -352,7 +352,7 @@ async fn attribution_link_is_idempotent_with_sdk_key() {
     // Second bind with the same pair — still succeeds.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-idem",
@@ -389,7 +389,7 @@ async fn attribution_link_rejects_rebind_to_different_user() {
     // First bind to user A.
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-rebind",
@@ -404,7 +404,7 @@ async fn attribution_link_rejects_rebind_to_different_user() {
     // repo update filter doesn't match because user_id is already set).
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "install-rebind",
@@ -426,7 +426,7 @@ async fn attribution_link_returns_404_for_missing_install() {
 
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": "does-not-exist",
@@ -448,7 +448,7 @@ async fn attribution_link_rejects_secret_key() {
 
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {api_key}"))
         .json(&serde_json::json!({
             "install_id": "any",
@@ -467,7 +467,7 @@ async fn attribution_link_rejects_no_auth() {
 
     let resp = app
         .client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .json(&serde_json::json!({
             "install_id": "any",
             "user_id": "usr_any"
@@ -502,7 +502,7 @@ async fn setup_attribution_chain(
         .unwrap();
 
     app.client
-        .post(app.url("/v1/attribution/install"))
+        .post(app.url("/v1/lifecycle/attribute"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "link_id": link_id,
@@ -514,7 +514,7 @@ async fn setup_attribution_chain(
         .unwrap();
 
     app.client
-        .put(app.url("/v1/attribution/identify"))
+        .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "install_id": install_id,
@@ -544,7 +544,7 @@ async fn sdk_convert_happy_path() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/convert"))
+        .post(app.url("/v1/lifecycle/convert"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "user_id": "usr-conv",
@@ -587,7 +587,7 @@ async fn sdk_convert_dedupes_by_idempotency_key() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/convert"))
+        .post(app.url("/v1/lifecycle/convert"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&payload)
         .send()
@@ -598,7 +598,7 @@ async fn sdk_convert_dedupes_by_idempotency_key() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/convert"))
+        .post(app.url("/v1/lifecycle/convert"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&payload)
         .send()
@@ -618,7 +618,7 @@ async fn sdk_convert_unattributed_user() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/convert"))
+        .post(app.url("/v1/lifecycle/convert"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "user_id": "unknown-user",
@@ -644,7 +644,7 @@ async fn sdk_convert_rejects_empty_user_id() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/convert"))
+        .post(app.url("/v1/lifecycle/convert"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "user_id": "",
@@ -666,7 +666,7 @@ async fn sdk_convert_rejects_empty_type() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/convert"))
+        .post(app.url("/v1/lifecycle/convert"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
             "user_id": "usr-test",
@@ -685,7 +685,7 @@ async fn sdk_convert_rejects_no_auth() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/convert"))
+        .post(app.url("/v1/lifecycle/convert"))
         .json(&serde_json::json!({
             "user_id": "usr-test",
             "type": "trade"
@@ -704,7 +704,7 @@ async fn sdk_convert_rejects_secret_key() {
 
     let resp = app
         .client
-        .post(app.url("/v1/attribution/convert"))
+        .post(app.url("/v1/lifecycle/convert"))
         .header("Authorization", format!("Bearer {api_key}"))
         .json(&serde_json::json!({
             "user_id": "usr-test",

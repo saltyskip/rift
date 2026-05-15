@@ -3,7 +3,7 @@ use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
 use rift::core::webhook_dispatcher::{
-    AttributionEventPayload, ClickEventPayload, ConversionEventPayload, IdentifyEventPayload,
+    AttributeEventPayload, ClickEventPayload, ConversionEventPayload, IdentifyEventPayload,
     WebhookDispatcher,
 };
 use rift::services::webhooks::models::Webhook;
@@ -102,7 +102,7 @@ impl WebhooksRepository for MockWebhooksRepo {
 #[derive(Default)]
 pub struct MockWebhookDispatcher {
     pub click_payloads: Mutex<Vec<ClickEventPayload>>,
-    pub attribution_payloads: Mutex<Vec<AttributionEventPayload>>,
+    pub attribute_payloads: Mutex<Vec<AttributeEventPayload>>,
     pub conversion_payloads: Mutex<Vec<ConversionEventPayload>>,
     pub identify_payloads: Mutex<Vec<IdentifyEventPayload>>,
 }
@@ -112,8 +112,8 @@ impl WebhookDispatcher for MockWebhookDispatcher {
         self.click_payloads.lock().unwrap().push(payload);
     }
 
-    fn dispatch_attribution(&self, payload: AttributionEventPayload) {
-        self.attribution_payloads.lock().unwrap().push(payload);
+    fn dispatch_attribute(&self, payload: AttributeEventPayload) {
+        self.attribute_payloads.lock().unwrap().push(payload);
     }
 
     fn dispatch_conversion(&self, payload: ConversionEventPayload) {

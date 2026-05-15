@@ -3,12 +3,13 @@ import { DocsCodeBlock as CodeBlock } from "@/components/docs-code-block";
 import { DocsSetupTabs } from "@/components/docs-setup-tabs";
 import { DocsStep as Step } from "@/components/docs-step";
 import { DocsCallout as Callout } from "@/components/docs-callout";
+import { LifecycleFlow } from "@/components/lifecycle-flow";
 
 export const metadata: Metadata = {
   title: "Attribution — Rift Docs",
   description:
     "Track clicks, attribute installs to links, and measure conversions across web, iOS, and Android.",
-  alternates: { canonical: "/docs/attribution" },
+  alternates: { canonical: "/docs/lifecycle" },
 };
 
 export default function AttributionPage() {
@@ -41,48 +42,21 @@ export default function AttributionPage() {
         <section className="space-y-4">
           <h2 className="text-2xl font-bold text-[#fafafa]">How it works</h2>
           <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
-            Every Rift link goes through a three-stage funnel:
+            Four SDK calls map 1:1 to four HTTP endpoints and four webhook
+            event types. Call them in funnel order as the user moves
+            through your product — Rift records each step, materializes
+            the install state, and fires a webhook your backend can react
+            to.
           </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#2dd4bf]">
-                1. Click
-              </p>
-              <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
-                A user taps a link. Rift records the click with platform, user
-                agent, and referrer. The SDK or landing page stages the link
-                ID for post-install pickup.
-              </p>
-            </div>
-            <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#f59e0b]">
-                2. Install
-              </p>
-              <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
-                After the app is installed and opened, the SDK recovers the link ID
-                and reports the attribution back to Rift.
-              </p>
-            </div>
-            <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#a78bfa]">
-                3. Identify
-              </p>
-              <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
-                After signup or login, the SDK binds the install to a user ID —
-                closing the loop from ad click to registered user.
-              </p>
-            </div>
-            <div className="rounded-xl border border-[#1e1e22] bg-[#111113] p-4">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#f472b6]">
-                4. Convert
-              </p>
-              <p className="mt-2 text-[13px] leading-relaxed text-[#71717a]">
-                When the user completes a valuable action (purchase, trade, deposit),
-                the SDK or your backend fires a conversion event attributed to the
-                originating link.
-              </p>
-            </div>
-          </div>
+          <LifecycleFlow />
+          <p className="text-[13px] text-[#71717a] leading-relaxed">
+            Solid arrows are synchronous: each SDK call hits one endpoint,
+            which writes to one (sometimes two) collections and dispatches
+            one webhook. Dashed arrows are funnel order — they happen
+            later in the user&apos;s journey, often on a different device
+            or session. The four verbs are independent: you can call any
+            of them at any time, in any order.
+          </p>
         </section>
 
         <div className="gradient-line" />
@@ -179,7 +153,7 @@ Rift.click("summer-sale");`}</CodeBlock>
                   <p>
                     On click, the SDK fires a{" "}
                     <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">sendBeacon</code> request
-                    to <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/attribution/click</code> and
+                    to <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/lifecycle/click</code> and
                     copies the link URL to the clipboard. The beacon is fire-and-forget — it
                     doesn&apos;t block navigation.
                   </p>
@@ -240,7 +214,7 @@ Rift.click("summer-sale");`}</CodeBlock>
               children: (
                 <div className="space-y-3 text-[15px] leading-relaxed text-[#a1a1aa]">
                   <p>Record a click directly via the API:</p>
-                  <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/attribution/click \\
+                  <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/lifecycle/click \\
   -H "Authorization: Bearer pk_live_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"link_id": "summer-sale"}'`}</CodeBlock>
@@ -259,12 +233,18 @@ Rift.click("summer-sale");`}</CodeBlock>
         {/* Install Attribution */}
         <section className="space-y-6">
           <h2 className="text-2xl font-bold text-[#fafafa]">
-            Install attribution
+            Attribute the touch
           </h2>
           <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
-            After the app is installed and opened for the first time, the SDK
-            recovers the original link ID and reports the attribution. The
-            mechanism differs by platform.
+            <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">
+              attribute
+            </code>{" "}
+            records that an install touched a link — whether it&apos;s a
+            fresh install whose first-touch you&apos;re capturing, or an
+            already-signed-in user clicking a new campaign link. Every
+            call appends an event; first-touch attribution stays sticky
+            for stats. On mobile the SDK recovers the link ID after
+            install — the mechanism differs by platform.
           </p>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -319,7 +299,7 @@ if let result = try await rift.checkDeferredDeepLink(
                     <p>
                       Or use the lower-level method if you need more control:
                     </p>
-                    <CodeBlock lang="swift">{`let reported = try await rift.reportAttributionForLink(linkId: "summer-sale")`}</CodeBlock>
+                    <CodeBlock lang="swift">{`let reported = try await rift.attributeLink(linkId: "summer-sale")`}</CodeBlock>
                   </div>
                 ),
               },
@@ -335,7 +315,7 @@ if let result = try await rift.checkDeferredDeepLink(
                     <CodeBlock lang="kotlin">{`// Using the install referrer
 val linkId = parseReferrerLink(referrerString)
 if (linkId != null) {
-    rift.reportAttributionForLink(linkId = linkId)
+    rift.attributeLink(linkId = linkId)
     val link = rift.getLink(linkId = linkId)
     link.androidDeepLink?.let { handleDeepLink(it) }
 }`}</CodeBlock>
@@ -348,7 +328,7 @@ if (linkId != null) {
                 children: (
                   <div className="space-y-3 text-[15px] leading-relaxed text-[#a1a1aa]">
                     <p>Report an install attribution directly:</p>
-                    <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/attribution/install \\
+                    <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/lifecycle/attribute \\
   -H "Authorization: Bearer pk_live_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -357,9 +337,12 @@ if (linkId != null) {
     "app_version": "1.0.0"
   }'`}</CodeBlock>
                     <Callout type="info">
-                      Only the first report for a given{" "}
-                      <code>install_id</code> is recorded. Subsequent
-                      reports for the same install are ignored.
+                      Every <code>attribute</code> call appends an event.
+                      First-touch attribution (the campaign that gets
+                      credit in stats) is preserved on the install record
+                      and not overwritten by subsequent calls — but the
+                      webhook fires every time, so receivers can react to
+                      re-attribution touchpoints.
                     </Callout>
                   </div>
                 ),
@@ -370,16 +353,33 @@ if (linkId != null) {
 
         <div className="gradient-line" />
 
-        {/* User Linking */}
+        {/* Identify */}
         <section className="space-y-6">
-          <h2 className="text-2xl font-bold text-[#fafafa]">
-            Bind users to installs
-          </h2>
+          <h2 className="text-2xl font-bold text-[#fafafa]">Identify the user</h2>
           <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
-            After a user signs up or logs in, tell Rift who they are. The mobile
-            SDK persists this binding locally, sends it to the server, and
-            silently retries on the next app launch if the network call fails.
-            One line, wherever you already handle your user session:
+            <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">
+              identify
+            </code>{" "}
+            is the join between &ldquo;an install touched my link&rdquo;
+            and &ldquo;a real user did the valuable thing later.&rdquo; It
+            unlocks the conversion-attribution path — every conversion
+            you fire afterwards resolves{" "}
+            <code className="text-[#71717a] bg-[#18181b] px-1 py-0.5 rounded text-[12px]">
+              user_id → first_link_id
+            </code>{" "}
+            via the install record so credit lands on the right campaign.
+            Subscribers receive the full triple{" "}
+            <code className="text-[#71717a] bg-[#18181b] px-1 py-0.5 rounded text-[12px]">
+              {"{user_id, link_id, link_metadata}"}
+            </code>{" "}
+            in the webhook, so you can react (grant entitlements, credit
+            referrals, send a welcome bonus) without a follow-up lookup.
+          </p>
+          <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
+            The mobile SDK persists this binding locally, sends it to the
+            server, and silently retries on the next app launch if the
+            network call fails. One line, wherever you already handle
+            your user session:
           </p>
 
           <DocsSetupTabs
@@ -438,7 +438,7 @@ lifecycleScope.launch {
                       signup time), you can also call the endpoint directly
                       with your publishable key:
                     </p>
-                    <CodeBlock>{`curl -X PUT https://api.riftl.ink/v1/attribution/identify \\
+                    <CodeBlock>{`curl -X PUT https://api.riftl.ink/v1/lifecycle/identify \\
   -H "Authorization: Bearer pk_live_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -461,6 +461,124 @@ lifecycleScope.launch {
             <strong className="text-[#fafafa]">On logout:</strong> call{" "}
             <code>rift.clearUserId()</code> to remove the stored user binding.
             The install_id is preserved — only the user link is cleared.
+          </Callout>
+
+          <div>
+            <p className="text-[13px] text-[#71717a] leading-relaxed mb-2">
+              The <code>identify</code> webhook payload your endpoint
+              receives:
+            </p>
+            <CodeBlock lang="json">{`{
+  "event": "identify",
+  "timestamp": "2026-05-15T12:34:56Z",
+  "data": {
+    "tenant_id": "65f...",
+    "user_id": "usr_abc123",
+    "link_id": "summer-sale",
+    "install_id": "device-uuid",
+    "link_metadata": {
+      "bonus_type": "welcome",
+      "bonus_amount_usdc": "20"
+    }
+  }
+}`}</CodeBlock>
+          </div>
+
+          <Callout type="info">
+            Idempotent rebind (same install ↔ same user) is intentionally
+            silent — the webhook only fires on a real state transition,
+            so subscribers can&apos;t double-fulfill on SDK retries. For
+            the existing-install re-attribution case (already-signed-in
+            user clicks a new campaign link), credits flow through the{" "}
+            <code>attribute</code> webhook instead — its payload carries
+            the already-bound <code>user_id</code>.
+          </Callout>
+        </section>
+
+        <div className="gradient-line" />
+
+        {/* Convert */}
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold text-[#fafafa]">Track conversions</h2>
+          <p className="text-[15px] text-[#a1a1aa] leading-relaxed">
+            <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">
+              convert
+            </code>{" "}
+            is the last verb in the funnel — the valuable action you
+            actually care about (first purchase, completed signup,
+            subscription start). Fire it from your app with a stable{" "}
+            <code className="text-[#71717a] bg-[#18181b] px-1 py-0.5 rounded text-[12px]">
+              idempotency_key
+            </code>{" "}
+            and Rift resolves the user back to the campaign that drove
+            their install via the{" "}
+            <code className="text-[#71717a] bg-[#18181b] px-1 py-0.5 rounded text-[12px]">
+              installs
+            </code>{" "}
+            record.
+          </p>
+
+          <DocsSetupTabs
+            title="Fire a conversion"
+            tabs={[
+              {
+                id: "ios",
+                label: "iOS",
+                children: (
+                  <div className="space-y-3">
+                    <CodeBlock lang="swift">{`try await rift.trackConversion(
+    conversionType: "first_trade",
+    idempotencyKey: order.id,
+    metadata: ["volume_usdc": "1500"]
+)`}</CodeBlock>
+                  </div>
+                ),
+              },
+              {
+                id: "android",
+                label: "Android",
+                children: (
+                  <div className="space-y-3">
+                    <CodeBlock lang="kotlin">{`rift.trackConversion(
+    conversionType = "first_trade",
+    idempotencyKey = order.id,
+    metadata = mapOf("volume_usdc" to "1500")
+)`}</CodeBlock>
+                  </div>
+                ),
+              },
+              {
+                id: "http",
+                label: "HTTP",
+                children: (
+                  <div className="space-y-3">
+                    <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/lifecycle/convert \\
+  -H "Authorization: Bearer pk_live_YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "user_id": "usr_abc123",
+    "type": "first_trade",
+    "idempotency_key": "ord_9f8d2",
+    "metadata": { "volume_usdc": "1500" }
+  }'`}</CodeBlock>
+                  </div>
+                ),
+              },
+            ]}
+          />
+
+          <Callout type="info">
+            Server-to-server conversion sources (Stripe, RevenueCat,
+            custom webhooks) configure separately so you can fire
+            conversions from billing infrastructure that never touches
+            the SDK. See{" "}
+            <a
+              href="/docs/conversions"
+              className="text-[#2dd4bf] hover:underline"
+            >
+              Conversions
+            </a>
+            .
           </Callout>
         </section>
 

@@ -5,15 +5,15 @@ use std::sync::Mutex;
 
 use rift::services::links::models::BulkInsertError;
 use rift::services::links::models::{
-    Attribution as RealAttribution, BindOutcome, ClickEvent, ClickMeta, CreateLinkInput, Link,
-    LinkStatus, TimeseriesDataPoint,
+    AttributeOutcome, ClickEvent, ClickMeta, CreateLinkInput, IdentifyOutcome,
+    Install as RealInstall, Link, LinkStatus, TimeseriesDataPoint,
 };
 use rift::services::links::repo::LinksRepository;
 
-struct Attribution {
+struct Install {
     tenant_id: ObjectId,
-    link_id: String,
     install_id: String,
+    first_link_id: String,
     user_id: Option<String>,
 }
 
@@ -21,7 +21,7 @@ struct Attribution {
 pub struct MockLinksRepo {
     pub links: Mutex<Vec<Link>>,
     pub clicks: Mutex<Vec<ClickEvent>>,
-    attributions: Mutex<Vec<Attribution>>,
+    installs: Mutex<Vec<Install>>,
 }
 
 #[async_trait]
@@ -280,102 +280,129 @@ impl LinksRepository for MockLinksRepo {
             .collect())
     }
 
-    async fn upsert_attribution(
+    async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
         link_id: &str,
         install_id: &str,
         _app_version: &str,
-    ) -> Result<(), String> {
-        let mut attrs = self.attributions.lock().unwrap();
-        if !attrs
+        _retention_bucket: String,
+    ) -> Result<AttributeOutcome, String> {
+        // Mirrors the real repo: first call inserts the install with this
+        // link as first_link_id (FirstTouch); subsequent calls preserve
+        // the original first_link_id and return Retouch.
+        let mut installs = self.installs.lock().unwrap();
+        let real = |i: &Install| RealInstall {
+            id: ObjectId::new(),
+            tenant_id: i.tenant_id,
+            install_id: i.install_id.clone(),
+            first_link_id: i.first_link_id.clone(),
+            first_app_version: "test".to_string(),
+            first_attributed_at: DateTime::now(),
+            user_id: i.user_id.clone(),
+            identified_at: None,
+        };
+        if let Some(existing) = installs
             .iter()
-            .any(|a| a.tenant_id == tenant_id && a.install_id == install_id)
+            .find(|a| a.tenant_id == tenant_id && a.install_id == install_id)
         {
-            attrs.push(Attribution {
-                tenant_id,
-                link_id: link_id.to_string(),
-                install_id: install_id.to_string(),
-                user_id: None,
-            });
+            return Ok(AttributeOutcome::Retouch(real(existing)));
         }
-        Ok(())
+        let new_install = Install {
+            tenant_id,
+            install_id: install_id.to_string(),
+            first_link_id: link_id.to_string(),
+            user_id: None,
+        };
+        let payload = real(&new_install);
+        installs.push(new_install);
+        Ok(AttributeOutcome::FirstTouch(payload))
     }
 
-    async fn link_attribution_to_user(
+    async fn identify_install(
         &self,
         tenant_id: &ObjectId,
         install_id: &str,
         user_id: &str,
-    ) -> Result<BindOutcome, String> {
-        // Mirrors the real repo: distinguishes a fresh bind from an
-        // idempotent rebind so callers (the identify-webhook fire-site)
-        // can suppress the webhook in the idempotent case.
-        let mut attrs = self.attributions.lock().unwrap();
-        let Some(attr) = attrs
+    ) -> Result<IdentifyOutcome, String> {
+        // Distinguishes a fresh bind from an idempotent rebind so callers
+        // (identify-webhook fire-site) can suppress the webhook in the
+        // idempotent case.
+        let mut installs = self.installs.lock().unwrap();
+        let Some(install) = installs
             .iter_mut()
             .find(|a| &a.tenant_id == tenant_id && a.install_id == install_id)
         else {
-            return Ok(BindOutcome::NotFound);
+            return Ok(IdentifyOutcome::NotFound);
         };
 
-        let real = |attr: &Attribution| RealAttribution {
+        let real = |install: &Install| RealInstall {
             id: ObjectId::new(),
-            tenant_id: attr.tenant_id,
-            link_id: attr.link_id.clone(),
-            install_id: attr.install_id.clone(),
+            tenant_id: install.tenant_id,
+            install_id: install.install_id.clone(),
+            first_link_id: install.first_link_id.clone(),
+            first_app_version: "test".to_string(),
+            first_attributed_at: DateTime::now(),
             user_id: Some(user_id.to_string()),
-            app_version: String::new(),
-            attributed_at: DateTime::now(),
+            identified_at: Some(DateTime::now()),
         };
 
-        match attr.user_id.as_deref() {
+        match install.user_id.as_deref() {
             None => {
-                attr.user_id = Some(user_id.to_string());
-                Ok(BindOutcome::NewBind(real(attr)))
+                install.user_id = Some(user_id.to_string());
+                Ok(IdentifyOutcome::NewBind(real(install)))
             }
-            Some(existing) if existing == user_id => Ok(BindOutcome::AlreadyBound(real(attr))),
-            Some(_) => Ok(BindOutcome::NotFound),
+            Some(existing) if existing == user_id => {
+                Ok(IdentifyOutcome::AlreadyBound(real(install)))
+            }
+            Some(_) => Ok(IdentifyOutcome::NotFound),
         }
     }
 
-    async fn count_attributions(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
+    async fn count_installs_by_first_link(
+        &self,
+        tenant_id: &ObjectId,
+        link_id: &str,
+    ) -> Result<u64, String> {
         Ok(self
-            .attributions
+            .installs
             .lock()
             .unwrap()
             .iter()
-            .filter(|a| &a.tenant_id == tenant_id && a.link_id == link_id)
+            .filter(|a| &a.tenant_id == tenant_id && a.first_link_id == link_id)
             .count() as u64)
     }
 
     async fn count_identifies(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
         Ok(self
-            .attributions
+            .installs
             .lock()
             .unwrap()
             .iter()
-            .filter(|a| &a.tenant_id == tenant_id && a.link_id == link_id && a.user_id.is_some())
+            .filter(|a| {
+                &a.tenant_id == tenant_id && a.first_link_id == link_id && a.user_id.is_some()
+            })
             .count() as u64)
     }
 
-    async fn find_attribution_by_user(
+    async fn find_install_by_user(
         &self,
         tenant_id: &ObjectId,
         user_id: &str,
-    ) -> Result<Option<RealAttribution>, String> {
-        let attrs = self.attributions.lock().unwrap();
-        Ok(attrs
+    ) -> Result<Option<RealInstall>, String> {
+        let installs = self.installs.lock().unwrap();
+        Ok(installs
             .iter()
             .find(|a| &a.tenant_id == tenant_id && a.user_id.as_deref() == Some(user_id))
-            .map(|a| RealAttribution {
+            .map(|a| RealInstall {
                 id: ObjectId::new(),
                 tenant_id: a.tenant_id,
-                link_id: a.link_id.clone(),
                 install_id: a.install_id.clone(),
+                first_link_id: a.first_link_id.clone(),
+                first_app_version: "test".to_string(),
+                first_attributed_at: DateTime::now(),
                 user_id: a.user_id.clone(),
-                app_version: "test".to_string(),
-                attributed_at: DateTime::now(),
+                identified_at: None,
             }))
     }
 }

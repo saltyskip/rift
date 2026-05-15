@@ -125,41 +125,103 @@ pub struct ClickEvent {
     pub platform: Option<String>,
 }
 
+/// Install state — one row per `(tenant_id, install_id)`. Holds the
+/// first-touch link attribution and (optionally) the bound user_id. This
+/// is the **mutable** projection over the immutable `attribution_events`
+/// time-series log; the event log is the source of truth, this is the
+/// materialized state for fast lookups (stats, conversions).
+///
+/// Updated by:
+/// - `/v1/lifecycle/attribute`: upsert with `first_link_id` set on insert
+///   only (preserves first-touch semantics for stats).
+/// - `/v1/lifecycle/identify`: `$set user_id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Attribution {
+pub struct Install {
     #[serde(rename = "_id")]
     pub id: ObjectId,
     pub tenant_id: ObjectId,
-    pub link_id: String,
     /// Unique per install (generated client-side).
     pub install_id: String,
-    /// User ID linked after signup (None until user authenticates).
+    /// First link that attributed this install. Set on insert only; later
+    /// `/lifecycle/attribute` calls for the same install append to the
+    /// event log but do not overwrite this field.
+    pub first_link_id: String,
+    /// App version recorded at first-touch.
+    pub first_app_version: String,
+    /// Soonest attribution timestamp for this install.
+    pub first_attributed_at: DateTime,
+    /// User id bound via `/lifecycle/identify`. None until the user
+    /// authenticates.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
-    pub app_version: String,
-    pub attributed_at: DateTime,
+    /// When `user_id` was first bound (None until identify completes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identified_at: Option<DateTime>,
 }
 
-/// Result of `LinksRepository::link_attribution_to_user`.
+/// One row per `/lifecycle/attribute` call. Stored in a MongoDB
+/// time-series collection (timeField = `timestamp`, metaField = `meta`).
+/// Immutable — re-attribution to a new link is recorded as a NEW event
+/// rather than mutating an existing one. The time-series shape gives
+/// efficient time-bucketed analytics queries plus tier-based retention
+/// via partial TTL indexes on `meta.retention_bucket`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttributionEvent {
+    pub timestamp: DateTime,
+    pub meta: AttributionEventMeta,
+    pub link_id: String,
+    pub app_version: String,
+    /// User id at the moment of the event. Often `None` for the first
+    /// event of an install (user hasn't signed in yet). Filled by the
+    /// route handler if `installs.user_id` is already set, so downstream
+    /// subscribers can act immediately on existing-install re-attribution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+}
+
+/// Time-series metadata. `tenant_id` + `install_id` are the join keys
+/// for queries; `retention_bucket` participates in per-tier TTL indexes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttributionEventMeta {
+    pub tenant_id: ObjectId,
+    pub install_id: String,
+    /// Retention tier marker — stamped at insert from the tenant's plan,
+    /// used by `ensure_retention_ttl_indexes`. Stays with the event for
+    /// life; tier upgrades don't extend historical retention.
+    pub retention_bucket: String,
+}
+
+/// Result of `LinksRepository::record_attribute_event`.
 ///
-/// Distinguishes a real state change (`NewBind` — webhook should fire) from an
-/// idempotent replay where the install was already bound to this same user
-/// (`AlreadyBound` — no fire, otherwise subscribers double-credit). The
-/// returned `Attribution` reflects the post-update state so the caller can
-/// build the outbound payload without a second query.
+/// `FirstTouch` and `Retouch` both successfully record an event; they
+/// differ only in whether `installs` was newly inserted (first-touch
+/// attribution for this install) vs already existed (re-attribution to
+/// a new or same link). Both fire the `attribute` webhook. The caller
+/// uses the returned `Install` to build the outbound payload (need
+/// `user_id` if it's already bound — that's the existing-install path).
 #[derive(Debug, Clone)]
-pub enum BindOutcome {
-    /// The bind changed state — `user_id` was previously absent or null and we
-    /// just set it. Fire the `identify` webhook.
-    NewBind(Attribution),
-    /// `install_id` was already bound to this same `user_id`. The route still
-    /// returns 200 but the webhook is suppressed. The Attribution is carried
-    /// for symmetry / future use even though the current handler doesn't read
-    /// it (silenced via `_` pattern).
+pub enum AttributeOutcome {
+    FirstTouch(Install),
+    Retouch(Install),
+}
+
+/// Result of `LinksRepository::identify_install`.
+///
+/// Distinguishes a real state change (`NewBind` — fire `identify` webhook)
+/// from an idempotent replay (`AlreadyBound` — suppress). The carried
+/// `Install` reflects the post-update state for payload construction.
+#[derive(Debug, Clone)]
+pub enum IdentifyOutcome {
+    /// Bind changed state — `user_id` was previously absent and we just
+    /// set it. Fire the `identify` webhook.
+    NewBind(Install),
+    /// Install was already bound to this same `user_id`. Route returns 200
+    /// but webhook is suppressed.
     #[allow(dead_code)]
-    AlreadyBound(Attribution),
-    /// No attribution matched. Either the `install_id` is unknown for this
-    /// tenant, or it's already bound to a different user — both surface as 404.
+    AlreadyBound(Install),
+    /// No install row matched. Either `install_id` is unknown for this
+    /// tenant, or it's already bound to a different user — both surface
+    /// as 404.
     NotFound,
 }
 
@@ -491,15 +553,27 @@ pub struct ListLinksResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct LinkAttributionRequest {
+pub struct IdentifyRequest {
     #[schema(example = "d4f7a1b2-3c8e-4f9a-b5d6-7e8f9a0b1c2d")]
     pub install_id: String,
     #[schema(example = "user_12345")]
     pub user_id: String,
 }
 
+/// Response from `POST /v1/lifecycle/attribute`. Today: `{success}` only.
+/// Forward room: `event_id` (stable id customers can dedup against),
+/// `is_first_touch` (signal whether `installs` row was newly inserted).
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AttributionResponse {
+pub struct AttributeResponse {
+    #[schema(example = true)]
+    pub success: bool,
+}
+
+/// Response from `PUT /v1/lifecycle/identify`. Today: `{success}` only.
+/// Forward room: `prior_attributions` (anonymous events just linked to
+/// this user_id), `bound_at` (server-side timestamp of the binding).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct IdentifyResponse {
     #[schema(example = true)]
     pub success: bool,
 }
@@ -512,7 +586,7 @@ pub struct LinkStatsResponse {
     pub click_count: u64,
     #[schema(example = 312)]
     pub install_count: u64,
-    /// Installs that progressed through `PUT /v1/attribution/identify` — i.e.
+    /// Installs that progressed through `PUT /v1/lifecycle/identify` — i.e.
     /// the user_id is bound to the install. `identify` is the deterministic
     /// join in the attribution funnel.
     #[schema(example = 198)]
@@ -589,7 +663,7 @@ pub struct ClickRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct AttributionReportRequest {
+pub struct AttributeRequest {
     #[schema(example = "summer-menu-2025")]
     pub link_id: String,
     #[schema(example = "d4f7a1b2-3c8e-4f9a-b5d6-7e8f9a0b1c2d")]

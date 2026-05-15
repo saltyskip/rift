@@ -51,7 +51,7 @@ Feature set:
 | `handleUniversalLink(_:)` on iOS | `Rift.shared.handle(continuedActivity:)` in the iOS SDK |
 | `FirebaseDynamicLinks.getDynamicLink()` on Android | `Rift.getInstance().handleIntent(intent)` in the Android SDK |
 | Deferred deep linking via clipboard | Deferred lookup via SDK on first app open — no clipboard access needed |
-| Install attribution (per-install) | `POST /v1/attribution/install` from the SDK, plus webhook fan-out |
+| Install attribution (per-install) | `POST /v1/lifecycle/attribute` from the SDK, plus webhook fan-out |
 | Conversion events (manual) | Conversions API with signed webhooks and a `custom` source type |
 | AASA / `assetlinks.json` hosted automatically | Same — Rift serves both files for every registered domain |
 | Social meta tags on preview pages | Landing page auto-fills OG/Twitter cards from link metadata |

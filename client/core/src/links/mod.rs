@@ -125,21 +125,30 @@ pub struct QrCodeOptions {
 }
 
 #[derive(Debug, Serialize)]
-pub struct AttributionReportRequest {
+pub struct AttributeRequest {
     pub link_id: String,
     pub install_id: String,
     pub app_version: String,
 }
 
+/// Response from `POST /v1/lifecycle/attribute`. See server-side
+/// `AttributeResponse` for forward-compat fields landing here over time.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AttributionResponse {
+pub struct AttributeResponse {
     pub success: bool,
 }
 
 #[derive(Debug, Serialize)]
-pub struct LinkAttributionRequest {
+pub struct IdentifyRequest {
     pub install_id: String,
     pub user_id: String,
+}
+
+/// Response from `PUT /v1/lifecycle/identify`. See server-side
+/// `IdentifyResponse` for forward-compat fields landing here over time.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IdentifyResponse {
+    pub success: bool,
 }
 
 impl RiftClient {
@@ -220,7 +229,7 @@ impl RiftClient {
         link_id: impl Into<String>,
     ) -> Result<ClickResponse, RiftClientError> {
         self.post(
-            "/v1/attribution/click",
+            "/v1/lifecycle/click",
             &ClickRequest {
                 link_id: link_id.into(),
             },
@@ -229,15 +238,19 @@ impl RiftClient {
         .await
     }
 
-    pub async fn report_attribution(
+    /// Record an attribution event — install (or already-installed user)
+    /// touched a link. Always appends to the server's event log;
+    /// re-attribution of an existing install is supported and intended.
+    /// Requires a publishable key (`pk_live_`).
+    pub async fn attribute(
         &self,
         link_id: impl Into<String>,
         install_id: impl Into<String>,
         app_version: impl Into<String>,
-    ) -> Result<AttributionResponse, RiftClientError> {
+    ) -> Result<AttributeResponse, RiftClientError> {
         self.post(
-            "/v1/attribution/install",
-            &AttributionReportRequest {
+            "/v1/lifecycle/attribute",
+            &AttributeRequest {
                 link_id: link_id.into(),
                 install_id: install_id.into(),
                 app_version: app_version.into(),
@@ -249,17 +262,17 @@ impl RiftClient {
 
     /// Bind an install_id to a user_id on the server.
     ///
-    /// Requires a publishable key (`pk_live_`). The endpoint is idempotent for
-    /// identical `(install_id, user_id)` pairs and refuses to overwrite a
+    /// Requires a publishable key (`pk_live_`). Idempotent for identical
+    /// `(install_id, user_id)` pairs and refuses to overwrite a
     /// previously-bound user. Used by the mobile SDK's `set_user_id` flow.
-    pub async fn link_attribution(
+    pub async fn identify(
         &self,
         install_id: impl Into<String>,
         user_id: impl Into<String>,
-    ) -> Result<AttributionResponse, RiftClientError> {
+    ) -> Result<IdentifyResponse, RiftClientError> {
         self.put(
-            "/v1/attribution/identify",
-            &LinkAttributionRequest {
+            "/v1/lifecycle/identify",
+            &IdentifyRequest {
                 install_id: install_id.into(),
                 user_id: user_id.into(),
             },
