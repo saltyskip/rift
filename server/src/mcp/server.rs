@@ -18,9 +18,7 @@ use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::conversions::models::SourceType;
 use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::links::models::LinkError;
-use crate::services::links::models::{
-    AgentContext, BulkCreateLinksRequest, BulkLinkTemplate, CreateLinkRequest, UpdateLinkRequest,
-};
+use crate::services::links::models::{BulkCreateLinksRequest, CreateLinkRequest};
 use crate::services::links::service::LinksService;
 
 crate::impl_container!(RiftMcp);
@@ -65,29 +63,12 @@ impl RiftMcp {
 #[tool_router]
 impl RiftMcp {
     #[tool(description = "Create a new Rift deep link with platform-specific destinations")]
-    #[tracing::instrument(skip(self, input), fields(tool = "create_link"))]
+    #[tracing::instrument(skip(self, req), fields(tool = "create_link"))]
     async fn create_link(
         &self,
-        Parameters(input): Parameters<CreateLinkInput>,
+        Parameters(req): Parameters<CreateLinkRequest>,
     ) -> Result<String, String> {
         let tenant_id = self.tenant_id()?;
-        let req = CreateLinkRequest {
-            custom_id: input.custom_id,
-            ios_deep_link: input.ios_deep_link,
-            android_deep_link: input.android_deep_link,
-            web_url: input.web_url,
-            ios_store_url: input.ios_store_url,
-            android_store_url: input.android_store_url,
-            metadata: input.metadata,
-            affiliate_id: None,
-            agent_context: input.agent_context.map(|ac| AgentContext {
-                action: ac.action,
-                cta: ac.cta,
-                description: ac.description,
-            }),
-            social_preview: None,
-        };
-
         // MCP tool sessions authenticate as the tenant; treat as full scope.
         // FUTURE: when MCP grows partner support, source the scope from the
         // session's credential and pass it through here.
@@ -103,32 +84,12 @@ impl RiftMcp {
     #[tool(
         description = "Atomically create up to 100 Rift deep links sharing one template. Provide either `custom_ids` (caller-supplied slugs) or `count` (auto-generated). Requires a verified custom domain. Returns all created links or an error listing every per-row problem so they can be fixed in one pass."
     )]
-    #[tracing::instrument(skip(self, input), fields(tool = "create_links"))]
+    #[tracing::instrument(skip(self, req), fields(tool = "create_links"))]
     async fn create_links(
         &self,
-        Parameters(input): Parameters<CreateLinksInput>,
+        Parameters(req): Parameters<BulkCreateLinksRequest>,
     ) -> Result<String, String> {
         let tenant_id = self.tenant_id()?;
-        let req = BulkCreateLinksRequest {
-            template: BulkLinkTemplate {
-                ios_deep_link: input.template.ios_deep_link,
-                android_deep_link: input.template.android_deep_link,
-                web_url: input.template.web_url,
-                ios_store_url: input.template.ios_store_url,
-                android_store_url: input.template.android_store_url,
-                metadata: input.template.metadata,
-                affiliate_id: None,
-                agent_context: input.template.agent_context.map(|ac| AgentContext {
-                    action: ac.action,
-                    cta: ac.cta,
-                    description: ac.description,
-                }),
-                social_preview: None,
-            },
-            custom_ids: input.custom_ids,
-            count: input.count,
-        };
-
         match self
             .service
             .create_links_bulk(tenant_id, Some(&KeyScope::Full), req)
@@ -187,41 +148,18 @@ impl RiftMcp {
         serde_json::to_string_pretty(&resp).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Update an existing Rift deep link's destinations or metadata")]
+    #[tool(
+        description = "Update an existing Rift deep link's destinations or metadata. Omit a field to leave it unchanged; pass `null` to clear a nullable field (e.g. `\"ios_deep_link\": null`)."
+    )]
     #[tracing::instrument(skip(self, input), fields(tool = "update_link"))]
     async fn update_link(
         &self,
         Parameters(input): Parameters<UpdateLinkInput>,
     ) -> Result<String, String> {
         let tenant_id = self.tenant_id()?;
-        let ios_deep_link = if input.clear_ios_deep_link {
-            Some(None) // unset
-        } else {
-            input.ios_deep_link.map(Some) // set or leave unchanged
-        };
-        let android_deep_link = if input.clear_android_deep_link {
-            Some(None)
-        } else {
-            input.android_deep_link.map(Some)
-        };
-        let req = UpdateLinkRequest {
-            ios_deep_link,
-            android_deep_link,
-            web_url: input.web_url,
-            ios_store_url: input.ios_store_url,
-            android_store_url: input.android_store_url,
-            metadata: input.metadata,
-            agent_context: input.agent_context.map(|ac| AgentContext {
-                action: ac.action,
-                cta: ac.cta,
-                description: ac.description,
-            }),
-            social_preview: None,
-        };
-
         let detail = self
             .service
-            .update_link(&tenant_id, &input.link_id, req)
+            .update_link(&tenant_id, &input.link_id, input.body)
             .await
             .map_err(|e| e.to_string())?;
 
