@@ -132,6 +132,24 @@ impl RiftMcp {
         serde_json::to_string_pretty(&detail).map_err(|e| e.to_string())
     }
 
+    #[tool(
+        description = "Get performance stats for a Rift deep link: click_count (landing-page visits), install_count (first-launch installs attributed to this link), identify_count (installs that bound a user_id via /v1/lifecycle/identify), convert_count (sum of conversion events), and a per-type conversions breakdown."
+    )]
+    #[tracing::instrument(skip(self), fields(tool = "get_link_stats"))]
+    async fn get_link_stats(
+        &self,
+        Parameters(input): Parameters<GetLinkStatsInput>,
+    ) -> Result<String, String> {
+        let tenant_id = self.tenant_id()?;
+        let stats = self
+            .service
+            .get_link_stats(&tenant_id, None, &input.link_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        serde_json::to_string_pretty(&stats).map_err(|e| e.to_string())
+    }
+
     #[tool(description = "List your Rift deep links with cursor-based pagination")]
     #[tracing::instrument(skip(self), fields(tool = "list_links"))]
     async fn list_links(

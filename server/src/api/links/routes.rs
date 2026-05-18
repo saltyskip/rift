@@ -248,9 +248,10 @@ pub async fn delete_link(
 pub async fn get_link_stats(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(scope): axum::Extension<CallerScope>,
     Path(link_id): Path<String>,
 ) -> Response {
-    let Some(repo) = &state.links_repo else {
+    let Some(ref svc) = state.links_service else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Database not configured", "code": "no_database" })),
@@ -258,52 +259,13 @@ pub async fn get_link_stats(
             .into_response();
     };
 
-    let Some(_link) = repo
-        .find_link_by_tenant_and_id(&tenant.0, &link_id)
+    match svc
+        .get_link_stats(&tenant.0, scope.0.as_ref(), &link_id)
         .await
-        .ok()
-        .flatten()
-    else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Link not found", "code": "not_found" })),
-        )
-            .into_response();
-    };
-
-    let click_count = repo.count_clicks(&tenant.0, &link_id).await.unwrap_or(0);
-    let install_count = repo
-        .count_installs_by_first_link(&tenant.0, &link_id)
-        .await
-        .unwrap_or(0);
-    let identify_count = repo
-        .count_identifies(&tenant.0, &link_id)
-        .await
-        .unwrap_or(0);
-
-    // Conversions are optional — if the repo isn't configured (no DB) or the
-    // aggregation fails, return an empty list rather than failing the whole
-    // stats response. The counters above are the load-bearing fields;
-    // conversions are additive.
-    let conversions = if let Some(conv_repo) = &state.conversions_repo {
-        conv_repo
-            .get_conversion_counts_for_link(&tenant.0, &link_id)
-            .await
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    let convert_count: u64 = conversions.iter().map(|c| c.count).sum();
-
-    Json(json!({
-        "link_id": link_id,
-        "click_count": click_count,
-        "install_count": install_count,
-        "identify_count": identify_count,
-        "convert_count": convert_count,
-        "conversions": conversions,
-    }))
-    .into_response()
+    {
+        Ok(stats) => Json(stats).into_response(),
+        Err(e) => link_error_to_response(e),
+    }
 }
 
 // ── GET /v1/links/{link_id}/qr.{format} — Styled QR export ──

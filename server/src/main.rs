@@ -434,13 +434,16 @@ async fn run_server(cfg: Config) {
 
     let links_service = links_repo.as_ref().map(|repo| {
         Arc::new(crate::services::links::service::LinksService::new(
-            repo.clone(),
-            domains_repo.clone(),
-            affiliates_repo.clone(),
-            threat_feed.clone(),
-            cfg.public_url.clone(),
-            quota_service.clone(),
-            tier_resolver.clone(),
+            crate::services::links::models::LinksServiceDeps {
+                links_repo: repo.clone(),
+                domains_repo: domains_repo.clone(),
+                affiliates_repo: affiliates_repo.clone(),
+                conversions_repo: conversions_repo.clone(),
+                threat_feed: threat_feed.clone(),
+                public_url: cfg.public_url.clone(),
+                quota: quota_service.clone(),
+                tiers: tier_resolver.clone(),
+            },
         ))
     });
 

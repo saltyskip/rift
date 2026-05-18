@@ -389,15 +389,16 @@ fn make_service(links: Vec<Link>, has_verified_domain: bool) -> LinksService {
     let domains = Arc::new(MockDomainsRepo {
         has_verified: has_verified_domain,
     });
-    LinksService::new(
-        repo,
-        Some(domains),
-        None, // no affiliates wired for these tests
-        ThreatFeed::new(),
-        "https://riftl.ink".to_string(),
-        None,
-        None,
-    )
+    LinksService::new(crate::services::links::models::LinksServiceDeps {
+        links_repo: repo,
+        domains_repo: Some(domains),
+        affiliates_repo: None,
+        conversions_repo: None,
+        threat_feed: ThreatFeed::new(),
+        public_url: "https://riftl.ink".to_string(),
+        quota: None,
+        tiers: None,
+    })
 }
 
 // ── Tests ──

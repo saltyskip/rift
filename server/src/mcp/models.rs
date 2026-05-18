@@ -53,6 +53,13 @@ pub struct DeleteLinkInput {
     pub link_id: String,
 }
 
+/// Input for the `get_link_stats` MCP tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetLinkStatsInput {
+    /// The link ID to fetch stats for.
+    pub link_id: String,
+}
+
 /// Input for the `create_source` MCP tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateSourceInput {
