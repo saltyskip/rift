@@ -16,6 +16,41 @@ The server separates **domain logic** from **transport layers**:
 - **Transport layers must not import from each other** — both `api/` and `mcp/` import from `services/`
 - **Domains own their models and repositories** in `services/<domain>/`
 
+### Shared model layer between MCP and API
+
+Both transports must share the same request/response/data types from `services/<domain>/models.rs`, not maintain parallel mirrored structs. **Default: share.** Mirror only when a transport convention genuinely diverges (and document why inline).
+
+The reason: mirrored types drift. A field added to the core type but missed in a transport mirror silently disappears at that transport's boundary — the bug looks like a runtime issue, not a type error. We hit this exact bug when `SocialPreview` was added to the core link model but never mirrored into MCP, so `og:image` was silently `None` on every MCP-created link.
+
+- **Pure data shapes** (`AgentContext`, `SocialPreview`, etc.) — derive both schema systems on one type:
+
+  ```rust
+  #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+  #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+  pub struct SocialPreview { ... }
+  ```
+
+  REST uses `ToSchema` (utoipa) for OpenAPI; MCP uses `JsonSchema` (schemars) for tool input schemas. The `cfg_attr` keeps schemars optional via the `mcp` feature.
+
+- **Request bodies** (`CreateLinkRequest`, `UpdateLinkRequest`, `BulkLinkTemplate`, `BulkCreateLinksRequest`) — same pattern: one type, both derives. The MCP tool handler takes `Parameters<CreateLinkRequest>` directly instead of declaring a parallel `CreateLinkInput`.
+
+- **MongoDB types** (`ObjectId` in `affiliate_id`) — add `#[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]` next to the existing `#[schema(value_type = String, ...)]`. Both schema systems then render the field as a string.
+
+- **`Option<Option<T>>` "send null to clear" pattern** — works over MCP too (serde deserializes `null` → `Some(None)`, absent → `None`). Document the convention in the tool's `description` so LLM callers know to pass `null` explicitly. Do not invent a separate `clear_*: bool` pattern at the MCP boundary; it just creates drift.
+
+- **Transport envelopes that must remain MCP-specific** — pagination params, resource IDs (REST puts these in URL paths; MCP needs them in the input body), and tool-action wrappers. These live in `mcp/models.rs`. When they need to carry a shared body, use `#[serde(flatten)]` over a shared core type rather than re-declaring fields:
+
+  ```rust
+  #[derive(Debug, Deserialize, JsonSchema)]
+  pub struct UpdateLinkInput {
+      pub link_id: String,       // MCP-only: REST has this in the URL path
+      #[serde(flatten)]
+      pub body: UpdateLinkRequest, // shared with REST
+  }
+  ```
+
+- **Hiding a field from one transport** — if `affiliate_id` shouldn't yet be exposed on MCP (because MCP rejects affiliate-scoped credentials), prefer a server-side scope check that validates the caller can use it, over hiding the field from the schema. Hidden fields drift back into existence the moment scope opens up.
+
 ### Quota enforcement + usage incrementation live in the service layer, never in transport
 
 Every operation that consumes a quota (link create, event track, domain create, team invite, webhook create) must call `QuotaService::check(tenant, resource)` from inside a `services/<domain>/service.rs` method, **not** from an `api/` route handler. Same rule for the atomic usage counter: `$inc` happens inside `QuotaService::check(TrackEvent)`, which is called from the service layer.

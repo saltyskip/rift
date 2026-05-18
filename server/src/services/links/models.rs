@@ -15,6 +15,7 @@ pub enum LinkStatus {
 
 /// Structured context for AI agents resolving this link.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct AgentContext {
     /// The link's intent. Must be one of: purchase, subscribe, signup, download, read, book, open.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -31,6 +32,7 @@ pub struct AgentContext {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct SocialPreview {
     /// Public title used for Open Graph/Twitter previews (max 120 characters).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -325,6 +327,7 @@ impl CreateLinkInput {
 // ── API Request / Response Models ──
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct CreateLinkRequest {
     /// Optional vanity slug (3-64 chars, alphanumeric + hyphens).
     #[serde(default)]
@@ -359,6 +362,7 @@ pub struct CreateLinkRequest {
     /// from a scoped caller return `affiliate_scope_mismatch`.
     #[serde(default)]
     #[schema(value_type = String, example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    #[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]
     pub affiliate_id: Option<ObjectId>,
     /// Structured context for AI agents. When set, agents resolving this link receive action, CTA, and description metadata alongside the destinations.
     #[serde(default)]
@@ -381,6 +385,7 @@ pub struct CreateLinkResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct UpdateLinkRequest {
     /// iOS deep link URI. Send `null` to clear.
     #[serde(default, deserialize_with = "deserialize_optional")]
@@ -464,6 +469,7 @@ pub struct LinkDetail {
 /// accepts a list of IDs separately) and minus `affiliate_id` (the caller's
 /// scope governs attribution for the whole batch).
 #[derive(Debug, Deserialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct BulkLinkTemplate {
     #[serde(default)]
     #[schema(example = "tablefour://restaurant/782/reserve")]
@@ -486,6 +492,7 @@ pub struct BulkLinkTemplate {
     /// callers; ignored / overridden for affiliate-scoped callers.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    #[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]
     pub affiliate_id: Option<ObjectId>,
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
@@ -498,6 +505,7 @@ pub struct BulkLinkTemplate {
 /// alphanumeric + hyphens). `count` mode: server generates N random 8-char
 /// uppercase IDs.
 #[derive(Debug, Deserialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct BulkCreateLinksRequest {
     pub template: BulkLinkTemplate,
     #[serde(default)]

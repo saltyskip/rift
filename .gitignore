@@ -37,3 +37,4 @@ sdk/mobile/dist/android/kotlin/
 # Preview / temp files
 preview-*.html
 .claude/worktrees/
+.mcp.json
