@@ -3,14 +3,36 @@
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import Image from "next/image";
+import Link from "next/link";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.riftl.ink";
+
+type AuthState = "unknown" | "signed-in" | "signed-out";
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const [auth, setAuth] = useState<AuthState>("unknown");
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_URL}/v1/auth/me`, { credentials: "include" })
+      .then((r) => {
+        if (cancelled) return;
+        setAuth(r.ok ? "signed-in" : "signed-out");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAuth("signed-out");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -27,7 +49,7 @@ export function Navbar() {
       }}
     >
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <a href="/" className="flex items-center gap-0.5">
+        <Link href="/" className="flex items-center gap-0.5">
           <Image
             src="/logo.svg"
             alt="Rift"
@@ -37,7 +59,7 @@ export function Navbar() {
             style={{ filter: "invert(1) sepia(1) saturate(5) hue-rotate(140deg) brightness(0.85)" }}
           />
           <span className="text-base font-semibold tracking-tight">Rift</span>
-        </a>
+        </Link>
 
         <nav className="hidden md:flex items-center gap-8">
           {[
@@ -62,12 +84,31 @@ export function Navbar() {
           <a href="/api-reference" className="text-[13px] text-[#71717a] hover:text-[#fafafa] transition-colors hidden sm:block">
             API Reference
           </a>
-          <a
-            href="/signup"
-            className="text-[13px] font-medium bg-[#2dd4bf] text-[#042f2e] px-3.5 py-1.5 rounded-lg hover:bg-[#5eead4] transition-colors"
-          >
-            Get API Key
-          </a>
+          {auth === "signed-in" ? (
+            <a
+              href="/account"
+              className="text-[13px] font-medium bg-[#2dd4bf] text-[#042f2e] px-3.5 py-1.5 rounded-lg hover:bg-[#5eead4] transition-colors"
+            >
+              Account
+            </a>
+          ) : (
+            <>
+              {auth === "signed-out" && (
+                <a
+                  href="/signin"
+                  className="text-[13px] text-[#71717a] hover:text-[#fafafa] transition-colors hidden sm:block"
+                >
+                  Sign in
+                </a>
+              )}
+              <a
+                href="/signup"
+                className="text-[13px] font-medium bg-[#2dd4bf] text-[#042f2e] px-3.5 py-1.5 rounded-lg hover:bg-[#5eead4] transition-colors"
+              >
+                Get API Key
+              </a>
+            </>
+          )}
         </div>
       </div>
     </motion.header>

@@ -3,23 +3,11 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-// ── Signup / Verify ──
-
-#[derive(Deserialize, ToSchema)]
-pub struct SignupRequest {
-    pub email: String,
-}
+// ── Verify (team-invite acceptance) ──
 
 #[derive(Deserialize, ToSchema)]
 pub struct VerifyQuery {
     pub token: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct SignupResponse {
-    pub message: String,
-    pub key_prefix: String,
-    pub note: String,
 }
 
 // ── Secret Key CRUD ──

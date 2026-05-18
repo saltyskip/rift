@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { FreeSignupForm } from "@/components/free-signup-form";
 
 export const metadata: Metadata = {
@@ -44,7 +45,8 @@ export default function SignupPage() {
             </p>
             <pre className="rounded-xl border border-[#222225] bg-[#0a0a0b] p-5 text-[13px] text-[#e4e4e7] overflow-x-auto font-mono">
               <code>{`rift init
-# Enter your email → verify → paste your rl_live_ key`}</code>
+# Enter your email → click the link in your inbox
+# → land in /account → mint your first API key`}</code>
             </pre>
           </section>
 
@@ -66,8 +68,10 @@ rift subscribe pro   # when you outgrow Free`}</code>
               Sign up for free in your browser.
             </h2>
             <p className="text-[14px] text-[#71717a] mb-5">
-              Enter your email and we&rsquo;ll send a verification link. Your API key
-              appears once after verification.
+              Enter your email and we&rsquo;ll send a sign-in link. After
+              clicking, you&rsquo;ll land on{" "}
+              <code className="text-[#a1a1aa]">/account</code> where you can
+              mint your first API key.
             </p>
             <FreeSignupForm />
           </section>
@@ -75,6 +79,15 @@ rift subscribe pro   # when you outgrow Free`}</code>
           <section className="mt-16">
             <p className="text-[11px] font-mono text-[#52525b] uppercase tracking-widest mb-4">
               Already have an account?
+            </p>
+            <p className="text-[14px] text-[#71717a] mb-4">
+              <Link
+                href="/signin"
+                className="text-[#2dd4bf] hover:text-[#5eead4] transition-colors"
+              >
+                Sign in →
+              </Link>{" "}
+              to manage your keys, or paste an existing key into the CLI:
             </p>
             <pre className="rounded-xl border border-[#222225] bg-[#0a0a0b] p-5 text-[13px] text-[#e4e4e7] overflow-x-auto font-mono">
               <code>{`rift login     # paste your rl_live_ key

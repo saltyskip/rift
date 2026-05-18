@@ -7,69 +7,24 @@ use std::sync::Arc;
 
 use super::models::{
     ConfirmCreateKeyRequest, CreateKeyResponse, ListSecretKeysResponse, RequestCreateKeyRequest,
-    SecretKeyDetail, SignupRequest, SignupResponse, VerifyQuery,
+    SecretKeyDetail, VerifyQuery,
 };
 use crate::api::auth::models::{AuthKeyId, TenantId};
 use crate::app::AppState;
 use crate::services::auth::secret_keys::models::SecretKeyError;
 use crate::services::auth::users::models::UserError;
 
-// ── Signup / Verify handlers ──
-
-#[utoipa::path(
-    post,
-    path = "/v1/auth/signup",
-    tag = "Signup",
-    request_body = SignupRequest,
-    responses(
-        (status = 201, description = "Verification email sent", body = SignupResponse),
-        (status = 400, description = "Invalid email", body = crate::error::ErrorResponse),
-        (status = 409, description = "Email already registered", body = crate::error::ErrorResponse),
-    )
-)]
-#[tracing::instrument(skip(state, body))]
-pub async fn signup(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<SignupRequest>,
-) -> Response {
-    let Some(users_svc) = &state.users_service else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "Auth not configured", "code": "no_database" })),
-        )
-            .into_response();
-    };
-
-    match users_svc
-        .signup(
-            &body.email,
-            &state.config.public_url,
-            &state.config.resend_api_key,
-            &state.config.resend_from_email,
-        )
-        .await
-    {
-        Ok(_) => (
-            StatusCode::CREATED,
-            Json(json!({
-                "message": "Verification email sent. Click the link to verify your email and receive your API key.",
-                "note": "Your API key will be shown once after verification. Save it — we can't show it again."
-            })),
-        )
-            .into_response(),
-        Err(e) => user_error_response(&e),
-    }
-}
+// ── Team-invite verification ──
 
 #[utoipa::path(
     get,
     path = "/v1/auth/verify",
-    tag = "Signup",
+    tag = "Team",
     params(
-        ("token" = String, Query, description = "Verification token from the email link"),
+        ("token" = String, Query, description = "Verification token from a team-invite email"),
     ),
     responses(
-        (status = 200, description = "Email verified, key activated"),
+        (status = 200, description = "Invite accepted; user is now a verified team member"),
         (status = 400, description = "Invalid or expired token", body = crate::error::ErrorResponse),
     )
 )]
@@ -88,29 +43,15 @@ pub async fn verify_email(
 
     match users_svc.verify(&params.token).await {
         Ok(result) => {
-            if let (Some(key), Some(prefix)) = (result.key, result.key_prefix) {
-                tracing::info!(tenant_id = %result.tenant_id, "Owner verified, key created");
-                (
-                    StatusCode::OK,
-                    Json(json!({
-                        "message": "Email verified! Your API key is below. Save it — we can't show it again.",
-                        "code": "verified",
-                        "key": key,
-                        "key_prefix": prefix,
-                    })),
-                )
-                    .into_response()
-            } else {
-                tracing::info!(tenant_id = %result.tenant_id, email = %result.email, "Invited user verified");
-                (
-                    StatusCode::OK,
-                    Json(json!({
-                        "message": "Email verified! You now have access to this team.",
-                        "code": "verified"
-                    })),
-                )
-                    .into_response()
-            }
+            tracing::info!(tenant_id = %result.tenant_id, email = %result.email, "Invited user verified");
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "message": "Email verified! You now have access to this team. Sign in at /signin to continue.",
+                    "code": "verified"
+                })),
+            )
+                .into_response()
         }
         Err(UserError::NotFound) => (
             StatusCode::BAD_REQUEST,
@@ -280,7 +221,7 @@ pub async fn list_secret_keys(
 pub async fn delete_secret_key(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(auth_key): axum::Extension<AuthKeyId>,
+    auth_key: Option<axum::Extension<AuthKeyId>>,
     Path(key_id): Path<String>,
 ) -> Response {
     let Some(svc) = &state.secret_keys_service else {
@@ -299,7 +240,14 @@ pub async fn delete_secret_key(
             .into_response();
     };
 
-    match svc.delete(tenant.0, oid, auth_key.0).await {
+    // `auth_key` is `Some` when this route was reached via API-key auth
+    // (`auth_gate` injects `AuthKeyId`); `None` when reached via session
+    // auth (`combined_auth_gate` doesn't have a key to inject). The service
+    // layer only enforces the self-delete guard when the caller was using
+    // a key — sessions can never self-delete.
+    let auth_key_id = auth_key.map(|axum::Extension(a)| a.0);
+
+    match svc.delete(tenant.0, oid, auth_key_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => sk_error_response(&e),
     }
@@ -308,44 +256,36 @@ pub async fn delete_secret_key(
 // ── Error response helpers ──
 
 fn user_error_response(e: &UserError) -> Response {
-    // Quota violations come through the shared 402 renderer.
-    if matches!(e, UserError::QuotaExceeded(_)) {
-        // Signup flows don't invoke quota today, but keep the mapping complete
-        // so adding a quota check on signup later doesn't silently 500.
-        if let UserError::QuotaExceeded(q) = e {
-            let cloned = match q {
-                crate::services::billing::quota::QuotaError::Exceeded {
-                    resource,
-                    limit,
-                    current,
-                } => crate::services::billing::quota::QuotaError::Exceeded {
-                    resource: *resource,
-                    limit: *limit,
-                    current: *current,
-                },
-                crate::services::billing::quota::QuotaError::Billing(b) => {
-                    crate::services::billing::quota::QuotaError::Billing(match b {
-                        crate::services::billing::models::BillingError::TenantNotFound => {
-                            crate::services::billing::models::BillingError::TenantNotFound
-                        }
-                        crate::services::billing::models::BillingError::Internal(s) => {
-                            crate::services::billing::models::BillingError::Internal(s.clone())
-                        }
-                    })
-                }
-            };
-            return crate::api::billing::quota_response::to_response(cloned);
-        }
+    if let UserError::QuotaExceeded(q) = e {
+        let cloned = match q {
+            crate::services::billing::quota::QuotaError::Exceeded {
+                resource,
+                limit,
+                current,
+            } => crate::services::billing::quota::QuotaError::Exceeded {
+                resource: *resource,
+                limit: *limit,
+                current: *current,
+            },
+            crate::services::billing::quota::QuotaError::Billing(b) => {
+                crate::services::billing::quota::QuotaError::Billing(match b {
+                    crate::services::billing::models::BillingError::TenantNotFound => {
+                        crate::services::billing::models::BillingError::TenantNotFound
+                    }
+                    crate::services::billing::models::BillingError::Internal(s) => {
+                        crate::services::billing::models::BillingError::Internal(s.clone())
+                    }
+                })
+            }
+        };
+        return crate::api::billing::quota_response::to_response(cloned);
     }
     let status = match e {
         UserError::InvalidEmail => StatusCode::BAD_REQUEST,
-        UserError::EmailExists => StatusCode::CONFLICT,
-        UserError::UserExists => StatusCode::CONFLICT,
-        UserError::LastUser => StatusCode::CONFLICT,
+        UserError::UserExists | UserError::LastUser => StatusCode::CONFLICT,
         UserError::NotFound => StatusCode::NOT_FOUND,
         UserError::QuotaExceeded(_) => unreachable!("handled above"),
-        UserError::EmailFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        UserError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        UserError::EmailFailed(_) | UserError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (
         status,

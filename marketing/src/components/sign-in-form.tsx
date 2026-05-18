@@ -10,7 +10,7 @@ type State =
   | { kind: "sent"; email: string }
   | { kind: "error"; message: string };
 
-export function FreeSignupForm() {
+export function SignInForm() {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<State>({ kind: "idle" });
 
@@ -29,6 +29,13 @@ export function FreeSignupForm() {
         credentials: "include",
         body: JSON.stringify({ email: trimmed }),
       });
+      if (resp.status === 429) {
+        setState({
+          kind: "error",
+          message: "Too many sign-in requests. Try again in a bit.",
+        });
+        return;
+      }
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
         setState({
@@ -50,39 +57,44 @@ export function FreeSignupForm() {
     return (
       <div className="rounded-xl border border-[#2dd4bf]/30 bg-[#2dd4bf]/[0.05] p-6">
         <p className="text-[12px] font-mono text-[#2dd4bf] uppercase tracking-widest mb-2">
-          Sign-in link sent
+          Check your inbox
         </p>
         <p className="text-[15px] text-[#fafafa] mb-1">
-          We sent a link to <span className="font-medium">{state.email}</span>.
-          Click it to sign in — your account is created automatically on first sign-in.
+          We sent a sign-in link to{" "}
+          <span className="font-medium">{state.email}</span>.
         </p>
         <p className="text-[13px] text-[#71717a]">
-          The link expires in 15 minutes.
+          The link expires in 15 minutes and can only be used once.
         </p>
       </div>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col sm:flex-row gap-2">
-      <input
-        type="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        placeholder="you@company.com"
-        required
-        disabled={state.kind === "submitting"}
-        className="flex-1 h-11 rounded-lg border border-[#222225] bg-[#111113] px-4 text-[14px] text-[#fafafa] placeholder:text-[#52525b] outline-none focus:border-[#2dd4bf]/50 transition-colors disabled:opacity-60"
-      />
+    <form onSubmit={onSubmit} className="space-y-3">
+      <label className="block">
+        <span className="block text-[12px] font-mono text-[#52525b] uppercase tracking-widest mb-2">
+          Email address
+        </span>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@company.com"
+          required
+          disabled={state.kind === "submitting"}
+          className="w-full h-11 rounded-lg border border-[#222225] bg-[#111113] px-4 text-[14px] text-[#fafafa] placeholder:text-[#52525b] outline-none focus:border-[#2dd4bf]/50 transition-colors disabled:opacity-60"
+        />
+      </label>
       <button
         type="submit"
         disabled={state.kind === "submitting"}
-        className="h-11 rounded-lg border border-[#222225] bg-[#111113] px-5 text-[14px] font-medium text-[#fafafa] hover:border-[#2dd4bf]/30 transition-colors disabled:opacity-60"
+        className="w-full h-11 rounded-lg bg-[#2dd4bf] text-[#042f2e] text-[14px] font-semibold hover:bg-[#5eead4] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        {state.kind === "submitting" ? "Sending…" : "Sign in with email"}
+        {state.kind === "submitting" ? "Sending link…" : "Email me a sign-in link"}
       </button>
       {state.kind === "error" && (
-        <p className="text-[13px] text-red-400 sm:w-full">{state.message}</p>
+        <p className="text-[13px] text-red-400">{state.message}</p>
       )}
     </form>
   );

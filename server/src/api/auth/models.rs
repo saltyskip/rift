@@ -15,6 +15,20 @@ pub struct TenantId(pub ObjectId);
 #[derive(Debug, Clone)]
 pub struct AuthKeyId(pub ObjectId);
 
+/// Human identity for session-authenticated requests.
+///
+/// Only injected by `session_auth_gate` and `combined_auth_gate` (when the
+/// session path wins). Key-only routes never see this; session-only handlers
+/// can extract it via `Extension<UserId>`. Combined-auth handlers should treat
+/// it as optional (`Option<Extension<UserId>>`).
+#[derive(Debug, Clone)]
+pub struct UserId(pub ObjectId);
+
+/// The active session's ObjectId — used by `POST /v1/auth/signout` to revoke
+/// the exact session the caller arrived on.
+#[derive(Debug, Clone)]
+pub struct SessionId(pub ObjectId);
+
 /// Domain associated with an SDK key, injected by `sdk_auth_gate`.
 #[derive(Debug, Clone)]
 pub struct SdkDomain(pub String);

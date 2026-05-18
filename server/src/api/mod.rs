@@ -25,8 +25,7 @@ use crate::app::AppState;
         contact(name = "Rift", url = "https://riftl.ink"),
     ),
     paths(
-        // Authentication — signup, verify, key management, team management
-        auth::secret_keys::routes::signup,
+        // Authentication — key management, team management
         auth::secret_keys::routes::verify_email,
         auth::secret_keys::routes::request_create_key,
         auth::secret_keys::routes::confirm_create_key,
@@ -101,8 +100,6 @@ use crate::app::AppState;
     components(schemas(
         health::models::HealthResponse,
         crate::error::ErrorResponse,
-        auth::secret_keys::models::SignupRequest,
-        auth::secret_keys::models::SignupResponse,
         crate::services::links::models::CreateLinkRequest,
         crate::services::links::models::CreateLinkResponse,
         crate::services::links::models::BulkCreateLinksRequest,

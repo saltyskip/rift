@@ -178,7 +178,6 @@ pub async fn spawn_app() -> TestApp {
             rift::services::auth::users::service::UsersService::new(
                 tenants_service.clone(),
                 users_repo.clone() as Arc<dyn UsersRepository>,
-                secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>,
                 tokens_service.clone(),
                 None,
             ),
@@ -190,6 +189,7 @@ pub async fn spawn_app() -> TestApp {
                 tokens_service.clone(),
             ),
         )),
+        sessions_service: None,
         conversions_repo: Some(conversions_repo),
         conversions_service,
         billing_service: Some(Arc::new(

@@ -78,15 +78,4 @@ impl UsersRepository for MockUsersRepo {
             Ok(None)
         }
     }
-
-    async fn upsert_by_email(&self, doc: &UserDoc) -> Result<(), String> {
-        let mut users = self.users.lock().unwrap();
-        if let Some(existing) = users.iter_mut().find(|u| u.email == doc.email) {
-            existing.tenant_id = doc.tenant_id;
-            existing.is_owner = doc.is_owner;
-        } else {
-            users.push(doc.clone());
-        }
-        Ok(())
-    }
 }

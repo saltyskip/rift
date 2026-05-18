@@ -1,35 +1,48 @@
 use crate::common;
 
+// `/v1/auth/signup` is gone — the signin flow at `/v1/auth/signin` is the
+// single front door now. Note: the test harness wires `sessions_service: None`
+// (no real Mongo behind it), so signin returns 503. These tests assert that
+// the OLD endpoint is gone (404) and that signin's wiring is at least live.
+//
+// Full signin happy-path coverage lives in the integration test that boots
+// against a real MongoDB; mock-mongo here doesn't support the session
+// repo's atomic ops cleanly.
+
 #[tokio::test]
-async fn signup_rejects_invalid_email() {
+async fn old_signup_endpoint_is_gone() {
     let app = common::spawn_app().await;
 
     let resp = app
         .client
         .post(app.url("/v1/auth/signup"))
-        .json(&serde_json::json!({ "email": "bad" }))
+        .json(&serde_json::json!({ "email": "anyone@example.com" }))
         .send()
         .await
         .unwrap();
 
-    assert_eq!(resp.status(), 400);
-    let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["code"], "invalid_email");
+    assert_eq!(resp.status(), 404);
 }
 
 #[tokio::test]
-async fn signup_rejects_short_email() {
+async fn signin_endpoint_is_wired() {
     let app = common::spawn_app().await;
 
     let resp = app
         .client
-        .post(app.url("/v1/auth/signup"))
-        .json(&serde_json::json!({ "email": "a@b" }))
+        .post(app.url("/v1/auth/signin"))
+        .json(&serde_json::json!({ "email": "anyone@example.com" }))
         .send()
         .await
         .unwrap();
 
-    assert_eq!(resp.status(), 400);
+    // Sessions service is `None` in the mock harness → 503. The point of
+    // this test is that the route exists (not a 404) and is reachable.
+    assert!(
+        resp.status() == 503 || resp.status() == 200,
+        "expected 503 (no sessions service) or 200 (live), got {}",
+        resp.status()
+    );
 }
 
 #[tokio::test]
