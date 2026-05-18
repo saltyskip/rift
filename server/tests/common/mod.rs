@@ -92,19 +92,25 @@ pub async fn spawn_app() -> TestApp {
 
     let threat_feed = rift::core::threat_feed::ThreatFeed::new();
 
-    let links_service = Some(Arc::new(rift::services::links::service::LinksService::new(
-        links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>,
-        Some(domains_repo.clone() as Arc<dyn rift::services::domains::repo::DomainsRepository>),
-        Some(affiliates_repo.clone()
-            as Arc<dyn rift::services::affiliates::repo::AffiliatesRepository>),
-        threat_feed.clone(),
-        config.public_url.clone(),
-        None,
-        None,
-    )));
-
     let conversions_repo: Arc<dyn rift::services::conversions::repo::ConversionsRepository> =
         Arc::new(MockConversionsRepo::default());
+
+    let links_service = Some(Arc::new(rift::services::links::service::LinksService::new(
+        rift::services::links::models::LinksServiceDeps {
+            links_repo: links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>,
+            domains_repo: Some(
+                domains_repo.clone() as Arc<dyn rift::services::domains::repo::DomainsRepository>
+            ),
+            affiliates_repo: Some(affiliates_repo.clone()
+                as Arc<dyn rift::services::affiliates::repo::AffiliatesRepository>),
+            conversions_repo: Some(conversions_repo.clone()),
+            threat_feed: threat_feed.clone(),
+            public_url: config.public_url.clone(),
+            quota: None,
+            tiers: None,
+        },
+    )));
+
     let conversions_service = Some(Arc::new(
         rift::services::conversions::service::ConversionsService::new(
             conversions_repo.clone(),

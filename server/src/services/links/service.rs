@@ -11,6 +11,7 @@ use crate::services::affiliates::repo::AffiliatesRepository;
 use crate::services::auth::secret_keys::repo::KeyScope;
 use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
+use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 
@@ -30,6 +31,10 @@ pub struct LinksService {
     /// "no affiliates configured" → `AffiliateNotFound` for explicit values
     /// and a graceful pass-through for unscoped/no-affiliate creates.
     affiliates_repo: Option<Arc<dyn AffiliatesRepository>>,
+    /// Optional because conversion tracking is feature-flagged and the test
+    /// harness boots without it. Stats fall back to an empty conversion list
+    /// when absent, matching the legacy route-handler behavior.
+    conversions_repo: Option<Arc<dyn ConversionsRepository>>,
     threat_feed: ThreatFeed,
     public_url: String,
     quota: Option<Arc<dyn QuotaChecker>>,
@@ -37,23 +42,16 @@ pub struct LinksService {
 }
 
 impl LinksService {
-    pub fn new(
-        links_repo: Arc<dyn LinksRepository>,
-        domains_repo: Option<Arc<dyn DomainsRepository>>,
-        affiliates_repo: Option<Arc<dyn AffiliatesRepository>>,
-        threat_feed: ThreatFeed,
-        public_url: String,
-        quota: Option<Arc<dyn QuotaChecker>>,
-        tiers: Option<Arc<dyn TierResolver>>,
-    ) -> Self {
+    pub fn new(deps: super::models::LinksServiceDeps) -> Self {
         Self {
-            links_repo,
-            domains_repo,
-            affiliates_repo,
-            threat_feed,
-            public_url,
-            quota,
-            tiers,
+            links_repo: deps.links_repo,
+            domains_repo: deps.domains_repo,
+            affiliates_repo: deps.affiliates_repo,
+            conversions_repo: deps.conversions_repo,
+            threat_feed: deps.threat_feed,
+            public_url: deps.public_url,
+            quota: deps.quota,
+            tiers: deps.tiers,
         }
     }
 
@@ -487,6 +485,68 @@ impl LinksService {
         }
 
         Ok(self.link_to_detail(&link).await)
+    }
+
+    /// Aggregate click / install / identify / conversion counts for a link.
+    ///
+    /// Conversion data is additive: if the conversions repo is not configured
+    /// or its aggregation fails, the response still returns the load-bearing
+    /// counters with an empty `conversions` list, rather than failing the
+    /// whole call.
+    #[tracing::instrument(skip(self, caller_scope))]
+    pub async fn get_link_stats(
+        &self,
+        tenant_id: &ObjectId,
+        caller_scope: Option<&KeyScope>,
+        link_id: &str,
+    ) -> Result<LinkStatsResponse, LinkError> {
+        let link = self
+            .links_repo
+            .find_link_by_tenant_and_id(tenant_id, link_id)
+            .await
+            .map_err(LinkError::Internal)?
+            .ok_or(LinkError::NotFound)?;
+
+        if let Some(KeyScope::Affiliate { affiliate_id }) = caller_scope {
+            if link.affiliate_id != Some(*affiliate_id) {
+                return Err(LinkError::NotFound);
+            }
+        }
+
+        let click_count = self
+            .links_repo
+            .count_clicks(tenant_id, link_id)
+            .await
+            .unwrap_or(0);
+        let install_count = self
+            .links_repo
+            .count_installs_by_first_link(tenant_id, link_id)
+            .await
+            .unwrap_or(0);
+        let identify_count = self
+            .links_repo
+            .count_identifies(tenant_id, link_id)
+            .await
+            .unwrap_or(0);
+
+        let conversions = if let Some(conv_repo) = &self.conversions_repo {
+            conv_repo
+                .get_conversion_counts_for_link(tenant_id, link_id)
+                .await
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let convert_count: u64 = conversions.iter().map(|c| c.count).sum();
+
+        Ok(LinkStatsResponse {
+            link_id: link_id.to_string(),
+            click_count,
+            install_count,
+            identify_count,
+            convert_count,
+            conversions,
+        })
     }
 
     #[tracing::instrument(skip(self))]

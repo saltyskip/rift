@@ -1,6 +1,31 @@
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
+
+use crate::core::threat_feed::ThreatFeed;
+use crate::services::affiliates::repo::AffiliatesRepository;
+use crate::services::billing::quota::QuotaChecker;
+use crate::services::billing::service::TierResolver;
+use crate::services::conversions::repo::ConversionsRepository;
+use crate::services::domains::repo::DomainsRepository;
+use crate::services::links::repo::LinksRepository;
+
+/// Construction-time dependencies for [`super::service::LinksService`].
+///
+/// Bundled into a struct so callers use field-init shorthand at the call site
+/// (clippy::too_many_arguments — see CLAUDE.md "if clippy complains about too
+/// many arguments, use a struct or builder pattern").
+pub struct LinksServiceDeps {
+    pub links_repo: Arc<dyn LinksRepository>,
+    pub domains_repo: Option<Arc<dyn DomainsRepository>>,
+    pub affiliates_repo: Option<Arc<dyn AffiliatesRepository>>,
+    pub conversions_repo: Option<Arc<dyn ConversionsRepository>>,
+    pub threat_feed: ThreatFeed,
+    pub public_url: String,
+    pub quota: Option<Arc<dyn QuotaChecker>>,
+    pub tiers: Option<Arc<dyn TierResolver>>,
+}
 
 // ── Database Documents ──
 
