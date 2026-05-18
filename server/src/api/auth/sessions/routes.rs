@@ -18,6 +18,7 @@ use super::models::{
 use crate::api::auth::models::{SessionId, TenantId, UserId};
 use crate::api::auth::secret_keys::models::CreateKeyResponse;
 use crate::app::AppState;
+use crate::core::http::client_ip_from_headers;
 use crate::services::auth::sessions::SessionError;
 
 const SESSION_COOKIE_NAME: &str = "session_token";
@@ -33,10 +34,14 @@ pub async fn sign_in(
     Json(body): Json<SignInRequest>,
 ) -> Response {
     let Some(svc) = state.sessions_service.as_ref() else {
-        return service_unavailable("Sessions not configured");
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Sessions not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
-    let ip = extract_client_ip(&headers);
+    let ip = client_ip_from_headers(&headers);
 
     match svc.request_sign_in(&body.email, &ip).await {
         Ok(()) => (StatusCode::OK, Json(SignInResponse { status: "sent" })).into_response(),
@@ -53,7 +58,14 @@ pub async fn sign_in(
             Json(json!({ "error": "Invalid email address", "code": "invalid_email" })),
         )
             .into_response(),
-        Err(e) => internal_error_response(&e),
+        Err(e) => {
+            tracing::error!(error = %e, "signin_request_failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string(), "code": e.code() })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -75,7 +87,7 @@ pub async fn callback(
         return redirect_to(&expired_url, None);
     };
 
-    let ip = extract_client_ip(&headers);
+    let ip = client_ip_from_headers(&headers);
     let user_agent = headers
         .get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
@@ -86,10 +98,10 @@ pub async fn callback(
         .await
     {
         Ok(outcome) => {
-            let cookie = build_session_cookie(
+            let cookie = build_cookie(
                 &outcome.raw_token,
-                &state.config.environment,
                 SESSION_COOKIE_MAX_AGE,
+                &state.config.environment,
             );
             tracing::info!(
                 user_id = %outcome.user_id,
@@ -115,7 +127,11 @@ pub async fn me(
     axum::Extension(user): axum::Extension<UserId>,
 ) -> Response {
     let Some(users_repo) = state.users_service.as_ref() else {
-        return service_unavailable("Users not configured");
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Users not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
     // Fetch by tenant+user_id via the existing list path — there's no
@@ -165,14 +181,20 @@ pub async fn sign_out(
     axum::Extension(session): axum::Extension<SessionId>,
 ) -> Response {
     let Some(svc) = state.sessions_service.as_ref() else {
-        return service_unavailable("Sessions not configured");
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Sessions not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
     if let Err(e) = svc.revoke(&session.0).await {
         tracing::error!(error = %e, "signout_failed");
     }
 
-    let cookie = build_cleared_session_cookie(&state.config.environment);
+    // Clearing the cookie = same attrs as a fresh issue but with an empty
+    // value and Max-Age=0.
+    let cookie = build_cookie("", 0, &state.config.environment);
     Response::builder()
         .status(StatusCode::NO_CONTENT)
         .header(header::SET_COOKIE, cookie)
@@ -190,7 +212,11 @@ pub async fn issue_secret_key(
     Json(_body): Json<IssueKeyRequest>,
 ) -> Response {
     let Some(svc) = state.secret_keys_service.as_ref() else {
-        return service_unavailable("Secret keys not configured");
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Secret keys not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
     match svc.issue_for_session(tenant.0, user.0).await {
@@ -227,33 +253,6 @@ pub async fn issue_secret_key(
 
 // ── Helpers ──
 
-fn service_unavailable(message: &'static str) -> Response {
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(json!({ "error": message, "code": "service_unavailable" })),
-    )
-        .into_response()
-}
-
-fn internal_error_response(e: &SessionError) -> Response {
-    tracing::error!(error = %e, "session_error");
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(json!({ "error": e.to_string(), "code": e.code() })),
-    )
-        .into_response()
-}
-
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "local".to_string())
-}
-
 fn redirect_to(url: &str, cookie: Option<String>) -> Response {
     let mut builder = Response::builder()
         .status(StatusCode::SEE_OTHER)
@@ -266,34 +265,20 @@ fn redirect_to(url: &str, cookie: Option<String>) -> Response {
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-/// Construct the `Set-Cookie` value for a fresh session.
+/// Construct a `Set-Cookie` value for the session cookie.
 ///
-/// `Domain=.riftl.ink` is hardcoded for prod — the marketing site and API
-/// both sit under `riftl.ink`, so this scopes the cookie to share between
-/// them while excluding unrelated subdomains. Dev (`environment=development`)
-/// drops `Domain` and `Secure` so localhost works without HTTPS.
-fn build_session_cookie(raw_token: &str, environment: &str, max_age: i64) -> String {
-    if environment == "development" {
-        format!(
-            "{SESSION_COOKIE_NAME}={raw_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}"
-        )
+/// Same function for issuing fresh cookies (pass the raw token + max_age) and
+/// for clearing on signout (pass empty token + max_age=0); attrs match so
+/// browsers actually scrub the value. `Domain=.riftl.ink` + `Secure` are
+/// added in production so the cookie is shared across `riftl.ink` subdomains;
+/// dev drops both so localhost without HTTPS works.
+fn build_cookie(value: &str, max_age: i64, environment: &str) -> String {
+    let attrs = if environment == "development" {
+        "Path=/; HttpOnly; SameSite=Lax"
     } else {
-        format!(
-            "{SESSION_COOKIE_NAME}={raw_token}; Domain=.riftl.ink; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age={max_age}"
-        )
-    }
-}
-
-/// Construct the `Set-Cookie` value that clears the session cookie on signout.
-/// Mirrors the prod cookie attrs so browsers actually scrub it.
-fn build_cleared_session_cookie(environment: &str) -> String {
-    if environment == "development" {
-        format!("{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
-    } else {
-        format!(
-            "{SESSION_COOKIE_NAME}=; Domain=.riftl.ink; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"
-        )
-    }
+        "Domain=.riftl.ink; Path=/; HttpOnly; Secure; SameSite=Lax"
+    };
+    format!("{SESSION_COOKIE_NAME}={value}; {attrs}; Max-Age={max_age}")
 }
 
 /// Refuse anything that's not a simple same-site relative path. Stops

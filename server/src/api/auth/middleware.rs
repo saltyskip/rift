@@ -2,6 +2,7 @@ use axum::extract::Request;
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Json, Response};
+use axum_extra::headers::{Cookie, HeaderMapExt};
 use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::net::SocketAddr;
@@ -191,11 +192,19 @@ pub async fn session_auth_gate(
     next: Next,
 ) -> Response {
     let Some(svc) = state.sessions_service.clone() else {
-        return service_unavailable("Sessions not configured");
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Sessions not configured", "code": "no_database" })),
+        )
+            .into_response();
     };
 
     let Some(raw_token) = extract_session_token(&req) else {
-        return unauthorized_session("Missing session");
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Missing session", "code": "unauthorized" })),
+        )
+            .into_response();
     };
 
     match svc.lookup(&raw_token).await {
@@ -213,7 +222,11 @@ pub async fn session_auth_gate(
             });
             next.run(req).await
         }
-        Ok(None) => unauthorized_session("Session expired or revoked"),
+        Ok(None) => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Session expired or revoked", "code": "unauthorized" })),
+        )
+            .into_response(),
         Err(e) => {
             tracing::error!(error = %e, "session_lookup_failed");
             (
@@ -232,7 +245,7 @@ pub async fn session_auth_gate(
 ///
 /// Session wins if both are present. API-key path preserves existing affiliate
 /// scope enforcement.
-pub async fn combined_auth_gate(
+pub async fn session_or_key_auth_gate(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     mut req: Request,
     next: Next,
@@ -308,21 +321,9 @@ pub async fn combined_auth_gate(
         return next.run(req).await;
     }
 
-    unauthorized_session("Session or API key required")
-}
-
-fn service_unavailable(message: &'static str) -> Response {
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(json!({ "error": message, "code": "service_unavailable" })),
-    )
-        .into_response()
-}
-
-fn unauthorized_session(message: &'static str) -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        Json(json!({ "error": message, "code": "unauthorized" })),
+        Json(json!({ "error": "Session or API key required", "code": "unauthorized" })),
     )
         .into_response()
 }
@@ -332,30 +333,21 @@ fn unauthorized_session(message: &'static str) -> Response {
 /// forward-compat for the CLI device-flow (Phase 2); browsers always use the
 /// cookie.
 fn extract_session_token(req: &Request) -> Option<String> {
-    if let Some(cookie_header) = req.headers().get("cookie").and_then(|v| v.to_str().ok()) {
-        for part in cookie_header.split(';') {
-            let trimmed = part.trim();
-            if let Some(value) = trimmed.strip_prefix("session_token=") {
-                if !value.is_empty() {
-                    return Some(value.to_string());
-                }
+    if let Some(cookie) = req.headers().typed_get::<Cookie>() {
+        if let Some(value) = cookie.get("session_token") {
+            if !value.is_empty() {
+                return Some(value.to_string());
             }
         }
     }
 
-    if let Some(header) = req
+    let header = req
         .headers()
         .get("authorization")
-        .and_then(|v| v.to_str().ok())
-    {
-        if let Some(token) = header.strip_prefix("Bearer ") {
-            if !token.starts_with("rl_") && !token.starts_with("pk_") && !token.is_empty() {
-                return Some(token.to_string());
-            }
-        }
-    }
-
-    None
+        .and_then(|v| v.to_str().ok())?;
+    let token = header.strip_prefix("Bearer ")?;
+    (!token.starts_with("rl_") && !token.starts_with("pk_") && !token.is_empty())
+        .then(|| token.to_string())
 }
 
 /// SDK auth middleware for pk_live_ keys.

@@ -10,6 +10,7 @@ use super::models::{
 };
 use crate::api::auth::models::TenantId;
 use crate::app::AppState;
+use crate::core::http::client_ip_from_headers;
 use crate::services::auth::tenants::repo::{BillingMethod, PlanTier};
 use crate::services::billing::handoff::{BillingHandoffError, HandoffOutcome};
 use crate::services::billing::limits::limits_for;
@@ -167,7 +168,7 @@ pub async fn create_magic_link(
             .into_response();
     };
 
-    let client_ip = extract_client_ip(&headers);
+    let client_ip = client_ip_from_headers(&headers);
     match service
         .request(&body.email, &body.intent, body.tier.as_deref(), &client_ip)
         .await
@@ -467,17 +468,4 @@ fn parse_paid_tier(s: &str) -> Option<PlanTier> {
         "scale" => Some(PlanTier::Scale),
         _ => None,
     }
-}
-
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    // In production we run behind Fly's proxy which sets X-Forwarded-For.
-    // Local dev without the header falls back to a single shared bucket,
-    // which is fine for a dev machine.
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "local".to_string())
 }

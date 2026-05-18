@@ -242,7 +242,7 @@ pub async fn delete_secret_key(
 
     // `auth_key` is `Some` when this route was reached via API-key auth
     // (`auth_gate` injects `AuthKeyId`); `None` when reached via session
-    // auth (`combined_auth_gate` doesn't have a key to inject). The service
+    // auth (`session_or_key_auth_gate` doesn't have a key to inject). The service
     // layer only enforces the self-delete guard when the caller was using
     // a key — sessions can never self-delete.
     let auth_key_id = auth_key.map(|axum::Extension(a)| a.0);

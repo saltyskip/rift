@@ -17,10 +17,10 @@ pub struct AuthKeyId(pub ObjectId);
 
 /// Human identity for session-authenticated requests.
 ///
-/// Only injected by `session_auth_gate` and `combined_auth_gate` (when the
+/// Only injected by `session_auth_gate` and `session_or_key_auth_gate` (when the
 /// session path wins). Key-only routes never see this; session-only handlers
-/// can extract it via `Extension<UserId>`. Combined-auth handlers should treat
-/// it as optional (`Option<Extension<UserId>>`).
+/// can extract it via `Extension<UserId>`. Handlers wrapped with `session_or_key_auth_gate`
+/// should treat it as optional (`Option<Extension<UserId>>`).
 #[derive(Debug, Clone)]
 pub struct UserId(pub ObjectId);
 
