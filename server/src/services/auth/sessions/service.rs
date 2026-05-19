@@ -41,7 +41,12 @@ impl SessionsService {
 
     /// 30 days — typical "remember me" default. Sessions are cheap to revoke;
     /// the bigger the surface, the more annoying re-auth becomes.
-    const SESSION_TTL_SECS: i64 = 30 * 24 * 60 * 60;
+    ///
+    /// `pub` so cookie-issuing route handlers (`api/auth/sessions/routes.rs`,
+    /// `api/auth/oauth/routes.rs`) can set `Max-Age` consistent with the
+    /// server-side session row's `expires_at`. Drift here silently produces
+    /// cookies that expire before the row, or vice versa.
+    pub const SESSION_TTL_SECS: i64 = 30 * 24 * 60 * 60;
 
     /// Per-email cap: 5 signin emails per hour. Stops an attacker from
     /// spamming an inbox by hitting `/v1/auth/signin` from rotating IPs.
@@ -225,6 +230,39 @@ impl SessionsService {
                 .map_err(|e| SessionError::Internal(e.to_string()))?,
         };
 
+        let raw_session = self
+            .issue_session(user_id, tenant_id, client_ip, user_agent)
+            .await?;
+
+        // Surface `email` only for logging — callers don't need it beyond
+        // sentry/tracing context, which we set at the route handler layer.
+        tracing::info!(
+            user_id = %user_id,
+            tenant_id = %tenant_id,
+            email = %email,
+            "sign_in_consumed"
+        );
+
+        Ok(SignInOutcome {
+            raw_token: raw_session,
+            user_id,
+            tenant_id,
+            origin,
+        })
+    }
+
+    /// Mint a fresh session for an already-resolved `(user_id, tenant_id)` and
+    /// return the raw opaque cookie value. Shared between the magic-link
+    /// `consume_sign_in` path and the OAuth-federation callback path — both
+    /// arrive at "we have a verified user, mint a session" through different
+    /// upstreams but produce the same session row + cookie shape.
+    pub async fn issue_session(
+        &self,
+        user_id: ObjectId,
+        tenant_id: ObjectId,
+        client_ip: Option<&str>,
+        user_agent: Option<&str>,
+    ) -> Result<String, SessionError> {
         let raw_session = generate_session_token();
         let token_hash = hash_session_token(&raw_session);
         let now = mongodb::bson::DateTime::now();
@@ -250,21 +288,7 @@ impl SessionsService {
             .await
             .map_err(SessionError::Internal)?;
 
-        // Surface `email` only for logging — callers don't need it beyond
-        // sentry/tracing context, which we set at the route handler layer.
-        tracing::info!(
-            user_id = %user_id,
-            tenant_id = %tenant_id,
-            email = %email,
-            "sign_in_consumed"
-        );
-
-        Ok(SignInOutcome {
-            raw_token: raw_session,
-            user_id,
-            tenant_id,
-            origin,
-        })
+        Ok(raw_session)
     }
 
     /// Resolve a raw session token to an identity for middleware. Returns

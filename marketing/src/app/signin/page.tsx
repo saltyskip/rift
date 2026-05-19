@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OauthButtons } from "@/components/oauth-buttons";
 import { SignInForm } from "@/components/sign-in-form";
 
 export const metadata: Metadata = {
@@ -26,6 +27,7 @@ export default function SignInPage() {
         </p>
 
         <div className="rounded-xl border border-[#222225] bg-[#111113] p-6">
+          <OauthButtons />
           <SignInForm />
         </div>
 

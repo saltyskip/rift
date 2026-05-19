@@ -91,6 +91,10 @@ pub async fn spawn_app() -> TestApp {
         stripe_price_id_scale: String::new(),
         stripe_success_url: String::new(),
         stripe_cancel_url: String::new(),
+        github_oauth_client_id: String::new(),
+        github_oauth_client_secret: String::new(),
+        google_oauth_client_id: String::new(),
+        google_oauth_client_secret: String::new(),
     };
 
     let threat_feed = rift::core::threat_feed::ThreatFeed::new();
@@ -195,6 +199,7 @@ pub async fn spawn_app() -> TestApp {
             ),
         )),
         sessions_service: None,
+        oauth_service: None,
         conversions_repo: Some(conversions_repo),
         conversions_service,
         billing_service: Some(Arc::new(

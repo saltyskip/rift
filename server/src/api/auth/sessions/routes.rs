@@ -23,8 +23,9 @@ use crate::core::http::client_ip_from_headers;
 use crate::services::auth::sessions::SessionError;
 
 const SESSION_COOKIE_NAME: &str = "session_token";
-/// 30 days, matches `SessionsService::SESSION_TTL_SECS`.
-const SESSION_COOKIE_MAX_AGE: i64 = 30 * 24 * 60 * 60;
+/// Cookie `Max-Age` always tracks the server-side session row's TTL.
+const SESSION_COOKIE_MAX_AGE: i64 =
+    crate::services::auth::sessions::service::SessionsService::SESSION_TTL_SECS;
 
 // ── POST /v1/auth/signin ──
 
@@ -348,7 +349,7 @@ pub async fn issue_secret_key(
 
 // ── Helpers ──
 
-fn redirect_to(url: &str, cookie: Option<String>) -> Response {
+pub(crate) fn redirect_to(url: &str, cookie: Option<String>) -> Response {
     let mut builder = Response::builder()
         .status(StatusCode::SEE_OTHER)
         .header(header::LOCATION, url);
@@ -372,7 +373,7 @@ fn redirect_to(url: &str, cookie: Option<String>) -> Response {
 /// same shape (when API + marketing share `.sandbox.riftl.ink`) or
 /// `SameSite=None; Secure` with no Domain (when marketing lives on a
 /// different parent, e.g. a Vercel preview URL).
-fn build_cookie(
+pub(crate) fn build_cookie(
     value: &str,
     max_age: i64,
     domain: Option<&str>,
@@ -411,7 +412,7 @@ fn build_cookie(
 /// Returns `None` (use the default `/account` fallback) for anything
 /// suspicious. The caller controls the authority by concatenating its own
 /// `marketing_url`; we only emit the path + query from `Url::join`.
-fn sanitize_next(base_url: &str, next: &str) -> Option<String> {
+pub(crate) fn sanitize_next(base_url: &str, next: &str) -> Option<String> {
     if next.is_empty()
         || next
             .bytes()

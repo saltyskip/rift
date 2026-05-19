@@ -1,5 +1,6 @@
 pub mod middleware;
 pub mod models;
+pub mod oauth;
 pub mod publishable_keys;
 pub mod secret_keys;
 pub mod sessions;
@@ -15,4 +16,5 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(publishable_keys::router(state.clone()))
         .merge(users::router(state.clone()))
         .merge(sessions::router(state))
+        .merge(oauth::router())
 }

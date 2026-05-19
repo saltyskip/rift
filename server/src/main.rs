@@ -512,6 +512,37 @@ async fn run_server(cfg: Config) {
         _ => None,
     };
 
+    let oauth_service = match (&tokens_service, &users_repo, &users_service) {
+        (Some(tokens), Some(u), Some(users_svc)) => {
+            let oauth_cfg = crate::services::auth::oauth::models::OauthConfig {
+                github: crate::services::auth::oauth::models::ProviderCredentials {
+                    client_id: cfg.github_oauth_client_id.clone(),
+                    client_secret: cfg.github_oauth_client_secret.clone(),
+                },
+                google: crate::services::auth::oauth::models::ProviderCredentials {
+                    client_id: cfg.google_oauth_client_id.clone(),
+                    client_secret: cfg.google_oauth_client_secret.clone(),
+                },
+                api_base_url: cfg.public_url.clone(),
+            };
+            let svc = crate::services::auth::oauth::OauthService::new(
+                oauth_cfg,
+                tokens.clone(),
+                u.clone(),
+                users_svc.clone(),
+            );
+            // None when neither GitHub nor Google credentials are set — the
+            // routes return 503 cleanly. Reading any_configured here keeps
+            // the unused-Arc avoided.
+            if svc.any_configured() {
+                Some(Arc::new(svc))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
     let conversions_service = match (&conversions_repo, &links_repo) {
         (Some(c), Some(l)) => Some(Arc::new(ConversionsService::new(
             c.clone(),
@@ -548,6 +579,7 @@ async fn run_server(cfg: Config) {
         users_service,
         secret_keys_service,
         sessions_service,
+        oauth_service,
         conversions_service,
         billing_service,
         billing_handoff_service,
