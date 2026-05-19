@@ -1,5 +1,5 @@
 use axum::extract::{Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use serde_json::json;
 use std::sync::Arc;
@@ -74,9 +74,10 @@ pub async fn get_billing_status(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, headers))]
 pub async fn create_stripe_checkout(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     axum::Extension(tenant): axum::Extension<TenantId>,
     Query(q): Query<CheckoutQuery>,
 ) -> Response {
@@ -91,13 +92,14 @@ pub async fn create_stripe_checkout(
             .into_response();
     };
 
+    let (success_url, cancel_url) = resolve_checkout_urls(&state, &headers);
     let cfg = crate::services::billing::stripe_client::StripeConfig {
         secret_key: state.config.stripe_secret_key.clone(),
         price_id_pro: state.config.stripe_price_id_pro.clone(),
         price_id_business: state.config.stripe_price_id_business.clone(),
         price_id_scale: state.config.stripe_price_id_scale.clone(),
-        success_url: state.config.stripe_success_url.clone(),
-        cancel_url: state.config.stripe_cancel_url.clone(),
+        success_url,
+        cancel_url,
     };
 
     match create_checkout_session(&cfg, tier, &tenant.0.to_hex()).await {
@@ -152,9 +154,10 @@ pub async fn create_stripe_checkout(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, headers))]
 pub async fn create_stripe_portal(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     axum::Extension(tenant): axum::Extension<TenantId>,
 ) -> Response {
     let Some(tenants) = state.tenants_repo.as_ref() else {
@@ -195,7 +198,7 @@ pub async fn create_stripe_portal(
             .into_response();
     };
 
-    let return_url = format!("{}/manage", state.config.marketing_url);
+    let return_url = format!("{}/manage", resolve_marketing_base(&state, &headers));
     match create_portal_session(&state.config.stripe_secret_key, customer_id, &return_url).await {
         Ok(session) => (
             StatusCode::OK,
@@ -360,6 +363,47 @@ pub async fn cancel_subscription(
 }
 
 // ── Helpers ──
+
+/// Pick the base URL to use for Stripe `success_url` / `cancel_url` /
+/// `return_url`. Prefer the request's `Origin` (when allowlisted by the
+/// `OriginMatcher`) so per-PR Vercel previews redirect back to themselves
+/// instead of the env-configured staging/prod URL. Falls back to
+/// `marketing_url` for non-browser callers (CLI via API key) or for any
+/// origin that doesn't match the allowlist.
+///
+/// Trust model: `Origin` is browser-controlled and cannot be forged by
+/// page JavaScript on a malicious site. Non-browser callers can set it
+/// freely, but the matcher restricts acceptable values to allowlisted
+/// hosts, so the worst case is a fall-through to the env default.
+fn resolve_marketing_base(state: &AppState, headers: &HeaderMap) -> String {
+    headers
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| state.origin_matcher.matches_str(s))
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| state.config.marketing_url.clone())
+}
+
+/// Resolve Stripe Checkout `success_url` + `cancel_url`. When the request's
+/// `Origin` is allowlisted, derive both from it so previews land back on the
+/// preview URL. Otherwise fall back to the explicit env overrides (kept so
+/// ops can point prod redirects somewhere unusual without touching code).
+fn resolve_checkout_urls(state: &AppState, headers: &HeaderMap) -> (String, String) {
+    let origin = headers
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| state.origin_matcher.matches_str(s));
+    match origin {
+        Some(o) => (
+            format!("{o}/welcome"),
+            format!("{o}/?error=cancelled#pricing"),
+        ),
+        None => (
+            state.config.stripe_success_url.clone(),
+            state.config.stripe_cancel_url.clone(),
+        ),
+    }
+}
 
 fn render(status: BillingStatus) -> BillingStatusResponse {
     let limits = limits_for(status.effective_tier);
