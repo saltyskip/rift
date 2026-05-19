@@ -98,6 +98,7 @@ impl SessionsService {
         email_raw: &str,
         client_ip: &str,
         origin: Option<&str>,
+        next: Option<&str>,
     ) -> Result<(), SessionError> {
         if !self.ip_limiter.check(client_ip) {
             return Err(SessionError::RateLimited);
@@ -119,10 +120,13 @@ impl SessionsService {
             return Ok(());
         }
 
-        let metadata = match origin {
-            Some(o) => doc! { "origin": o },
-            None => doc! {},
-        };
+        let mut metadata = doc! {};
+        if let Some(o) = origin {
+            metadata.insert("origin", o);
+        }
+        if let Some(n) = next {
+            metadata.insert("next", n);
+        }
 
         let raw_token = match self
             .tokens
@@ -185,14 +189,15 @@ impl SessionsService {
             .await
             .map_err(SessionError::Internal)?;
 
-        let (email, origin) = match outcome {
+        let (email, origin, next) = match outcome {
             ConsumeOutcome::Ok {
                 purpose: TokenPurpose::Signin,
                 email,
                 metadata,
             } => {
                 let origin = metadata.get_str("origin").ok().map(|s| s.to_string());
-                (email, origin)
+                let next = metadata.get_str("next").ok().map(|s| s.to_string());
+                (email, origin, next)
             }
             // Token valid but for a different flow — refuse so we don't let
             // billing magic-links or key-rotation codes mint sessions.
@@ -248,6 +253,7 @@ impl SessionsService {
             user_id,
             tenant_id,
             origin,
+            next,
         })
     }
 

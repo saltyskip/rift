@@ -11,7 +11,17 @@ export const metadata: Metadata = {
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/saltyskip/rift/main/client/cli/install.sh | sh";
 
-export default function SignInPage() {
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next: nextRaw } = await searchParams;
+  // Only forward `next` if it's a same-origin path. Server re-validates
+  // against the matched origin / marketing_url, but a client-side guard
+  // keeps obvious garbage out of the POST body.
+  const next = nextRaw && nextRaw.startsWith("/") ? nextRaw : undefined;
+
   return (
     <main className="pt-24 pb-20 px-6 min-h-[70vh]">
       <div className="mx-auto max-w-md">
@@ -27,8 +37,8 @@ export default function SignInPage() {
         </p>
 
         <div className="rounded-xl border border-[#222225] bg-[#111113] p-6">
-          <OauthButtons />
-          <SignInForm />
+          <OauthButtons next={next} />
+          <SignInForm next={next} />
         </div>
 
         <section className="mt-14">

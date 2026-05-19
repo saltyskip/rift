@@ -1,5 +1,4 @@
 use mongodb::bson;
-use serde::Deserialize;
 
 use crate::services::auth::tenants::repo::{BillingMethod, PlanTier, SubscriptionStatus};
 
@@ -156,86 +155,6 @@ pub struct StripeDedupDoc {
     pub inserted_at: bson::DateTime,
 }
 
-// ── Handoff (magic-link → Stripe) ──
-
-/// What flow the caller wants the magic link to gate. Maps onto `TokenPurpose`
-/// at issue time.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BillingIntent {
-    Subscribe,
-    Portal,
-}
-
-/// Paid tier selector. `PlanTier` minus Free (Free doesn't need Stripe).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BillingTier {
-    Pro,
-    Business,
-    Scale,
-}
-
-impl BillingTier {
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "pro" => Some(Self::Pro),
-            "business" => Some(Self::Business),
-            "scale" => Some(Self::Scale),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Pro => "pro",
-            Self::Business => "business",
-            Self::Scale => "scale",
-        }
-    }
-
-    pub fn to_plan_tier(self) -> PlanTier {
-        match self {
-            Self::Pro => PlanTier::Pro,
-            Self::Business => PlanTier::Business,
-            Self::Scale => PlanTier::Scale,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum BillingHandoffError {
-    Invalid { code: &'static str, message: String },
-    RateLimited,
-}
-
-/// Successful redeem outcome. Routes convert each variant to a 302.
-#[derive(Debug)]
-pub enum HandoffOutcome {
-    CheckoutUrl(String),
-    PortalUrl(String),
-    /// Portal intent but the email doesn't resolve to a Stripe customer.
-    NoSubscription,
-    /// Token not found, expired, already consumed, or of an unexpected purpose.
-    Expired,
-}
-
-/// Config slice passed at construction. Kept separate from `AppState` so the
-/// service is easy to test with arbitrary Stripe/Resend stubs.
-#[derive(Clone)]
-pub struct BillingHandoffConfig {
-    pub resend_api_key: String,
-    pub resend_from_email: String,
-    /// API domain (e.g. `https://api.riftl.ink`). Used when building the
-    /// magic-link URL that embeds in the email — must hit an API route.
-    pub public_url: String,
-    /// Marketing site (e.g. `https://riftl.ink`). Used for every redirect
-    /// target that lands on a marketing page: Stripe success/cancel, portal
-    /// return, link-expired banner, no-subscription banner.
-    pub marketing_url: String,
-    pub stripe: StripeConfig,
-}
-
 // ── Stripe client ──
 
 #[derive(Debug, Clone)]
@@ -292,25 +211,6 @@ impl std::fmt::Display for StripeError {
 #[derive(Debug, serde::Deserialize)]
 pub struct CheckoutSession {
     pub url: String,
-}
-
-/// Options for the billing-handoff Checkout session. Unlike the Bearer-authed
-/// `create_checkout_session`, this variant doesn't assume an existing tenant —
-/// either `customer_id` is known (tenant upgrading) or `customer_email` +
-/// `pending_email` are set (brand-new customer, the webhook will materialize
-/// the tenant on payment completion).
-pub struct HandoffCheckoutOpts<'a> {
-    pub tier: PlanTier,
-    pub customer_id: Option<&'a str>,
-    pub customer_email: Option<&'a str>,
-    /// Written to subscription metadata so the webhook handler can create a
-    /// tenant after payment without any client-side state.
-    pub pending_email: Option<&'a str>,
-    /// When set, echoed back via subscription metadata and
-    /// `client_reference_id` so the webhook can find the tenant fast.
-    pub tenant_id_hex: Option<&'a str>,
-    pub success_url: &'a str,
-    pub cancel_url: &'a str,
 }
 
 /// Result of creating a Billing Portal session — the caller redirects the

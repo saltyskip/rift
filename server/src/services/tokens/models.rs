@@ -4,16 +4,12 @@ use mongodb::bson;
 use serde::{Deserialize, Serialize};
 
 /// Which flow a token gates. Stored on the doc and returned by `consume_hash`
-/// so the caller can switch on it without looking up by purpose up front —
-/// this is what lets `/v1/billing/go` take a single opaque token and
-/// dispatch to Checkout vs Portal.
+/// so the caller can switch on it without looking up by purpose up front.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TokenPurpose {
     EmailVerify,
     KeyRotation,
-    BillingSubscribe,
-    BillingPortal,
     Signin,
     /// OAuth federation state CSRF token — issued at `/v1/auth/oauth/{p}/start`,
     /// consumed at `/v1/auth/oauth/{p}/callback`. Metadata carries

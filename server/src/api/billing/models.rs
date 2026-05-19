@@ -12,11 +12,6 @@ pub struct CheckoutQuery {
     pub tier: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct MagicLinkGoQuery {
-    pub token: String,
-}
-
 /// Slim JSON shape for the status endpoint. Rendered from `BillingStatus` so
 /// the external contract stays stable if we add internal fields later.
 #[derive(Serialize, ToSchema)]
@@ -44,27 +39,6 @@ pub struct LimitsView {
 #[derive(Serialize, ToSchema)]
 pub struct CheckoutSessionResponse {
     pub checkout_url: String,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct MagicLinkRequest {
-    /// Email to send the magic link to. Always returns 200 regardless of
-    /// whether an account exists — prevents enumeration.
-    #[schema(example = "you@company.com")]
-    pub email: String,
-    /// One of: `subscribe`, `portal`. Determines the flow on redemption.
-    #[schema(example = "subscribe")]
-    pub intent: String,
-    /// Required when `intent` is `subscribe`. One of: `pro`, `business`, `scale`.
-    #[schema(example = "pro")]
-    pub tier: Option<String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct MagicLinkResponse {
-    /// Always `"sent"`. Never indicates whether the email actually dispatched —
-    /// prevents account enumeration via timing or error signals.
-    pub status: &'static str,
 }
 
 #[derive(Serialize, ToSchema)]

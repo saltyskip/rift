@@ -362,33 +362,6 @@ async fn run_server(cfg: Config) {
         ))
     });
 
-    let billing_handoff_service = match (&tokens_service, &tenants_repo) {
-        (Some(tokens), Some(t)) => {
-            let config = crate::services::billing::handoff::BillingHandoffConfig {
-                resend_api_key: cfg.resend_api_key.clone(),
-                resend_from_email: cfg.resend_from_email.clone(),
-                public_url: cfg.public_url.clone(),
-                marketing_url: cfg.marketing_url.clone(),
-                stripe: crate::services::billing::stripe_client::StripeConfig {
-                    secret_key: cfg.stripe_secret_key.clone(),
-                    price_id_pro: cfg.stripe_price_id_pro.clone(),
-                    price_id_business: cfg.stripe_price_id_business.clone(),
-                    price_id_scale: cfg.stripe_price_id_scale.clone(),
-                    success_url: cfg.stripe_success_url.clone(),
-                    cancel_url: cfg.stripe_cancel_url.clone(),
-                },
-            };
-            Some(Arc::new(
-                crate::services::billing::handoff::BillingHandoffService::new(
-                    tokens.clone(),
-                    t.clone(),
-                    config,
-                ),
-            ))
-        }
-        _ => None,
-    };
-
     // conversions_service is built after quota_service — it takes both
     // billing (for retention bucketing) and quota (for TrackEvent check).
 
@@ -582,7 +555,6 @@ async fn run_server(cfg: Config) {
         oauth_service,
         conversions_service,
         billing_service,
-        billing_handoff_service,
         tokens_service,
     });
     // quota_service is consumed by the per-domain services above; it's

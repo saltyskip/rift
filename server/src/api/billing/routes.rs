@@ -1,18 +1,16 @@
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Json, Redirect, Response};
+use axum::response::{IntoResponse, Json, Response};
 use serde_json::json;
 use std::sync::Arc;
 
 use super::models::{
-    BillingStatusResponse, CheckoutQuery, CheckoutSessionResponse, LimitsView, MagicLinkGoQuery,
-    MagicLinkRequest, MagicLinkResponse, PortalSessionResponse,
+    BillingStatusResponse, CheckoutQuery, CheckoutSessionResponse, LimitsView,
+    PortalSessionResponse,
 };
 use crate::api::auth::models::TenantId;
 use crate::app::AppState;
-use crate::core::http::client_ip_from_headers;
 use crate::services::auth::tenants::repo::{BillingMethod, PlanTier};
-use crate::services::billing::handoff::{BillingHandoffError, HandoffOutcome};
 use crate::services::billing::limits::limits_for;
 use crate::services::billing::models::{BillingError, BillingStatus};
 use crate::services::billing::stripe_client::{
@@ -76,9 +74,10 @@ pub async fn get_billing_status(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, headers))]
 pub async fn create_stripe_checkout(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     axum::Extension(tenant): axum::Extension<TenantId>,
     Query(q): Query<CheckoutQuery>,
 ) -> Response {
@@ -93,13 +92,14 @@ pub async fn create_stripe_checkout(
             .into_response();
     };
 
+    let (success_url, cancel_url) = resolve_checkout_urls(&state, &headers);
     let cfg = crate::services::billing::stripe_client::StripeConfig {
         secret_key: state.config.stripe_secret_key.clone(),
         price_id_pro: state.config.stripe_price_id_pro.clone(),
         price_id_business: state.config.stripe_price_id_business.clone(),
         price_id_scale: state.config.stripe_price_id_scale.clone(),
-        success_url: state.config.stripe_success_url.clone(),
-        cancel_url: state.config.stripe_cancel_url.clone(),
+        success_url,
+        cancel_url,
     };
 
     match create_checkout_session(&cfg, tier, &tenant.0.to_hex()).await {
@@ -140,84 +140,6 @@ pub async fn create_stripe_checkout(
     }
 }
 
-// ── POST /v1/billing/magic-link — public, rate-limited ──
-
-#[utoipa::path(
-    post,
-    path = "/v1/billing/magic-link",
-    tag = "Billing",
-    request_body = MagicLinkRequest,
-    responses(
-        (status = 200, description = "Always returned (prevents email enumeration)", body = MagicLinkResponse),
-        (status = 400, description = "Invalid intent or missing tier", body = crate::error::ErrorResponse),
-        (status = 429, description = "Rate limit exceeded", body = crate::error::ErrorResponse),
-        (status = 503, description = "Billing not configured", body = crate::error::ErrorResponse),
-    ),
-)]
-#[tracing::instrument(skip(state, headers, body))]
-pub async fn create_magic_link(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Json(body): Json<MagicLinkRequest>,
-) -> Response {
-    let Some(service) = state.billing_handoff_service.as_ref() else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "Billing not configured", "code": "no_billing" })),
-        )
-            .into_response();
-    };
-
-    let client_ip = client_ip_from_headers(&headers);
-    match service
-        .request(&body.email, &body.intent, body.tier.as_deref(), &client_ip)
-        .await
-    {
-        Ok(()) => (StatusCode::OK, Json(MagicLinkResponse { status: "sent" })).into_response(),
-        Err(BillingHandoffError::RateLimited) => (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(json!({
-                "error": "Too many magic-link requests. Try again later.",
-                "code": "rate_limited"
-            })),
-        )
-            .into_response(),
-        Err(BillingHandoffError::Invalid { code, message }) => (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": message, "code": code })),
-        )
-            .into_response(),
-    }
-}
-
-// ── GET /v1/billing/go — redeem magic link → Stripe redirect ──
-
-#[tracing::instrument(skip(state))]
-pub async fn redeem_magic_link(
-    State(state): State<Arc<AppState>>,
-    Query(q): Query<MagicLinkGoQuery>,
-) -> Response {
-    // `/pricing` doesn't exist as a standalone route on the marketing site —
-    // it's an anchor on the home page.
-    let expired_url = format!("{}/?error=link_expired#pricing", state.config.marketing_url);
-    let no_subscription_url = format!(
-        "{}/manage?error=no_subscription",
-        state.config.marketing_url
-    );
-
-    let Some(service) = state.billing_handoff_service.as_ref() else {
-        return Redirect::to(&expired_url).into_response();
-    };
-
-    match service.redeem(&q.token).await {
-        HandoffOutcome::CheckoutUrl(url) | HandoffOutcome::PortalUrl(url) => {
-            Redirect::to(&url).into_response()
-        }
-        HandoffOutcome::NoSubscription => Redirect::to(&no_subscription_url).into_response(),
-        HandoffOutcome::Expired => Redirect::to(&expired_url).into_response(),
-    }
-}
-
 // ── POST /v1/billing/stripe/portal — Stripe Billing Portal for current tenant ──
 
 #[utoipa::path(
@@ -232,9 +154,10 @@ pub async fn redeem_magic_link(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, headers))]
 pub async fn create_stripe_portal(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     axum::Extension(tenant): axum::Extension<TenantId>,
 ) -> Response {
     let Some(tenants) = state.tenants_repo.as_ref() else {
@@ -275,7 +198,7 @@ pub async fn create_stripe_portal(
             .into_response();
     };
 
-    let return_url = format!("{}/manage", state.config.marketing_url);
+    let return_url = format!("{}/manage", resolve_marketing_base(&state, &headers));
     match create_portal_session(&state.config.stripe_secret_key, customer_id, &return_url).await {
         Ok(session) => (
             StatusCode::OK,
@@ -440,6 +363,47 @@ pub async fn cancel_subscription(
 }
 
 // ── Helpers ──
+
+/// Pick the base URL to use for Stripe `success_url` / `cancel_url` /
+/// `return_url`. Prefer the request's `Origin` (when allowlisted by the
+/// `OriginMatcher`) so per-PR Vercel previews redirect back to themselves
+/// instead of the env-configured staging/prod URL. Falls back to
+/// `marketing_url` for non-browser callers (CLI via API key) or for any
+/// origin that doesn't match the allowlist.
+///
+/// Trust model: `Origin` is browser-controlled and cannot be forged by
+/// page JavaScript on a malicious site. Non-browser callers can set it
+/// freely, but the matcher restricts acceptable values to allowlisted
+/// hosts, so the worst case is a fall-through to the env default.
+fn resolve_marketing_base(state: &AppState, headers: &HeaderMap) -> String {
+    headers
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| state.origin_matcher.matches_str(s))
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| state.config.marketing_url.clone())
+}
+
+/// Resolve Stripe Checkout `success_url` + `cancel_url`. When the request's
+/// `Origin` is allowlisted, derive both from it so previews land back on the
+/// preview URL. Otherwise fall back to the explicit env overrides (kept so
+/// ops can point prod redirects somewhere unusual without touching code).
+fn resolve_checkout_urls(state: &AppState, headers: &HeaderMap) -> (String, String) {
+    let origin = headers
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| state.origin_matcher.matches_str(s));
+    match origin {
+        Some(o) => (
+            format!("{o}/welcome"),
+            format!("{o}/?error=cancelled#pricing"),
+        ),
+        None => (
+            state.config.stripe_success_url.clone(),
+            state.config.stripe_cancel_url.clone(),
+        ),
+    }
+}
 
 fn render(status: BillingStatus) -> BillingStatusResponse {
     let limits = limits_for(status.effective_tier);

@@ -58,6 +58,11 @@ pub struct SignInOutcome {
     pub user_id: ObjectId,
     pub tenant_id: ObjectId,
     pub origin: Option<String>,
+    /// Same-origin path captured at signin time and validated against
+    /// the request's `Origin` (or `marketing_url`). The callback prefers
+    /// this over a query-string `next` because the metadata copy can't be
+    /// tampered with by whoever clicked the link.
+    pub next: Option<String>,
 }
 
 // ── Errors ──
