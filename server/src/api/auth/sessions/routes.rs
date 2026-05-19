@@ -56,7 +56,18 @@ pub async fn sign_in(
 
     let ip = client_ip_from_headers(&headers);
 
-    match svc.request_sign_in(&body.email, &ip).await {
+    // Capture + validate the request's Origin so the callback redirects
+    // back to wherever the signin started. Validation reuses the CORS
+    // allowlist (`OriginMatcher`) so the redirect-target rule and the
+    // CORS rule can never disagree — anything CORS allows is allowed as
+    // a redirect; everything else is dropped (callback falls back to
+    // `marketing_url`).
+    let origin = headers
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| state.origin_matcher.matches_str(s));
+
+    match svc.request_sign_in(&body.email, &ip, origin).await {
         Ok(()) => (StatusCode::OK, Json(SignInResponse { status: "sent" })).into_response(),
         Err(SessionError::RateLimited) => (
             StatusCode::TOO_MANY_REQUESTS,
@@ -103,14 +114,10 @@ pub async fn callback(
     headers: HeaderMap,
     Query(q): Query<CallbackQuery>,
 ) -> Response {
-    let marketing_url = &state.config.marketing_url;
-    let success_path = q
-        .next
-        .as_deref()
-        .and_then(|n| sanitize_next(marketing_url, n))
-        .unwrap_or_else(|| "/account".to_string());
-    let success_url = format!("{marketing_url}{success_path}");
-    let expired_url = format!("{marketing_url}/signin?error=link_expired");
+    // The redirect base used for the "link expired" path — needs a
+    // sensible default before we have an outcome to read the origin from.
+    let fallback_base = state.config.marketing_url.as_str();
+    let expired_url = format!("{fallback_base}/signin?error=link_expired");
 
     let Some(svc) = state.sessions_service.as_ref() else {
         return redirect_to(&expired_url, None);
@@ -127,6 +134,23 @@ pub async fn callback(
         .await
     {
         Ok(outcome) => {
+            // Pick the redirect base. Token origin wins IF it still
+            // passes the matcher (defense in depth — env vars may have
+            // changed between signin and callback). Otherwise fall
+            // back to marketing_url.
+            let base = outcome
+                .origin
+                .as_deref()
+                .filter(|o| state.origin_matcher.matches_str(o))
+                .unwrap_or(fallback_base);
+
+            let success_path = q
+                .next
+                .as_deref()
+                .and_then(|n| sanitize_next(base, n))
+                .unwrap_or_else(|| "/account".to_string());
+            let success_url = format!("{base}{success_path}");
+
             let cookie = build_cookie(
                 &outcome.raw_token,
                 SESSION_COOKIE_MAX_AGE,
@@ -137,6 +161,7 @@ pub async fn callback(
             tracing::info!(
                 user_id = %outcome.user_id,
                 tenant_id = %outcome.tenant_id,
+                redirect_base = %base,
                 "session_created"
             );
             redirect_to(&success_url, Some(cookie))

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::core::cdp::CdpFacilitator;
 use crate::core::config::Config;
+use crate::core::origin::OriginMatcher;
 use crate::core::webhook_dispatcher::WebhookDispatcher;
 use crate::services::affiliates::service::AffiliatesService;
 use crate::services::apps::repo::AppsRepository;
@@ -37,6 +38,9 @@ pub struct AppState {
     pub domains_repo: Option<Arc<dyn DomainsRepository>>,
     pub apps_repo: Option<Arc<dyn AppsRepository>>,
     pub config: Config,
+    /// Shared origin allowlist — used by the CORS layer AND by the
+    /// signin/callback flow to validate redirect targets.
+    pub origin_matcher: Arc<OriginMatcher>,
     pub facilitator: Option<CdpFacilitator>,
     pub x402_price_tags: Vec<v1::PriceTag>,
     pub webhooks_repo: Option<Arc<dyn WebhooksRepository>>,

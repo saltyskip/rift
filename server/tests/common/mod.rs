@@ -134,6 +134,7 @@ pub async fn spawn_app() -> TestApp {
         tokens_repo.clone(),
     ));
 
+    let origin_matcher = rift::core::origin::OriginMatcher::from_env(&config);
     let state = Arc::new(AppState {
         tenants_repo: Some(tenants_repo.clone() as Arc<dyn TenantsRepository>),
         stripe_webhook_dedup: None,
@@ -147,6 +148,7 @@ pub async fn spawn_app() -> TestApp {
         ),
         apps_repo: Some(apps_repo.clone() as Arc<dyn rift::services::apps::repo::AppsRepository>),
         config,
+        origin_matcher,
         facilitator: None,
         x402_price_tags: vec![],
         webhooks_repo: Some(

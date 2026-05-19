@@ -4,6 +4,7 @@ pub mod db;
 pub mod email;
 pub mod http;
 pub mod models;
+pub mod origin;
 pub mod rate_limit;
 pub mod threat_feed;
 pub mod validation;

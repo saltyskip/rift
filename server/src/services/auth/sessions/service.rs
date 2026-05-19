@@ -77,6 +77,14 @@ impl SessionsService {
     /// Issue a signin magic link to `email`. Auto-signup happens on redeem,
     /// not here — this is a pure "emit token + send email" operation.
     ///
+    /// `origin` is the request's `Origin` header value, **already validated**
+    /// by the route handler against the `OriginMatcher`. When provided, it
+    /// gets stored in the token's metadata so the callback can redirect the
+    /// user back to wherever they started — letting Vercel preview URLs
+    /// (which change per branch / per commit) work without env-var updates.
+    /// Callers MUST validate before passing — the service trusts what it
+    /// gets here.
+    ///
     /// Always returns `Ok` on validation success to prevent email enumeration;
     /// downstream failures (send error, per-email cap hit) are logged and
     /// swallowed. The only error surfaces are invalid-email and IP rate-limit.
@@ -84,6 +92,7 @@ impl SessionsService {
         &self,
         email_raw: &str,
         client_ip: &str,
+        origin: Option<&str>,
     ) -> Result<(), SessionError> {
         if !self.ip_limiter.check(client_ip) {
             return Err(SessionError::RateLimited);
@@ -105,6 +114,11 @@ impl SessionsService {
             return Ok(());
         }
 
+        let metadata = match origin {
+            Some(o) => doc! { "origin": o },
+            None => doc! {},
+        };
+
         let raw_token = match self
             .tokens
             .issue(TokenSpec {
@@ -112,7 +126,7 @@ impl SessionsService {
                 kind: TokenKind::HashKeyed,
                 ttl_secs: Self::SIGNIN_TOKEN_TTL_SECS,
                 email: email.clone(),
-                metadata: doc! {},
+                metadata,
             })
             .await
         {
@@ -147,6 +161,13 @@ impl SessionsService {
     /// Consume a signin token: resolve / create the user, mint a fresh
     /// session, and return the raw cookie value plus the resolved identity.
     /// Called from `GET /v1/auth/callback?token=` once.
+    ///
+    /// `origin` (when present in the token's metadata) is returned via
+    /// `SignInOutcome::origin` so the callback can redirect the browser back
+    /// to the same origin that started the flow. Callers MUST re-validate
+    /// the origin against the current allowlist before using it — what was
+    /// allowed at signin time may not be allowed at callback time if env
+    /// vars changed.
     pub async fn consume_sign_in(
         &self,
         raw_token: &str,
@@ -159,12 +180,15 @@ impl SessionsService {
             .await
             .map_err(SessionError::Internal)?;
 
-        let email = match outcome {
+        let (email, origin) = match outcome {
             ConsumeOutcome::Ok {
                 purpose: TokenPurpose::Signin,
                 email,
-                ..
-            } => email,
+                metadata,
+            } => {
+                let origin = metadata.get_str("origin").ok().map(|s| s.to_string());
+                (email, origin)
+            }
             // Token valid but for a different flow — refuse so we don't let
             // billing magic-links or key-rotation codes mint sessions.
             ConsumeOutcome::Ok { .. } => return Err(SessionError::InvalidToken),
@@ -239,6 +263,7 @@ impl SessionsService {
             raw_token: raw_session,
             user_id,
             tenant_id,
+            origin,
         })
     }
 

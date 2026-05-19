@@ -49,12 +49,15 @@ pub struct ResolvedSession {
     pub tenant_id: ObjectId,
 }
 
-/// Returned from `consume_sign_in` — the raw cookie value to set + the resolved
-/// identity for downstream logging.
+/// Returned from `consume_sign_in` — the raw cookie value to set, the
+/// resolved identity, and the validated-at-signin-time redirect origin
+/// (when the signin POST carried an `Origin` header that passed the
+/// `OriginMatcher` allowlist).
 pub struct SignInOutcome {
     pub raw_token: String,
     pub user_id: ObjectId,
     pub tenant_id: ObjectId,
+    pub origin: Option<String>,
 }
 
 // ── Errors ──

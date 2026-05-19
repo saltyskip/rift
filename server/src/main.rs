@@ -523,6 +523,8 @@ async fn run_server(cfg: Config) {
         _ => None,
     };
 
+    let origin_matcher = crate::core::origin::OriginMatcher::from_env(&cfg);
+
     let state = Arc::new(AppState {
         tenants_repo,
         stripe_webhook_dedup: stripe_webhook_dedup_repo,
@@ -532,6 +534,7 @@ async fn run_server(cfg: Config) {
         domains_repo,
         apps_repo,
         config: cfg.clone(),
+        origin_matcher: origin_matcher.clone(),
         facilitator,
         x402_price_tags,
         webhooks_repo,
@@ -581,7 +584,7 @@ async fn run_server(cfg: Config) {
         .layer(RequestBodyLimitLayer::new(64 * 1024))
         .layer(sentry::integrations::tower::SentryHttpLayer::new().enable_transaction())
         .layer(sentry::integrations::tower::NewSentryLayer::new_from_top())
-        .layer(build_cors_layer(&cfg));
+        .layer(build_cors_layer(origin_matcher));
 
     let addr = cfg.bind_addr();
     tracing::info!("Starting Rift on {addr}");
@@ -598,101 +601,24 @@ async fn run_server(cfg: Config) {
     .expect("Server error");
 }
 
-/// Build the global CORS layer.
+/// Build the global CORS layer using the shared `OriginMatcher`.
 ///
 /// Session cookies require `credentials: true` on the CORS response, which in
 /// turn requires an explicit origin allowlist (CORS spec forbids `*` with
-/// credentials). Two env vars control which origins are accepted:
+/// credentials). The matcher reads `ALLOWED_ORIGINS` + `ALLOWED_ORIGIN_REGEX`
+/// from env — see `core::origin` for the algorithm and the documented
+/// Vercel-preview impersonation caveat.
 ///
-/// - `ALLOWED_ORIGINS` — exact-match list (comma separated). E.g.
-///   `https://riftl.ink,https://sandbox.riftl.ink`.
-/// - `ALLOWED_ORIGIN_REGEX` — single regex that must fully match the Origin
-///   header. Anchored automatically (`^...$`). Use when the origin set is
-///   dynamic (Vercel preview URLs use `-` separators inside one DNS label,
-///   so DNS-label boundary checks can't safely match them).
-///
-/// **Vercel previews carry a structural impersonation risk.** Vercel team
-/// slugs are user-chosen and live in the same DNS label as the
-/// project/branch (`{proj}-git-{branch}-{team}.vercel.app`). An attacker
-/// can register a Vercel team named `evil-{your-team}` and any regex you
-/// anchor on the team suffix will let their previews through too. Treat
-/// `ALLOWED_ORIGIN_REGEX` as a convenience for non-production environments;
-/// for prod, prefer either exact `ALLOWED_ORIGINS` entries or moving the
-/// previews onto a custom subdomain (`*.preview.riftl.ink`) where normal
-/// DNS-label rules apply.
-///
-/// Defaults: marketing URL + localhost dev ports if `ALLOWED_ORIGINS` is unset.
 /// Existing API-key callers from arbitrary origins are unaffected because
 /// bearer-token requests don't need `credentials: true`.
-fn build_cors_layer(cfg: &Config) -> CorsLayer {
-    let mut exact: Vec<axum::http::HeaderValue> = std::env::var("ALLOWED_ORIGINS")
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .filter_map(|s| s.parse().ok())
-        .collect();
-
-    if exact.is_empty() {
-        for s in [
-            cfg.marketing_url.as_str(),
-            "http://localhost:3000",
-            "http://localhost:3001",
-        ] {
-            if let Ok(v) = axum::http::HeaderValue::from_str(s) {
-                if !exact.contains(&v) {
-                    exact.push(v);
-                }
-            }
-        }
-    }
-
-    let pattern = std::env::var("ALLOWED_ORIGIN_REGEX")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .and_then(|raw| {
-            // Force full-match anchoring so callers can't accidentally write
-            // a partial-match pattern that lets prefixes through.
-            let anchored = format!("^(?:{})$", raw.trim());
-            match regex::Regex::new(&anchored) {
-                Ok(re) => Some(re),
-                Err(e) => {
-                    tracing::error!(error = %e, pattern = %raw, "invalid ALLOWED_ORIGIN_REGEX — ignored");
-                    None
-                }
-            }
-        });
-
+fn build_cors_layer(matcher: Arc<crate::core::origin::OriginMatcher>) -> CorsLayer {
     // `*` for methods/headers is forbidden when `credentials: true`; mirroring
     // the request value is the spec-friendly alternative.
     CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(move |origin, _parts| {
-            origin_matches(origin, &exact, pattern.as_ref())
+            matcher.matches(origin)
         }))
         .allow_credentials(true)
         .allow_methods(AllowMethods::mirror_request())
         .allow_headers(AllowHeaders::mirror_request())
 }
-
-/// Decide whether `origin` is allowed. Exact-match wins; falls back to the
-/// regex if configured. Pure function — see `main_tests.rs` for the cases.
-fn origin_matches(
-    origin: &axum::http::HeaderValue,
-    exact: &[axum::http::HeaderValue],
-    pattern: Option<&regex::Regex>,
-) -> bool {
-    if exact.iter().any(|e| e == origin) {
-        return true;
-    }
-    let Some(re) = pattern else {
-        return false;
-    };
-    let Ok(origin_str) = origin.to_str() else {
-        return false;
-    };
-    re.is_match(origin_str)
-}
-
-#[cfg(test)]
-#[path = "main_tests.rs"]
-mod tests;
