@@ -11,8 +11,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 pub use super::models::{
-    CheckoutSession, HandoffCheckoutOpts, PortalSession, StripeConfig, StripeError,
-    WebhookVerifyError,
+    CheckoutSession, PortalSession, StripeConfig, StripeError, WebhookVerifyError,
 };
 use crate::services::auth::tenants::repo::PlanTier;
 
@@ -59,65 +58,6 @@ pub async fn create_checkout_session(
         // on a later `customer.subscription.*` event.
         ("subscription_data[metadata][tenant_id]", tenant_id_hex),
     ];
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(format!("{STRIPE_API_BASE}/checkout/sessions"))
-        .basic_auth(&cfg.secret_key, None::<&str>)
-        .header("Stripe-Version", STRIPE_API_VERSION)
-        .form(&params)
-        .send()
-        .await
-        .map_err(|e| StripeError::Network(e.to_string()))?;
-
-    let status = resp.status();
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| StripeError::Network(e.to_string()))?;
-
-    if !status.is_success() {
-        return Err(StripeError::Api(format!("{status}: {body}")));
-    }
-
-    serde_json::from_str::<CheckoutSession>(&body).map_err(|e| StripeError::Api(e.to_string()))
-}
-
-/// Create a Checkout session for the billing-handoff flow (email magic-link
-/// → Stripe Checkout).
-pub async fn create_checkout_session_for_handoff(
-    cfg: &StripeConfig,
-    opts: HandoffCheckoutOpts<'_>,
-) -> Result<CheckoutSession, StripeError> {
-    if !cfg.is_configured() {
-        return Err(StripeError::NotConfigured);
-    }
-    let price_id = cfg
-        .price_id_for(opts.tier)
-        .ok_or(StripeError::MissingPriceId(opts.tier))?;
-
-    // Stripe's form encoder accepts repeated keys, so we build the params
-    // as a Vec of (&str, &str) rather than a fixed-size array.
-    let mut params: Vec<(&str, &str)> = vec![
-        ("mode", "subscription"),
-        ("line_items[0][price]", price_id),
-        ("line_items[0][quantity]", "1"),
-        ("success_url", opts.success_url),
-        ("cancel_url", opts.cancel_url),
-        ("automatic_tax[enabled]", "false"),
-    ];
-    if let Some(cust) = opts.customer_id {
-        params.push(("customer", cust));
-    } else if let Some(email) = opts.customer_email {
-        params.push(("customer_email", email));
-    }
-    if let Some(tenant_id) = opts.tenant_id_hex {
-        params.push(("client_reference_id", tenant_id));
-        params.push(("subscription_data[metadata][tenant_id]", tenant_id));
-    }
-    if let Some(pending_email) = opts.pending_email {
-        params.push(("subscription_data[metadata][pending_email]", pending_email));
-    }
 
     let client = reqwest::Client::new();
     let resp = client

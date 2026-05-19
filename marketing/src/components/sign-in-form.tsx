@@ -38,7 +38,7 @@ function initialStateFromUrl(): State {
   return { kind: "error", message };
 }
 
-export function SignInForm() {
+export function SignInForm({ next }: { next?: string } = {}) {
   const [email, setEmail] = useState("");
   // Initialize from `?error=<code>` so an OAuth callback redirect surfaces a
   // toast on the magic-link form without a separate component. Lazy
@@ -69,11 +69,13 @@ export function SignInForm() {
     }
     setState({ kind: "submitting" });
     try {
+      const body: Record<string, unknown> = { email: trimmed };
+      if (next) body.next = next;
       const resp = await fetch(`${API_URL}/v1/auth/signin`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email: trimmed }),
+        body: JSON.stringify(body),
       });
       if (resp.status === 429) {
         setState({

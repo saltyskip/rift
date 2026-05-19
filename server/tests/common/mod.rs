@@ -207,7 +207,6 @@ pub async fn spawn_app() -> TestApp {
                 tenants_repo.clone() as Arc<dyn TenantsRepository>
             ),
         )),
-        billing_handoff_service: None,
         tokens_service: Some(tokens_service.clone()),
     });
 

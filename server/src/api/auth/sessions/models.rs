@@ -7,6 +7,13 @@ use utoipa::ToSchema;
 pub struct SignInRequest {
     #[schema(example = "alice@example.com")]
     pub email: String,
+    /// Optional same-origin path to redirect to after sign-in. Validated
+    /// against the request's `Origin` (or `marketing_url`) at signin time and
+    /// stored in the token metadata so the callback can use it even when the
+    /// query-string `next` is missing or tampered with.
+    #[serde(default)]
+    #[schema(example = "/checkout?tier=pro")]
+    pub next: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

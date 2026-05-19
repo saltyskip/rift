@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { MagicLinkForm } from "@/components/magic-link-form";
+import { BillingCta } from "@/components/billing-cta";
 
 export const metadata: Metadata = {
   title: "Manage your Rift subscription",
   description:
-    "Update your card, download invoices, or cancel your subscription. We'll email a secure link to open your billing portal.",
+    "Update your card, download invoices, or cancel your subscription via Stripe's billing portal.",
 };
 
 export default async function ManagePage({
@@ -25,8 +25,7 @@ export default async function ManagePage({
           </h1>
           <p className="text-[14px] text-[#71717a] mb-8 leading-relaxed">
             Update your card, download invoices, or cancel — all through
-            Stripe&rsquo;s hosted portal. Enter your email below and we&rsquo;ll send a
-            single-use link.
+            Stripe&rsquo;s hosted portal.
           </p>
 
           {done === "1" && (
@@ -54,12 +53,7 @@ export default async function ManagePage({
           )}
 
           <div className="rounded-xl border border-[#222225] bg-[#111113] p-6">
-            <MagicLinkForm
-              intent="portal"
-              label="Your billing email"
-              submitLabel="Send secure link"
-              note="The link expires in 15 minutes and can only be used once. It opens Stripe's billing portal directly."
-            />
+            <BillingCta intent="portal" />
           </div>
 
           <section className="mt-10 text-[13px] text-[#52525b] leading-relaxed">

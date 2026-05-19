@@ -1,18 +1,16 @@
 use axum::extract::{Query, State};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Json, Redirect, Response};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Json, Response};
 use serde_json::json;
 use std::sync::Arc;
 
 use super::models::{
-    BillingStatusResponse, CheckoutQuery, CheckoutSessionResponse, LimitsView, MagicLinkGoQuery,
-    MagicLinkRequest, MagicLinkResponse, PortalSessionResponse,
+    BillingStatusResponse, CheckoutQuery, CheckoutSessionResponse, LimitsView,
+    PortalSessionResponse,
 };
 use crate::api::auth::models::TenantId;
 use crate::app::AppState;
-use crate::core::http::client_ip_from_headers;
 use crate::services::auth::tenants::repo::{BillingMethod, PlanTier};
-use crate::services::billing::handoff::{BillingHandoffError, HandoffOutcome};
 use crate::services::billing::limits::limits_for;
 use crate::services::billing::models::{BillingError, BillingStatus};
 use crate::services::billing::stripe_client::{
@@ -137,84 +135,6 @@ pub async fn create_stripe_checkout(
             )
                 .into_response()
         }
-    }
-}
-
-// ── POST /v1/billing/magic-link — public, rate-limited ──
-
-#[utoipa::path(
-    post,
-    path = "/v1/billing/magic-link",
-    tag = "Billing",
-    request_body = MagicLinkRequest,
-    responses(
-        (status = 200, description = "Always returned (prevents email enumeration)", body = MagicLinkResponse),
-        (status = 400, description = "Invalid intent or missing tier", body = crate::error::ErrorResponse),
-        (status = 429, description = "Rate limit exceeded", body = crate::error::ErrorResponse),
-        (status = 503, description = "Billing not configured", body = crate::error::ErrorResponse),
-    ),
-)]
-#[tracing::instrument(skip(state, headers, body))]
-pub async fn create_magic_link(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Json(body): Json<MagicLinkRequest>,
-) -> Response {
-    let Some(service) = state.billing_handoff_service.as_ref() else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "Billing not configured", "code": "no_billing" })),
-        )
-            .into_response();
-    };
-
-    let client_ip = client_ip_from_headers(&headers);
-    match service
-        .request(&body.email, &body.intent, body.tier.as_deref(), &client_ip)
-        .await
-    {
-        Ok(()) => (StatusCode::OK, Json(MagicLinkResponse { status: "sent" })).into_response(),
-        Err(BillingHandoffError::RateLimited) => (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(json!({
-                "error": "Too many magic-link requests. Try again later.",
-                "code": "rate_limited"
-            })),
-        )
-            .into_response(),
-        Err(BillingHandoffError::Invalid { code, message }) => (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": message, "code": code })),
-        )
-            .into_response(),
-    }
-}
-
-// ── GET /v1/billing/go — redeem magic link → Stripe redirect ──
-
-#[tracing::instrument(skip(state))]
-pub async fn redeem_magic_link(
-    State(state): State<Arc<AppState>>,
-    Query(q): Query<MagicLinkGoQuery>,
-) -> Response {
-    // `/pricing` doesn't exist as a standalone route on the marketing site —
-    // it's an anchor on the home page.
-    let expired_url = format!("{}/?error=link_expired#pricing", state.config.marketing_url);
-    let no_subscription_url = format!(
-        "{}/manage?error=no_subscription",
-        state.config.marketing_url
-    );
-
-    let Some(service) = state.billing_handoff_service.as_ref() else {
-        return Redirect::to(&expired_url).into_response();
-    };
-
-    match service.redeem(&q.token).await {
-        HandoffOutcome::CheckoutUrl(url) | HandoffOutcome::PortalUrl(url) => {
-            Redirect::to(&url).into_response()
-        }
-        HandoffOutcome::NoSubscription => Redirect::to(&no_subscription_url).into_response(),
-        HandoffOutcome::Expired => Redirect::to(&expired_url).into_response(),
     }
 }
 

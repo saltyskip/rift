@@ -30,9 +30,6 @@ impl TenantsRepository for MockTenants {
     ) -> Result<Option<TenantDoc>, String> {
         Ok(None)
     }
-    async fn find_by_owner_email(&self, _email: &str) -> Result<Option<TenantDoc>, String> {
-        Ok(None)
-    }
     async fn apply_subscription_update(
         &self,
         _tenant_id: &ObjectId,

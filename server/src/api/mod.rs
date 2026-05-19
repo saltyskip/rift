@@ -99,7 +99,6 @@ use crate::app::AppState;
         billing::routes::create_stripe_checkout,
         billing::routes::create_stripe_portal,
         billing::routes::cancel_subscription,
-        billing::routes::create_magic_link,
         // (Stripe webhook omitted — raw-body handler, documented on Stripe's end)
         // System
         health::routes::health,
@@ -179,8 +178,6 @@ use crate::app::AppState;
         crate::api::billing::models::LimitsView,
         crate::api::billing::models::CheckoutSessionResponse,
         crate::api::billing::models::PortalSessionResponse,
-        crate::api::billing::models::MagicLinkRequest,
-        crate::api::billing::models::MagicLinkResponse,
         crate::services::auth::tenants::repo::PlanTier,
         crate::services::auth::tenants::repo::BillingMethod,
         crate::services::auth::tenants::repo::SubscriptionStatus,

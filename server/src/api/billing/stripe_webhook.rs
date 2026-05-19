@@ -281,28 +281,18 @@ async fn handle_subscription_upsert(
 
     // Send welcome email *after* the subscription is persisted. Failure to
     // email is logged but doesn't re-queue the webhook — the webhook already
-    // succeeded at its primary job (tenant + subscription state). Customers
-    // can always use the magic-link portal flow to recover.
+    // succeeded at its primary job. Free is skipped because there's no
+    // welcome path for a Free tenant here.
     if let Some((email, api_key)) = newly_minted_key {
-        let billing_tier = match plan_tier {
-            Some(crate::services::auth::tenants::repo::PlanTier::Pro) => {
-                Some(crate::services::billing::handoff::BillingTier::Pro)
-            }
-            Some(crate::services::auth::tenants::repo::PlanTier::Business) => {
-                Some(crate::services::billing::handoff::BillingTier::Business)
-            }
-            Some(crate::services::auth::tenants::repo::PlanTier::Scale) => {
-                Some(crate::services::billing::handoff::BillingTier::Scale)
-            }
-            _ => None,
-        };
-        if let Some(billing_tier) = billing_tier {
+        if let Some(tier) =
+            plan_tier.filter(|t| !matches!(t, crate::services::auth::tenants::repo::PlanTier::Free))
+        {
             if let Err(e) = crate::services::billing::email::send_welcome(
                 &state.config.resend_api_key,
                 &state.config.resend_from_email,
                 &email,
                 &api_key,
-                billing_tier,
+                tier,
                 &state.config.marketing_url,
             )
             .await

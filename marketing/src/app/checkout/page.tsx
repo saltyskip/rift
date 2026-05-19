@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { MagicLinkForm } from "@/components/magic-link-form";
+import { BillingCta } from "@/components/billing-cta";
 import { getTierBySlug, isPaidTierSlug, type PaidTierSlug } from "@/lib/tiers";
 
 export const metadata: Metadata = {
   title: "Subscribe to Rift",
   description:
-    "Start your Rift paid subscription. We'll email a secure link to complete checkout.",
+    "Start your Rift paid subscription. Sign in once, then continue to Stripe checkout.",
 };
 
 export default async function CheckoutPage({
@@ -71,12 +71,10 @@ export default async function CheckoutPage({
             </ul>
 
             <div className="rounded-xl border border-[#222225] bg-[#111113] p-6">
-              <MagicLinkForm
+              <BillingCta
                 intent="subscribe"
                 tier={tier.slug as PaidTierSlug}
-                label="Your email"
-                submitLabel="Continue to Stripe"
-                note="We'll email a single-use link that takes you to secure Stripe checkout. Existing customers are recognized automatically."
+                tierName={tier.name}
               />
             </div>
           </section>
@@ -89,15 +87,15 @@ export default async function CheckoutPage({
               <ol className="space-y-3 text-[13px] text-[#a1a1aa] leading-relaxed">
                 <li>
                   <span className="text-[#2dd4bf] font-mono mr-2">1.</span>
-                  Check your inbox for a secure link.
+                  Sign in (or pick up an existing session).
                 </li>
                 <li>
                   <span className="text-[#2dd4bf] font-mono mr-2">2.</span>
-                  Click it to open Stripe Checkout.
+                  Confirm details on Stripe Checkout.
                 </li>
                 <li>
                   <span className="text-[#2dd4bf] font-mono mr-2">3.</span>
-                  Your API key lands in your inbox after payment.
+                  Mint your API key from <code className="text-[#a1a1aa]">/account</code> when you&rsquo;re ready.
                 </li>
               </ol>
             </div>

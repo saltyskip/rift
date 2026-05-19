@@ -68,7 +68,20 @@ pub async fn sign_in(
         .and_then(|v| v.to_str().ok())
         .filter(|s| state.origin_matcher.matches_str(s));
 
-    match svc.request_sign_in(&body.email, &ip, origin).await {
+    // Sanitize `next` against the resolved base (validated origin if present,
+    // else marketing_url) — same precedence the callback uses. Storing the
+    // pre-sanitized value in the token's metadata means the callback can
+    // trust it without re-validating the user-controlled query string.
+    let next_base = origin.unwrap_or(state.config.marketing_url.as_str());
+    let next = body
+        .next
+        .as_deref()
+        .and_then(|n| sanitize_next(next_base, n));
+
+    match svc
+        .request_sign_in(&body.email, &ip, origin, next.as_deref())
+        .await
+    {
         Ok(()) => (StatusCode::OK, Json(SignInResponse { status: "sent" })).into_response(),
         Err(SessionError::RateLimited) => (
             StatusCode::TOO_MANY_REQUESTS,
@@ -145,10 +158,14 @@ pub async fn callback(
                 .filter(|o| state.origin_matcher.matches_str(o))
                 .unwrap_or(fallback_base);
 
-            let success_path = q
+            // Prefer the `next` captured at signin time (already sanitized
+            // against its base, can't be tampered with by whoever clicked the
+            // emailed link). Fall back to a query-string `next` (e.g. team
+            // invite acceptance) and finally `/account`.
+            let success_path = outcome
                 .next
-                .as_deref()
-                .and_then(|n| sanitize_next(base, n))
+                .clone()
+                .or_else(|| q.next.as_deref().and_then(|n| sanitize_next(base, n)))
                 .unwrap_or_else(|| "/account".to_string());
             let success_url = format!("{base}{success_path}");
 
