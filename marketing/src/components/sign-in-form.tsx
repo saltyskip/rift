@@ -1,8 +1,27 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.riftl.ink";
+
+// `?error=<code>` codes the OAuth callback redirects back with. Mapped to
+// user-facing toasts so the magic-link form can surface OAuth failures
+// without a separate component.
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  oauth_state_invalid:
+    "Your sign-in link expired or was already used. Try again.",
+  oauth_email_unverified:
+    "Your email isn't verified with that provider. Verify it or use email sign-in.",
+  oauth_no_email:
+    "We couldn't get an email from that provider. Use email sign-in instead.",
+  oauth_provider_error:
+    "Sign-in with that provider failed. Try again or use email.",
+  oauth_not_configured:
+    "That provider isn't configured. Use email sign-in.",
+  oauth_provider_unknown: "Unknown sign-in provider.",
+  oauth_internal: "Something went wrong. Try again.",
+  link_expired: "Your sign-in link expired. Try again.",
+};
 
 type State =
   | { kind: "idle" }
@@ -10,9 +29,35 @@ type State =
   | { kind: "sent"; email: string }
   | { kind: "error"; message: string };
 
+function initialStateFromUrl(): State {
+  if (typeof window === "undefined") return { kind: "idle" };
+  const code = new URLSearchParams(window.location.search).get("error");
+  if (!code) return { kind: "idle" };
+  const message = OAUTH_ERROR_MESSAGES[code] ?? "Sign-in failed. Try again.";
+  return { kind: "error", message };
+}
+
 export function SignInForm() {
   const [email, setEmail] = useState("");
-  const [state, setState] = useState<State>({ kind: "idle" });
+  // Initialize from `?error=<code>` so an OAuth callback redirect surfaces a
+  // toast on the magic-link form without a separate component. Lazy
+  // initializer (not useEffect+setState) keeps the render synchronous and
+  // avoids the "cascading renders" lint rule.
+  const [state, setState] = useState<State>(initialStateFromUrl);
+
+  // Strip `?error=<code>` from the URL once after mount so reloading the
+  // page doesn't re-show the toast. This is a side effect (external system =
+  // browser history), not a setState — safe to do in useEffect.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("error")) return;
+    params.delete("error");
+    const next = params.toString();
+    const url =
+      window.location.pathname + (next ? `?${next}` : "") + window.location.hash;
+    window.history.replaceState(null, "", url);
+  }, []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

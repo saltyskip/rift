@@ -15,6 +15,10 @@ pub enum TokenPurpose {
     BillingSubscribe,
     BillingPortal,
     Signin,
+    /// OAuth federation state CSRF token — issued at `/v1/auth/oauth/{p}/start`,
+    /// consumed at `/v1/auth/oauth/{p}/callback`. Metadata carries
+    /// `{provider, code_verifier, next, origin}`. 5-min TTL.
+    OauthState,
 }
 
 /// How the token is looked up on consume.

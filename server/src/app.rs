@@ -6,6 +6,7 @@ use crate::core::origin::OriginMatcher;
 use crate::core::webhook_dispatcher::WebhookDispatcher;
 use crate::services::affiliates::service::AffiliatesService;
 use crate::services::apps::repo::AppsRepository;
+use crate::services::auth::oauth::OauthService;
 use crate::services::auth::publishable_keys::repo::SdkKeysRepository;
 use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::SecretKeysService;
@@ -54,6 +55,10 @@ pub struct AppState {
     pub users_service: Option<Arc<UsersService>>,
     pub secret_keys_service: Option<Arc<SecretKeysService>>,
     pub sessions_service: Option<Arc<SessionsService>>,
+    /// OAuth federation (GitHub + Google signin). `None` when neither
+    /// provider is configured; individual providers can be missing inside
+    /// the service even when the field is `Some`.
+    pub oauth_service: Option<Arc<OauthService>>,
     pub conversions_service: Option<Arc<ConversionsService>>,
     pub billing_service: Option<Arc<BillingService>>,
     pub billing_handoff_service: Option<Arc<BillingHandoffService>>,

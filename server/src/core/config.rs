@@ -84,6 +84,18 @@ pub struct Config {
     pub stripe_price_id_scale: String,
     pub stripe_success_url: String,
     pub stripe_cancel_url: String,
+
+    // ── OAuth federation (GitHub + Google signin) ──
+    /// GitHub OAuth app credentials. Empty pair = GitHub signin disabled.
+    /// One app per environment (GitHub doesn't allow multiple callback URLs
+    /// on a single app); credentials live in Fly secrets.
+    pub github_oauth_client_id: String,
+    pub github_oauth_client_secret: String,
+    /// Google OAuth app credentials. Empty pair = Google signin disabled.
+    /// Google allows multiple redirect URIs on one app, so prod+sandbox
+    /// can share if you want.
+    pub google_oauth_client_id: String,
+    pub google_oauth_client_secret: String,
 }
 
 impl Config {
@@ -167,6 +179,13 @@ impl Config {
             stripe_price_id_scale: std::env::var("STRIPE_PRICE_ID_SCALE").unwrap_or_default(),
             stripe_success_url: std::env::var("STRIPE_SUCCESS_URL").unwrap_or_default(),
             stripe_cancel_url: std::env::var("STRIPE_CANCEL_URL").unwrap_or_default(),
+
+            github_oauth_client_id: std::env::var("GITHUB_OAUTH_CLIENT_ID").unwrap_or_default(),
+            github_oauth_client_secret: std::env::var("GITHUB_OAUTH_CLIENT_SECRET")
+                .unwrap_or_default(),
+            google_oauth_client_id: std::env::var("GOOGLE_OAUTH_CLIENT_ID").unwrap_or_default(),
+            google_oauth_client_secret: std::env::var("GOOGLE_OAUTH_CLIENT_SECRET")
+                .unwrap_or_default(),
         }
     }
 

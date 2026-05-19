@@ -1,4 +1,5 @@
 pub mod keys;
+pub mod oauth;
 pub mod publishable_keys;
 pub mod scope;
 pub mod secret_keys;

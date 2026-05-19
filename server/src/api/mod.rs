@@ -31,6 +31,8 @@ use crate::app::AppState;
         auth::sessions::routes::me,
         auth::sessions::routes::sign_out,
         auth::sessions::routes::issue_secret_key,
+        auth::oauth::routes::start,
+        auth::oauth::routes::callback,
         auth::secret_keys::routes::verify_email,
         auth::secret_keys::routes::request_create_key,
         auth::secret_keys::routes::confirm_create_key,
