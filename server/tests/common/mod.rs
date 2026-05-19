@@ -69,6 +69,7 @@ pub async fn spawn_app() -> TestApp {
         marketing_url: "http://localhost:0".to_string(),
         cookie_domain: None,
         cookie_secure: false,
+        cookie_same_site: rift::core::config::CookieSameSite::Lax,
         free_daily_limit: 5,
         sentry_dsn: String::new(),
         environment: "test".to_string(),

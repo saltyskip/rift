@@ -32,8 +32,19 @@ pub struct Config {
     pub cookie_domain: Option<String>,
     /// Whether the session cookie gets `Secure`. Derived from `MARKETING_URL`
     /// scheme — `https://` → true, otherwise false. Browsers refuse `Secure`
-    /// cookies over plain HTTP, so dev/localhost MUST be false.
+    /// cookies over plain HTTP, so dev/localhost MUST be false. When
+    /// `cookie_same_site == None`, this is forced to `true` because
+    /// browsers reject `SameSite=None` without `Secure`.
     pub cookie_secure: bool,
+    /// `SameSite` attribute for the session cookie. `Lax` (the default)
+    /// blocks cross-origin subresource requests from sending the cookie —
+    /// good CSRF posture for prod where marketing + API share a parent
+    /// domain. `None` allows the cookie on every cross-origin request and
+    /// is intended for preview/sandbox environments where the marketing
+    /// site (e.g. a `*.vercel.app` preview URL) and the API live on
+    /// different parent domains. `None` widens the CSRF surface — keep
+    /// it confined to non-prod via `COOKIE_SAMESITE`.
+    pub cookie_same_site: CookieSameSite,
     pub free_daily_limit: i64,
 
     // ── Sentry ──
@@ -106,12 +117,21 @@ impl Config {
                     .or(std::env::var("PUBLIC_URL").ok().as_deref())
                     .unwrap_or("http://localhost:3000"),
             ),
-            cookie_secure: std::env::var("MARKETING_URL")
-                .ok()
-                .as_deref()
-                .or(std::env::var("PUBLIC_URL").ok().as_deref())
-                .unwrap_or("http://localhost:3000")
-                .starts_with("https://"),
+            cookie_secure: {
+                let same_site =
+                    CookieSameSite::from_env_str(std::env::var("COOKIE_SAMESITE").ok().as_deref());
+                let scheme_secure = std::env::var("MARKETING_URL")
+                    .ok()
+                    .as_deref()
+                    .or(std::env::var("PUBLIC_URL").ok().as_deref())
+                    .unwrap_or("http://localhost:3000")
+                    .starts_with("https://");
+                // SameSite=None requires Secure or browsers drop the cookie.
+                scheme_secure || same_site == CookieSameSite::None
+            },
+            cookie_same_site: CookieSameSite::from_env_str(
+                std::env::var("COOKIE_SAMESITE").ok().as_deref(),
+            ),
             free_daily_limit: std::env::var("FREE_DAILY_LIMIT")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -152,6 +172,36 @@ impl Config {
 
     pub fn bind_addr(&self) -> String {
         format!("{}:{}", self.host, self.port)
+    }
+}
+
+/// `SameSite` attribute for the session cookie. Parsed from the
+/// `COOKIE_SAMESITE` env var; unknown values fall back to `Lax`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CookieSameSite {
+    Strict,
+    Lax,
+    None,
+}
+
+impl CookieSameSite {
+    pub fn from_env_str(raw: Option<&str>) -> Self {
+        match raw.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+            Some("strict") => Self::Strict,
+            Some("none") => Self::None,
+            // Default + explicit "lax" + anything unrecognised → Lax.
+            // Unrecognised values fall back rather than panic so a typo
+            // doesn't kill the server at startup.
+            _ => Self::Lax,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Strict => "Strict",
+            Self::Lax => "Lax",
+            Self::None => "None",
+        }
     }
 }
 

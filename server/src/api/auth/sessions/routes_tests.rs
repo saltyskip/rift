@@ -2,7 +2,8 @@
 //! input listed here either redirects somewhere the browser ultimately
 //! resolves off-origin (rejected) or stays on the marketing site (accepted).
 
-use super::sanitize_next;
+use super::{build_cookie, sanitize_next};
+use crate::core::config::CookieSameSite;
 
 const BASE: &str = "https://riftl.ink";
 
@@ -96,4 +97,64 @@ fn url_join_handles_dot_segments() {
     // `..` traversal stays same-origin (Url::join normalises), so this is
     // structurally safe — included so we know what to expect.
     assert_eq!(sanitize_next(BASE, "/a/../b"), Some("/b".to_string()));
+}
+
+#[test]
+fn build_cookie_prod_shape() {
+    // Production profile: scoped to parent, Secure, Lax.
+    let c = build_cookie(
+        "abc",
+        2592000,
+        Some(".riftl.ink"),
+        true,
+        CookieSameSite::Lax,
+    );
+    assert_eq!(
+        c,
+        "session_token=abc; Domain=.riftl.ink; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000"
+    );
+}
+
+#[test]
+fn build_cookie_sandbox_cross_origin_shape() {
+    // Sandbox-with-Vercel-preview profile: no Domain (sticks to exact host),
+    // Secure (required by SameSite=None), SameSite=None for cross-origin.
+    let c = build_cookie("abc", 2592000, None, true, CookieSameSite::None);
+    assert_eq!(
+        c,
+        "session_token=abc; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=2592000"
+    );
+}
+
+#[test]
+fn build_cookie_dev_shape() {
+    // Localhost: no Domain, no Secure, Lax.
+    let c = build_cookie("abc", 2592000, None, false, CookieSameSite::Lax);
+    assert_eq!(
+        c,
+        "session_token=abc; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000"
+    );
+}
+
+#[test]
+fn clearing_cookie_matches_issuing_attrs() {
+    // The signout cookie must mirror the issuing cookie's attrs (minus the
+    // value + Max-Age) or browsers won't scrub the original. M4 in the
+    // review pinned this as an invariant.
+    let issued = build_cookie(
+        "abc",
+        2592000,
+        Some(".riftl.ink"),
+        true,
+        CookieSameSite::Lax,
+    );
+    let cleared = build_cookie("", 0, Some(".riftl.ink"), true, CookieSameSite::Lax);
+    // Strip the value and Max-Age, compare the rest.
+    let strip = |s: &str| {
+        s.replace("session_token=abc; ", "")
+            .replace("session_token=; ", "")
+            .replace("Max-Age=2592000", "Max-Age=N")
+            .replace("Max-Age=0", "Max-Age=N")
+    };
+    assert_eq!(strip(&issued), strip(&cleared));
 }

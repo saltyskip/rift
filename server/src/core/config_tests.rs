@@ -3,7 +3,7 @@
 //! sandbox session into prod. Every supported deployment topology is pinned
 //! here.
 
-use super::resolve_cookie_domain;
+use super::{resolve_cookie_domain, CookieSameSite};
 
 #[test]
 fn prod_marketing_yields_riftl_ink_parent() {
@@ -78,10 +78,58 @@ fn override_without_leading_dot_gets_normalised() {
 #[test]
 fn override_empty_or_whitespace_falls_back_to_none() {
     // Empty string explicitly disables the Domain attribute. Useful for
-    // single-host deployments where you don't want subdomain scoping.
+    // single-host deployments where you don't want subdomain scoping —
+    // including the sandbox/Vercel-preview setup where the cookie must
+    // stick to the exact API host because marketing lives on a different
+    // parent domain.
     assert_eq!(resolve_cookie_domain(Some(""), "https://riftl.ink"), None);
     assert_eq!(
         resolve_cookie_domain(Some("   "), "https://riftl.ink"),
         None
     );
+}
+
+#[test]
+fn same_site_defaults_to_lax() {
+    // Unset, empty, garbage, and "lax" all land on Lax — typo doesn't
+    // crash the server at startup.
+    assert_eq!(CookieSameSite::from_env_str(None), CookieSameSite::Lax);
+    assert_eq!(CookieSameSite::from_env_str(Some("")), CookieSameSite::Lax);
+    assert_eq!(
+        CookieSameSite::from_env_str(Some("garbage")),
+        CookieSameSite::Lax
+    );
+    assert_eq!(
+        CookieSameSite::from_env_str(Some("lax")),
+        CookieSameSite::Lax
+    );
+}
+
+#[test]
+fn same_site_parses_none_and_strict_case_insensitive() {
+    // Cross-origin sandbox/preview testing sets None explicitly.
+    assert_eq!(
+        CookieSameSite::from_env_str(Some("None")),
+        CookieSameSite::None
+    );
+    assert_eq!(
+        CookieSameSite::from_env_str(Some("NONE")),
+        CookieSameSite::None
+    );
+    assert_eq!(
+        CookieSameSite::from_env_str(Some("Strict")),
+        CookieSameSite::Strict
+    );
+    assert_eq!(
+        CookieSameSite::from_env_str(Some("strict")),
+        CookieSameSite::Strict
+    );
+}
+
+#[test]
+fn same_site_as_str_round_trips_into_set_cookie_form() {
+    // The `Set-Cookie` attribute value the browser expects: title-case.
+    assert_eq!(CookieSameSite::Lax.as_str(), "Lax");
+    assert_eq!(CookieSameSite::Strict.as_str(), "Strict");
+    assert_eq!(CookieSameSite::None.as_str(), "None");
 }
