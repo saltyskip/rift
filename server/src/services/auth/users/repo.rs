@@ -24,7 +24,6 @@ pub trait UsersRepository: Send + Sync {
     /// doc on success, `None` if no such user exists. Idempotent — verifying
     /// an already-verified user is a no-op that returns the doc.
     async fn mark_verified(&self, email: &str) -> Result<Option<UserDoc>, String>;
-    async fn upsert_by_email(&self, doc: &UserDoc) -> Result<(), String>;
 }
 
 // ── Repository ──
@@ -124,30 +123,5 @@ impl UsersRepository for UsersRepo {
             )
             .await
             .map_err(|e| e.to_string())
-    }
-
-    async fn upsert_by_email(&self, doc: &UserDoc) -> Result<(), String> {
-        let opts = mongodb::options::UpdateOptions::builder()
-            .upsert(true)
-            .build();
-        self.users
-            .update_one(
-                doc! { "email": &doc.email },
-                doc! {
-                    "$set": {
-                        "tenant_id": doc.tenant_id,
-                        "is_owner": doc.is_owner,
-                    },
-                    "$setOnInsert": {
-                        "email": &doc.email,
-                        "verified": doc.verified,
-                        "created_at": doc.created_at,
-                    },
-                },
-            )
-            .with_options(opts)
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok(())
     }
 }

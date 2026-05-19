@@ -174,9 +174,7 @@ fn error_response(e: &UserError) -> Response {
     }
     let status = match e {
         UserError::InvalidEmail => StatusCode::BAD_REQUEST,
-        UserError::EmailExists | UserError::UserExists | UserError::LastUser => {
-            StatusCode::CONFLICT
-        }
+        UserError::UserExists | UserError::LastUser => StatusCode::CONFLICT,
         UserError::NotFound => StatusCode::NOT_FOUND,
         UserError::QuotaExceeded(_) => unreachable!("handled above"),
         UserError::EmailFailed(_) | UserError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,

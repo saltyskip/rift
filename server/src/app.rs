@@ -2,12 +2,14 @@ use std::sync::Arc;
 
 use crate::core::cdp::CdpFacilitator;
 use crate::core::config::Config;
+use crate::core::origin::OriginMatcher;
 use crate::core::webhook_dispatcher::WebhookDispatcher;
 use crate::services::affiliates::service::AffiliatesService;
 use crate::services::apps::repo::AppsRepository;
 use crate::services::auth::publishable_keys::repo::SdkKeysRepository;
 use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::SecretKeysService;
+use crate::services::auth::sessions::service::SessionsService;
 use crate::services::auth::tenants::repo::TenantsRepository;
 use crate::services::auth::usage::repo::UsageRepository;
 use crate::services::auth::users::service::UsersService;
@@ -36,6 +38,9 @@ pub struct AppState {
     pub domains_repo: Option<Arc<dyn DomainsRepository>>,
     pub apps_repo: Option<Arc<dyn AppsRepository>>,
     pub config: Config,
+    /// Shared origin allowlist — used by the CORS layer AND by the
+    /// signin/callback flow to validate redirect targets.
+    pub origin_matcher: Arc<OriginMatcher>,
     pub facilitator: Option<CdpFacilitator>,
     pub x402_price_tags: Vec<v1::PriceTag>,
     pub webhooks_repo: Option<Arc<dyn WebhooksRepository>>,
@@ -48,6 +53,7 @@ pub struct AppState {
     pub affiliates_service: Option<Arc<AffiliatesService>>,
     pub users_service: Option<Arc<UsersService>>,
     pub secret_keys_service: Option<Arc<SecretKeysService>>,
+    pub sessions_service: Option<Arc<SessionsService>>,
     pub conversions_service: Option<Arc<ConversionsService>>,
     pub billing_service: Option<Arc<BillingService>>,
     pub billing_handoff_service: Option<Arc<BillingHandoffService>>,

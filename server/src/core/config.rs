@@ -23,6 +23,28 @@ pub struct Config {
     /// `https://riftl.ink`. Falls back to `public_url` for dev so a solo
     /// server still works end-to-end.
     pub marketing_url: String,
+    /// `Domain` attribute for the session cookie. Derived from `MARKETING_URL`'s
+    /// host so each environment scopes its cookies to its own subtree:
+    /// prod (`riftl.ink`) → `.riftl.ink`, sandbox (`sandbox.riftl.ink`) →
+    /// `.sandbox.riftl.ink`, local dev (`localhost`) → `None`. This stops a
+    /// sandbox session cookie from leaking into prod. `COOKIE_DOMAIN` can
+    /// override for unusual deployments.
+    pub cookie_domain: Option<String>,
+    /// Whether the session cookie gets `Secure`. Derived from `MARKETING_URL`
+    /// scheme — `https://` → true, otherwise false. Browsers refuse `Secure`
+    /// cookies over plain HTTP, so dev/localhost MUST be false. When
+    /// `cookie_same_site == None`, this is forced to `true` because
+    /// browsers reject `SameSite=None` without `Secure`.
+    pub cookie_secure: bool,
+    /// `SameSite` attribute for the session cookie. `Lax` (the default)
+    /// blocks cross-origin subresource requests from sending the cookie —
+    /// good CSRF posture for prod where marketing + API share a parent
+    /// domain. `None` allows the cookie on every cross-origin request and
+    /// is intended for preview/sandbox environments where the marketing
+    /// site (e.g. a `*.vercel.app` preview URL) and the API live on
+    /// different parent domains. `None` widens the CSRF surface — keep
+    /// it confined to non-prod via `COOKIE_SAMESITE`.
+    pub cookie_same_site: CookieSameSite,
     pub free_daily_limit: i64,
 
     // ── Sentry ──
@@ -87,6 +109,29 @@ impl Config {
             marketing_url: std::env::var("MARKETING_URL").unwrap_or_else(|_| {
                 std::env::var("PUBLIC_URL").unwrap_or_else(|_| "http://localhost:3000".to_string())
             }),
+            cookie_domain: resolve_cookie_domain(
+                std::env::var("COOKIE_DOMAIN").ok().as_deref(),
+                std::env::var("MARKETING_URL")
+                    .ok()
+                    .as_deref()
+                    .or(std::env::var("PUBLIC_URL").ok().as_deref())
+                    .unwrap_or("http://localhost:3000"),
+            ),
+            cookie_secure: {
+                let same_site =
+                    CookieSameSite::from_env_str(std::env::var("COOKIE_SAMESITE").ok().as_deref());
+                let scheme_secure = std::env::var("MARKETING_URL")
+                    .ok()
+                    .as_deref()
+                    .or(std::env::var("PUBLIC_URL").ok().as_deref())
+                    .unwrap_or("http://localhost:3000")
+                    .starts_with("https://");
+                // SameSite=None requires Secure or browsers drop the cookie.
+                scheme_secure || same_site == CookieSameSite::None
+            },
+            cookie_same_site: CookieSameSite::from_env_str(
+                std::env::var("COOKIE_SAMESITE").ok().as_deref(),
+            ),
             free_daily_limit: std::env::var("FREE_DAILY_LIMIT")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -129,3 +174,72 @@ impl Config {
         format!("{}:{}", self.host, self.port)
     }
 }
+
+/// `SameSite` attribute for the session cookie. Parsed from the
+/// `COOKIE_SAMESITE` env var; unknown values fall back to `Lax`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CookieSameSite {
+    Strict,
+    Lax,
+    None,
+}
+
+impl CookieSameSite {
+    pub fn from_env_str(raw: Option<&str>) -> Self {
+        match raw.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+            Some("strict") => Self::Strict,
+            Some("none") => Self::None,
+            // Default + explicit "lax" + anything unrecognised → Lax.
+            // Unrecognised values fall back rather than panic so a typo
+            // doesn't kill the server at startup.
+            _ => Self::Lax,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Strict => "Strict",
+            Self::Lax => "Lax",
+            Self::None => "None",
+        }
+    }
+}
+
+/// Resolve the cookie `Domain` attribute. Explicit `COOKIE_DOMAIN` wins
+/// (normalised to a leading dot). Otherwise derive from the marketing URL's
+/// host; return `None` for `localhost` or numeric IPs so dev works without
+/// the browser silently dropping the cookie.
+///
+/// Why the leading dot: RFC 6265 treats `Domain=.example.com` and
+/// `Domain=example.com` identically in modern browsers, but the leading
+/// dot is the conventional safe form and makes the intent ("send to this
+/// host and its subdomains") explicit at the call site.
+fn resolve_cookie_domain(override_env: Option<&str>, marketing_url: &str) -> Option<String> {
+    if let Some(raw) = override_env {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        return Some(if trimmed.starts_with('.') {
+            trimmed.to_string()
+        } else {
+            format!(".{trimmed}")
+        });
+    }
+
+    let parsed = url::Url::parse(marketing_url).ok()?;
+    let host = parsed.host_str()?;
+    // IPv6 hosts come back bracketed (`[::1]`); strip before IP-parsing.
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(host);
+    if bare == "localhost" || bare.parse::<std::net::IpAddr>().is_ok() {
+        return None;
+    }
+    Some(format!(".{host}"))
+}
+
+#[cfg(test)]
+#[path = "config_tests.rs"]
+mod tests;

@@ -67,6 +67,9 @@ pub async fn spawn_app() -> TestApp {
         resend_from_email: String::new(),
         public_url: "http://localhost:0".to_string(),
         marketing_url: "http://localhost:0".to_string(),
+        cookie_domain: None,
+        cookie_secure: false,
+        cookie_same_site: rift::core::config::CookieSameSite::Lax,
         free_daily_limit: 5,
         sentry_dsn: String::new(),
         environment: "test".to_string(),
@@ -131,6 +134,7 @@ pub async fn spawn_app() -> TestApp {
         tokens_repo.clone(),
     ));
 
+    let origin_matcher = rift::core::origin::OriginMatcher::from_env(&config);
     let state = Arc::new(AppState {
         tenants_repo: Some(tenants_repo.clone() as Arc<dyn TenantsRepository>),
         stripe_webhook_dedup: None,
@@ -144,6 +148,7 @@ pub async fn spawn_app() -> TestApp {
         ),
         apps_repo: Some(apps_repo.clone() as Arc<dyn rift::services::apps::repo::AppsRepository>),
         config,
+        origin_matcher,
         facilitator: None,
         x402_price_tags: vec![],
         webhooks_repo: Some(
@@ -178,7 +183,6 @@ pub async fn spawn_app() -> TestApp {
             rift::services::auth::users::service::UsersService::new(
                 tenants_service.clone(),
                 users_repo.clone() as Arc<dyn UsersRepository>,
-                secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>,
                 tokens_service.clone(),
                 None,
             ),
@@ -190,6 +194,7 @@ pub async fn spawn_app() -> TestApp {
                 tokens_service.clone(),
             ),
         )),
+        sessions_service: None,
         conversions_repo: Some(conversions_repo),
         conversions_service,
         billing_service: Some(Arc::new(

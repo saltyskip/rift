@@ -20,7 +20,7 @@ macro_rules! impl_container {
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
@@ -200,12 +200,14 @@ async fn run_server(cfg: Config) {
         stripe_webhook_dedup_repo,
         tokens_repo,
         affiliates_repo,
+        sessions_repo,
     ) = if cfg.mongo_uri.is_empty() {
         tracing::warn!(
             "MONGO_URI not set — auth, links, domains, apps, webhooks, sdk_keys, conversions, and affiliates disabled"
         );
         (
             None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+            None,
         )
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
@@ -254,6 +256,11 @@ async fn run_server(cfg: Config) {
                 );
                 let tokens: Arc<dyn crate::services::tokens::TokensRepository> =
                     Arc::new(crate::services::tokens::repo::TokensRepoMongo::new(&database).await);
+                let sessions: Arc<dyn crate::services::auth::sessions::SessionsRepository> =
+                    Arc::new(
+                        crate::services::auth::sessions::repo::SessionsRepoMongo::new(&database)
+                            .await,
+                    );
                 (
                     Some(tenants),
                     Some(users),
@@ -269,6 +276,7 @@ async fn run_server(cfg: Config) {
                     Some(stripe_dedup),
                     Some(tokens),
                     Some(affiliates),
+                    Some(sessions),
                 )
             }
             None => {
@@ -277,7 +285,7 @@ async fn run_server(cfg: Config) {
                 );
                 (
                     None, None, None, None, None, None, None, None, None, None, None, None, None,
-                    None,
+                    None, None,
                 )
             }
         }
@@ -472,21 +480,35 @@ async fn run_server(cfg: Config) {
         _ => None,
     };
 
-    let users_service = match (
-        &tenants_service,
-        &users_repo,
-        &secret_keys_repo,
-        &tokens_service,
-    ) {
-        (Some(t), Some(u), Some(sk), Some(tokens)) => Some(Arc::new(
+    let users_service = match (&tenants_service, &users_repo, &tokens_service) {
+        (Some(t), Some(u), Some(tokens)) => Some(Arc::new(
             crate::services::auth::users::service::UsersService::new(
                 t.clone(),
                 u.clone(),
-                sk.clone(),
                 tokens.clone(),
                 quota_service.clone(),
             ),
         )),
+        _ => None,
+    };
+
+    let sessions_service = match (&tokens_service, &sessions_repo, &users_repo, &users_service) {
+        (Some(tokens), Some(sessions), Some(u), Some(users_svc)) => {
+            let config = crate::services::auth::sessions::SessionsConfig {
+                public_url: cfg.public_url.clone(),
+                resend_api_key: cfg.resend_api_key.clone(),
+                resend_from_email: cfg.resend_from_email.clone(),
+            };
+            Some(Arc::new(
+                crate::services::auth::sessions::service::SessionsService::new(
+                    tokens.clone(),
+                    sessions.clone(),
+                    u.clone(),
+                    users_svc.clone(),
+                    config,
+                ),
+            ))
+        }
         _ => None,
     };
 
@@ -501,6 +523,8 @@ async fn run_server(cfg: Config) {
         _ => None,
     };
 
+    let origin_matcher = crate::core::origin::OriginMatcher::from_env(&cfg);
+
     let state = Arc::new(AppState {
         tenants_repo,
         stripe_webhook_dedup: stripe_webhook_dedup_repo,
@@ -510,6 +534,7 @@ async fn run_server(cfg: Config) {
         domains_repo,
         apps_repo,
         config: cfg.clone(),
+        origin_matcher: origin_matcher.clone(),
         facilitator,
         x402_price_tags,
         webhooks_repo,
@@ -522,6 +547,7 @@ async fn run_server(cfg: Config) {
         affiliates_service,
         users_service,
         secret_keys_service,
+        sessions_service,
         conversions_service,
         billing_service,
         billing_handoff_service,
@@ -558,7 +584,7 @@ async fn run_server(cfg: Config) {
         .layer(RequestBodyLimitLayer::new(64 * 1024))
         .layer(sentry::integrations::tower::SentryHttpLayer::new().enable_transaction())
         .layer(sentry::integrations::tower::NewSentryLayer::new_from_top())
-        .layer(CorsLayer::permissive());
+        .layer(build_cors_layer(origin_matcher));
 
     let addr = cfg.bind_addr();
     tracing::info!("Starting Rift on {addr}");
@@ -573,4 +599,26 @@ async fn run_server(cfg: Config) {
     )
     .await
     .expect("Server error");
+}
+
+/// Build the global CORS layer using the shared `OriginMatcher`.
+///
+/// Session cookies require `credentials: true` on the CORS response, which in
+/// turn requires an explicit origin allowlist (CORS spec forbids `*` with
+/// credentials). The matcher reads `ALLOWED_ORIGINS` + `ALLOWED_ORIGIN_REGEX`
+/// from env — see `core::origin` for the algorithm and the documented
+/// Vercel-preview impersonation caveat.
+///
+/// Existing API-key callers from arbitrary origins are unaffected because
+/// bearer-token requests don't need `credentials: true`.
+fn build_cors_layer(matcher: Arc<crate::core::origin::OriginMatcher>) -> CorsLayer {
+    // `*` for methods/headers is forbidden when `credentials: true`; mirroring
+    // the request value is the spec-friendly alternative.
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::predicate(move |origin, _parts| {
+            matcher.matches(origin)
+        }))
+        .allow_credentials(true)
+        .allow_methods(AllowMethods::mirror_request())
+        .allow_headers(AllowHeaders::mirror_request())
 }

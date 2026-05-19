@@ -10,10 +10,9 @@ use crate::services::tokens::{ConsumeOutcome, TokenKind, TokenPurpose, TokenServ
 
 // ── Shared primitive: mint a new secret key for an existing tenant ──
 //
-// Used by the initial owner-key path (UsersService::verify) and the
-// confirmation-code path (SecretKeysService::confirm_create). Billing paths
-// in later phases can call this directly. Mints with `KeyScope::Full`;
-// affiliate-scoped keys go through `mint_scoped` below.
+// Used by the email-code confirmation path (`SecretKeysService::confirm_create`)
+// and the session-authed instant-mint path (`SecretKeysService::issue_for_session`).
+// Mints with `KeyScope::Full`; affiliate-scoped keys go through `mint_scoped` below.
 pub async fn mint_for_tenant(
     sk_repo: &dyn SecretKeysRepository,
     tenant_id: ObjectId,
@@ -236,15 +235,23 @@ impl SecretKeysService {
             .collect())
     }
 
-    /// Delete a secret key. Enforces guards: can't delete last key or self.
+    /// Delete a secret key. Enforces guards: can't delete last key.
+    ///
+    /// `auth_key_id` is `Some(_)` only when the caller is authenticated by an
+    /// API key — in that case we also reject deletion of the caller's own
+    /// key (self-delete would 401 every subsequent request). Session-authed
+    /// callers pass `None`; they're authed by a session, not a key, so
+    /// SelfDelete is structurally impossible.
     pub async fn delete(
         &self,
         tenant_id: ObjectId,
         key_id: ObjectId,
-        auth_key_id: ObjectId,
+        auth_key_id: Option<ObjectId>,
     ) -> Result<(), SecretKeyError> {
-        if key_id == auth_key_id {
-            return Err(SecretKeyError::SelfDelete);
+        if let Some(auth_key_id) = auth_key_id {
+            if key_id == auth_key_id {
+                return Err(SecretKeyError::SelfDelete);
+            }
         }
 
         let count = self
@@ -268,5 +275,28 @@ impl SecretKeysService {
         }
 
         Ok(())
+    }
+
+    /// Mint a key for a session-authed caller. The session middleware has
+    /// already proven the caller is `user_id` on `tenant_id`, so we skip the
+    /// email-code dance entirely. Enforces the 5-keys-per-tenant ceiling so
+    /// session-issued and email-confirmed keys share the same budget.
+    pub async fn issue_for_session(
+        &self,
+        tenant_id: ObjectId,
+        user_id: ObjectId,
+    ) -> Result<CreatedKey, SecretKeyError> {
+        let count = self
+            .sk_repo
+            .count_by_tenant(&tenant_id)
+            .await
+            .map_err(SecretKeyError::Internal)?;
+        if count >= 5 {
+            return Err(SecretKeyError::KeyLimit);
+        }
+
+        mint_for_tenant(&*self.sk_repo, tenant_id, user_id)
+            .await
+            .map_err(SecretKeyError::Internal)
     }
 }

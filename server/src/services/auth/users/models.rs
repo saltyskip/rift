@@ -25,7 +25,6 @@ pub struct UserDoc {
 #[derive(Debug)]
 pub enum UserError {
     InvalidEmail,
-    EmailExists,
     UserExists,
     LastUser,
     NotFound,
@@ -44,10 +43,6 @@ impl fmt::Display for UserError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidEmail => write!(f, "Invalid email address"),
-            Self::EmailExists => write!(
-                f,
-                "Email already registered. Use key rotation to get a new key, or contact support."
-            ),
             Self::UserExists => write!(f, "User already exists on this team"),
             Self::LastUser => write!(f, "Cannot remove the last verified user on this team"),
             Self::NotFound => write!(f, "User not found"),
@@ -62,7 +57,6 @@ impl UserError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::InvalidEmail => "invalid_email",
-            Self::EmailExists => "email_exists",
             Self::UserExists => "user_exists",
             Self::LastUser => "last_user",
             Self::NotFound => "not_found",
@@ -75,14 +69,9 @@ impl UserError {
 
 // ── Service return types ──
 
-pub struct SignupResult;
-
 pub struct VerifyResult {
     pub tenant_id: ObjectId,
     pub email: String,
-    /// Only set for owner verification — the full key shown once.
-    pub key: Option<String>,
-    pub key_prefix: Option<String>,
 }
 
 pub struct InviteResult {

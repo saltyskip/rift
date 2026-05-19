@@ -2,6 +2,7 @@ use axum::extract::Request;
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Json, Response};
+use axum_extra::headers::{Cookie, HeaderMapExt};
 use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::net::SocketAddr;
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use x402_axum::paygate::PaygateProtocol;
 use x402_types::proto::v1;
 
-use super::models::{AuthKeyId, CallerScope, SdkDomain, TenantId};
+use super::models::{AuthKeyId, CallerScope, SdkDomain, SessionId, TenantId, UserId};
 use crate::app::AppState;
 use crate::services::auth::keys;
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
@@ -178,6 +179,198 @@ pub async fn auth_gate(
             .await;
     }
     response
+}
+
+/// Session auth middleware. Resolves the cookie `session_token` (or a non-`rl_`
+/// `Authorization: Bearer` token for forward-compat) to an active session,
+/// injects `TenantId` + `UserId` + `SessionId` + `CallerScope(Full)`, and
+/// passes through. Sessions are always full-tenant scope — there's no
+/// affiliate-scoped human in Phase 1.
+pub async fn session_auth_gate(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    let Some(svc) = state.sessions_service.clone() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Sessions not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    let Some(raw_token) = extract_session_token(&req) else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Missing session", "code": "unauthorized" })),
+        )
+            .into_response();
+    };
+
+    match svc.lookup(&raw_token).await {
+        Ok(Some(resolved)) => {
+            req.extensions_mut().insert(TenantId(resolved.tenant_id));
+            req.extensions_mut().insert(UserId(resolved.user_id));
+            req.extensions_mut().insert(SessionId(resolved.session_id));
+            req.extensions_mut()
+                .insert(CallerScope(Some(KeyScope::Full)));
+
+            sentry::configure_scope(|s| {
+                s.set_tag("tenant_id", resolved.tenant_id.to_string());
+                s.set_tag("user_id", resolved.user_id.to_string());
+                s.set_tag("transport", "session");
+            });
+            next.run(req).await
+        }
+        Ok(None) => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Session expired or revoked", "code": "unauthorized" })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "session_lookup_failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Auth middleware that accepts EITHER a session (cookie or non-`rl_` bearer)
+/// OR an `rl_live_` API key. Used by endpoints that are equally meaningful
+/// from the dashboard (session) and from automation (API key) — currently the
+/// `GET`/`DELETE /v1/auth/secret-keys/*` routes.
+///
+/// Session wins if both are present. API-key path preserves existing affiliate
+/// scope enforcement.
+pub async fn session_or_key_auth_gate(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    // Captured up front because `next.run(req).await` moves the request.
+    // Needed for the API-key path's usage-recording, which has to mirror
+    // `auth_gate`'s billable-call accounting (H3 — without this, key-authed
+    // calls to /v1/auth/secret-keys/* would bypass the quota meter).
+    let ip = client_ip(&req);
+    let endpoint = req.uri().path().to_string();
+
+    // ── Path A: session ──
+    if let (Some(svc), Some(raw_token)) =
+        (state.sessions_service.clone(), extract_session_token(&req))
+    {
+        match svc.lookup(&raw_token).await {
+            Ok(Some(resolved)) => {
+                req.extensions_mut().insert(TenantId(resolved.tenant_id));
+                req.extensions_mut().insert(UserId(resolved.user_id));
+                req.extensions_mut().insert(SessionId(resolved.session_id));
+                req.extensions_mut()
+                    .insert(CallerScope(Some(KeyScope::Full)));
+
+                sentry::configure_scope(|s| {
+                    s.set_tag("tenant_id", resolved.tenant_id.to_string());
+                    s.set_tag("user_id", resolved.user_id.to_string());
+                    s.set_tag("transport", "session");
+                });
+                // Session-authed calls don't count toward the API-key usage
+                // meter; they're human dashboard activity, not billable API.
+                return next.run(req).await;
+            }
+            Ok(None) => {
+                // Fall through and try API key — a stale cookie shouldn't
+                // block an explicit bearer key.
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "session_lookup_failed");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": "Internal error", "code": "db_error" })),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    // ── Path B: API key (mirrors auth_gate's key path, including usage recording) ──
+    if let Some(raw_key) = extract_bearer(&req) {
+        let (tenant_id, key_id, scope) =
+            match validate_api_key(state.secret_keys_repo.as_deref(), &raw_key).await {
+                Ok(ids) => ids,
+                Err(resp) => return resp,
+            };
+
+        if let Some(KeyScope::Affiliate { .. }) = scope {
+            if !is_path_allowed_for_affiliate(req.method(), req.uri().path()) {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(json!({
+                        "error": "This key's scope does not permit this operation",
+                        "code": "forbidden_scope"
+                    })),
+                )
+                    .into_response();
+            }
+        }
+
+        req.extensions_mut().insert(TenantId(tenant_id));
+        req.extensions_mut().insert(AuthKeyId(key_id));
+        req.extensions_mut().insert(CallerScope(scope.clone()));
+
+        sentry::configure_scope(|s| {
+            s.set_tag("tenant_id", tenant_id.to_string());
+            s.set_tag("key_id", key_id.to_string());
+            s.set_tag("transport", "http");
+            if let Some(KeyScope::Affiliate { .. }) = &scope {
+                s.set_tag("key_scope", "affiliate");
+            }
+        });
+
+        let response = next.run(req).await;
+        if response.status().is_success() {
+            if let Some(usage_repo) = state.usage_repo.as_deref() {
+                usage_repo
+                    .record_usage(usage_repo::UsageDoc {
+                        id: None,
+                        api_key_id: Some(key_id),
+                        ip,
+                        endpoint,
+                        ts: usage_repo::now_bson(),
+                    })
+                    .await;
+            }
+        }
+        return response;
+    }
+
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({ "error": "Session or API key required", "code": "unauthorized" })),
+    )
+        .into_response()
+}
+
+/// Extract a session token from the `Cookie: session_token=…` header or from a
+/// non-`rl_` / non-`pk_` `Authorization: Bearer …` header. The latter is
+/// forward-compat for the CLI device-flow (Phase 2); browsers always use the
+/// cookie.
+fn extract_session_token(req: &Request) -> Option<String> {
+    if let Some(cookie) = req.headers().typed_get::<Cookie>() {
+        if let Some(value) = cookie.get("session_token") {
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+
+    let header = req
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())?;
+    let token = header.strip_prefix("Bearer ")?;
+    (!token.starts_with("rl_") && !token.starts_with("pk_") && !token.is_empty())
+        .then(|| token.to_string())
 }
 
 /// SDK auth middleware for pk_live_ keys.

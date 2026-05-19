@@ -21,12 +21,16 @@ use crate::app::AppState;
     info(
         title = "Rift API",
         version = "0.1.0",
-        description = "Deep links for humans and agents.\n\nRift creates smart, cross-platform deep links with structured context for AI agents. Each link carries per-platform destinations, metadata, and an optional `agent_context` that makes links machine-readable.\n\n## Authentication\n\nSign up at `POST /v1/auth/signup` to get an API key (starts with `rl_live_`). Include it as a Bearer token in the Authorization header. Client SDKs use publishable keys (`pk_live_`) for click tracking and attribution.\n\n## Quick start\n\n1. `POST /v1/auth/signup` — get an API key\n2. `POST /v1/links` — create your first link\n3. `GET /r/{link_id}` — resolve it (redirect for browsers, JSON for agents)\n\n## Content negotiation\n\nThe resolve endpoint (`GET /r/{link_id}`) is content-negotiated. Browsers receive a redirect or landing page. Requests with `Accept: application/json` receive structured link data including `agent_context` and a `_rift_meta` trust envelope.",
+        description = "Deep links for humans and agents.\n\nRift creates smart, cross-platform deep links with structured context for AI agents. Each link carries per-platform destinations, metadata, and an optional `agent_context` that makes links machine-readable.\n\n## Authentication\n\nHumans sign in at `POST /v1/auth/signin` (magic-link email) and manage their account at `/account`. API callers use a secret key (`rl_live_…`) as a Bearer token in the Authorization header — mint one from `/account` after signing in. Client SDKs use publishable keys (`pk_live_`) for click tracking and attribution.\n\n## Quick start\n\n1. Sign in via `POST /v1/auth/signin` or the web `/signin` page — magic-link email\n2. Mint a key via `POST /v1/auth/secret-keys/issue` (session-authed)\n3. `POST /v1/links` — create your first link with the key\n4. `GET /r/{link_id}` — resolve it (redirect for browsers, JSON for agents)\n\n## Content negotiation\n\nThe resolve endpoint (`GET /r/{link_id}`) is content-negotiated. Browsers receive a redirect or landing page. Requests with `Accept: application/json` receive structured link data including `agent_context` and a `_rift_meta` trust envelope.",
         contact(name = "Rift", url = "https://riftl.ink"),
     ),
     paths(
-        // Authentication — signup, verify, key management, team management
-        auth::secret_keys::routes::signup,
+        // Authentication — sessions (humans) + key management + team management
+        auth::sessions::routes::sign_in,
+        auth::sessions::routes::callback,
+        auth::sessions::routes::me,
+        auth::sessions::routes::sign_out,
+        auth::sessions::routes::issue_secret_key,
         auth::secret_keys::routes::verify_email,
         auth::secret_keys::routes::request_create_key,
         auth::secret_keys::routes::confirm_create_key,
@@ -101,8 +105,6 @@ use crate::app::AppState;
     components(schemas(
         health::models::HealthResponse,
         crate::error::ErrorResponse,
-        auth::secret_keys::models::SignupRequest,
-        auth::secret_keys::models::SignupResponse,
         crate::services::links::models::CreateLinkRequest,
         crate::services::links::models::CreateLinkResponse,
         crate::services::links::models::BulkCreateLinksRequest,
@@ -130,6 +132,12 @@ use crate::app::AppState;
         auth::secret_keys::models::CreateKeyResponse,
         auth::secret_keys::models::SecretKeyDetail,
         auth::secret_keys::models::ListSecretKeysResponse,
+        auth::sessions::models::SignInRequest,
+        auth::sessions::models::SignInResponse,
+        auth::sessions::models::MeResponse,
+        auth::sessions::models::UserSummary,
+        auth::sessions::models::TenantSummary,
+        auth::sessions::models::IssueKeyRequest,
         auth::users::models::InviteUserRequest,
         auth::users::models::InviteUserResponse,
         auth::users::models::UserDetail,

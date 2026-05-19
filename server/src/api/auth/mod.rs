@@ -2,6 +2,7 @@ pub mod middleware;
 pub mod models;
 pub mod publishable_keys;
 pub mod secret_keys;
+pub mod sessions;
 pub mod users;
 
 use axum::Router;
@@ -12,5 +13,6 @@ use crate::app::AppState;
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     secret_keys::router(state.clone())
         .merge(publishable_keys::router(state.clone()))
-        .merge(users::router(state))
+        .merge(users::router(state.clone()))
+        .merge(sessions::router(state))
 }

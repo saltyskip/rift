@@ -14,6 +14,7 @@ pub enum TokenPurpose {
     KeyRotation,
     BillingSubscribe,
     BillingPortal,
+    Signin,
 }
 
 /// How the token is looked up on consume.
