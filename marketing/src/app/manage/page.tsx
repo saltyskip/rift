@@ -10,9 +10,9 @@ export const metadata: Metadata = {
 export default async function ManagePage({
   searchParams,
 }: {
-  searchParams: Promise<{ done?: string; error?: string }>;
+  searchParams: Promise<{ done?: string }>;
 }) {
-  const { done, error } = await searchParams;
+  const { done } = await searchParams;
 
   return (
     <main className="pt-24 pb-20 px-6 min-h-[60vh]">
@@ -36,18 +36,6 @@ export default async function ManagePage({
               <p className="text-[14px] text-[#fafafa]">
                 Your subscription has been updated. Any changes take effect
                 according to your billing cycle.
-              </p>
-            </div>
-          )}
-
-          {error === "no_subscription" && (
-            <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/[0.05] p-5">
-              <p className="text-[12px] font-mono text-amber-400 uppercase tracking-widest mb-2">
-                No subscription found
-              </p>
-              <p className="text-[14px] text-[#fafafa]">
-                We couldn&rsquo;t find a paid subscription for that email. If you
-                meant to start one, head to pricing.
               </p>
             </div>
           )}

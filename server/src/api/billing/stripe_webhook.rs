@@ -242,28 +242,17 @@ async fn handle_subscription_upsert(
         .current_period_end
         .or_else(|| first_item.and_then(|i| i.current_period_end));
 
-    // Resolve (or materialize) the tenant. Fast path: metadata.tenant_id or
-    // existing stripe_customer_id. Fallback: pending_email from the
-    // magic-link flow, which means this is the first webhook for a
-    // brand-new customer — we create the tenant, owner user, and rl_live_
-    // key here, then email the key to the customer.
-    let (tenant_id, newly_minted_key) =
-        match try_resolve_tenant(tenants, &sub.metadata, &sub.customer).await? {
-            Some(id) => (id, None),
-            None => {
-                let Some(pending_email) =
-                    sub.metadata.get("pending_email").and_then(|v| v.as_str())
-                else {
-                    return Err(format!(
-                        "no tenant mapping for customer {} and no pending_email metadata",
-                        sub.customer
-                    ));
-                };
-                let (tid, key_info) =
-                    materialize_tenant_from_pending_email(state, pending_email).await?;
-                (tid, key_info)
-            }
-        };
+    // Resolve the tenant via metadata.tenant_id or existing stripe_customer_id.
+    // Every code path that creates a Checkout session now requires a session-
+    // or-key-authed caller (see /v1/billing/stripe/checkout), so the tenant_id
+    // metadata is always set at subscription-creation time. A missing mapping
+    // is an error — Stripe will retry the webhook and ops can investigate.
+    let Some(tenant_id) = try_resolve_tenant(tenants, &sub.metadata, &sub.customer).await? else {
+        return Err(format!(
+            "no tenant mapping for customer {} (tenant_id metadata absent)",
+            sub.customer
+        ));
+    };
 
     let update = SubscriptionUpdate {
         plan_tier,
@@ -279,61 +268,7 @@ async fn handle_subscription_upsert(
         .apply_subscription_update(&tenant_id, update)
         .await?;
 
-    // Send welcome email *after* the subscription is persisted. Failure to
-    // email is logged but doesn't re-queue the webhook — the webhook already
-    // succeeded at its primary job. Free is skipped because there's no
-    // welcome path for a Free tenant here.
-    if let Some((email, api_key)) = newly_minted_key {
-        if let Some(tier) =
-            plan_tier.filter(|t| !matches!(t, crate::services::auth::tenants::repo::PlanTier::Free))
-        {
-            if let Err(e) = crate::services::billing::email::send_welcome(
-                &state.config.resend_api_key,
-                &state.config.resend_from_email,
-                &email,
-                &api_key,
-                tier,
-                &state.config.marketing_url,
-            )
-            .await
-            {
-                tracing::error!(error = %e, email = %email, "welcome_email_send_failed");
-            }
-        }
-    }
-
     Ok(())
-}
-
-/// Create a fresh tenant for a customer that completed Checkout without ever
-/// having an account on our side. Returns `(tenant_id, Some((email,
-/// api_key)))` so the caller can email the customer their freshly-minted key.
-async fn materialize_tenant_from_pending_email(
-    state: &AppState,
-    pending_email: &str,
-) -> Result<(ObjectId, Option<(String, String)>), String> {
-    let users_service = state
-        .users_service
-        .as_ref()
-        .ok_or("users_service not configured")?;
-    let sk_repo = state
-        .secret_keys_repo
-        .as_ref()
-        .ok_or("secret_keys_repo not configured")?;
-
-    let (tenant_id, user_id) = users_service
-        .create_tenant_with_verified_owner(pending_email)
-        .await
-        .map_err(|e| format!("tenant materialize failed: {e}"))?;
-
-    let created = crate::services::auth::secret_keys::service::mint_for_tenant(
-        sk_repo.as_ref(),
-        tenant_id,
-        user_id,
-    )
-    .await?;
-
-    Ok((tenant_id, Some((pending_email.to_string(), created.key))))
 }
 
 async fn handle_subscription_deleted(
