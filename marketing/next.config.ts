@@ -11,6 +11,18 @@ const withMDX = createMDX({
 
 const nextConfig: NextConfig = {
   pageExtensions: ["ts", "tsx", "md", "mdx"],
+  async redirects() {
+    // /signup was the old dedicated signup page; the magic-link flow at
+    // /signin now handles both first-time and returning users. Keep the
+    // URL alive as a 301 so existing inbound links + SEO equity survive.
+    return [
+      {
+        source: "/signup",
+        destination: "/signin",
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     const apiOrigin =
       process.env.NEXT_PUBLIC_API_URL || "https://api.riftl.ink";
