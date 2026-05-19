@@ -250,6 +250,13 @@ pub async fn session_or_key_auth_gate(
     mut req: Request,
     next: Next,
 ) -> Response {
+    // Captured up front because `next.run(req).await` moves the request.
+    // Needed for the API-key path's usage-recording, which has to mirror
+    // `auth_gate`'s billable-call accounting (H3 — without this, key-authed
+    // calls to /v1/auth/secret-keys/* would bypass the quota meter).
+    let ip = client_ip(&req);
+    let endpoint = req.uri().path().to_string();
+
     // ── Path A: session ──
     if let (Some(svc), Some(raw_token)) =
         (state.sessions_service.clone(), extract_session_token(&req))
@@ -267,6 +274,8 @@ pub async fn session_or_key_auth_gate(
                     s.set_tag("user_id", resolved.user_id.to_string());
                     s.set_tag("transport", "session");
                 });
+                // Session-authed calls don't count toward the API-key usage
+                // meter; they're human dashboard activity, not billable API.
                 return next.run(req).await;
             }
             Ok(None) => {
@@ -284,7 +293,7 @@ pub async fn session_or_key_auth_gate(
         }
     }
 
-    // ── Path B: API key (mirrors auth_gate's key path) ──
+    // ── Path B: API key (mirrors auth_gate's key path, including usage recording) ──
     if let Some(raw_key) = extract_bearer(&req) {
         let (tenant_id, key_id, scope) =
             match validate_api_key(state.secret_keys_repo.as_deref(), &raw_key).await {
@@ -318,7 +327,21 @@ pub async fn session_or_key_auth_gate(
             }
         });
 
-        return next.run(req).await;
+        let response = next.run(req).await;
+        if response.status().is_success() {
+            if let Some(usage_repo) = state.usage_repo.as_deref() {
+                usage_repo
+                    .record_usage(usage_repo::UsageDoc {
+                        id: None,
+                        api_key_id: Some(key_id),
+                        ip,
+                        endpoint,
+                        ts: usage_repo::now_bson(),
+                    })
+                    .await;
+            }
+        }
+        return response;
     }
 
     (

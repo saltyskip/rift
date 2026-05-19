@@ -27,6 +27,18 @@ const SESSION_COOKIE_MAX_AGE: i64 = 30 * 24 * 60 * 60;
 
 // ── POST /v1/auth/signin ──
 
+#[utoipa::path(
+    post,
+    path = "/v1/auth/signin",
+    tag = "Sessions",
+    request_body = SignInRequest,
+    responses(
+        (status = 200, description = "Always returned on validation success (prevents email enumeration)", body = SignInResponse),
+        (status = 400, description = "Invalid email", body = crate::error::ErrorResponse),
+        (status = 429, description = "Per-IP rate limit exceeded", body = crate::error::ErrorResponse),
+        (status = 503, description = "Sessions not configured", body = crate::error::ErrorResponse),
+    )
+)]
 #[tracing::instrument(skip(state, headers, body))]
 pub async fn sign_in(
     State(state): State<Arc<AppState>>,
@@ -71,6 +83,19 @@ pub async fn sign_in(
 
 // ── GET /v1/auth/callback?token=… ──
 
+#[utoipa::path(
+    get,
+    path = "/v1/auth/callback",
+    tag = "Sessions",
+    params(
+        ("token" = String, Query, description = "Signin token from the magic-link email"),
+        ("next" = Option<String>, Query, description = "Optional same-origin path to redirect to (default `/account`). Rejected if it doesn't validate as same-origin against the marketing host."),
+    ),
+    responses(
+        (status = 303, description = "Session created — redirects to `?next` (or `/account`) with a `Set-Cookie: session_token=…` header"),
+        (status = 303, description = "Token invalid or expired — redirects to `/signin?error=link_expired`"),
+    )
+)]
 #[tracing::instrument(skip(state, headers))]
 pub async fn callback(
     State(state): State<Arc<AppState>>,
@@ -78,9 +103,12 @@ pub async fn callback(
     Query(q): Query<CallbackQuery>,
 ) -> Response {
     let marketing_url = &state.config.marketing_url;
-    let next_path = q.next.as_deref().unwrap_or("/account");
-    let next_safe = sanitize_next(next_path).unwrap_or("/account");
-    let success_url = format!("{marketing_url}{next_safe}");
+    let success_path = q
+        .next
+        .as_deref()
+        .and_then(|n| sanitize_next(marketing_url, n))
+        .unwrap_or_else(|| "/account".to_string());
+    let success_url = format!("{marketing_url}{success_path}");
     let expired_url = format!("{marketing_url}/signin?error=link_expired");
 
     let Some(svc) = state.sessions_service.as_ref() else {
@@ -120,6 +148,16 @@ pub async fn callback(
 
 // ── GET /v1/auth/me ──
 
+#[utoipa::path(
+    get,
+    path = "/v1/auth/me",
+    tag = "Sessions",
+    responses(
+        (status = 200, description = "Resolved user + tenant for the active session", body = MeResponse),
+        (status = 401, description = "No active session (or session expired/revoked)", body = crate::error::ErrorResponse),
+    ),
+    security(("session_cookie" = []))
+)]
 #[tracing::instrument(skip(state))]
 pub async fn me(
     State(state): State<Arc<AppState>>,
@@ -175,6 +213,16 @@ pub async fn me(
 
 // ── POST /v1/auth/signout ──
 
+#[utoipa::path(
+    post,
+    path = "/v1/auth/signout",
+    tag = "Sessions",
+    responses(
+        (status = 204, description = "Session revoked; `Set-Cookie` clears `session_token`"),
+        (status = 401, description = "No active session", body = crate::error::ErrorResponse),
+    ),
+    security(("session_cookie" = []))
+)]
 #[tracing::instrument(skip(state))]
 pub async fn sign_out(
     State(state): State<Arc<AppState>>,
@@ -204,6 +252,19 @@ pub async fn sign_out(
 
 // ── POST /v1/auth/secret-keys/issue ──
 
+#[utoipa::path(
+    post,
+    path = "/v1/auth/secret-keys/issue",
+    tag = "Secret Keys",
+    request_body = IssueKeyRequest,
+    responses(
+        (status = 201, description = "Key minted — full secret returned once", body = crate::api::auth::secret_keys::models::CreateKeyResponse),
+        (status = 401, description = "No active session", body = crate::error::ErrorResponse),
+        (status = 409, description = "Per-tenant key limit reached", body = crate::error::ErrorResponse),
+        (status = 503, description = "Secret keys not configured", body = crate::error::ErrorResponse),
+    ),
+    security(("session_cookie" = []))
+)]
 #[tracing::instrument(skip(state, _body))]
 pub async fn issue_secret_key(
     State(state): State<Arc<AppState>>,
@@ -281,13 +342,44 @@ fn build_cookie(value: &str, max_age: i64, environment: &str) -> String {
     format!("{SESSION_COOKIE_NAME}={value}; {attrs}; Max-Age={max_age}")
 }
 
-/// Refuse anything that's not a simple same-site relative path. Stops
-/// open-redirect via `?next=https://evil.com`. Returns `Some(safe_path)` on
-/// success.
-fn sanitize_next(next: &str) -> Option<&str> {
-    if next.starts_with('/') && !next.starts_with("//") && !next.contains("://") {
-        Some(next)
-    } else {
-        None
+/// Validate that `next` is a same-origin path on `base_url` and return the
+/// safe `path[?query]` to redirect to.
+///
+/// The hard work is delegated to `url::Url::join` + an origin-equality check —
+/// a WHATWG-conformant parser is the only correct way to detect bypasses like
+/// `//evil.com` (protocol-relative), `https://evil.com` (absolute), or
+/// scheme-relative variants. We additionally reject control characters
+/// (whitespace, tabs, CR/LF, backslash) up front: browsers strip those
+/// before parsing the `Location` header, so a URL the parser sees as
+/// same-origin may not match what the browser actually navigates to.
+///
+/// Returns `None` (use the default `/account` fallback) for anything
+/// suspicious. The caller controls the authority by concatenating its own
+/// `marketing_url`; we only emit the path + query from `Url::join`.
+fn sanitize_next(base_url: &str, next: &str) -> Option<String> {
+    if next.is_empty()
+        || next
+            .bytes()
+            .any(|b| matches!(b, b'\\' | b'\t' | b'\n' | b'\r' | 0..=0x1F))
+    {
+        return None;
     }
+
+    let base = url::Url::parse(base_url).ok()?;
+    let resolved = base.join(next).ok()?;
+
+    if resolved.origin() != base.origin() {
+        return None;
+    }
+
+    let mut out = resolved.path().to_string();
+    if let Some(q) = resolved.query() {
+        out.push('?');
+        out.push_str(q);
+    }
+    Some(out)
 }
+
+#[cfg(test)]
+#[path = "routes_tests.rs"]
+mod tests;
