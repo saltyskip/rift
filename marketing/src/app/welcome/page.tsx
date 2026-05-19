@@ -71,10 +71,10 @@ rift whoami
                 Manage billing
               </Link>
               <Link
-                href="/signup"
+                href="/signin"
                 className="text-[13px] font-medium text-[#71717a] px-4 py-2 rounded-lg hover:text-[#fafafa] transition-colors"
               >
-                See all commands
+                Sign in
               </Link>
             </div>
         </section>

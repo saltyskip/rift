@@ -84,31 +84,12 @@ export function Navbar() {
           <a href="/api-reference" className="text-[13px] text-[#71717a] hover:text-[#fafafa] transition-colors hidden sm:block">
             API Reference
           </a>
-          {auth === "signed-in" ? (
-            <a
-              href="/account"
-              className="text-[13px] font-medium bg-[#2dd4bf] text-[#042f2e] px-3.5 py-1.5 rounded-lg hover:bg-[#5eead4] transition-colors"
-            >
-              Account
-            </a>
-          ) : (
-            <>
-              {auth === "signed-out" && (
-                <a
-                  href="/signin"
-                  className="text-[13px] text-[#71717a] hover:text-[#fafafa] transition-colors hidden sm:block"
-                >
-                  Sign in
-                </a>
-              )}
-              <a
-                href="/signup"
-                className="text-[13px] font-medium bg-[#2dd4bf] text-[#042f2e] px-3.5 py-1.5 rounded-lg hover:bg-[#5eead4] transition-colors"
-              >
-                Get API Key
-              </a>
-            </>
-          )}
+          <a
+            href={auth === "signed-in" ? "/account" : "/signin"}
+            className="text-[13px] font-medium bg-[#2dd4bf] text-[#042f2e] px-3.5 py-1.5 rounded-lg hover:bg-[#5eead4] transition-colors"
+          >
+            {auth === "signed-in" ? "Account" : "Sign in"}
+          </a>
         </div>
       </div>
     </motion.header>

@@ -134,9 +134,9 @@ function TierCard({
       : `Get ${tier.name}`;
 
   // Destinations (human lane only):
-  //   Free → /signup (install + Free web signup form)
+  //   Free → /signin (magic-link signup + signin share one front door)
   //   Paid → /checkout?tier=<slug> (magic-link paid flow)
-  const ctaHref = !isPaid ? "/signup" : `/checkout?tier=${tier.slug}`;
+  const ctaHref = !isPaid ? "/signin" : `/checkout?tier=${tier.slug}`;
 
   return (
     <motion.div
