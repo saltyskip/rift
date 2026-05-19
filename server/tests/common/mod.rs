@@ -67,6 +67,8 @@ pub async fn spawn_app() -> TestApp {
         resend_from_email: String::new(),
         public_url: "http://localhost:0".to_string(),
         marketing_url: "http://localhost:0".to_string(),
+        cookie_domain: None,
+        cookie_secure: false,
         free_daily_limit: 5,
         sentry_dsn: String::new(),
         environment: "test".to_string(),

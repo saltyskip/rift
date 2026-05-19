@@ -129,7 +129,8 @@ pub async fn callback(
             let cookie = build_cookie(
                 &outcome.raw_token,
                 SESSION_COOKIE_MAX_AGE,
-                &state.config.environment,
+                state.config.cookie_domain.as_deref(),
+                state.config.cookie_secure,
             );
             tracing::info!(
                 user_id = %outcome.user_id,
@@ -242,7 +243,12 @@ pub async fn sign_out(
 
     // Clearing the cookie = same attrs as a fresh issue but with an empty
     // value and Max-Age=0.
-    let cookie = build_cookie("", 0, &state.config.environment);
+    let cookie = build_cookie(
+        "",
+        0,
+        state.config.cookie_domain.as_deref(),
+        state.config.cookie_secure,
+    );
     Response::builder()
         .status(StatusCode::NO_CONTENT)
         .header(header::SET_COOKIE, cookie)
@@ -328,18 +334,29 @@ fn redirect_to(url: &str, cookie: Option<String>) -> Response {
 
 /// Construct a `Set-Cookie` value for the session cookie.
 ///
-/// Same function for issuing fresh cookies (pass the raw token + max_age) and
-/// for clearing on signout (pass empty token + max_age=0); attrs match so
-/// browsers actually scrub the value. `Domain=.riftl.ink` + `Secure` are
-/// added in production so the cookie is shared across `riftl.ink` subdomains;
-/// dev drops both so localhost without HTTPS works.
-fn build_cookie(value: &str, max_age: i64, environment: &str) -> String {
-    let attrs = if environment == "development" {
-        "Path=/; HttpOnly; SameSite=Lax"
-    } else {
-        "Domain=.riftl.ink; Path=/; HttpOnly; Secure; SameSite=Lax"
-    };
-    format!("{SESSION_COOKIE_NAME}={value}; {attrs}; Max-Age={max_age}")
+/// Same function for issuing fresh cookies (pass the raw token + a positive
+/// `max_age`) and for clearing on signout (pass empty value + `max_age=0`);
+/// attrs match so browsers actually scrub the cookie they previously set.
+///
+/// `domain` and `secure` are pre-resolved by `Config::from_env` from
+/// `MARKETING_URL` — see `resolve_cookie_domain` for the derivation. Prod
+/// gets `Domain=.riftl.ink + Secure`, sandbox gets `Domain=.sandbox.riftl.ink
+/// + Secure` (so the cookie doesn't leak into prod), local dev gets neither.
+fn build_cookie(value: &str, max_age: i64, domain: Option<&str>, secure: bool) -> String {
+    // Conventional attr order: name=value; Domain=...; Path=/; HttpOnly;
+    // Secure; SameSite=Lax; Max-Age=N
+    let mut out = format!("{SESSION_COOKIE_NAME}={value}");
+    if let Some(d) = domain {
+        out.push_str("; Domain=");
+        out.push_str(d);
+    }
+    out.push_str("; Path=/; HttpOnly");
+    if secure {
+        out.push_str("; Secure");
+    }
+    out.push_str("; SameSite=Lax; Max-Age=");
+    out.push_str(&max_age.to_string());
+    out
 }
 
 /// Validate that `next` is a same-origin path on `base_url` and return the
