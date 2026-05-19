@@ -24,6 +24,7 @@ use super::models::{CallbackQuery, StartQuery};
 use crate::api::auth::sessions::routes::{build_cookie, redirect_to, sanitize_next};
 use crate::app::AppState;
 use crate::core::http::client_ip_from_headers;
+use crate::core::origin::OriginMatcher;
 use crate::services::auth::oauth::{OauthError, OauthProvider};
 
 const SESSION_COOKIE_MAX_AGE: i64 = 30 * 24 * 60 * 60;
@@ -67,15 +68,16 @@ pub async fn start(
             .into_response();
     };
 
-    // Validate the request's Origin against the CORS allowlist — same trick
-    // as magic-link signin so the callback redirects back to wherever the
-    // flow started. Anything not on the matcher gets dropped (callback will
-    // fall back to `marketing_url`).
-    let origin = headers
-        .get("origin")
-        .and_then(|v| v.to_str().ok())
-        .filter(|s| state.origin_matcher.matches_str(s))
-        .map(|s| s.to_string());
+    // Resolve where this flow started so the callback redirects back to
+    // the same browser tab. Unlike magic-link signin (which is a fetch POST
+    // and always carries Origin), OAuth start is a top-level GET navigation
+    // — browsers do NOT send `Origin` on those. Fall back to `Referer`,
+    // which IS sent on cross-origin nav (the default `strict-origin-when-
+    // cross-origin` policy sends just the origin part, which is exactly
+    // what we need). Both candidates are validated against the matcher;
+    // anything not allowlisted gets dropped (callback falls back to
+    // `marketing_url`).
+    let origin = resolve_request_origin(&headers, &state.origin_matcher);
 
     // Sanitize `next` against the redirect base we'll use at callback time.
     // We use `origin` if present, otherwise `marketing_url`. `sanitize_next`
@@ -214,4 +216,34 @@ pub async fn callback(
         "oauth_session_created"
     );
     redirect_to(&success_url, Some(cookie))
+}
+
+// ── Helpers ──
+
+/// Resolve where the user is signing in from. OAuth `/start` is a top-level
+/// GET navigation, so `Origin` is typically absent — fall back to `Referer`,
+/// which browsers DO send on cross-origin nav (just the origin portion under
+/// the default `strict-origin-when-cross-origin` policy). Both candidates
+/// are passed through `OriginMatcher` so anything off the CORS allowlist is
+/// rejected up front and never reaches the state token's metadata.
+fn resolve_request_origin(headers: &HeaderMap, matcher: &OriginMatcher) -> Option<String> {
+    if let Some(o) = headers
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| matcher.matches_str(s))
+    {
+        return Some(o.to_string());
+    }
+
+    // Parse Referer with `url::Url` and emit the origin form ourselves —
+    // browsers may include a path under non-default referrer policies, and
+    // the matcher only knows how to compare origins.
+    let referer = headers.get("referer").and_then(|v| v.to_str().ok())?;
+    let parsed = url::Url::parse(referer).ok()?;
+    let host = parsed.host_str()?;
+    let origin_str = match parsed.port() {
+        Some(p) => format!("{}://{}:{}", parsed.scheme(), host, p),
+        None => format!("{}://{}", parsed.scheme(), host),
+    };
+    matcher.matches_str(&origin_str).then_some(origin_str)
 }
