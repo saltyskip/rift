@@ -26,8 +26,7 @@ use crate::app::AppState;
 use crate::core::http::client_ip_from_headers;
 use crate::core::origin::OriginMatcher;
 use crate::services::auth::oauth::{OauthError, OauthProvider};
-
-const SESSION_COOKIE_MAX_AGE: i64 = 30 * 24 * 60 * 60;
+use crate::services::auth::sessions::service::SessionsService;
 
 // ── GET /v1/auth/oauth/{provider}/start ──
 
@@ -86,8 +85,10 @@ pub async fn start(
     let next_base = origin.as_deref().unwrap_or(&state.config.marketing_url);
     let next = q.next.as_deref().and_then(|n| sanitize_next(next_base, n));
 
+    let ip = client_ip_from_headers(&headers);
+
     match svc
-        .start(provider, next.as_deref(), origin.as_deref())
+        .start(provider, &ip, next.as_deref(), origin.as_deref())
         .await
     {
         Ok(outcome) => redirect_to(&outcome.authorize_url, None),
@@ -96,6 +97,14 @@ pub async fn start(
             Json(
                 json!({ "error": "OAuth provider not configured", "code": "oauth_not_configured" }),
             ),
+        )
+            .into_response(),
+        Err(OauthError::RateLimited) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({
+                "error": "Too many sign-in requests. Try again later.",
+                "code": "rate_limited",
+            })),
         )
             .into_response(),
         Err(e) => {
@@ -202,7 +211,7 @@ pub async fn callback(
 
     let cookie = build_cookie(
         &raw_session,
-        SESSION_COOKIE_MAX_AGE,
+        SessionsService::SESSION_TTL_SECS,
         state.config.cookie_domain.as_deref(),
         state.config.cookie_secure,
         state.config.cookie_same_site,

@@ -13,6 +13,7 @@
 //! `UsersRepo::find_by_email` and converge to the same `User` row.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use mongodb::bson::{doc, oid::ObjectId};
 use rand::Rng;
@@ -23,6 +24,7 @@ use super::models::{
     OauthCallbackOutcome, OauthConfig, OauthError, OauthProvider, OauthStartOutcome,
 };
 use super::providers::{GithubClient, GoogleClient, OauthProviderClient};
+use crate::core::rate_limit::RateLimiter;
 use crate::services::auth::users::repo::UsersRepository;
 use crate::services::auth::users::service::UsersService;
 use crate::services::tokens::{ConsumeOutcome, TokenKind, TokenPurpose, TokenService, TokenSpec};
@@ -36,6 +38,10 @@ pub struct OauthService {
     google: Option<Box<dyn OauthProviderClient>>,
     api_base_url: String,
     http: Client,
+    /// Per-IP rate limit on `/start`. OAuth state issuance is unauthenticated
+    /// and amplifies into outbound HTTPS calls to providers — without this
+    /// gate, an attacker could spam state-token rows and provider RPS.
+    ip_limiter: RateLimiter,
 }
 
 impl OauthService {
@@ -74,10 +80,20 @@ impl OauthService {
             github,
             google,
             api_base_url: config.api_base_url,
+            // Timeouts bound how long a wedged GitHub/Google response can
+            // hold the callback handler open. The callback runs synchronously
+            // inside the user's browser navigation — without these, a slow
+            // upstream pegs an Axum worker until the request is dropped.
             http: Client::builder()
                 .user_agent("rift-oauth/1.0")
+                .connect_timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(10))
                 .build()
                 .expect("reqwest client builds with static config"),
+            // 30/min — looser than magic-link (10/min) because OAuth flows
+            // can involve more legitimate retries (back-button, account
+            // switcher, "wrong account" → start over).
+            ip_limiter: RateLimiter::new(30, 30),
         }
     }
 
@@ -99,9 +115,14 @@ impl OauthService {
     pub async fn start(
         &self,
         provider: OauthProvider,
+        client_ip: &str,
         next: Option<&str>,
         origin: Option<&str>,
     ) -> Result<OauthStartOutcome, OauthError> {
+        if !self.ip_limiter.check(client_ip) {
+            return Err(OauthError::RateLimited);
+        }
+
         let client = self.client_for(provider)?;
 
         // PKCE: random verifier, S256-hashed challenge.

@@ -23,8 +23,9 @@ use crate::core::http::client_ip_from_headers;
 use crate::services::auth::sessions::SessionError;
 
 const SESSION_COOKIE_NAME: &str = "session_token";
-/// 30 days, matches `SessionsService::SESSION_TTL_SECS`.
-const SESSION_COOKIE_MAX_AGE: i64 = 30 * 24 * 60 * 60;
+/// Cookie `Max-Age` always tracks the server-side session row's TTL.
+const SESSION_COOKIE_MAX_AGE: i64 =
+    crate::services::auth::sessions::service::SessionsService::SESSION_TTL_SECS;
 
 // ── POST /v1/auth/signin ──
 

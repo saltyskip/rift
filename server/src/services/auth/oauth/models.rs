@@ -120,6 +120,8 @@ pub enum OauthError {
     /// Defends against an attacker swapping providers mid-flow after stealing
     /// a state token.
     ProviderMismatch,
+    /// Per-IP rate limit on `/start` was exceeded.
+    RateLimited,
     /// Provider's token endpoint or userinfo call failed (network, 4xx, 5xx,
     /// malformed body). Logged with details; surfaced as a generic toast.
     ProviderError(String),
@@ -138,6 +140,7 @@ impl fmt::Display for OauthError {
             Self::NotConfigured => write!(f, "OAuth provider not configured"),
             Self::InvalidState => write!(f, "OAuth sign-in link is invalid or has expired"),
             Self::ProviderMismatch => write!(f, "OAuth provider mismatch"),
+            Self::RateLimited => write!(f, "Too many sign-in requests. Try again later."),
             Self::ProviderError(e) => write!(f, "OAuth provider error: {e}"),
             Self::EmailUnverified => write!(f, "Email from provider is not verified"),
             Self::NoEmail => write!(f, "Provider did not return an email"),
@@ -152,6 +155,7 @@ impl OauthError {
         match self {
             Self::NotConfigured => "oauth_not_configured",
             Self::InvalidState | Self::ProviderMismatch => "oauth_state_invalid",
+            Self::RateLimited => "rate_limited",
             Self::ProviderError(_) => "oauth_provider_error",
             Self::EmailUnverified => "oauth_email_unverified",
             Self::NoEmail => "oauth_no_email",

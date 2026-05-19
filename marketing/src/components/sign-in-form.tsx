@@ -20,6 +20,7 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
     "That provider isn't configured. Use email sign-in.",
   oauth_provider_unknown: "Unknown sign-in provider.",
   oauth_internal: "Something went wrong. Try again.",
+  rate_limited: "Too many sign-in requests. Try again in a bit.",
   link_expired: "Your sign-in link expired. Try again.",
 };
 

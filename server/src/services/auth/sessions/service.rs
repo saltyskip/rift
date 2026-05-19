@@ -41,7 +41,12 @@ impl SessionsService {
 
     /// 30 days — typical "remember me" default. Sessions are cheap to revoke;
     /// the bigger the surface, the more annoying re-auth becomes.
-    const SESSION_TTL_SECS: i64 = 30 * 24 * 60 * 60;
+    ///
+    /// `pub` so cookie-issuing route handlers (`api/auth/sessions/routes.rs`,
+    /// `api/auth/oauth/routes.rs`) can set `Max-Age` consistent with the
+    /// server-side session row's `expires_at`. Drift here silently produces
+    /// cookies that expire before the row, or vice versa.
+    pub const SESSION_TTL_SECS: i64 = 30 * 24 * 60 * 60;
 
     /// Per-email cap: 5 signin emails per hour. Stops an attacker from
     /// spamming an inbox by hitting `/v1/auth/signin` from rotating IPs.
