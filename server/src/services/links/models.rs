@@ -740,6 +740,7 @@ pub struct TimeseriesResponse {
 
 // ── Errors ──
 
+use crate::services::auth::permissions::AuthzError;
 use crate::services::billing::quota::QuotaError;
 use std::fmt;
 
@@ -759,6 +760,7 @@ pub enum LinkError {
     AffiliateScopeMismatch,
     /// Caller (full scope) referenced an affiliate that doesn't exist in this tenant.
     AffiliateNotFound,
+    Forbidden(AuthzError),
     QuotaExceeded(QuotaError),
     Internal(String),
     // ── Bulk-create only ──
@@ -782,6 +784,12 @@ impl From<QuotaError> for LinkError {
     }
 }
 
+impl From<AuthzError> for LinkError {
+    fn from(err: AuthzError) -> Self {
+        LinkError::Forbidden(err)
+    }
+}
+
 impl fmt::Display for LinkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -802,6 +810,7 @@ impl fmt::Display for LinkError {
                 "affiliate_id does not match the affiliate this credential is scoped to"
             ),
             Self::AffiliateNotFound => write!(f, "Affiliate not found"),
+            Self::Forbidden(e) => write!(f, "{e}"),
             Self::QuotaExceeded(e) => write!(f, "{e}"),
             Self::Internal(e) => write!(f, "Internal error: {e}"),
             Self::BatchTooLarge { max, got } => {
@@ -837,6 +846,7 @@ impl LinkError {
             Self::EmptyUpdate => "empty_update",
             Self::AffiliateScopeMismatch => "affiliate_scope_mismatch",
             Self::AffiliateNotFound => "affiliate_not_found",
+            Self::Forbidden(e) => e.code(),
             Self::QuotaExceeded(_) => "quota_exceeded",
             Self::Internal(_) => "db_error",
             Self::BatchTooLarge { .. } => "batch_too_large",

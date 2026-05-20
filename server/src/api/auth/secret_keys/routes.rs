@@ -9,8 +9,8 @@ use super::models::{
     ConfirmCreateKeyRequest, CreateKeyResponse, ListSecretKeysResponse, RequestCreateKeyRequest,
     SecretKeyDetail, VerifyQuery,
 };
-use crate::api::auth::models::{AuthKeyId, TenantId};
 use crate::app::AppState;
+use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::secret_keys::models::SecretKeyError;
 use crate::services::auth::users::models::UserError;
 
@@ -80,10 +80,10 @@ pub async fn verify_email(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state, req))]
+#[tracing::instrument(skip(state, ctx, req))]
 pub async fn request_create_key(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Json(req): Json<RequestCreateKeyRequest>,
 ) -> Response {
     let Some(svc) = &state.secret_keys_service else {
@@ -94,9 +94,10 @@ pub async fn request_create_key(
             .into_response();
     };
 
+    let tenant_id = ctx.tenant_id;
     match svc
         .request_create(
-            tenant.0,
+            &ctx,
             &req.email,
             &state.config.resend_api_key,
             &state.config.resend_from_email,
@@ -105,7 +106,7 @@ pub async fn request_create_key(
     {
         Ok(()) => {
             let email = req.email.trim().to_lowercase();
-            tracing::info!(email = %email, tenant_id = %tenant.0, "Key creation code sent");
+            tracing::info!(email = %email, tenant_id = %tenant_id, "Key creation code sent");
             (
                 StatusCode::OK,
                 Json(json!({
@@ -131,10 +132,10 @@ pub async fn request_create_key(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state, req))]
+#[tracing::instrument(skip(state, ctx, req))]
 pub async fn confirm_create_key(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Json(req): Json<ConfirmCreateKeyRequest>,
 ) -> Response {
     let Some(svc) = &state.secret_keys_service else {
@@ -145,9 +146,10 @@ pub async fn confirm_create_key(
             .into_response();
     };
 
-    match svc.confirm_create(tenant.0, &req.email, &req.token).await {
+    let tenant_id = ctx.tenant_id;
+    match svc.confirm_create(&ctx, &req.email, &req.token).await {
         Ok(created) => {
-            tracing::info!(tenant_id = %tenant.0, "New secret key created via email confirmation");
+            tracing::info!(tenant_id = %tenant_id, "New secret key created via email confirmation");
             (
                 StatusCode::CREATED,
                 Json(json!(CreateKeyResponse {
@@ -175,10 +177,10 @@ pub async fn confirm_create_key(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn list_secret_keys(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
 ) -> Response {
     let Some(svc) = &state.secret_keys_service else {
         return (
@@ -188,7 +190,7 @@ pub async fn list_secret_keys(
             .into_response();
     };
 
-    match svc.list(&tenant.0).await {
+    match svc.list(&ctx).await {
         Ok(keys) => {
             let details: Vec<SecretKeyDetail> = keys
                 .iter()
@@ -217,11 +219,10 @@ pub async fn list_secret_keys(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn delete_secret_key(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    auth_key: Option<axum::Extension<AuthKeyId>>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Path(key_id): Path<String>,
 ) -> Response {
     let Some(svc) = &state.secret_keys_service else {
@@ -240,14 +241,10 @@ pub async fn delete_secret_key(
             .into_response();
     };
 
-    // `auth_key` is `Some` when this route was reached via API-key auth
-    // (`auth_gate` injects `AuthKeyId`); `None` when reached via session
-    // auth (`session_or_key_auth_gate` doesn't have a key to inject). The service
-    // layer only enforces the self-delete guard when the caller was using
-    // a key — sessions can never self-delete.
-    let auth_key_id = auth_key.map(|axum::Extension(a)| a.0);
-
-    match svc.delete(tenant.0, oid, auth_key_id).await {
+    // Self-delete guard derives from `ctx.principal` inside the service —
+    // `Principal::SecretKey` matches request key_id means self-delete; sessions
+    // can't self-delete because their principal is `User`.
+    match svc.delete(&ctx, oid).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => sk_error_response(&e),
     }
@@ -272,6 +269,9 @@ fn user_error_response(e: &UserError) -> Response {
                     crate::services::billing::models::BillingError::TenantNotFound => {
                         crate::services::billing::models::BillingError::TenantNotFound
                     }
+                    crate::services::billing::models::BillingError::Forbidden(a) => {
+                        crate::services::billing::models::BillingError::Forbidden(a.clone())
+                    }
                     crate::services::billing::models::BillingError::Internal(s) => {
                         crate::services::billing::models::BillingError::Internal(s.clone())
                     }
@@ -280,11 +280,14 @@ fn user_error_response(e: &UserError) -> Response {
         };
         return crate::api::billing::quota_response::to_response(cloned);
     }
+    if let UserError::Forbidden(authz) = e {
+        return crate::api::auth::forbidden_response::to_response(authz.clone());
+    }
     let status = match e {
         UserError::InvalidEmail => StatusCode::BAD_REQUEST,
         UserError::UserExists | UserError::LastUser => StatusCode::CONFLICT,
         UserError::NotFound => StatusCode::NOT_FOUND,
-        UserError::QuotaExceeded(_) => unreachable!("handled above"),
+        UserError::QuotaExceeded(_) | UserError::Forbidden(_) => unreachable!("handled above"),
         UserError::EmailFailed(_) | UserError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (
@@ -295,6 +298,9 @@ fn user_error_response(e: &UserError) -> Response {
 }
 
 fn sk_error_response(e: &SecretKeyError) -> Response {
+    if let SecretKeyError::Forbidden(authz) = e {
+        return crate::api::auth::forbidden_response::to_response(authz.clone());
+    }
     let status = match e {
         SecretKeyError::UserNotMember | SecretKeyError::UserUnverified => StatusCode::FORBIDDEN,
         SecretKeyError::KeyLimit | SecretKeyError::LastKey | SecretKeyError::SelfDelete => {
@@ -305,6 +311,7 @@ fn sk_error_response(e: &SecretKeyError) -> Response {
         }
         SecretKeyError::InvalidCode => StatusCode::BAD_REQUEST,
         SecretKeyError::NotFound => StatusCode::NOT_FOUND,
+        SecretKeyError::Forbidden(_) => unreachable!("handled above"),
         SecretKeyError::EmailFailed(_) | SecretKeyError::Internal(_) => {
             StatusCode::INTERNAL_SERVER_ERROR
         }

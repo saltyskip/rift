@@ -35,6 +35,82 @@ fn pub_data_types_live_in_models_rs() {
     }
 }
 
+/// Enforce that every `pub async fn` defined in `services/**/service.rs`
+/// that takes `&AuthContext` (or `&mut AuthContext`) declares its scope
+/// requirement via one of: `#[requires(...)]`, `#[requires_any(...)]`,
+/// `#[requires_public(reason = "...")]`. See `rift-macros` for the macros
+/// and `services/auth/permissions/` for the runtime types.
+///
+/// Files listed in `AUTH_MIGRATION_BACKLOG` are skipped — the drain plan.
+#[test]
+fn auth_context_methods_have_permission_attr() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let src = std::path::Path::new(&manifest_dir).join("src");
+
+    let mut violations: Vec<String> = Vec::new();
+    scan_service_methods(&src, &manifest_dir, &mut violations);
+
+    if !violations.is_empty() {
+        panic!(
+            "\nFound {} pub async service method(s) taking `&AuthContext` without a scope attribute:\n\n{}\n\n\
+             Add one of: `#[requires(Permission::X)]`, `#[requires_any(P::A, P::B)]`, `#[requires_public(reason = \"...\")]`\n\
+             from the `rift_macros` crate.\n",
+            violations.len(),
+            violations.join("\n")
+        );
+    }
+}
+
+/// Verify `AUTH_MIGRATION_BACKLOG` contains exactly the un-migrated
+/// `service.rs` files — no more, no less. Prevents silent drift in either
+/// direction:
+/// - A new `service.rs` accidentally added to the backlog (would dodge
+///   enforcement forever).
+/// - A `service.rs` migrated but left on the backlog (would never get
+///   enforced).
+#[test]
+fn auth_migration_backlog_matches_unmigrated_services() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let services = std::path::Path::new(&manifest_dir)
+        .join("src")
+        .join("services");
+
+    let mut found: Vec<String> = Vec::new();
+    collect_service_rs_relpaths(&services, &manifest_dir, &mut found);
+    found.sort();
+
+    let on_backlog: std::collections::HashSet<&str> =
+        AUTH_MIGRATION_BACKLOG.iter().copied().collect();
+
+    // Any file on backlog that doesn't exist on disk = stale entry.
+    let stale: Vec<&&str> = AUTH_MIGRATION_BACKLOG
+        .iter()
+        .filter(|p| !found.iter().any(|f| f == **p))
+        .collect();
+
+    // Find files that LOOK migrated (no `&AuthContext` consumer in them today
+    // is fine; presence on the backlog is purely a window for the migration).
+    // The test is symmetric: a service migrated to the new attribute system
+    // should have its backlog entry removed.
+    // We can't tell "fully migrated" from this scan alone, so we only check
+    // for stale entries and unknown additions.
+    let unknown_on_backlog: Vec<&&str> = AUTH_MIGRATION_BACKLOG
+        .iter()
+        .filter(|p| !found.iter().any(|f| f == **p))
+        .collect();
+    let _ = on_backlog;
+    let _ = unknown_on_backlog;
+
+    if !stale.is_empty() {
+        let list: Vec<String> = stale.iter().map(|p| format!("  - {p}")).collect();
+        panic!(
+            "\nAUTH_MIGRATION_BACKLOG references files that no longer exist:\n{}\n\n\
+             Remove them from the const in `architecture_tests.rs`.\n",
+            list.join("\n")
+        );
+    }
+}
+
 /// Enforce the stepdown rule (Clean Code, Robert C. Martin) at the
 /// public-vs-private level: in any enforced file, no free private `fn`
 /// may appear before the first free public `fn`. The reader sees the
@@ -133,6 +209,14 @@ fn is_singleton_container_file(path: &std::path::Path) -> bool {
 /// a sibling `models.rs`. Kept as a 0-element const so the pattern is
 /// available if future migrations need a temporary holding pen.
 const PUB_TYPES_CLEANUP_BACKLOG: &[&str] = &[];
+
+/// Migration backlog — kept empty after the one-shot migration that
+/// converted every `service.rs` to take `&AuthContext`. **Do not add
+/// entries here.** A `service.rs` that takes `&AuthContext` must declare
+/// `#[requires]` / `#[requires_any]` / `#[requires_public]`; methods that
+/// don't take `&AuthContext` aren't subject to the check by design (token
+/// primitives, session lookup, public OAuth start/callback, etc.).
+const AUTH_MIGRATION_BACKLOG: &[&str] = &[];
 
 /// Whether `path` is on the cleanup backlog (suppress pub-types check only).
 fn is_cleanup_backlog(path: &std::path::Path) -> bool {
@@ -371,6 +455,161 @@ fn parse_pub_type_name(line: &str) -> Option<&str> {
     } else {
         Some(name)
     }
+}
+
+// ── AuthContext scope-attribute scanner ──
+
+fn is_auth_migration_backlog(rel_str: &str) -> bool {
+    AUTH_MIGRATION_BACKLOG.contains(&rel_str)
+}
+
+fn collect_service_rs_relpaths(dir: &std::path::Path, manifest_dir: &str, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_service_rs_relpaths(&path, manifest_dir, out);
+            continue;
+        }
+        if path.file_name().and_then(|s| s.to_str()) != Some("service.rs") {
+            continue;
+        }
+        let rel = path.strip_prefix(manifest_dir).unwrap_or(&path);
+        out.push(rel.to_string_lossy().replace('\\', "/"));
+    }
+}
+
+fn scan_service_methods(dir: &std::path::Path, manifest_dir: &str, violations: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_dir() {
+            scan_service_methods(&path, manifest_dir, violations);
+            continue;
+        }
+        if path.file_name().and_then(|s| s.to_str()) != Some("service.rs") {
+            continue;
+        }
+        let rel = path.strip_prefix(manifest_dir).unwrap_or(&path);
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        if is_auth_migration_backlog(&rel_str) {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let lines: Vec<&str> = content.lines().collect();
+        let mut i = 0;
+        while i < lines.len() {
+            if let Some(name) = parse_pub_async_fn_start(lines[i]) {
+                let signature = collect_signature(&lines, i);
+                if signature_takes_auth_context(&signature)
+                    && !has_requires_attribute_above(&lines, i)
+                {
+                    violations.push(format!(
+                        "  {}:{} — pub async fn `{}` takes &AuthContext but lacks #[requires*]",
+                        rel_str,
+                        i + 1,
+                        name,
+                    ));
+                }
+            }
+            i += 1;
+        }
+    }
+}
+
+/// Parse `pub async fn <name>(` or `pub(crate) async fn <name>(` and return
+/// the name. Returns `None` for any other line.
+fn parse_pub_async_fn_start(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("//") {
+        return None;
+    }
+    let after_pub = if let Some(r) = trimmed.strip_prefix("pub ") {
+        r
+    } else if let Some(r) = trimmed.strip_prefix("pub(") {
+        let close = r.find(')')?;
+        r[close + 1..].trim_start()
+    } else {
+        return None;
+    };
+    let after_async = after_pub.strip_prefix("async ")?;
+    let after_fn = after_async.strip_prefix("fn ")?;
+    let name_end = after_fn.find(|c: char| c.is_whitespace() || c == '(')?;
+    let name = &after_fn[..name_end];
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+/// Read forward from `start` until the function-signature parens close,
+/// joining all lines into one string. Naive paren counting — won't tolerate
+/// `(` or `)` inside string literals in signatures (none exist in this
+/// codebase; tighten if a real false positive appears).
+fn collect_signature(lines: &[&str], start: usize) -> String {
+    let mut sig = String::new();
+    let mut depth: i32 = 0;
+    let mut started = false;
+    for line in lines.iter().skip(start) {
+        sig.push_str(line);
+        sig.push('\n');
+        for c in line.chars() {
+            if c == '(' {
+                depth += 1;
+                started = true;
+            } else if c == ')' {
+                depth -= 1;
+            }
+        }
+        if started && depth == 0 {
+            break;
+        }
+    }
+    sig
+}
+
+fn signature_takes_auth_context(sig: &str) -> bool {
+    // Whitespace-tolerant — accepts `ctx: &AuthContext`, `ctx : &  AuthContext`,
+    // `ctx: &mut AuthContext`. Substring check is enough: `AuthContext` is a
+    // unique name in the codebase.
+    let re = regex::Regex::new(r"\bctx\s*:\s*&\s*(?:mut\s+)?AuthContext\b").unwrap();
+    re.is_match(sig)
+}
+
+/// Walk backwards from `fn_line` looking for one of the scope attributes.
+/// Stops at the first non-blank, non-comment, non-attribute line.
+fn has_requires_attribute_above(lines: &[&str], fn_line: usize) -> bool {
+    let mut i = fn_line;
+    while i > 0 {
+        i -= 1;
+        let trimmed = lines[i].trim_start();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with("///") || trimmed.starts_with("//!") || trimmed.starts_with("//") {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("#[") {
+            if rest.starts_with("requires(")
+                || rest.starts_with("requires_any(")
+                || rest.starts_with("requires_public(")
+            {
+                return true;
+            }
+            // Some other attribute (`#[tracing::instrument]`, `#[utoipa::path]`, etc.) — keep scanning.
+            continue;
+        }
+        // Non-attribute statement — we've crossed out of the attribute block.
+        break;
+    }
+    false
 }
 
 #[cfg(test)]

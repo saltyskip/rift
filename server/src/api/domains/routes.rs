@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::api::auth::models::TenantId;
 use crate::app::AppState;
+use crate::services::auth::permissions::AuthContext;
 use crate::services::domains::models::*;
 
 // ── POST /v1/domains — Register a custom domain ──
@@ -22,10 +23,10 @@ use crate::services::domains::models::*;
     ),
     security(("api_key" = []), ("x402" = [])),
 )]
-#[tracing::instrument(skip(state, req))]
+#[tracing::instrument(skip(state, ctx, req))]
 pub async fn create_domain(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Json(req): Json<CreateDomainRequest>,
 ) -> Response {
     let Some(svc) = &state.domains_service else {
@@ -60,28 +61,31 @@ pub async fn create_domain(
 
     let token = generate_verification_token();
     let created = match svc
-        .create_domain(tenant.0, domain.clone(), token.clone(), role)
+        .create_domain(&ctx, domain.clone(), token.clone(), role)
         .await
     {
         Ok(d) => d,
-        Err(crate::services::domains::models::DomainError::QuotaExceeded(q)) => {
+        Err(DomainError::QuotaExceeded(q)) => {
             return crate::api::billing::quota_response::to_response(q);
         }
-        Err(crate::services::domains::models::DomainError::AlreadyRegistered) => {
+        Err(DomainError::Forbidden(e)) => {
+            return crate::api::auth::forbidden_response::to_response(e);
+        }
+        Err(DomainError::AlreadyRegistered) => {
             return (
                 StatusCode::CONFLICT,
                 Json(json!({ "error": "Domain already registered", "code": "domain_taken" })),
             )
                 .into_response();
         }
-        Err(crate::services::domains::models::DomainError::AlternateLimit) => {
+        Err(DomainError::AlternateLimit) => {
             return (
                 StatusCode::CONFLICT,
                 Json(json!({ "error": "Only one alternate domain allowed per team", "code": "alternate_limit" })),
             )
                 .into_response();
         }
-        Err(crate::services::domains::models::DomainError::Internal(e)) => {
+        Err(DomainError::Internal(e)) => {
             tracing::error!("Failed to create domain: {e}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,

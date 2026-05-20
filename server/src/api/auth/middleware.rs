@@ -10,9 +10,10 @@ use std::sync::Arc;
 use x402_axum::paygate::PaygateProtocol;
 use x402_types::proto::v1;
 
-use super::models::{AuthKeyId, CallerScope, SdkDomain, SessionId, TenantId, UserId};
+use super::models::{AuthKeyId, SdkDomain, SessionId, TenantId, UserId};
 use crate::app::AppState;
 use crate::services::auth::keys;
+use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::auth::usage::repo::{self as usage_repo};
 
@@ -65,7 +66,11 @@ pub async fn auth_gate(
         // Inject tenant identity, key identity, and scope for downstream handlers.
         req.extensions_mut().insert(TenantId(tenant_id));
         req.extensions_mut().insert(AuthKeyId(key_id));
-        req.extensions_mut().insert(CallerScope(scope.clone()));
+        req.extensions_mut().insert(AuthContext::for_secret_key(
+            tenant_id,
+            key_id,
+            scope.as_ref(),
+        ));
 
         // Tag the per-request Sentry hub. NewSentryLayer creates a hub per
         // request, so this scope mutation is request-local — no leakage.
@@ -212,8 +217,11 @@ pub async fn session_auth_gate(
             req.extensions_mut().insert(TenantId(resolved.tenant_id));
             req.extensions_mut().insert(UserId(resolved.user_id));
             req.extensions_mut().insert(SessionId(resolved.session_id));
-            req.extensions_mut()
-                .insert(CallerScope(Some(KeyScope::Full)));
+            req.extensions_mut().insert(AuthContext::for_session(
+                resolved.tenant_id,
+                resolved.user_id,
+                resolved.session_id,
+            ));
 
             sentry::configure_scope(|s| {
                 s.set_tag("tenant_id", resolved.tenant_id.to_string());
@@ -266,8 +274,11 @@ pub async fn session_or_key_auth_gate(
                 req.extensions_mut().insert(TenantId(resolved.tenant_id));
                 req.extensions_mut().insert(UserId(resolved.user_id));
                 req.extensions_mut().insert(SessionId(resolved.session_id));
-                req.extensions_mut()
-                    .insert(CallerScope(Some(KeyScope::Full)));
+                req.extensions_mut().insert(AuthContext::for_session(
+                    resolved.tenant_id,
+                    resolved.user_id,
+                    resolved.session_id,
+                ));
 
                 sentry::configure_scope(|s| {
                     s.set_tag("tenant_id", resolved.tenant_id.to_string());
@@ -316,7 +327,11 @@ pub async fn session_or_key_auth_gate(
 
         req.extensions_mut().insert(TenantId(tenant_id));
         req.extensions_mut().insert(AuthKeyId(key_id));
-        req.extensions_mut().insert(CallerScope(scope.clone()));
+        req.extensions_mut().insert(AuthContext::for_secret_key(
+            tenant_id,
+            key_id,
+            scope.as_ref(),
+        ));
 
         sentry::configure_scope(|s| {
             s.set_tag("tenant_id", tenant_id.to_string());

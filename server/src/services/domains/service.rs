@@ -4,11 +4,12 @@
 //! from a transport layer — the quota check must travel with the create,
 //! same rule as links/conversions/users (see CLAUDE.md "Quota enforcement").
 
-use mongodb::bson::oid::ObjectId;
+use rift_macros::requires;
 use std::sync::Arc;
 
 use super::models::{Domain, DomainError, DomainRole};
 use super::repo::DomainsRepository;
+use crate::services::auth::permissions::{AuthContext, Permission};
 use crate::services::billing::quota::{QuotaChecker, Resource};
 
 crate::impl_container!(DomainsService);
@@ -25,19 +26,20 @@ impl DomainsService {
     /// Create a verified-on-demand domain record. Enforces both the alt-domain
     /// cap (hardcoded, 1 per tenant) and the tier domain quota (via
     /// `QuotaService::check`) before calling the repo.
+    #[requires(Permission::DomainsWrite)]
     pub async fn create_domain(
         &self,
-        tenant_id: ObjectId,
+        ctx: &AuthContext,
         domain: String,
         verification_token: String,
         role: DomainRole,
     ) -> Result<Domain, DomainError> {
         if let Some(q) = &self.quota {
-            q.check(&tenant_id, Resource::CreateDomain).await?;
+            q.check(&ctx.tenant_id, Resource::CreateDomain).await?;
         }
 
         if role == DomainRole::Alternate {
-            if let Ok(Some(_)) = self.repo.find_alternate_by_tenant(&tenant_id).await {
+            if let Ok(Some(_)) = self.repo.find_alternate_by_tenant(&ctx.tenant_id).await {
                 return Err(DomainError::AlternateLimit);
             }
         }
@@ -55,7 +57,7 @@ impl DomainsService {
 
         match self
             .repo
-            .create_domain(tenant_id, domain, verification_token, role)
+            .create_domain(ctx.tenant_id, domain, verification_token, role)
             .await
         {
             Ok(d) => Ok(d),

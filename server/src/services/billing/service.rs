@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use mongodb::bson;
 use mongodb::bson::oid::ObjectId;
+use rift_macros::requires;
 use std::sync::Arc;
 
 use super::effective_tier::effective_tier;
 use super::limits::limits_for;
 use super::models::{BillingError, BillingStatus};
+use crate::services::auth::permissions::{AuthContext, Permission};
 use crate::services::auth::tenants::repo::{PlanTier, TenantsRepository};
 
 /// The read-side of billing state that most services actually need.
@@ -38,10 +40,11 @@ impl BillingService {
         Self { tenants_repo }
     }
 
-    pub async fn status(&self, tenant_id: &ObjectId) -> Result<BillingStatus, BillingError> {
+    #[requires(Permission::BillingRead)]
+    pub async fn status(&self, ctx: &AuthContext) -> Result<BillingStatus, BillingError> {
         let tenant = self
             .tenants_repo
-            .find_by_id(tenant_id)
+            .find_by_id(&ctx.tenant_id)
             .await
             .map_err(BillingError::Internal)?
             .ok_or(BillingError::TenantNotFound)?;

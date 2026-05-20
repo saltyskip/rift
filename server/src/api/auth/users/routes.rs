@@ -6,8 +6,8 @@ use serde_json::json;
 use std::sync::Arc;
 
 use super::models::{InviteUserRequest, InviteUserResponse, ListUsersResponse, UserDetail};
-use crate::api::auth::models::TenantId;
 use crate::app::AppState;
+use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::users::models::UserError;
 
 // ── Handlers ──
@@ -24,10 +24,10 @@ use crate::services::auth::users::models::UserError;
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state, req))]
+#[tracing::instrument(skip(state, ctx, req))]
 pub async fn invite_user(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Json(req): Json<InviteUserRequest>,
 ) -> Response {
     let Some(svc) = &state.users_service else {
@@ -38,10 +38,11 @@ pub async fn invite_user(
             .into_response();
     };
 
+    let tenant_id = ctx.tenant_id;
     // Quota check moved into UsersService::invite for MCP / API parity.
     match svc
         .invite(
-            tenant.0,
+            &ctx,
             &req.email,
             &state.config.public_url,
             &state.config.resend_api_key,
@@ -50,7 +51,7 @@ pub async fn invite_user(
         .await
     {
         Ok(result) => {
-            tracing::info!(email = %result.email, tenant_id = %tenant.0, "User invited");
+            tracing::info!(email = %result.email, tenant_id = %tenant_id, "User invited");
             (
                 StatusCode::CREATED,
                 Json(json!(InviteUserResponse {
@@ -61,7 +62,7 @@ pub async fn invite_user(
             )
                 .into_response()
         }
-        Err(e) => error_response(&e),
+        Err(e) => error_response(e),
     }
 }
 
@@ -74,10 +75,10 @@ pub async fn invite_user(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
 ) -> Response {
     let Some(svc) = &state.users_service else {
         return (
@@ -87,7 +88,7 @@ pub async fn list_users(
             .into_response();
     };
 
-    match svc.list(&tenant.0).await {
+    match svc.list(&ctx).await {
         Ok(users) => {
             let details: Vec<UserDetail> = users
                 .iter()
@@ -101,7 +102,7 @@ pub async fn list_users(
                 .collect();
             Json(json!(ListUsersResponse { users: details })).into_response()
         }
-        Err(e) => error_response(&e),
+        Err(e) => error_response(e),
     }
 }
 
@@ -117,10 +118,10 @@ pub async fn list_users(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn delete_user(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Path(user_id): Path<String>,
 ) -> Response {
     let Some(svc) = &state.users_service else {
@@ -139,49 +140,34 @@ pub async fn delete_user(
             .into_response();
     };
 
-    match svc.delete(tenant.0, oid).await {
+    match svc.delete(&ctx, oid).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => error_response(&e),
+        Err(e) => error_response(e),
     }
 }
 
 // ── Error response helper ──
 
-fn error_response(e: &UserError) -> Response {
-    if let UserError::QuotaExceeded(q) = e {
-        // Move so we own the QuotaError, then delegate to the shared helper.
-        return crate::api::billing::quota_response::to_response(match q {
-            crate::services::billing::quota::QuotaError::Exceeded {
-                resource,
-                limit,
-                current,
-            } => crate::services::billing::quota::QuotaError::Exceeded {
-                resource: *resource,
-                limit: *limit,
-                current: *current,
-            },
-            crate::services::billing::quota::QuotaError::Billing(b) => {
-                crate::services::billing::quota::QuotaError::Billing(match b {
-                    crate::services::billing::models::BillingError::TenantNotFound => {
-                        crate::services::billing::models::BillingError::TenantNotFound
-                    }
-                    crate::services::billing::models::BillingError::Internal(s) => {
-                        crate::services::billing::models::BillingError::Internal(s.clone())
-                    }
-                })
-            }
-        });
+fn error_response(e: UserError) -> Response {
+    match e {
+        UserError::QuotaExceeded(q) => {
+            return crate::api::billing::quota_response::to_response(q);
+        }
+        UserError::Forbidden(authz) => {
+            return crate::api::auth::forbidden_response::to_response(authz);
+        }
+        _ => {}
     }
-    let status = match e {
+    let status = match &e {
         UserError::InvalidEmail => StatusCode::BAD_REQUEST,
         UserError::UserExists | UserError::LastUser => StatusCode::CONFLICT,
         UserError::NotFound => StatusCode::NOT_FOUND,
-        UserError::QuotaExceeded(_) => unreachable!("handled above"),
+        UserError::QuotaExceeded(_) | UserError::Forbidden(_) => {
+            unreachable!("handled above")
+        }
         UserError::EmailFailed(_) | UserError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
-    (
-        status,
-        Json(json!({ "error": e.to_string(), "code": e.code() })),
-    )
-        .into_response()
+    let code = e.code();
+    let message = e.to_string();
+    (status, Json(json!({ "error": message, "code": code }))).into_response()
 }

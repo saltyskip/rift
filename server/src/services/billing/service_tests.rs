@@ -1,9 +1,15 @@
 use super::*;
+use crate::services::auth::permissions::AuthContext;
+use crate::services::auth::secret_keys::repo::KeyScope;
 use crate::services::auth::tenants::repo::{PlanTier, TenantDoc};
 use mongodb::bson::DateTime;
 
 use async_trait::async_trait;
 use std::sync::Mutex;
+
+fn full_ctx_for(tenant_id: ObjectId) -> AuthContext {
+    AuthContext::for_secret_key(tenant_id, ObjectId::new(), Some(&KeyScope::Full))
+}
 
 #[derive(Default)]
 struct MockRepo {
@@ -63,7 +69,7 @@ async fn status_reports_free_default() {
         ..TenantDoc::default()
     })
     .await;
-    let s = svc.status(&id).await.unwrap();
+    let s = svc.status(&full_ctx_for(id)).await.unwrap();
     assert_eq!(s.plan_tier, PlanTier::Free);
     assert_eq!(s.effective_tier, PlanTier::Free);
     assert!(!s.comp_active);
@@ -80,7 +86,7 @@ async fn status_reports_active_comp_as_effective_tier() {
         ..TenantDoc::default()
     })
     .await;
-    let s = svc.status(&id).await.unwrap();
+    let s = svc.status(&full_ctx_for(id)).await.unwrap();
     assert_eq!(s.plan_tier, PlanTier::Free);
     assert_eq!(s.effective_tier, PlanTier::Business);
     assert!(s.comp_active);
@@ -97,7 +103,7 @@ async fn status_treats_expired_comp_as_inactive() {
         ..TenantDoc::default()
     })
     .await;
-    let s = svc.status(&id).await.unwrap();
+    let s = svc.status(&full_ctx_for(id)).await.unwrap();
     assert_eq!(s.effective_tier, PlanTier::Pro);
     assert!(!s.comp_active);
 }
@@ -106,6 +112,9 @@ async fn status_treats_expired_comp_as_inactive() {
 async fn status_missing_tenant_errors() {
     let repo = Arc::new(MockRepo::default());
     let svc = BillingService::new(repo as Arc<dyn TenantsRepository>);
-    let err = svc.status(&ObjectId::new()).await.unwrap_err();
+    let err = svc
+        .status(&full_ctx_for(ObjectId::new()))
+        .await
+        .unwrap_err();
     assert!(matches!(err, BillingError::TenantNotFound));
 }

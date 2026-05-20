@@ -16,3 +16,19 @@ if git diff --cached --name-only | grep -q "^sdk/web/src/"; then
     git add server/src/sdk/rift.js
     echo "Web SDK IIFE updated and staged."
 fi
+
+# ── Server / rift-macros: rustfmt check ──
+# Catches whitespace/wrap drift before push so CI's fmt step doesn't bounce
+# branches that compiled + passed tests locally. Clippy + tests stay in CI —
+# they're too slow for a pre-commit gate.
+staged_rs=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(server|rift-macros)/.*\.rs$' || true)
+if [ -n "$staged_rs" ]; then
+    for manifest in server/Cargo.toml rift-macros/Cargo.toml; do
+        if ! cargo fmt --manifest-path "$manifest" -- --check >/dev/null 2>&1; then
+            echo "rustfmt would change files under $(dirname "$manifest")/. Run:" >&2
+            echo "  cargo fmt --manifest-path $manifest" >&2
+            echo "then re-stage and commit." >&2
+            exit 1
+        fi
+    done
+fi

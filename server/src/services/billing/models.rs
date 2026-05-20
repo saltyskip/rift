@@ -17,13 +17,21 @@ pub struct BillingStatus {
 #[derive(Debug)]
 pub enum BillingError {
     TenantNotFound,
+    Forbidden(crate::services::auth::permissions::AuthzError),
     Internal(String),
+}
+
+impl From<crate::services::auth::permissions::AuthzError> for BillingError {
+    fn from(err: crate::services::auth::permissions::AuthzError) -> Self {
+        BillingError::Forbidden(err)
+    }
 }
 
 impl std::fmt::Display for BillingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::TenantNotFound => write!(f, "Tenant not found"),
+            Self::Forbidden(e) => write!(f, "{e}"),
             Self::Internal(e) => write!(f, "Internal error: {e}"),
         }
     }

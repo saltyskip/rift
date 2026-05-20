@@ -44,6 +44,13 @@ pub fn to_response(err: QuotaError) -> Response {
             Json(json!({ "error": "Tenant not found", "code": "tenant_not_found" })),
         )
             .into_response(),
+        QuotaError::Billing(BillingError::Forbidden(e)) => {
+            // Quota's tier lookup path doesn't authz, so this is unreachable in
+            // practice — but the type system requires the arm because
+            // `From<BillingError> for QuotaError` exists. Fold to the standard
+            // 403 emitter rather than crashing if it ever shows up.
+            crate::api::auth::forbidden_response::to_response(e)
+        }
         QuotaError::Billing(BillingError::Internal(e)) => {
             tracing::error!(error = %e, "quota_check_db_error");
             (

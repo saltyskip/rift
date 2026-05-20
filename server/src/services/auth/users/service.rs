@@ -1,10 +1,12 @@
 use mongodb::bson::{doc, oid::ObjectId};
+use rift_macros::requires;
 use std::sync::Arc;
 
 use super::models::{InviteResult, UserDetail, UserDoc, UserError, VerifyResult};
 use super::repo::UsersRepository;
 use crate::core::email;
 use crate::core::validation::validate_email;
+use crate::services::auth::permissions::{AuthContext, Permission};
 use crate::services::auth::tenants::service::TenantsService;
 use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::tokens::{ConsumeOutcome, TokenKind, TokenPurpose, TokenService, TokenSpec};
@@ -115,9 +117,10 @@ impl UsersService {
     }
 
     /// Invite a user to a tenant. Sends verification email.
+    #[requires(Permission::TenantAdmin)]
     pub async fn invite(
         &self,
-        tenant_id: ObjectId,
+        ctx: &AuthContext,
         email: &str,
         public_url: &str,
         resend_api_key: &str,
@@ -127,7 +130,7 @@ impl UsersService {
 
         if self
             .users_repo
-            .find_by_tenant_and_email(&tenant_id, &email)
+            .find_by_tenant_and_email(&ctx.tenant_id, &email)
             .await
             .map_err(UserError::Internal)?
             .is_some()
@@ -137,13 +140,13 @@ impl UsersService {
 
         // Service-layer quota enforcement (applies to every transport).
         if let Some(q) = &self.quota {
-            q.check(&tenant_id, Resource::InviteTeamMember).await?;
+            q.check(&ctx.tenant_id, Resource::InviteTeamMember).await?;
         }
 
         let user_id = ObjectId::new();
         let user_doc = UserDoc {
             id: Some(user_id),
-            tenant_id,
+            tenant_id: ctx.tenant_id,
             email: email.clone(),
             verified: false,
             is_owner: false,
@@ -193,10 +196,11 @@ impl UsersService {
     }
 
     /// List all users on a tenant.
-    pub async fn list(&self, tenant_id: &ObjectId) -> Result<Vec<UserDetail>, UserError> {
+    #[requires(Permission::TenantAdmin)]
+    pub async fn list(&self, ctx: &AuthContext) -> Result<Vec<UserDetail>, UserError> {
         let docs = self
             .users_repo
-            .list_by_tenant(tenant_id)
+            .list_by_tenant(&ctx.tenant_id)
             .await
             .map_err(UserError::Internal)?;
 
@@ -213,10 +217,11 @@ impl UsersService {
     }
 
     /// Delete a user. Guard: can't remove last verified user.
-    pub async fn delete(&self, tenant_id: ObjectId, user_id: ObjectId) -> Result<(), UserError> {
+    #[requires(Permission::TenantAdmin)]
+    pub async fn delete(&self, ctx: &AuthContext, user_id: ObjectId) -> Result<(), UserError> {
         let count = self
             .users_repo
-            .count_verified_by_tenant(&tenant_id)
+            .count_verified_by_tenant(&ctx.tenant_id)
             .await
             .map_err(UserError::Internal)?;
 
@@ -226,7 +231,7 @@ impl UsersService {
 
         let deleted = self
             .users_repo
-            .delete(&tenant_id, &user_id)
+            .delete(&ctx.tenant_id, &user_id)
             .await
             .map_err(UserError::Internal)?;
 

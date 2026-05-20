@@ -52,8 +52,15 @@ pub enum SecretKeyError {
     LastKey,
     SelfDelete,
     NotFound,
+    Forbidden(crate::services::auth::permissions::AuthzError),
     EmailFailed(String),
     Internal(String),
+}
+
+impl From<crate::services::auth::permissions::AuthzError> for SecretKeyError {
+    fn from(err: crate::services::auth::permissions::AuthzError) -> Self {
+        SecretKeyError::Forbidden(err)
+    }
 }
 
 impl fmt::Display for SecretKeyError {
@@ -76,6 +83,7 @@ impl fmt::Display for SecretKeyError {
                 )
             }
             Self::NotFound => write!(f, "Secret key not found"),
+            Self::Forbidden(e) => write!(f, "{e}"),
             Self::EmailFailed(e) => write!(f, "Failed to send confirmation email: {e}"),
             Self::Internal(e) => write!(f, "Internal error: {e}"),
         }
@@ -94,22 +102,9 @@ impl SecretKeyError {
             Self::LastKey => "last_key",
             Self::SelfDelete => "self_delete",
             Self::NotFound => "not_found",
+            Self::Forbidden(e) => e.code(),
             Self::EmailFailed(_) => "email_error",
             Self::Internal(_) => "db_error",
-        }
-    }
-}
-
-/// Caller's `KeyScope` is not authorized for this operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScopeError {
-    Forbidden,
-}
-
-impl fmt::Display for ScopeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Forbidden => write!(f, "key scope forbids this operation"),
         }
     }
 }

@@ -1,10 +1,12 @@
 use mongodb::bson::{doc, oid::ObjectId};
+use rift_macros::requires;
 use std::sync::Arc;
 
 use super::models::{CreatedKey, KeyDetail, KeyScope, SecretKeyDoc, SecretKeyError};
 use super::repo::SecretKeysRepository;
 use crate::core::email;
 use crate::services::auth::keys;
+use crate::services::auth::permissions::{AuthContext, Permission, Principal};
 use crate::services::auth::users::repo::UsersRepository;
 use crate::services::tokens::{ConsumeOutcome, TokenKind, TokenPurpose, TokenService, TokenSpec};
 
@@ -86,17 +88,18 @@ impl SecretKeysService {
     }
 
     /// Request a new key creation. Sends a 6-char code to the specified email.
+    #[requires(Permission::SecretKeysWrite)]
     pub async fn request_create(
         &self,
-        tenant_id: ObjectId,
+        ctx: &AuthContext,
         email: &str,
         resend_api_key: &str,
         resend_from_email: &str,
     ) -> Result<(), SecretKeyError> {
-        // Permission check: caller's email must be a verified member of this tenant.
+        // Permission check: target email must be a verified member of this tenant.
         let user = self
             .users_repo
-            .find_by_tenant_and_email(&tenant_id, email)
+            .find_by_tenant_and_email(&ctx.tenant_id, email)
             .await
             .map_err(SecretKeyError::Internal)?
             .ok_or(SecretKeyError::UserNotMember)?;
@@ -110,7 +113,7 @@ impl SecretKeysService {
         // Key limit.
         let count = self
             .sk_repo
-            .count_by_tenant(&tenant_id)
+            .count_by_tenant(&ctx.tenant_id)
             .await
             .map_err(SecretKeyError::Internal)?;
         if count >= 5 {
@@ -139,7 +142,7 @@ impl SecretKeysService {
                 ttl_secs: Self::ROTATION_TTL_SECS,
                 email: email.to_string(),
                 metadata: doc! {
-                    "tenant_id": tenant_id,
+                    "tenant_id": ctx.tenant_id,
                     "user_id": user_id,
                 },
             })
@@ -175,9 +178,10 @@ impl SecretKeysService {
     /// `tenant_id` and `email` are only used for transport-layer auth sanity —
     /// the token metadata is the authoritative source of (tenant_id, user_id)
     /// because that's what was bound to the code when it was issued.
+    #[requires(Permission::SecretKeysWrite)]
     pub async fn confirm_create(
         &self,
-        tenant_id: ObjectId,
+        ctx: &AuthContext,
         email: &str,
         token: &str,
     ) -> Result<CreatedKey, SecretKeyError> {
@@ -204,7 +208,7 @@ impl SecretKeysService {
                 // Belt-and-suspenders: the token is bound to a tenant; the
                 // HTTP caller also claims a tenant via API key. They must
                 // match, otherwise someone's crossing sessions.
-                if meta_tenant != tenant_id {
+                if meta_tenant != ctx.tenant_id {
                     return Err(SecretKeyError::InvalidCode);
                 }
 
@@ -217,10 +221,11 @@ impl SecretKeysService {
     }
 
     /// List all secret keys for a tenant (prefix only).
-    pub async fn list(&self, tenant_id: &ObjectId) -> Result<Vec<KeyDetail>, SecretKeyError> {
+    #[requires(Permission::SecretKeysRead)]
+    pub async fn list(&self, ctx: &AuthContext) -> Result<Vec<KeyDetail>, SecretKeyError> {
         let docs = self
             .sk_repo
-            .list_by_tenant(tenant_id)
+            .list_by_tenant(&ctx.tenant_id)
             .await
             .map_err(SecretKeyError::Internal)?;
 
@@ -237,18 +242,17 @@ impl SecretKeysService {
 
     /// Delete a secret key. Enforces guards: can't delete last key.
     ///
-    /// `auth_key_id` is `Some(_)` only when the caller is authenticated by an
-    /// API key — in that case we also reject deletion of the caller's own
-    /// key (self-delete would 401 every subsequent request). Session-authed
-    /// callers pass `None`; they're authed by a session, not a key, so
-    /// SelfDelete is structurally impossible.
-    pub async fn delete(
-        &self,
-        tenant_id: ObjectId,
-        key_id: ObjectId,
-        auth_key_id: Option<ObjectId>,
-    ) -> Result<(), SecretKeyError> {
-        if let Some(auth_key_id) = auth_key_id {
+    /// Self-delete check uses `ctx.principal`: when the caller authenticated
+    /// with the very key they're trying to delete (`Principal::SecretKey {
+    /// key_id }` matches the request's `key_id`), reject — otherwise the
+    /// next request would 401. Session-authed callers carry
+    /// `Principal::User { .. }` so `SelfDelete` is structurally impossible.
+    #[requires(Permission::SecretKeysWrite)]
+    pub async fn delete(&self, ctx: &AuthContext, key_id: ObjectId) -> Result<(), SecretKeyError> {
+        if let Principal::SecretKey {
+            key_id: auth_key_id,
+        } = ctx.principal
+        {
             if key_id == auth_key_id {
                 return Err(SecretKeyError::SelfDelete);
             }
@@ -256,7 +260,7 @@ impl SecretKeysService {
 
         let count = self
             .sk_repo
-            .count_by_tenant(&tenant_id)
+            .count_by_tenant(&ctx.tenant_id)
             .await
             .map_err(SecretKeyError::Internal)?;
 
@@ -266,7 +270,7 @@ impl SecretKeysService {
 
         let deleted = self
             .sk_repo
-            .delete_key(&tenant_id, &key_id)
+            .delete_key(&ctx.tenant_id, &key_id)
             .await
             .map_err(SecretKeyError::Internal)?;
 
@@ -278,24 +282,30 @@ impl SecretKeysService {
     }
 
     /// Mint a key for a session-authed caller. The session middleware has
-    /// already proven the caller is `user_id` on `tenant_id`, so we skip the
+    /// already proven the caller is a `Principal::User`, so we skip the
     /// email-code dance entirely. Enforces the 5-keys-per-tenant ceiling so
     /// session-issued and email-confirmed keys share the same budget.
-    pub async fn issue_for_session(
-        &self,
-        tenant_id: ObjectId,
-        user_id: ObjectId,
-    ) -> Result<CreatedKey, SecretKeyError> {
+    #[requires(Permission::SecretKeysWrite)]
+    pub async fn issue_for_session(&self, ctx: &AuthContext) -> Result<CreatedKey, SecretKeyError> {
+        let user_id = match ctx.principal {
+            Principal::User { user_id, .. } => user_id,
+            Principal::SecretKey { .. } => {
+                return Err(SecretKeyError::Internal(
+                    "issue_for_session called from non-session principal".into(),
+                ));
+            }
+        };
+
         let count = self
             .sk_repo
-            .count_by_tenant(&tenant_id)
+            .count_by_tenant(&ctx.tenant_id)
             .await
             .map_err(SecretKeyError::Internal)?;
         if count >= 5 {
             return Err(SecretKeyError::KeyLimit);
         }
 
-        mint_for_tenant(&*self.sk_repo, tenant_id, user_id)
+        mint_for_tenant(&*self.sk_repo, ctx.tenant_id, user_id)
             .await
             .map_err(SecretKeyError::Internal)
     }
