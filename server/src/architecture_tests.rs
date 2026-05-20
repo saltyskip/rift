@@ -460,7 +460,7 @@ fn parse_pub_type_name(line: &str) -> Option<&str> {
 // ── AuthContext scope-attribute scanner ──
 
 fn is_auth_migration_backlog(rel_str: &str) -> bool {
-    AUTH_MIGRATION_BACKLOG.iter().any(|entry| rel_str == *entry)
+    AUTH_MIGRATION_BACKLOG.contains(&rel_str)
 }
 
 fn collect_service_rs_relpaths(dir: &std::path::Path, manifest_dir: &str, out: &mut Vec<String>) {
