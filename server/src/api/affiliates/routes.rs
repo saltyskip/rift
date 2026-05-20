@@ -5,9 +5,10 @@ use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::api::auth::models::{AuthKeyId, CallerScope, TenantId};
+use crate::api::auth::models::AuthKeyId;
 use crate::app::AppState;
 use crate::services::affiliates::models::*;
+use crate::services::auth::permissions::AuthContext;
 
 // ── Affiliate CRUD ──
 
@@ -23,21 +24,17 @@ use crate::services::affiliates::models::*;
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state, req))]
+#[tracing::instrument(skip(state, ctx, req))]
 pub async fn create_affiliate(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Json(req): Json<CreateAffiliateRequest>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
         return no_database();
     };
 
-    match svc
-        .create_affiliate(tenant.0, scope.0.as_ref(), req.name, req.partner_key)
-        .await
-    {
+    match svc.create_affiliate(&ctx, req.name, req.partner_key).await {
         Ok(a) => (StatusCode::CREATED, Json(to_detail(&a))).into_response(),
         Err(e) => affiliate_error_to_response(e),
     }
@@ -52,17 +49,16 @@ pub async fn create_affiliate(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn list_affiliates(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
         return no_database();
     };
 
-    match svc.list_affiliates(tenant.0, scope.0.as_ref()).await {
+    match svc.list_affiliates(&ctx).await {
         Ok(list) => Json(ListAffiliatesResponse {
             affiliates: list.iter().map(to_detail).collect(),
         })
@@ -82,11 +78,10 @@ pub async fn list_affiliates(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn get_affiliate(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Path(affiliate_id): Path<String>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
@@ -96,7 +91,7 @@ pub async fn get_affiliate(
         return invalid_id();
     };
 
-    match svc.get_affiliate(tenant.0, scope.0.as_ref(), oid).await {
+    match svc.get_affiliate(&ctx, oid).await {
         Ok(a) => Json(to_detail(&a)).into_response(),
         Err(e) => affiliate_error_to_response(e),
     }
@@ -115,11 +110,10 @@ pub async fn get_affiliate(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state, req))]
+#[tracing::instrument(skip(state, ctx, req))]
 pub async fn patch_affiliate(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Path(affiliate_id): Path<String>,
     Json(req): Json<UpdateAffiliateRequest>,
 ) -> Response {
@@ -130,10 +124,7 @@ pub async fn patch_affiliate(
         return invalid_id();
     };
 
-    match svc
-        .update_affiliate(tenant.0, scope.0.as_ref(), oid, req)
-        .await
-    {
+    match svc.update_affiliate(&ctx, oid, req).await {
         Ok(a) => Json(to_detail(&a)).into_response(),
         Err(e) => affiliate_error_to_response(e),
     }
@@ -150,11 +141,10 @@ pub async fn patch_affiliate(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn delete_affiliate(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Path(affiliate_id): Path<String>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
@@ -164,7 +154,7 @@ pub async fn delete_affiliate(
         return invalid_id();
     };
 
-    match svc.delete_affiliate(tenant.0, scope.0.as_ref(), oid).await {
+    match svc.delete_affiliate(&ctx, oid).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => affiliate_error_to_response(e),
     }
@@ -188,11 +178,10 @@ pub async fn delete_affiliate(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn create_affiliate_credential(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     axum::Extension(auth_key): axum::Extension<AuthKeyId>,
     Path(affiliate_id): Path<String>,
 ) -> Response {
@@ -203,10 +192,7 @@ pub async fn create_affiliate_credential(
         return invalid_id();
     };
 
-    match svc
-        .mint_credential(tenant.0, scope.0.as_ref(), oid, auth_key.0)
-        .await
-    {
+    match svc.mint_credential(&ctx, oid, auth_key.0).await {
         Ok(minted) => (
             StatusCode::CREATED,
             Json(CreateAffiliateCredentialResponse {
@@ -237,11 +223,10 @@ pub async fn create_affiliate_credential(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn list_affiliate_credentials(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Path(affiliate_id): Path<String>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
@@ -251,7 +236,7 @@ pub async fn list_affiliate_credentials(
         return invalid_id();
     };
 
-    match svc.list_credentials(tenant.0, scope.0.as_ref(), oid).await {
+    match svc.list_credentials(&ctx, oid).await {
         Ok(keys) => {
             let creds: Vec<AffiliateCredentialDetail> = keys
                 .into_iter()
@@ -281,11 +266,10 @@ pub async fn list_affiliate_credentials(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn revoke_affiliate_credential(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Path((affiliate_id, key_id)): Path<(String, String)>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
@@ -298,10 +282,7 @@ pub async fn revoke_affiliate_credential(
         return invalid_id();
     };
 
-    match svc
-        .revoke_credential(tenant.0, scope.0.as_ref(), aff_oid, key_oid)
-        .await
-    {
+    match svc.revoke_credential(&ctx, aff_oid, key_oid).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => affiliate_error_to_response(e),
     }
@@ -321,8 +302,14 @@ fn to_detail(a: &Affiliate) -> AffiliateDetail {
 }
 
 fn affiliate_error_to_response(err: AffiliateError) -> Response {
-    if let AffiliateError::QuotaExceeded(q) = err {
-        return crate::api::billing::quota_response::to_response(q);
+    match err {
+        AffiliateError::QuotaExceeded(q) => {
+            return crate::api::billing::quota_response::to_response(q);
+        }
+        AffiliateError::Forbidden(authz) => {
+            return crate::api::auth::forbidden_response::to_response(authz);
+        }
+        _ => {}
     }
     let status = match &err {
         AffiliateError::InvalidName(_)
@@ -332,8 +319,9 @@ fn affiliate_error_to_response(err: AffiliateError) -> Response {
             StatusCode::CONFLICT
         }
         AffiliateError::NotFound | AffiliateError::CredentialNotFound => StatusCode::NOT_FOUND,
-        AffiliateError::Forbidden => StatusCode::FORBIDDEN,
-        AffiliateError::QuotaExceeded(_) => unreachable!("handled above"),
+        AffiliateError::QuotaExceeded(_) | AffiliateError::Forbidden(_) => {
+            unreachable!("handled above")
+        }
         AffiliateError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     let code = err.code();

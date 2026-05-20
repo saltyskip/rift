@@ -1,5 +1,6 @@
 use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
+use rift_macros::requires;
 use std::sync::Arc;
 
 use super::models::{
@@ -7,7 +8,7 @@ use super::models::{
     MAX_CREDENTIALS_PER_AFFILIATE,
 };
 use super::repo::AffiliatesRepository;
-use crate::services::auth::scope::require_full;
+use crate::services::auth::permissions::{AuthContext, Permission};
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::auth::secret_keys::service::mint_scoped;
 use crate::services::billing::quota::{QuotaChecker, Resource};
@@ -35,20 +36,19 @@ impl AffiliatesService {
     }
 
     /// Create an affiliate. Quota-checked + partner_key uniqueness enforced.
-    /// Caller must have full tenant scope.
+    /// Caller must carry `AffiliatesWrite` (only full-tenant keys do today).
+    #[requires(Permission::AffiliatesWrite)]
     pub async fn create_affiliate(
         &self,
-        tenant_id: ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
         name: String,
         partner_key: String,
     ) -> Result<Affiliate, AffiliateError> {
-        require_full(caller_scope)?;
         validate_name(&name)?;
         validate_partner_key(&partner_key)?;
 
         if let Some(q) = &self.quota {
-            q.check(&tenant_id, Resource::CreateAffiliate).await?;
+            q.check(&ctx.tenant_id, Resource::CreateAffiliate).await?;
         }
 
         // Pre-check uniqueness for a clean error before hitting the DB write.
@@ -56,7 +56,7 @@ impl AffiliatesService {
         // backstop — see the E11000 catch below.
         if self
             .repo
-            .find_by_partner_key(&tenant_id, &partner_key)
+            .find_by_partner_key(&ctx.tenant_id, &partner_key)
             .await
             .map_err(AffiliateError::Internal)?
             .is_some()
@@ -67,7 +67,7 @@ impl AffiliatesService {
         let now = DateTime::now();
         let affiliate = Affiliate {
             id: ObjectId::new(),
-            tenant_id,
+            tenant_id: ctx.tenant_id,
             name,
             partner_key: partner_key.clone(),
             status: AffiliateStatus::Active,
@@ -86,41 +86,37 @@ impl AffiliatesService {
         Ok(affiliate)
     }
 
+    #[requires(Permission::AffiliatesWrite)]
     pub async fn get_affiliate(
         &self,
-        tenant_id: ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
         affiliate_id: ObjectId,
     ) -> Result<Affiliate, AffiliateError> {
-        require_full(caller_scope)?;
         self.repo
-            .get_by_id(&tenant_id, &affiliate_id)
+            .get_by_id(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?
             .ok_or(AffiliateError::NotFound)
     }
 
+    #[requires(Permission::AffiliatesWrite)]
     pub async fn list_affiliates(
         &self,
-        tenant_id: ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
     ) -> Result<Vec<Affiliate>, AffiliateError> {
-        require_full(caller_scope)?;
         self.repo
-            .list_by_tenant(&tenant_id)
+            .list_by_tenant(&ctx.tenant_id)
             .await
             .map_err(AffiliateError::Internal)
     }
 
+    #[requires(Permission::AffiliatesWrite)]
     pub async fn update_affiliate(
         &self,
-        tenant_id: ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
         affiliate_id: ObjectId,
         req: UpdateAffiliateRequest,
     ) -> Result<Affiliate, AffiliateError> {
-        require_full(caller_scope)?;
-
         if req.name.is_none() && req.status.is_none() {
             return Err(AffiliateError::EmptyUpdate);
         }
@@ -132,7 +128,7 @@ impl AffiliatesService {
         let updated = self
             .repo
             .update_affiliate(
-                &tenant_id,
+                &ctx.tenant_id,
                 &affiliate_id,
                 req.name.as_deref(),
                 req.status,
@@ -148,26 +144,24 @@ impl AffiliatesService {
         // Re-fetch so the response carries the persisted values (including
         // the new updated_at).
         self.repo
-            .get_by_id(&tenant_id, &affiliate_id)
+            .get_by_id(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?
             .ok_or(AffiliateError::NotFound)
     }
 
-    /// Mint a new partner-scoped credential. Caller must have full scope.
+    /// Mint a new partner-scoped credential. Caller must carry `AffiliatesWrite`.
     /// Per-affiliate cap of `MAX_CREDENTIALS_PER_AFFILIATE` enforced.
+    #[requires(Permission::AffiliatesWrite)]
     pub async fn mint_credential(
         &self,
-        tenant_id: ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
         affiliate_id: ObjectId,
         created_by: ObjectId,
     ) -> Result<MintedCredential, AffiliateError> {
-        require_full(caller_scope)?;
-
         // Affiliate must exist in this tenant.
         self.repo
-            .get_by_id(&tenant_id, &affiliate_id)
+            .get_by_id(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?
             .ok_or(AffiliateError::NotFound)?;
@@ -176,7 +170,7 @@ impl AffiliatesService {
         // so a compromised tenant key can't spam unbounded credentials.
         let existing = self
             .secret_keys_repo
-            .list_by_tenant_and_affiliate(&tenant_id, &affiliate_id)
+            .list_by_tenant_and_affiliate(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?;
         if existing.len() >= MAX_CREDENTIALS_PER_AFFILIATE {
@@ -185,7 +179,7 @@ impl AffiliatesService {
 
         let created_key = mint_scoped(
             self.secret_keys_repo.as_ref(),
-            tenant_id,
+            ctx.tenant_id,
             created_by,
             KeyScope::Affiliate { affiliate_id },
         )
@@ -198,51 +192,47 @@ impl AffiliatesService {
         })
     }
 
-    /// List credentials scoped to an affiliate. Caller must have full scope.
-    /// Returns the raw `SecretKeyDoc`s; routes are responsible for projecting
-    /// to a no-secret DTO.
+    /// List credentials scoped to an affiliate. Caller must carry
+    /// `AffiliatesWrite`. Returns the raw `SecretKeyDoc`s; routes are
+    /// responsible for projecting to a no-secret DTO.
+    #[requires(Permission::AffiliatesWrite)]
     pub async fn list_credentials(
         &self,
-        tenant_id: ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
         affiliate_id: ObjectId,
     ) -> Result<Vec<crate::services::auth::secret_keys::repo::SecretKeyDoc>, AffiliateError> {
-        require_full(caller_scope)?;
-
         // Affiliate must exist (404 vs empty list — different semantics).
         self.repo
-            .get_by_id(&tenant_id, &affiliate_id)
+            .get_by_id(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?
             .ok_or(AffiliateError::NotFound)?;
 
         self.secret_keys_repo
-            .list_by_tenant_and_affiliate(&tenant_id, &affiliate_id)
+            .list_by_tenant_and_affiliate(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)
     }
 
-    /// Revoke a partner credential. Caller must have full scope. Atomic at
-    /// the repo level — no TOCTOU between membership check and delete.
+    /// Revoke a partner credential. Caller must carry `AffiliatesWrite`.
+    /// Atomic at the repo level — no TOCTOU between membership check and delete.
+    #[requires(Permission::AffiliatesWrite)]
     pub async fn revoke_credential(
         &self,
-        tenant_id: ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
         affiliate_id: ObjectId,
         key_id: ObjectId,
     ) -> Result<(), AffiliateError> {
-        require_full(caller_scope)?;
-
         // Surface affiliate-not-found distinctly from credential-not-found.
         self.repo
-            .get_by_id(&tenant_id, &affiliate_id)
+            .get_by_id(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?
             .ok_or(AffiliateError::NotFound)?;
 
         let deleted = self
             .secret_keys_repo
-            .delete_affiliate_credential(&tenant_id, &affiliate_id, &key_id)
+            .delete_affiliate_credential(&ctx.tenant_id, &affiliate_id, &key_id)
             .await
             .map_err(AffiliateError::Internal)?;
 
@@ -258,17 +248,15 @@ impl AffiliatesService {
     /// to (a) reject delete if any `Link.affiliate_id` or scoped `SecretKey`
     /// references this affiliate, or (b) cascade-revoke credentials and
     /// orphan the link refs. v1 leaves orphan refs (inert until dispatch).
+    #[requires(Permission::AffiliatesWrite)]
     pub async fn delete_affiliate(
         &self,
-        tenant_id: ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
         affiliate_id: ObjectId,
     ) -> Result<(), AffiliateError> {
-        require_full(caller_scope)?;
-
         let deleted = self
             .repo
-            .delete_affiliate(&tenant_id, &affiliate_id)
+            .delete_affiliate(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?;
 

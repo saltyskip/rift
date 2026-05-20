@@ -84,6 +84,7 @@ pub struct VerifyDomainResponse {
 
 // ── Errors ──
 
+use crate::services::auth::permissions::AuthzError;
 use crate::services::billing::quota::QuotaError;
 
 #[derive(Debug)]
@@ -91,6 +92,7 @@ pub enum DomainError {
     AlreadyRegistered,
     AlternateLimit,
     QuotaExceeded(QuotaError),
+    Forbidden(AuthzError),
     Internal(String),
 }
 
@@ -100,12 +102,19 @@ impl From<QuotaError> for DomainError {
     }
 }
 
+impl From<AuthzError> for DomainError {
+    fn from(err: AuthzError) -> Self {
+        DomainError::Forbidden(err)
+    }
+}
+
 impl std::fmt::Display for DomainError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::AlreadyRegistered => write!(f, "Domain already registered"),
             Self::AlternateLimit => write!(f, "Only one alternate domain allowed per team"),
             Self::QuotaExceeded(e) => write!(f, "{e}"),
+            Self::Forbidden(e) => write!(f, "{e}"),
             Self::Internal(e) => write!(f, "Internal error: {e}"),
         }
     }

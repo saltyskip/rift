@@ -101,6 +101,12 @@ impl SecretKeyError {
 }
 
 /// Caller's `KeyScope` is not authorized for this operation.
+///
+/// **Deprecated** — superseded by `services/auth/permissions::AuthzError`.
+/// Kept alive through the scope-macro migration window so the test file
+/// in `services/auth/scope_tests.rs` still compiles. Deleted in the final
+/// migration PR.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopeError {
     Forbidden,

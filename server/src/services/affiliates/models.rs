@@ -114,8 +114,8 @@ pub struct ListAffiliateCredentialsResponse {
 
 // ── Errors + service helper types ──
 
+use crate::services::auth::permissions::AuthzError;
 use crate::services::auth::secret_keys::models::CreatedKey;
-use crate::services::auth::secret_keys::models::ScopeError;
 use crate::services::billing::quota::QuotaError;
 use std::fmt;
 
@@ -131,7 +131,7 @@ pub enum AffiliateError {
     PartnerKeyTaken(String),
     NotFound,
     EmptyUpdate,
-    Forbidden,
+    Forbidden(AuthzError),
     /// Per-affiliate credential cap reached — see `MAX_CREDENTIALS_PER_AFFILIATE`.
     CredentialLimit,
     /// Credential to revoke not found for this affiliate.
@@ -146,9 +146,9 @@ impl From<QuotaError> for AffiliateError {
     }
 }
 
-impl From<ScopeError> for AffiliateError {
-    fn from(_: ScopeError) -> Self {
-        AffiliateError::Forbidden
+impl From<AuthzError> for AffiliateError {
+    fn from(err: AuthzError) -> Self {
+        AffiliateError::Forbidden(err)
     }
 }
 
@@ -160,7 +160,7 @@ impl fmt::Display for AffiliateError {
             Self::PartnerKeyTaken(k) => write!(f, "partner_key '{k}' is already taken"),
             Self::NotFound => write!(f, "Affiliate not found"),
             Self::EmptyUpdate => write!(f, "No fields to update"),
-            Self::Forbidden => write!(f, "Key scope forbids this operation"),
+            Self::Forbidden(e) => write!(f, "{e}"),
             Self::CredentialLimit => write!(
                 f,
                 "Maximum of {MAX_CREDENTIALS_PER_AFFILIATE} credentials per affiliate"
@@ -180,7 +180,7 @@ impl AffiliateError {
             Self::PartnerKeyTaken(_) => "partner_key_taken",
             Self::NotFound => "not_found",
             Self::EmptyUpdate => "empty_update",
-            Self::Forbidden => "forbidden_scope",
+            Self::Forbidden(e) => e.code(),
             Self::CredentialLimit => "credential_limit",
             Self::CredentialNotFound => "credential_not_found",
             Self::QuotaExceeded(_) => "quota_exceeded",

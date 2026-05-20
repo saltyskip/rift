@@ -4,10 +4,12 @@
 //! `api/` and (future) `mcp/` consumers call, so quota lives here.
 
 use mongodb::bson::oid::ObjectId;
+use rift_macros::requires;
 use std::sync::Arc;
 
 use super::models::{Webhook, WebhookError, WebhookEventType};
 use super::repo::WebhooksRepository;
+use crate::services::auth::permissions::{AuthContext, Permission};
 use crate::services::billing::quota::{QuotaChecker, Resource};
 
 crate::impl_container!(WebhooksService);
@@ -21,11 +23,12 @@ impl WebhooksService {
         Self { repo, quota }
     }
 
-    /// Create a webhook for a tenant. Enforces the tier's webhook count
-    /// quota before calling the repo.
+    /// Create a webhook for the caller's tenant. Enforces the tier's webhook
+    /// count quota before calling the repo.
+    #[requires(Permission::WebhooksWrite)]
     pub async fn create_webhook(
         &self,
-        tenant_id: ObjectId,
+        ctx: &AuthContext,
         id: ObjectId,
         url: String,
         secret: String,
@@ -33,12 +36,12 @@ impl WebhooksService {
         created_at: mongodb::bson::DateTime,
     ) -> Result<Webhook, WebhookError> {
         if let Some(q) = &self.quota {
-            q.check(&tenant_id, Resource::CreateWebhook).await?;
+            q.check(&ctx.tenant_id, Resource::CreateWebhook).await?;
         }
 
         let webhook = Webhook {
             id,
-            tenant_id,
+            tenant_id: ctx.tenant_id,
             url,
             secret,
             events,

@@ -1,5 +1,12 @@
 //! Scope enforcement helpers.
 //!
+//! **Deprecated** — superseded by `services/auth/permissions::AuthContext`.
+//! Affiliates migrated in PR1; remaining services migrate in subsequent PRs.
+//! The final migration PR deletes this module + `ScopeError`. Keeping the
+//! `pub fn` alive in the meantime so the test file still compiles.
+
+#![allow(dead_code)]
+//!
 //! Service methods call these at the top to gate access by `KeyScope`.
 //! Two layers of enforcement work together:
 //!

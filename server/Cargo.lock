@@ -5109,6 +5109,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.28",
  "resend-rs",
+ "rift-macros",
  "rmcp",
  "schemars 1.2.1",
  "sentry",
@@ -5129,6 +5130,15 @@ dependencies = [
  "x402-axum",
  "x402-chain-eip155",
  "x402-types",
+]
+
+[[package]]
+name = "rift-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

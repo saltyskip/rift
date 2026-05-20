@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::api::auth::models::TenantId;
 use crate::app::AppState;
+use crate::services::auth::permissions::AuthContext;
 use crate::services::webhooks::models::*;
 
 #[utoipa::path(
@@ -20,10 +21,10 @@ use crate::services::webhooks::models::*;
     ),
     security(("api_key" = []), ("x402" = [])),
 )]
-#[tracing::instrument(skip(state, req))]
+#[tracing::instrument(skip(state, ctx, req))]
 pub async fn create_webhook(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Json(req): Json<CreateWebhookRequest>,
 ) -> Response {
     let Some(svc) = &state.webhooks_service else {
@@ -56,7 +57,7 @@ pub async fn create_webhook(
 
     match svc
         .create_webhook(
-            tenant.0,
+            &ctx,
             id,
             req.url.clone(),
             secret.clone(),
@@ -76,10 +77,9 @@ pub async fn create_webhook(
             }),
         )
             .into_response(),
-        Err(crate::services::webhooks::models::WebhookError::QuotaExceeded(q)) => {
-            crate::api::billing::quota_response::to_response(q)
-        }
-        Err(crate::services::webhooks::models::WebhookError::Internal(e)) => {
+        Err(WebhookError::QuotaExceeded(q)) => crate::api::billing::quota_response::to_response(q),
+        Err(WebhookError::Forbidden(e)) => crate::api::auth::forbidden_response::to_response(e),
+        Err(WebhookError::Internal(e)) => {
             tracing::error!("Failed to create webhook: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
