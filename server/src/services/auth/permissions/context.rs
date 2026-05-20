@@ -1,11 +1,5 @@
 //! Constructors + scope-check methods for `AuthContext`, plus `Scopes`
 //! helpers. Implementation file; `pub` data types live in `models.rs`.
-//!
-//! Migration-window allow: helpers like `require_any`, `from_permissions`,
-//! `iter`, `is_empty`, `len` are part of the intended API surface but
-//! unconsumed in PR1. Remove the allow once the migration backlog drains.
-
-#![allow(dead_code)]
 
 use super::models::{AuthContext, AuthzError, Permission, Principal, ResourceScope, Scopes};
 use crate::services::auth::secret_keys::repo::KeyScope;
@@ -63,6 +57,9 @@ impl AuthContext {
     }
 
     /// Guard that the caller carries at least one of the listed permissions.
+    /// Paired with the `#[requires_any(...)]` proc-macro. Currently unused
+    /// by services but kept available for future multi-permission gates.
+    #[allow(dead_code)]
     pub fn require_any(&self, perms: &[Permission]) -> Result<(), AuthzError> {
         if perms.iter().any(|p| self.permissions.contains(*p)) {
             Ok(())
@@ -88,25 +85,8 @@ impl Scopes {
         ]))
     }
 
-    /// Build a `Scopes` from an explicit permission set.
-    pub fn from_permissions<I: IntoIterator<Item = Permission>>(perms: I) -> Self {
-        Self(perms.into_iter().collect())
-    }
-
     pub fn contains(&self, perm: Permission) -> bool {
         self.0.contains(&perm)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = Permission> + '_ {
-        self.0.iter().copied()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
     }
 }
 

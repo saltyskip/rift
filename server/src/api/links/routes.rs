@@ -10,9 +10,10 @@ use std::sync::Arc;
 use super::landing::{render_smart_landing_page, LandingPageContext};
 use super::models::{QrCodeQuery, ResolveQuery};
 use super::qr::{render_link_qr, QrOutputFormat};
-use crate::api::auth::models::{CallerScope, TenantId};
+use crate::api::auth::models::TenantId;
 use crate::app::AppState;
 use crate::core::webhook_dispatcher::ClickEventPayload;
+use crate::services::auth::permissions::AuthContext;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::models::LinkError;
@@ -32,11 +33,10 @@ use crate::services::links::models::*;
     ),
     security(("api_key" = []), ("x402" = [])),
 )]
-#[tracing::instrument(skip(state, req))]
+#[tracing::instrument(skip(state, ctx, req))]
 pub async fn create_link(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Json(req): Json<CreateLinkRequest>,
 ) -> Response {
     let Some(ref svc) = state.links_service else {
@@ -49,7 +49,7 @@ pub async fn create_link(
 
     // Quota check + scope/affiliate enforcement live in
     // `LinksService::create_link` so MCP tool calls hit the same path.
-    match svc.create_link(tenant.0, scope.0.as_ref(), req).await {
+    match svc.create_link(&ctx, req).await {
         Ok(resp) => (StatusCode::CREATED, Json(json!(resp))).into_response(),
         Err(e) => link_error_to_response(e),
     }
@@ -69,11 +69,10 @@ pub async fn create_link(
     ),
     security(("api_key" = []), ("x402" = [])),
 )]
-#[tracing::instrument(skip(state, req))]
+#[tracing::instrument(skip(state, ctx, req))]
 pub async fn create_links_bulk(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Json(req): Json<BulkCreateLinksRequest>,
 ) -> Response {
     let Some(ref svc) = state.links_service else {
@@ -84,7 +83,7 @@ pub async fn create_links_bulk(
             .into_response();
     };
 
-    match svc.create_links_bulk(tenant.0, scope.0.as_ref(), req).await {
+    match svc.create_links_bulk(&ctx, req).await {
         Ok(resp) => (StatusCode::CREATED, Json(json!(resp))).into_response(),
         Err(e) => link_error_to_response(e),
     }
@@ -102,10 +101,10 @@ pub async fn create_links_bulk(
     ),
     security(("api_key" = []), ("x402" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn list_links(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Query(query): Query<ListLinksQuery>,
 ) -> Response {
     let Some(ref svc) = state.links_service else {
@@ -116,7 +115,7 @@ pub async fn list_links(
             .into_response();
     };
 
-    match svc.list_links(&tenant.0, query.limit, query.cursor).await {
+    match svc.list_links(&ctx, query.limit, query.cursor).await {
         Ok(resp) => Json(json!(resp)).into_response(),
         Err(e) => link_error_to_response(e),
     }
@@ -133,11 +132,10 @@ pub async fn list_links(
     ),
     security(("api_key" = []), ("x402" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn get_link(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Path(link_id): Path<String>,
 ) -> Response {
     let Some(svc) = &state.links_service else {
@@ -148,13 +146,14 @@ pub async fn get_link(
             .into_response();
     };
 
-    match svc.get_link(&tenant.0, scope.0.as_ref(), &link_id).await {
+    match svc.get_link(&ctx, &link_id).await {
         Ok(detail) => Json(json!(detail)).into_response(),
-        Err(crate::services::links::models::LinkError::NotFound) => (
+        Err(LinkError::NotFound) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Link not found", "code": "not_found" })),
         )
             .into_response(),
+        Err(LinkError::Forbidden(e)) => crate::api::auth::forbidden_response::to_response(e),
         Err(e) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": e.to_string(), "code": e.code() })),
@@ -177,10 +176,10 @@ pub async fn get_link(
     ),
     security(("api_key" = []), ("x402" = [])),
 )]
-#[tracing::instrument(skip(state, req))]
+#[tracing::instrument(skip(state, ctx, req))]
 pub async fn update_link(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Path(link_id): Path<String>,
     Json(req): Json<UpdateLinkRequest>,
 ) -> Response {
@@ -192,7 +191,7 @@ pub async fn update_link(
             .into_response();
     };
 
-    match svc.update_link(&tenant.0, &link_id, req).await {
+    match svc.update_link(&ctx, &link_id, req).await {
         Ok(detail) => Json(json!(detail)).into_response(),
         Err(e) => link_error_to_response(e),
     }
@@ -211,10 +210,10 @@ pub async fn update_link(
     ),
     security(("api_key" = []), ("x402" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn delete_link(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Path(link_id): Path<String>,
 ) -> Response {
     let Some(ref svc) = state.links_service else {
@@ -225,7 +224,7 @@ pub async fn delete_link(
             .into_response();
     };
 
-    match svc.delete_link(&tenant.0, &link_id).await {
+    match svc.delete_link(&ctx, &link_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => link_error_to_response(e),
     }
@@ -244,11 +243,10 @@ pub async fn delete_link(
     ),
     security(("api_key" = []), ("x402" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn get_link_stats(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(scope): axum::Extension<CallerScope>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Path(link_id): Path<String>,
 ) -> Response {
     let Some(ref svc) = state.links_service else {
@@ -259,10 +257,7 @@ pub async fn get_link_stats(
             .into_response();
     };
 
-    match svc
-        .get_link_stats(&tenant.0, scope.0.as_ref(), &link_id)
-        .await
-    {
+    match svc.get_link_stats(&ctx, &link_id).await {
         Ok(stats) => Json(stats).into_response(),
         Err(e) => link_error_to_response(e),
     }
@@ -938,6 +933,9 @@ fn link_error_to_response(err: LinkError) -> Response {
     if let LinkError::QuotaExceeded(q) = err {
         return crate::api::billing::quota_response::to_response(q);
     }
+    if let LinkError::Forbidden(e) = err {
+        return crate::api::auth::forbidden_response::to_response(e);
+    }
     // BatchValidationFailed carries a per-row error list — return the full
     // array so the caller can fix every issue in one pass.
     if let LinkError::BatchValidationFailed(errors) = err {
@@ -968,7 +966,9 @@ fn link_error_to_response(err: LinkError) -> Response {
         | LinkError::BatchModeMissing => StatusCode::BAD_REQUEST,
         LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
         LinkError::NotFound | LinkError::AffiliateNotFound => StatusCode::NOT_FOUND,
-        LinkError::QuotaExceeded(_) | LinkError::BatchValidationFailed(_) => {
+        LinkError::QuotaExceeded(_)
+        | LinkError::Forbidden(_)
+        | LinkError::BatchValidationFailed(_) => {
             unreachable!("handled above")
         }
         LinkError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,

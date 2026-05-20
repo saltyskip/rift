@@ -15,11 +15,12 @@ use super::models::{
     CallbackQuery, IssueKeyRequest, MeResponse, SignInRequest, SignInResponse, TenantSummary,
     UserSummary,
 };
-use crate::api::auth::models::{SessionId, TenantId, UserId};
+use crate::api::auth::models::{SessionId, UserId};
 use crate::api::auth::secret_keys::models::CreateKeyResponse;
 use crate::app::AppState;
 use crate::core::config::CookieSameSite;
 use crate::core::http::client_ip_from_headers;
+use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::sessions::SessionError;
 
 const SESSION_COOKIE_NAME: &str = "session_token";
@@ -204,10 +205,10 @@ pub async fn callback(
     ),
     security(("session_cookie" = []))
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn me(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     axum::Extension(user): axum::Extension<UserId>,
 ) -> Response {
     let Some(users_repo) = state.users_service.as_ref() else {
@@ -221,7 +222,7 @@ pub async fn me(
     // Fetch by tenant+user_id via the existing list path — there's no
     // find_by_id helper today and Phase 1 doesn't justify adding one. The
     // list is bounded by team size (currently 1-5 users per tenant).
-    let users = match users_repo.list(&tenant.0).await {
+    let users = match users_repo.list(&ctx).await {
         Ok(u) => u,
         Err(e) => {
             tracing::error!(error = %e, "me_user_lookup_failed");
@@ -251,7 +252,7 @@ pub async fn me(
             is_owner: user_detail.is_owner,
         },
         tenant: TenantSummary {
-            id: tenant.0.to_hex(),
+            id: ctx.tenant_id.to_hex(),
         },
     })
     .into_response()
@@ -317,11 +318,10 @@ pub async fn sign_out(
     ),
     security(("session_cookie" = []))
 )]
-#[tracing::instrument(skip(state, _body))]
+#[tracing::instrument(skip(state, ctx, _body))]
 pub async fn issue_secret_key(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    axum::Extension(user): axum::Extension<UserId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     Json(_body): Json<IssueKeyRequest>,
 ) -> Response {
     let Some(svc) = state.secret_keys_service.as_ref() else {
@@ -332,7 +332,7 @@ pub async fn issue_secret_key(
             .into_response();
     };
 
-    match svc.issue_for_session(tenant.0, user.0).await {
+    match svc.issue_for_session(&ctx).await {
         Ok(created) => (
             StatusCode::CREATED,
             Json(CreateKeyResponse {

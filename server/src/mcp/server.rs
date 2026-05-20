@@ -14,6 +14,7 @@ use std::sync::{Arc, OnceLock};
 
 use super::models::*;
 use crate::services::auth::keys;
+use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::conversions::models::SourceType;
 use crate::services::conversions::repo::ConversionsRepository;
@@ -27,8 +28,16 @@ pub struct RiftMcp {
     secret_keys_repo: Arc<dyn SecretKeysRepository>,
     conversions_repo: Option<Arc<dyn ConversionsRepository>>,
     public_url: String,
-    tenant_id: OnceLock<ObjectId>,
+    /// `(tenant_id, key_id)` resolved during `initialize`. Used to build
+    /// `AuthContext` for each tool call.
+    session: OnceLock<McpSession>,
     tool_router: ToolRouter<Self>,
+}
+
+#[derive(Clone, Copy)]
+struct McpSession {
+    tenant_id: ObjectId,
+    key_id: ObjectId,
 }
 
 impl RiftMcp {
@@ -43,16 +52,30 @@ impl RiftMcp {
             secret_keys_repo,
             conversions_repo,
             public_url,
-            tenant_id: OnceLock::new(),
+            session: OnceLock::new(),
             tool_router: Self::tool_router(),
         }
     }
 
     fn tenant_id(&self) -> Result<ObjectId, String> {
-        self.tenant_id
+        self.session
             .get()
-            .copied()
+            .map(|s| s.tenant_id)
             .ok_or_else(|| "Not authenticated".to_string())
+    }
+
+    /// Build an `AuthContext` for this MCP session. MCP rejects affiliate-
+    /// scoped keys at init, so we always synthesize a Full-tenant context.
+    fn auth_context(&self) -> Result<AuthContext, String> {
+        let s = self
+            .session
+            .get()
+            .ok_or_else(|| "Not authenticated".to_string())?;
+        Ok(AuthContext::for_secret_key(
+            s.tenant_id,
+            s.key_id,
+            Some(&KeyScope::Full),
+        ))
     }
 
     fn webhook_url_for(&self, url_token: &str) -> String {
@@ -68,13 +91,10 @@ impl RiftMcp {
         &self,
         Parameters(req): Parameters<CreateLinkRequest>,
     ) -> Result<String, String> {
-        let tenant_id = self.tenant_id()?;
-        // MCP tool sessions authenticate as the tenant; treat as full scope.
-        // FUTURE: when MCP grows partner support, source the scope from the
-        // session's credential and pass it through here.
+        let ctx = self.auth_context()?;
         let resp = self
             .service
-            .create_link(tenant_id, Some(&KeyScope::Full), req)
+            .create_link(&ctx, req)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -89,12 +109,8 @@ impl RiftMcp {
         &self,
         Parameters(req): Parameters<BulkCreateLinksRequest>,
     ) -> Result<String, String> {
-        let tenant_id = self.tenant_id()?;
-        match self
-            .service
-            .create_links_bulk(tenant_id, Some(&KeyScope::Full), req)
-            .await
-        {
+        let ctx = self.auth_context()?;
+        match self.service.create_links_bulk(&ctx, req).await {
             Ok(resp) => serde_json::to_string_pretty(&resp).map_err(|e| e.to_string()),
             Err(LinkError::BatchValidationFailed(errors)) => {
                 // Render the per-row failures as a bullet list so the model
@@ -119,13 +135,10 @@ impl RiftMcp {
         &self,
         Parameters(input): Parameters<GetLinkInput>,
     ) -> Result<String, String> {
-        let tenant_id = self.tenant_id()?;
-        // MCP rejects affiliate-scoped keys at init (see initialize), so the
-        // caller is always Full-or-grandfathered. Passing None means "no
-        // scope filter" — equivalent to Full for read.
+        let ctx = self.auth_context()?;
         let detail = self
             .service
-            .get_link(&tenant_id, None, &input.link_id)
+            .get_link(&ctx, &input.link_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -140,10 +153,10 @@ impl RiftMcp {
         &self,
         Parameters(input): Parameters<GetLinkStatsInput>,
     ) -> Result<String, String> {
-        let tenant_id = self.tenant_id()?;
+        let ctx = self.auth_context()?;
         let stats = self
             .service
-            .get_link_stats(&tenant_id, None, &input.link_id)
+            .get_link_stats(&ctx, &input.link_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -156,10 +169,10 @@ impl RiftMcp {
         &self,
         Parameters(input): Parameters<ListLinksInput>,
     ) -> Result<String, String> {
-        let tenant_id = self.tenant_id()?;
+        let ctx = self.auth_context()?;
         let resp = self
             .service
-            .list_links(&tenant_id, input.limit, input.cursor)
+            .list_links(&ctx, input.limit, input.cursor)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -174,10 +187,10 @@ impl RiftMcp {
         &self,
         Parameters(input): Parameters<UpdateLinkInput>,
     ) -> Result<String, String> {
-        let tenant_id = self.tenant_id()?;
+        let ctx = self.auth_context()?;
         let detail = self
             .service
-            .update_link(&tenant_id, &input.link_id, input.body)
+            .update_link(&ctx, &input.link_id, input.body)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -190,9 +203,9 @@ impl RiftMcp {
         &self,
         Parameters(input): Parameters<DeleteLinkInput>,
     ) -> Result<String, String> {
-        let tenant_id = self.tenant_id()?;
+        let ctx = self.auth_context()?;
         self.service
-            .delete_link(&tenant_id, &input.link_id)
+            .delete_link(&ctx, &input.link_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -342,8 +355,11 @@ impl ServerHandler for RiftMcp {
         }
 
         let tenant_id = key_doc.tenant_id;
-        self.tenant_id
-            .set(tenant_id)
+        self.session
+            .set(McpSession {
+                tenant_id,
+                key_id: key_doc.id,
+            })
             .map_err(|_| McpError::internal_error("Session already authenticated", None))?;
 
         tracing::info!(%tenant_id, "MCP session authenticated");

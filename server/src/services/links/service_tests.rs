@@ -1,4 +1,6 @@
 use super::*;
+use crate::services::auth::permissions::AuthContext;
+use crate::services::auth::secret_keys::repo::KeyScope;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::models::BulkInsertError;
 use crate::services::links::models::TimeseriesDataPoint;
@@ -6,6 +8,14 @@ use crate::services::links::repo::LinksRepository;
 use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
 use std::sync::Mutex;
+
+/// Build a Full-scope `AuthContext` for tests. The macro-injected scope
+/// check is exercised by `services/auth/permissions/context_tests.rs`;
+/// every links-service test should land on the happy authorization path
+/// so the assertion focuses on business-logic behavior, not the gate.
+fn ctx(tenant_id: ObjectId) -> AuthContext {
+    AuthContext::for_secret_key(tenant_id, ObjectId::new(), Some(&KeyScope::Full))
+}
 
 #[test]
 fn canonical_link_url_prefers_verified_primary_domain() {
@@ -420,7 +430,7 @@ async fn create_link_generates_id() {
         social_preview: None,
     };
 
-    let resp = svc.create_link(tenant_id, None, req).await.unwrap();
+    let resp = svc.create_link(&ctx(tenant_id), req).await.unwrap();
     assert_eq!(resp.link_id.len(), 8);
     assert!(resp.url.contains(&resp.link_id));
 }
@@ -442,7 +452,7 @@ async fn create_link_custom_id_requires_verified_domain() {
         social_preview: None,
     };
 
-    let err = svc.create_link(tenant_id, None, req).await.unwrap_err();
+    let err = svc.create_link(&ctx(tenant_id), req).await.unwrap_err();
     assert!(matches!(err, LinkError::NoVerifiedDomain));
 }
 
@@ -463,7 +473,7 @@ async fn create_link_custom_id_with_verified_domain() {
         social_preview: None,
     };
 
-    let resp = svc.create_link(tenant_id, None, req).await.unwrap();
+    let resp = svc.create_link(&ctx(tenant_id), req).await.unwrap();
     assert_eq!(resp.link_id, "my-link");
     assert_eq!(resp.url, "https://example.com/my-link");
 }
@@ -485,7 +495,7 @@ async fn create_link_invalid_custom_id() {
         social_preview: None,
     };
 
-    let err = svc.create_link(tenant_id, None, req).await.unwrap_err();
+    let err = svc.create_link(&ctx(tenant_id), req).await.unwrap_err();
     assert!(matches!(err, LinkError::InvalidCustomId(_)));
 }
 
@@ -509,7 +519,7 @@ async fn create_link_duplicate() {
     };
 
     // First create should succeed (random ID won't collide with "EXISTING")
-    let resp = svc.create_link(tenant_id, None, req).await.unwrap();
+    let resp = svc.create_link(&ctx(tenant_id), req).await.unwrap();
     assert_ne!(resp.link_id, "EXISTING");
 }
 
@@ -519,7 +529,7 @@ async fn get_link_existing() {
     let link = make_link(tenant_id, "ABC123");
     let svc = make_service(vec![link], false);
 
-    let detail = svc.get_link(&tenant_id, None, "ABC123").await.unwrap();
+    let detail = svc.get_link(&ctx(tenant_id), "ABC123").await.unwrap();
     assert_eq!(detail.link_id, "ABC123");
     assert!(detail.url.contains("ABC123"));
 }
@@ -529,7 +539,7 @@ async fn get_link_not_found() {
     let svc = make_service(vec![], false);
     let tenant_id = ObjectId::new();
 
-    let err = svc.get_link(&tenant_id, None, "NOPE").await.unwrap_err();
+    let err = svc.get_link(&ctx(tenant_id), "NOPE").await.unwrap_err();
     assert!(matches!(err, LinkError::NotFound));
 }
 
@@ -541,7 +551,7 @@ async fn list_links_returns_page() {
         .collect();
     let svc = make_service(links, false);
 
-    let resp = svc.list_links(&tenant_id, Some(10), None).await.unwrap();
+    let resp = svc.list_links(&ctx(tenant_id), Some(10), None).await.unwrap();
     assert_eq!(resp.links.len(), 3);
     assert!(resp.next_cursor.is_none());
 }
@@ -551,7 +561,7 @@ async fn list_links_empty() {
     let svc = make_service(vec![], false);
     let tenant_id = ObjectId::new();
 
-    let resp = svc.list_links(&tenant_id, None, None).await.unwrap();
+    let resp = svc.list_links(&ctx(tenant_id), None, None).await.unwrap();
     assert!(resp.links.is_empty());
     assert!(resp.next_cursor.is_none());
 }
@@ -565,11 +575,11 @@ async fn list_links_clamps_limit() {
     let svc = make_service(links, false);
 
     // Limit > 100 should be clamped
-    let resp = svc.list_links(&tenant_id, Some(200), None).await.unwrap();
+    let resp = svc.list_links(&ctx(tenant_id), Some(200), None).await.unwrap();
     assert_eq!(resp.links.len(), 5);
 
     // Limit < 1 should be clamped to 1
-    let resp = svc.list_links(&tenant_id, Some(0), None).await.unwrap();
+    let resp = svc.list_links(&ctx(tenant_id), Some(0), None).await.unwrap();
     assert_eq!(resp.links.len(), 1);
 }
 
@@ -590,7 +600,7 @@ async fn update_link_success() {
         social_preview: None,
     };
 
-    let detail = svc.update_link(&tenant_id, "UPD123", req).await.unwrap();
+    let detail = svc.update_link(&ctx(tenant_id), "UPD123", req).await.unwrap();
     assert_eq!(detail.web_url.as_deref(), Some("https://updated.com"));
 }
 
@@ -610,7 +620,7 @@ async fn update_link_not_found() {
         social_preview: None,
     };
 
-    let err = svc.update_link(&tenant_id, "NOPE", req).await.unwrap_err();
+    let err = svc.update_link(&ctx(tenant_id), "NOPE", req).await.unwrap_err();
     assert!(matches!(err, LinkError::NotFound));
 }
 
@@ -632,7 +642,7 @@ async fn update_link_empty() {
     };
 
     let err = svc
-        .update_link(&tenant_id, "EMPTY1", req)
+        .update_link(&ctx(tenant_id), "EMPTY1", req)
         .await
         .unwrap_err();
     assert!(matches!(err, LinkError::EmptyUpdate));
@@ -644,7 +654,7 @@ async fn delete_link_success() {
     let link = make_link(tenant_id, "DEL123");
     let svc = make_service(vec![link], false);
 
-    svc.delete_link(&tenant_id, "DEL123").await.unwrap();
+    svc.delete_link(&ctx(tenant_id), "DEL123").await.unwrap();
 }
 
 #[tokio::test]
@@ -652,7 +662,7 @@ async fn delete_link_not_found() {
     let svc = make_service(vec![], false);
     let tenant_id = ObjectId::new();
 
-    let err = svc.delete_link(&tenant_id, "NOPE").await.unwrap_err();
+    let err = svc.delete_link(&ctx(tenant_id), "NOPE").await.unwrap_err();
     assert!(matches!(err, LinkError::NotFound));
 }
 
@@ -681,7 +691,7 @@ async fn bulk_empty_returns_batch_empty() {
         count: None,
     };
     let err = svc
-        .create_links_bulk(ObjectId::new(), None, req)
+        .create_links_bulk(&ctx(ObjectId::new()), req)
         .await
         .unwrap_err();
     assert!(matches!(err, LinkError::BatchEmpty));
@@ -696,7 +706,7 @@ async fn bulk_too_large_returns_batch_too_large() {
         count: Some(101),
     };
     let err = svc
-        .create_links_bulk(ObjectId::new(), None, req)
+        .create_links_bulk(&ctx(ObjectId::new()), req)
         .await
         .unwrap_err();
     assert!(matches!(
@@ -714,7 +724,7 @@ async fn bulk_both_modes_returns_ambiguous() {
         count: Some(5),
     };
     let err = svc
-        .create_links_bulk(ObjectId::new(), None, req)
+        .create_links_bulk(&ctx(ObjectId::new()), req)
         .await
         .unwrap_err();
     assert!(matches!(err, LinkError::BatchModeAmbiguous));
@@ -729,7 +739,7 @@ async fn bulk_neither_mode_returns_missing() {
         count: None,
     };
     let err = svc
-        .create_links_bulk(ObjectId::new(), None, req)
+        .create_links_bulk(&ctx(ObjectId::new()), req)
         .await
         .unwrap_err();
     assert!(matches!(err, LinkError::BatchModeMissing));
@@ -744,7 +754,7 @@ async fn bulk_no_verified_domain_rejects() {
         count: Some(3),
     };
     let err = svc
-        .create_links_bulk(ObjectId::new(), None, req)
+        .create_links_bulk(&ctx(ObjectId::new()), req)
         .await
         .unwrap_err();
     assert!(matches!(err, LinkError::NoVerifiedDomain));
@@ -761,7 +771,7 @@ async fn bulk_template_invalid_url_returns_template_error() {
         count: Some(3),
     };
     let err = svc
-        .create_links_bulk(ObjectId::new(), None, req)
+        .create_links_bulk(&ctx(ObjectId::new()), req)
         .await
         .unwrap_err();
     assert!(matches!(err, LinkError::InvalidUrl(_)));
@@ -776,7 +786,7 @@ async fn bulk_invalid_custom_id_returns_per_row_error() {
         count: None,
     };
     let err = svc
-        .create_links_bulk(ObjectId::new(), None, req)
+        .create_links_bulk(&ctx(ObjectId::new()), req)
         .await
         .unwrap_err();
     let LinkError::BatchValidationFailed(errs) = err else {
@@ -800,7 +810,7 @@ async fn bulk_duplicate_custom_id_within_batch() {
         count: None,
     };
     let err = svc
-        .create_links_bulk(ObjectId::new(), None, req)
+        .create_links_bulk(&ctx(ObjectId::new()), req)
         .await
         .unwrap_err();
     let LinkError::BatchValidationFailed(errs) = err else {
@@ -826,7 +836,7 @@ async fn bulk_existing_custom_id_returns_link_id_taken() {
         count: None,
     };
     let err = svc
-        .create_links_bulk(tenant_id, None, req)
+        .create_links_bulk(&ctx(tenant_id), req)
         .await
         .unwrap_err();
     let LinkError::BatchValidationFailed(errs) = err else {
@@ -846,7 +856,7 @@ async fn bulk_count_mode_happy_path() {
         count: Some(10),
     };
     let resp = svc
-        .create_links_bulk(ObjectId::new(), None, req)
+        .create_links_bulk(&ctx(ObjectId::new()), req)
         .await
         .unwrap();
     assert_eq!(resp.links.len(), 10);
@@ -864,7 +874,7 @@ async fn bulk_custom_ids_mode_happy_path() {
         count: None,
     };
     let resp = svc
-        .create_links_bulk(ObjectId::new(), None, req)
+        .create_links_bulk(&ctx(ObjectId::new()), req)
         .await
         .unwrap();
     assert_eq!(resp.links.len(), 2);

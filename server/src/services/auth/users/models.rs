@@ -5,6 +5,7 @@ use mongodb::bson::{self, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::services::auth::permissions::AuthzError;
 use crate::services::billing::quota::QuotaError;
 
 // ── DB Document ──
@@ -28,6 +29,7 @@ pub enum UserError {
     UserExists,
     LastUser,
     NotFound,
+    Forbidden(AuthzError),
     QuotaExceeded(QuotaError),
     EmailFailed(String),
     Internal(String),
@@ -39,6 +41,12 @@ impl From<QuotaError> for UserError {
     }
 }
 
+impl From<AuthzError> for UserError {
+    fn from(err: AuthzError) -> Self {
+        UserError::Forbidden(err)
+    }
+}
+
 impl fmt::Display for UserError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -46,6 +54,7 @@ impl fmt::Display for UserError {
             Self::UserExists => write!(f, "User already exists on this team"),
             Self::LastUser => write!(f, "Cannot remove the last verified user on this team"),
             Self::NotFound => write!(f, "User not found"),
+            Self::Forbidden(e) => write!(f, "{e}"),
             Self::QuotaExceeded(e) => write!(f, "{e}"),
             Self::EmailFailed(e) => write!(f, "Failed to send email: {e}"),
             Self::Internal(e) => write!(f, "Internal error: {e}"),
@@ -60,6 +69,7 @@ impl UserError {
             Self::UserExists => "user_exists",
             Self::LastUser => "last_user",
             Self::NotFound => "not_found",
+            Self::Forbidden(e) => e.code(),
             Self::QuotaExceeded(_) => "quota_exceeded",
             Self::EmailFailed(_) => "email_error",
             Self::Internal(_) => "db_error",

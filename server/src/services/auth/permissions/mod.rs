@@ -13,9 +13,4 @@
 pub mod context;
 pub mod models;
 
-// `Principal`/`ResourceScope`/`Scopes` are re-exported for future consumers
-// (services that introspect the principal kind or pin to an affiliate scope)
-// even though PR1 doesn't reference them yet. Allow the lint until the
-// migration backlog drains and consumers appear.
-#[allow(unused_imports)]
-pub use models::{AuthContext, AuthzError, Permission, Principal, ResourceScope, Scopes};
+pub use models::{AuthContext, AuthzError, Permission, Principal, ResourceScope};

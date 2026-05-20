@@ -1,5 +1,6 @@
 use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
+use rift_macros::requires;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -8,7 +9,7 @@ use super::repo::LinksRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
 use crate::services::affiliates::repo::AffiliatesRepository;
-use crate::services::auth::secret_keys::repo::KeyScope;
+use crate::services::auth::permissions::{AuthContext, Permission, ResourceScope};
 use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
 use crate::services::conversions::repo::ConversionsRepository;
@@ -138,13 +139,14 @@ impl LinksService {
             .await
     }
 
-    #[tracing::instrument(skip(self, req, caller_scope))]
+    #[tracing::instrument(skip(self, req, ctx))]
+    #[requires(Permission::LinksWrite)]
     pub async fn create_link(
         &self,
-        tenant_id: ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
         req: CreateLinkRequest,
     ) -> Result<CreateLinkResponse, LinkError> {
+        let tenant_id = ctx.tenant_id;
         // Quota enforcement lives here (service layer) so MCP tool invocations
         // and HTTP route handlers both hit the same choke point. CLAUDE.md
         // codifies this rule — see "Quota enforcement" section there.
@@ -152,17 +154,17 @@ impl LinksService {
             q.check(&tenant_id, Resource::CreateLink).await?;
         }
 
-        // Resolve `affiliate_id` against the caller's scope.
+        // Resolve `affiliate_id` against the caller's resource scope.
         //
-        // | caller_scope        | req.affiliate_id     | result                      |
-        // |---------------------|----------------------|-----------------------------|
-        // | Affiliate(A)        | None                 | pin to A                    |
-        // | Affiliate(A)        | Some(A)              | pin to A                    |
-        // | Affiliate(A)        | Some(B) where B != A | AffiliateScopeMismatch (400)|
-        // | Full / None (grand) | Some(B)              | validate B; pin to B        |
-        // | Full / None (grand) | None                 | None (existing behaviour)   |
+        // | resource_scope     | req.affiliate_id     | result                      |
+        // |--------------------|----------------------|-----------------------------|
+        // | Affiliate(A)       | None                 | pin to A                    |
+        // | Affiliate(A)       | Some(A)              | pin to A                    |
+        // | Affiliate(A)       | Some(B) where B != A | AffiliateScopeMismatch (400)|
+        // | Tenant             | Some(B)              | validate B; pin to B        |
+        // | Tenant             | None                 | None                        |
         let resolved_affiliate_id = self
-            .resolve_affiliate_id(&tenant_id, caller_scope, req.affiliate_id)
+            .resolve_affiliate_id(&tenant_id, &ctx.resource_scope, req.affiliate_id)
             .await?;
 
         let has_verified_domain = self.tenant_has_verified_domain(&tenant_id).await;
@@ -261,13 +263,14 @@ impl LinksService {
     /// customers running campaigns under their own domain). Quota is
     /// pre-checked once via `check_n` so the batch is one decision rather
     /// than failing mid-loop.
-    #[tracing::instrument(skip(self, req, caller_scope))]
+    #[tracing::instrument(skip(self, req, ctx))]
+    #[requires(Permission::LinksWrite)]
     pub async fn create_links_bulk(
         &self,
-        tenant_id: ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
         req: BulkCreateLinksRequest,
     ) -> Result<BulkCreateLinksResponse, LinkError> {
+        let tenant_id = ctx.tenant_id;
         // 1. Mode — exactly one of custom_ids / count.
         let mode_ids = req.custom_ids.as_deref();
         let mode_count = req.count;
@@ -294,7 +297,7 @@ impl LinksService {
 
         // 3. Affiliate resolution — once for the whole batch.
         let resolved_affiliate_id = self
-            .resolve_affiliate_id(&tenant_id, caller_scope, req.template.affiliate_id)
+            .resolve_affiliate_id(&tenant_id, &ctx.resource_scope, req.template.affiliate_id)
             .await?;
 
         // 4. Template validation (URL, threat, metadata, agent, social).
@@ -461,16 +464,16 @@ impl LinksService {
         }
     }
 
-    #[tracing::instrument(skip(self, caller_scope))]
+    #[tracing::instrument(skip(self, ctx))]
+    #[requires(Permission::LinksRead)]
     pub async fn get_link(
         &self,
-        tenant_id: &ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
         link_id: &str,
     ) -> Result<LinkDetail, LinkError> {
         let link = self
             .links_repo
-            .find_link_by_tenant_and_id(tenant_id, link_id)
+            .find_link_by_tenant_and_id(&ctx.tenant_id, link_id)
             .await
             .map_err(LinkError::Internal)?
             .ok_or(LinkError::NotFound)?;
@@ -478,8 +481,8 @@ impl LinksService {
         // Affiliate-scoped credentials can only read their own affiliate's
         // links. Return NotFound (not Forbidden) so the existence of links
         // belonging to other affiliates isn't disclosed.
-        if let Some(KeyScope::Affiliate { affiliate_id }) = caller_scope {
-            if link.affiliate_id != Some(*affiliate_id) {
+        if let ResourceScope::Affiliate { affiliate_id } = ctx.resource_scope {
+            if link.affiliate_id != Some(affiliate_id) {
                 return Err(LinkError::NotFound);
             }
         }
@@ -493,13 +496,14 @@ impl LinksService {
     /// or its aggregation fails, the response still returns the load-bearing
     /// counters with an empty `conversions` list, rather than failing the
     /// whole call.
-    #[tracing::instrument(skip(self, caller_scope))]
+    #[tracing::instrument(skip(self, ctx))]
+    #[requires(Permission::LinksRead)]
     pub async fn get_link_stats(
         &self,
-        tenant_id: &ObjectId,
-        caller_scope: Option<&KeyScope>,
+        ctx: &AuthContext,
         link_id: &str,
     ) -> Result<LinkStatsResponse, LinkError> {
+        let tenant_id = &ctx.tenant_id;
         let link = self
             .links_repo
             .find_link_by_tenant_and_id(tenant_id, link_id)
@@ -507,8 +511,8 @@ impl LinksService {
             .map_err(LinkError::Internal)?
             .ok_or(LinkError::NotFound)?;
 
-        if let Some(KeyScope::Affiliate { affiliate_id }) = caller_scope {
-            if link.affiliate_id != Some(*affiliate_id) {
+        if let ResourceScope::Affiliate { affiliate_id } = ctx.resource_scope {
+            if link.affiliate_id != Some(affiliate_id) {
                 return Err(LinkError::NotFound);
             }
         }
@@ -549,13 +553,15 @@ impl LinksService {
         })
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, ctx))]
+    #[requires(Permission::LinksRead)]
     pub async fn list_links(
         &self,
-        tenant_id: &ObjectId,
+        ctx: &AuthContext,
         limit: Option<i64>,
         cursor: Option<String>,
     ) -> Result<ListLinksResponse, LinkError> {
+        let tenant_id = &ctx.tenant_id;
         let limit = limit.unwrap_or(50).clamp(1, 100);
         let cursor_id = cursor.and_then(|c| ObjectId::parse_str(&c).ok());
 
@@ -591,13 +597,15 @@ impl LinksService {
         })
     }
 
-    #[tracing::instrument(skip(self, req))]
+    #[tracing::instrument(skip(self, req, ctx))]
+    #[requires(Permission::LinksWrite)]
     pub async fn update_link(
         &self,
-        tenant_id: &ObjectId,
+        ctx: &AuthContext,
         link_id: &str,
         req: UpdateLinkRequest,
     ) -> Result<LinkDetail, LinkError> {
+        let tenant_id = &ctx.tenant_id;
         // Flatten Option<Option<String>> to Option<&str> for validation.
         let ios_dl = req.ios_deep_link.as_ref().and_then(|v| v.as_deref());
         let android_dl = req.android_deep_link.as_ref().and_then(|v| v.as_deref());
@@ -693,10 +701,15 @@ impl LinksService {
             return Err(LinkError::NotFound);
         }
 
-        // Re-fetch the updated link. The caller's update was already
-        // authorized; passing None here means "no scope check" (treated as
-        // Full for read).
-        self.get_link(tenant_id, None, link_id).await
+        // Re-fetch the updated link, bypassing the resource-scope filter —
+        // the caller's update was already authorized at the macro layer.
+        let link = self
+            .links_repo
+            .find_link_by_tenant_and_id(tenant_id, link_id)
+            .await
+            .map_err(LinkError::Internal)?
+            .ok_or(LinkError::NotFound)?;
+        Ok(self.link_to_detail(&link).await)
     }
 
     #[tracing::instrument(skip(self))]
@@ -731,10 +744,11 @@ impl LinksService {
             .ok_or(LinkError::NotFound)
     }
 
-    pub async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<(), LinkError> {
+    #[requires(Permission::LinksDelete)]
+    pub async fn delete_link(&self, ctx: &AuthContext, link_id: &str) -> Result<(), LinkError> {
         let deleted = self
             .links_repo
-            .delete_link(tenant_id, link_id)
+            .delete_link(&ctx.tenant_id, link_id)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to delete link: {e}");
@@ -785,26 +799,26 @@ impl LinksService {
             .unwrap_or(false)
     }
 
-    /// Resolve the link's `affiliate_id` from the caller's scope and the
-    /// optional value in the request body. See the branch table in
+    /// Resolve the link's `affiliate_id` from the caller's resource scope and
+    /// the optional value in the request body. See the branch table in
     /// `create_link` for the full matrix.
     async fn resolve_affiliate_id(
         &self,
         tenant_id: &ObjectId,
-        caller_scope: Option<&KeyScope>,
+        resource_scope: &ResourceScope,
         requested: Option<ObjectId>,
     ) -> Result<Option<ObjectId>, LinkError> {
-        match (caller_scope, requested) {
+        match (resource_scope, requested) {
             // Affiliate-scoped credential — server pins to scope; reject mismatch.
-            (Some(KeyScope::Affiliate { affiliate_id }), None) => Ok(Some(*affiliate_id)),
-            (Some(KeyScope::Affiliate { affiliate_id }), Some(req)) if req == *affiliate_id => {
+            (ResourceScope::Affiliate { affiliate_id }, None) => Ok(Some(*affiliate_id)),
+            (ResourceScope::Affiliate { affiliate_id }, Some(req)) if req == *affiliate_id => {
                 Ok(Some(*affiliate_id))
             }
-            (Some(KeyScope::Affiliate { .. }), Some(_)) => Err(LinkError::AffiliateScopeMismatch),
+            (ResourceScope::Affiliate { .. }, Some(_)) => Err(LinkError::AffiliateScopeMismatch),
 
-            // Full scope (or pre-migration grandfather) — accept request value
-            // after validating it exists in this tenant.
-            (Some(KeyScope::Full), Some(req)) | (None, Some(req)) => {
+            // Tenant-wide credential — accept request value after validating
+            // it exists in this tenant.
+            (ResourceScope::Tenant, Some(req)) => {
                 let repo = self
                     .affiliates_repo
                     .as_ref()
@@ -816,7 +830,7 @@ impl LinksService {
                 Ok(Some(req))
             }
 
-            (Some(KeyScope::Full), None) | (None, None) => Ok(None),
+            (ResourceScope::Tenant, None) => Ok(None),
         }
     }
 

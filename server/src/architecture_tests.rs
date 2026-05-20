@@ -210,24 +210,13 @@ fn is_singleton_container_file(path: &std::path::Path) -> bool {
 /// available if future migrations need a temporary holding pen.
 const PUB_TYPES_CLEANUP_BACKLOG: &[&str] = &[];
 
-/// Files containing `pub async fn` methods that take `&AuthContext` but
-/// haven't yet been annotated with `#[requires]` / `#[requires_any]` /
-/// `#[requires_public]`. The scope macro migration drains this list one
-/// service at a time. **Do not add new entries here.** A new
-/// `services/*/service.rs` file inherits enforcement automatically; the
-/// only way onto the list is via the migration window (rails landed in
-/// PR1, this list shrinks by one in each subsequent PR until empty).
-const AUTH_MIGRATION_BACKLOG: &[&str] = &[
-    "src/services/auth/oauth/service.rs",
-    "src/services/auth/secret_keys/service.rs",
-    "src/services/auth/sessions/service.rs",
-    "src/services/auth/tenants/service.rs",
-    "src/services/auth/users/service.rs",
-    "src/services/billing/service.rs",
-    "src/services/conversions/service.rs",
-    "src/services/links/service.rs",
-    "src/services/tokens/service.rs",
-];
+/// Migration backlog — kept empty after the one-shot migration that
+/// converted every `service.rs` to take `&AuthContext`. **Do not add
+/// entries here.** A `service.rs` that takes `&AuthContext` must declare
+/// `#[requires]` / `#[requires_any]` / `#[requires_public]`; methods that
+/// don't take `&AuthContext` aren't subject to the check by design (token
+/// primitives, session lookup, public OAuth start/callback, etc.).
+const AUTH_MIGRATION_BACKLOG: &[&str] = &[];
 
 /// Whether `path` is on the cleanup backlog (suppress pub-types check only).
 fn is_cleanup_backlog(path: &std::path::Path) -> bool {

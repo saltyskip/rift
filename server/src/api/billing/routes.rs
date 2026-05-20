@@ -10,6 +10,7 @@ use super::models::{
 };
 use crate::api::auth::models::TenantId;
 use crate::app::AppState;
+use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::tenants::repo::{BillingMethod, PlanTier};
 use crate::services::billing::limits::limits_for;
 use crate::services::billing::models::{BillingError, BillingStatus};
@@ -28,10 +29,10 @@ use crate::services::billing::stripe_client::{
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn get_billing_status(
     State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
 ) -> Response {
     let Some(service) = state.billing_service.as_ref() else {
         return (
@@ -41,13 +42,14 @@ pub async fn get_billing_status(
             .into_response();
     };
 
-    match service.status(&tenant.0).await {
+    match service.status(&ctx).await {
         Ok(status) => (StatusCode::OK, Json(render(status))).into_response(),
         Err(BillingError::TenantNotFound) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Tenant not found", "code": "tenant_not_found" })),
         )
             .into_response(),
+        Err(BillingError::Forbidden(e)) => crate::api::auth::forbidden_response::to_response(e),
         Err(BillingError::Internal(e)) => {
             tracing::error!(error = %e, "billing_status_db_error");
             (
@@ -243,9 +245,10 @@ pub async fn create_stripe_portal(
     ),
     security(("api_key" = [])),
 )]
-#[tracing::instrument(skip(state))]
+#[tracing::instrument(skip(state, ctx))]
 pub async fn cancel_subscription(
     State(state): State<Arc<AppState>>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
     axum::Extension(tenant): axum::Extension<TenantId>,
 ) -> Response {
     let Some(billing) = state.billing_service.as_ref() else {
@@ -256,8 +259,11 @@ pub async fn cancel_subscription(
             .into_response();
     };
 
-    let status = match billing.status(&tenant.0).await {
+    let status = match billing.status(&ctx).await {
         Ok(s) => s,
+        Err(crate::services::billing::models::BillingError::Forbidden(e)) => {
+            return crate::api::auth::forbidden_response::to_response(e);
+        }
         Err(e) => {
             tracing::error!(error = %e, "billing_cancel_status_fetch_failed");
             return (

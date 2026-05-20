@@ -10,7 +10,7 @@ use std::sync::Arc;
 use x402_axum::paygate::PaygateProtocol;
 use x402_types::proto::v1;
 
-use super::models::{AuthKeyId, CallerScope, SdkDomain, SessionId, TenantId, UserId};
+use super::models::{AuthKeyId, SdkDomain, SessionId, TenantId, UserId};
 use crate::app::AppState;
 use crate::services::auth::keys;
 use crate::services::auth::permissions::AuthContext;
@@ -66,7 +66,6 @@ pub async fn auth_gate(
         // Inject tenant identity, key identity, and scope for downstream handlers.
         req.extensions_mut().insert(TenantId(tenant_id));
         req.extensions_mut().insert(AuthKeyId(key_id));
-        req.extensions_mut().insert(CallerScope(scope.clone()));
         req.extensions_mut().insert(AuthContext::for_secret_key(
             tenant_id,
             key_id,
@@ -218,8 +217,6 @@ pub async fn session_auth_gate(
             req.extensions_mut().insert(TenantId(resolved.tenant_id));
             req.extensions_mut().insert(UserId(resolved.user_id));
             req.extensions_mut().insert(SessionId(resolved.session_id));
-            req.extensions_mut()
-                .insert(CallerScope(Some(KeyScope::Full)));
             req.extensions_mut().insert(AuthContext::for_session(
                 resolved.tenant_id,
                 resolved.user_id,
@@ -277,8 +274,6 @@ pub async fn session_or_key_auth_gate(
                 req.extensions_mut().insert(TenantId(resolved.tenant_id));
                 req.extensions_mut().insert(UserId(resolved.user_id));
                 req.extensions_mut().insert(SessionId(resolved.session_id));
-                req.extensions_mut()
-                    .insert(CallerScope(Some(KeyScope::Full)));
                 req.extensions_mut().insert(AuthContext::for_session(
                     resolved.tenant_id,
                     resolved.user_id,
@@ -332,7 +327,6 @@ pub async fn session_or_key_auth_gate(
 
         req.extensions_mut().insert(TenantId(tenant_id));
         req.extensions_mut().insert(AuthKeyId(key_id));
-        req.extensions_mut().insert(CallerScope(scope.clone()));
         req.extensions_mut().insert(AuthContext::for_secret_key(
             tenant_id,
             key_id,

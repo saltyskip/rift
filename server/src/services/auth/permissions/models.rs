@@ -1,12 +1,4 @@
 //! Data types for service-layer authorization.
-//!
-//! The `#[allow(dead_code)]` blocks below are migration-window concessions —
-//! `AnyOfMissing`, the `principal`/`resource_scope` fields, and the optional
-//! `Scopes` helpers (`from_permissions`, `iter`, `is_empty`, `len`) are part
-//! of the intended public API surface but have no consumers in PR1. Remove
-//! the allows once the migration backlog drains.
-
-#![allow(dead_code)]
 
 use mongodb::bson::oid::ObjectId;
 use std::collections::BTreeSet;
@@ -107,9 +99,14 @@ pub struct AuthContext {
 }
 
 /// Caller is missing a permission required by the operation.
+///
+/// `AnyOfMissing` pairs with `#[requires_any(...)]` — currently no service
+/// uses the multi-permission form, but it's part of the macro surface and
+/// stays available for future use.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthzError {
     MissingPermission(Permission),
+    #[allow(dead_code)]
     AnyOfMissing(Vec<Permission>),
 }
 
