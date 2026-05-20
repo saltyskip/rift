@@ -8,7 +8,12 @@ ENV GIT_SHA=$GIT_SHA
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
-# Cache dependencies by building a dummy main first
+# `rift-macros` is a path-dep proc-macro crate — cargo needs its source
+# (not just the manifest) to resolve the dep, so copy it upfront. The crate
+# is tiny so cache-busting on rift-macros changes is fine.
+COPY rift-macros ./rift-macros
+
+# Cache registry dependencies by building a dummy main first
 RUN mkdir src && echo "fn main() {}" > src/main.rs && touch src/lib.rs && cargo build --release && rm -rf src
 
 COPY src ./src
