@@ -55,7 +55,7 @@ base64 = "0.22"
 email_address = "0.2"
 hmac = "0.12"
 futures = "0.3"
-rift-macros = { path = "../rift-macros" }
+rift-macros = { path = "rift-macros" }
 rmcp = { version = "1.2", features = ["server", "transport-streamable-http-server"], optional = true }
 schemars = { version = "1.2", optional = true }
 
