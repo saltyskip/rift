@@ -551,7 +551,10 @@ async fn list_links_returns_page() {
         .collect();
     let svc = make_service(links, false);
 
-    let resp = svc.list_links(&ctx(tenant_id), Some(10), None).await.unwrap();
+    let resp = svc
+        .list_links(&ctx(tenant_id), Some(10), None)
+        .await
+        .unwrap();
     assert_eq!(resp.links.len(), 3);
     assert!(resp.next_cursor.is_none());
 }
@@ -575,11 +578,17 @@ async fn list_links_clamps_limit() {
     let svc = make_service(links, false);
 
     // Limit > 100 should be clamped
-    let resp = svc.list_links(&ctx(tenant_id), Some(200), None).await.unwrap();
+    let resp = svc
+        .list_links(&ctx(tenant_id), Some(200), None)
+        .await
+        .unwrap();
     assert_eq!(resp.links.len(), 5);
 
     // Limit < 1 should be clamped to 1
-    let resp = svc.list_links(&ctx(tenant_id), Some(0), None).await.unwrap();
+    let resp = svc
+        .list_links(&ctx(tenant_id), Some(0), None)
+        .await
+        .unwrap();
     assert_eq!(resp.links.len(), 1);
 }
 
@@ -600,7 +609,10 @@ async fn update_link_success() {
         social_preview: None,
     };
 
-    let detail = svc.update_link(&ctx(tenant_id), "UPD123", req).await.unwrap();
+    let detail = svc
+        .update_link(&ctx(tenant_id), "UPD123", req)
+        .await
+        .unwrap();
     assert_eq!(detail.web_url.as_deref(), Some("https://updated.com"));
 }
 
@@ -620,7 +632,10 @@ async fn update_link_not_found() {
         social_preview: None,
     };
 
-    let err = svc.update_link(&ctx(tenant_id), "NOPE", req).await.unwrap_err();
+    let err = svc
+        .update_link(&ctx(tenant_id), "NOPE", req)
+        .await
+        .unwrap_err();
     assert!(matches!(err, LinkError::NotFound));
 }
 

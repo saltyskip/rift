@@ -112,6 +112,9 @@ async fn status_treats_expired_comp_as_inactive() {
 async fn status_missing_tenant_errors() {
     let repo = Arc::new(MockRepo::default());
     let svc = BillingService::new(repo as Arc<dyn TenantsRepository>);
-    let err = svc.status(&full_ctx_for(ObjectId::new())).await.unwrap_err();
+    let err = svc
+        .status(&full_ctx_for(ObjectId::new()))
+        .await
+        .unwrap_err();
     assert!(matches!(err, BillingError::TenantNotFound));
 }
