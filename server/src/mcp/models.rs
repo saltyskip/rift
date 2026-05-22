@@ -12,8 +12,9 @@
 //! See `CLAUDE.md` → "Shared model layer" for the rule.
 
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
+use crate::services::conversions::models::SourceType;
 use crate::services::links::models::UpdateLinkRequest;
 
 /// Input for the `get_link` MCP tool.
@@ -73,3 +74,55 @@ pub struct CreateSourceInput {
 /// Input for the `list_sources` MCP tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListSourcesInput {}
+
+// ── Output types ──
+//
+// MCP tools return structured JSON via `rmcp::handler::server::wrapper::Json<T>`,
+// which auto-generates an `output_schema` from `T`'s `JsonSchema`. Shared service
+// response types live in `services/<domain>/models.rs` and are reused directly.
+// The types below are MCP-specific (e.g. delete acknowledgement, sources with
+// derived `webhook_url`) and have no REST counterpart.
+
+/// Output for the `links.delete` MCP tool.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct DeleteLinkOutput {
+    /// The link ID that was deleted.
+    pub link_id: String,
+    /// Always `true` on a successful delete.
+    pub deleted: bool,
+}
+
+/// Output for the `sources.create` MCP tool.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CreateSourceOutput {
+    /// The newly-created source's ID (hex-encoded ObjectId).
+    pub id: String,
+    /// Human-readable name as supplied by the caller.
+    pub name: String,
+    /// Source type — currently always `custom`.
+    pub source_type: SourceType,
+    /// Webhook URL the customer's backend POSTs conversion events to.
+    pub webhook_url: String,
+}
+
+/// One conversion source with its derived webhook URL.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SourceSummary {
+    /// Source ID (hex-encoded ObjectId).
+    pub id: String,
+    /// Human-readable name.
+    pub name: String,
+    /// Source type.
+    pub source_type: SourceType,
+    /// Webhook URL the customer's backend POSTs conversion events to.
+    pub webhook_url: String,
+    /// When the source was created (RFC 3339).
+    pub created_at: String,
+}
+
+/// Output for the `sources.list` MCP tool.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ListSourcesOutput {
+    /// All conversion sources for the authenticated tenant.
+    pub sources: Vec<SourceSummary>,
+}

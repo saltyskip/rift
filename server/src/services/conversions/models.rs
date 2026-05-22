@@ -9,6 +9,7 @@ use utoipa::ToSchema;
 /// by implementing a new `ConversionParser`, adding a variant here, and one line in
 /// `parser_for`. No schema migration required.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SourceType {
     Custom,
@@ -131,9 +132,12 @@ pub struct ListSourcesResponse {
 /// Aggregated counts per `(link, type)` for embedding in `LinkStatsResponse`.
 /// Computed on read from `conversion_events` via an aggregation pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct ConversionDetail {
+    /// Customer-defined conversion type (e.g. "signup", "purchase", "deposit").
     #[schema(example = "deposit")]
     pub conversion_type: String,
+    /// Number of conversion events of this type attributed to the link.
     #[schema(example = 19)]
     pub count: u64,
 }

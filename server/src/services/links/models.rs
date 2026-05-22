@@ -398,9 +398,12 @@ pub struct CreateLinkRequest {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct CreateLinkResponse {
+    /// The link's vanity slug or auto-generated ID — the path segment after the domain.
     #[schema(example = "summer-menu-2025")]
     pub link_id: String,
+    /// The fully-qualified link URL ready to share.
     #[schema(example = "https://riftl.ink/summer-menu-2025")]
     pub url: String,
     /// When this link expires (RFC 3339). Null for permanent links. Links without a verified custom domain expire after 30 days.
@@ -455,34 +458,46 @@ where
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct LinkDetail {
+    /// The link's vanity slug or auto-generated ID — the path segment after the domain.
     #[schema(example = "summer-menu-2025")]
     pub link_id: String,
+    /// The fully-qualified link URL ready to share.
     #[schema(example = "https://riftl.ink/summer-menu-2025")]
     pub url: String,
+    /// iOS deep link URI this link redirects to on iOS devices with the app installed.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "tablefour://restaurant/782/reserve")]
     pub ios_deep_link: Option<String>,
+    /// Android deep link URI this link redirects to on Android devices with the app installed.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "tablefour://restaurant/782/reserve")]
     pub android_deep_link: Option<String>,
+    /// Web fallback URL for desktop / unknown platforms.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "https://tablefour.com/restaurant/782")]
     pub web_url: Option<String>,
+    /// App Store URL for iOS users without the app installed.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
     pub ios_store_url: Option<String>,
+    /// Play Store URL for Android users without the app installed.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
     pub android_store_url: Option<String>,
+    /// When this link was created (RFC 3339).
     #[schema(example = "2025-06-15T10:30:00Z")]
     pub created_at: String,
     /// Affiliate this link is attributed to. None for unattributed links.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<String>, example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    #[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]
     pub affiliate_id: Option<ObjectId>,
+    /// Structured context for AI agents resolving this link.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,
+    /// Open Graph / Twitter preview metadata rendered on Rift landing pages.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub social_preview: Option<SocialPreview>,
 }
@@ -554,15 +569,20 @@ pub struct BulkCreateLinksRequest {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct BulkLinkResult {
+    /// The link's vanity slug or auto-generated ID — the path segment after the domain.
     #[schema(example = "partner-acme")]
     pub link_id: String,
+    /// The fully-qualified link URL ready to share.
     #[schema(example = "https://go.acme.com/partner-acme")]
     pub url: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct BulkCreateLinksResponse {
+    /// Every link successfully created by the batch, in input order.
     pub links: Vec<BulkLinkResult>,
 }
 
@@ -591,7 +611,9 @@ pub struct ListLinksQuery {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct ListLinksResponse {
+    /// The current page of links, most recent first.
     pub links: Vec<LinkDetail>,
     /// Cursor for the next page. Null if no more results.
     #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
@@ -625,11 +647,15 @@ pub struct IdentifyResponse {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct LinkStatsResponse {
+    /// The link these stats are for.
     #[schema(example = "summer-menu-2025")]
     pub link_id: String,
+    /// Total landing-page visits across all platforms.
     #[schema(example = 1420)]
     pub click_count: u64,
+    /// First-launch installs attributed to this link.
     #[schema(example = 312)]
     pub install_count: u64,
     /// Installs that progressed through `PUT /v1/lifecycle/identify` — i.e.
