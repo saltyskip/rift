@@ -177,10 +177,12 @@ pub struct Install {
     pub tenant_id: ObjectId,
     /// Unique per install (generated client-side).
     pub install_id: String,
-    /// First link that attributed this install. Set on insert only; later
-    /// `/lifecycle/attribute` calls for the same install append to the
-    /// event log but do not overwrite this field.
-    pub first_link_id: String,
+    /// First link that attributed this install. Legacy field — Phase 6
+    /// stopped writing it for new installs (credit is computed at read
+    /// time from `attribution_events`). Old rows still carry a value;
+    /// new rows have `None`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub first_link_id: Option<String>,
     /// App version recorded at first-touch.
     pub first_app_version: String,
     /// Soonest attribution timestamp for this install.

@@ -528,16 +528,15 @@ async fn run_server(cfg: Config) {
         _ => None,
     };
 
-    let conversions_service = match (&conversions_repo, &links_repo) {
-        (Some(c), Some(l)) => Some(Arc::new(ConversionsService::new(
+    let conversions_service = conversions_repo.as_ref().map(|c| {
+        Arc::new(ConversionsService::new(
             c.clone(),
-            l.clone(),
+            app_users_repo.clone(),
             webhook_dispatcher.clone(),
             tier_resolver.clone(),
             quota_service.clone(),
-        ))),
-        _ => None,
-    };
+        ))
+    });
 
     let analytics_service = match (&links_repo, &install_events_repo, &app_users_repo) {
         (Some(l), Some(ie), Some(au)) => Some(Arc::new(

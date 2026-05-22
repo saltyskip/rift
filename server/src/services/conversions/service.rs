@@ -6,9 +6,9 @@ use super::models::ParsedConversion;
 use super::models::{ConversionEvent, ConversionMeta, IngestResult, Source};
 use super::repo::ConversionsRepository;
 use crate::core::webhook_dispatcher::{ConversionEventPayload, WebhookDispatcher};
+use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
-use crate::services::links::repo::LinksRepository;
 
 crate::impl_container!(ConversionsService);
 /// Orchestration layer for conversion ingestion. Keeps route handlers thin per
@@ -16,7 +16,10 @@ crate::impl_container!(ConversionsService);
 /// parse, delegate here, return status).
 pub struct ConversionsService {
     conversions_repo: Arc<dyn ConversionsRepository>,
-    links_repo: Arc<dyn LinksRepository>,
+    /// User-existence check for attribution. Optional during the cutover
+    /// so reduced-feature builds keep booting; ingest treats `None` as
+    /// "trust the caller" and accepts every event with a user_id.
+    app_users_repo: Option<Arc<dyn AppUsersRepository>>,
     webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
     tiers: Option<Arc<dyn TierResolver>>,
     quota: Option<Arc<dyn QuotaChecker>>,
@@ -25,14 +28,14 @@ pub struct ConversionsService {
 impl ConversionsService {
     pub fn new(
         conversions_repo: Arc<dyn ConversionsRepository>,
-        links_repo: Arc<dyn LinksRepository>,
+        app_users_repo: Option<Arc<dyn AppUsersRepository>>,
         webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
         tiers: Option<Arc<dyn TierResolver>>,
         quota: Option<Arc<dyn QuotaChecker>>,
     ) -> Self {
         Self {
             conversions_repo,
-            links_repo,
+            app_users_repo,
             webhook_dispatcher,
             tiers,
             quota,
@@ -97,28 +100,37 @@ impl ConversionsService {
                 }
             }
 
-            // 2. Attribution lookup — need user_id → Install → first_link_id.
-            // Conversions without a matching install are counted as
-            // "unattributed" and dropped (not counted in stats).
-            let link_id = match &event.user_id {
-                Some(uid) => self
-                    .links_repo
-                    .find_install_by_user(&tenant_id, uid)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|i| i.first_link_id),
-                None => None,
-            };
-            let Some(link_id) = link_id else {
+            // 2. Attribution check — require a known user. Credit is
+            // computed at read time from the user's journey, so the
+            // ingest path no longer needs to resolve a link_id; it just
+            // confirms the user_id exists in `app_users` (or trusts
+            // the caller when `app_users_repo` isn't wired).
+            let Some(user_id) = event.user_id.as_ref() else {
                 tracing::debug!(
                     source_id = %source_id,
-                    user_id = ?event.user_id,
-                    "conversion has no matching attribution; skipping",
+                    "conversion has no user_id; skipping",
                 );
                 result.unattributed += 1;
                 continue;
             };
+            let user_known = match &self.app_users_repo {
+                Some(repo) => repo
+                    .find_by_user_id(&tenant_id, user_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some(),
+                None => true,
+            };
+            if !user_known {
+                tracing::debug!(
+                    source_id = %source_id,
+                    user_id = %user_id,
+                    "conversion user_id not found in app_users; skipping",
+                );
+                result.unattributed += 1;
+                continue;
+            }
 
             // 2b. Quota check (TrackEvent) — same "events per month" counter
             // as clicks. Runs post-dedup so a duplicate doesn't consume the
@@ -146,7 +158,10 @@ impl ConversionsService {
                 id: Some(ObjectId::new()),
                 meta: ConversionMeta {
                     tenant_id,
-                    link_id: link_id.clone(),
+                    // Credit is computed at read time; no link_id frozen
+                    // in storage. Legacy field kept on the schema for
+                    // back-compat with pre-Phase-6 rows.
+                    link_id: None,
                     source_id,
                     conversion_type: event.conversion_type.clone(),
                     retention_bucket,
@@ -180,7 +195,7 @@ impl ConversionsService {
                     event_id: event_id.to_hex(),
                     tenant_id: tenant_id.to_hex(),
                     source_id: source_id.to_hex(),
-                    link_id: link_id.clone(),
+                    link_id: None,
                     conversion_type: event.conversion_type.clone(),
                     user_id: event.user_id.clone(),
                     metadata: metadata_json,

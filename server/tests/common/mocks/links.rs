@@ -12,7 +12,7 @@ use rift::services::links::repo::LinksRepository;
 struct Install {
     tenant_id: ObjectId,
     install_id: String,
-    first_link_id: String,
+    first_link_id: Option<String>,
     user_id: Option<String>,
 }
 
@@ -267,7 +267,7 @@ impl LinksRepository for MockLinksRepo {
         let new_install = Install {
             tenant_id,
             install_id: install_id.to_string(),
-            first_link_id: link_id.to_string(),
+            first_link_id: Some(link_id.to_string()),
             user_id: None,
         };
         let payload = real(&new_install);
@@ -313,27 +313,6 @@ impl LinksRepository for MockLinksRepo {
             }
             Some(_) => Ok(IdentifyOutcome::NotFound),
         }
-    }
-
-    async fn find_install_by_user(
-        &self,
-        tenant_id: &ObjectId,
-        user_id: &str,
-    ) -> Result<Option<RealInstall>, String> {
-        let installs = self.installs.lock().unwrap();
-        Ok(installs
-            .iter()
-            .find(|a| &a.tenant_id == tenant_id && a.user_id.as_deref() == Some(user_id))
-            .map(|a| RealInstall {
-                id: ObjectId::new(),
-                tenant_id: a.tenant_id,
-                install_id: a.install_id.clone(),
-                first_link_id: a.first_link_id.clone(),
-                first_app_version: "test".to_string(),
-                first_attributed_at: DateTime::now(),
-                user_id: a.user_id.clone(),
-                identified_at: None,
-            }))
     }
 
     async fn backfill_user_id_on_attribution_events(

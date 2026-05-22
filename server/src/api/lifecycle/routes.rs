@@ -21,7 +21,6 @@ use crate::core::webhook_dispatcher::{
 };
 use crate::services::links::models::{
     AttributeOutcome, AttributeRequest, ClickRequest, IdentifyOutcome, IdentifyRequest, Install,
-    Link,
 };
 
 // ── POST /v1/lifecycle/click — SDK-authenticated click ──
@@ -328,37 +327,36 @@ pub async fn lifecycle_identify(
     }
 }
 
-/// Load the link, then dispatch the `identify` webhook with the full
-/// `{user_id, link_id, link_metadata}` triple. The bind has already
-/// committed, so any anomaly here (missing link, etc.) is a soft warning
-/// rather than an error path.
+/// Dispatch the `identify` webhook. Post-Phase-6, the payload carries
+/// IDs only; receivers compute any link context from their own webhook
+/// stream.
+///
+/// Legacy installs (pre-Phase-6, still carrying `first_link_id`)
+/// opportunistically include the first-touch link metadata for
+/// back-compat. New installs omit it because no link is frozen on the
+/// install row.
 async fn fire_identify_event(state: &Arc<AppState>, install: Install) {
-    let (Some(repo), Some(dispatcher)) = (&state.links_repo, &state.webhook_dispatcher) else {
+    let Some(dispatcher) = &state.webhook_dispatcher else {
         return;
     };
 
-    let link: Link = match repo
-        .find_link_by_tenant_and_id(&install.tenant_id, &install.first_link_id)
-        .await
-    {
-        Ok(Some(l)) => l,
-        Ok(None) => {
-            tracing::warn!(
-                link_id = %install.first_link_id,
-                "identify webhook: link missing for install"
-            );
-            return;
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "identify webhook: failed to load link");
-            return;
-        }
+    // Best-effort link metadata for legacy first_link_id installs.
+    let (legacy_link_id, link_metadata) = match (&install.first_link_id, &state.links_repo) {
+        (Some(link_id), Some(repo)) => match repo
+            .find_link_by_tenant_and_id(&install.tenant_id, link_id)
+            .await
+        {
+            Ok(Some(l)) => {
+                let meta = l
+                    .metadata
+                    .as_ref()
+                    .and_then(|d| serde_json::to_value(d).ok());
+                (Some(link_id.clone()), meta)
+            }
+            _ => (Some(link_id.clone()), None),
+        },
+        _ => (None, None),
     };
-
-    let link_metadata = link
-        .metadata
-        .as_ref()
-        .and_then(|d| serde_json::to_value(d).ok());
 
     // `user_id` is always `Some` here — `IdentifyOutcome::NewBind` is
     // constructed post-update with `user_id` set. Defensive default keeps
@@ -368,7 +366,7 @@ async fn fire_identify_event(state: &Arc<AppState>, install: Install) {
     dispatcher.dispatch_identify(IdentifyEventPayload {
         tenant_id: install.tenant_id.to_hex(),
         user_id,
-        link_id: install.first_link_id,
+        link_id: legacy_link_id,
         install_id: install.install_id,
         link_metadata,
         timestamp: Utc::now().to_rfc3339(),

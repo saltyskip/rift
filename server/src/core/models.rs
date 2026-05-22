@@ -43,7 +43,11 @@ pub struct ConversionEventPayload {
     pub event_id: String,
     pub tenant_id: String,
     pub source_id: String,
-    pub link_id: String,
+    /// Legacy field — Phase 6 stopped populating it. Receivers building
+    /// attribution downstream should compute credit from their own
+    /// webhook stream instead of relying on this field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_id: Option<String>,
     pub conversion_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
@@ -56,11 +60,15 @@ pub struct ConversionEventPayload {
 pub struct IdentifyEventPayload {
     pub tenant_id: String,
     pub user_id: String,
-    pub link_id: String,
+    /// Legacy field — present only when the install's `first_link_id`
+    /// is still on the row (pre-Phase-6 installs). New installs have
+    /// `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_id: Option<String>,
     pub install_id: String,
-    /// Snapshot of `Link.metadata` at fire time. Free-form JSON; receivers
-    /// agree on schema with the campaign creator (e.g. `{bonus_type,
-    /// bonus_amount_usdc}`). Absent when the attributed link has no metadata.
+    /// Snapshot of `Link.metadata` at fire time. Absent when the
+    /// attributed link has no metadata or — post-Phase-6 — when no
+    /// first-touch link is known for the install.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_metadata: Option<serde_json::Value>,
     pub timestamp: String,

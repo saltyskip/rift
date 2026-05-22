@@ -267,7 +267,7 @@ impl LinksRepository for MockLinksRepo {
             id: ObjectId::new(),
             tenant_id,
             install_id: install_id.to_string(),
-            first_link_id: link_id.to_string(),
+            first_link_id: Some(link_id.to_string()),
             first_app_version: app_version.to_string(),
             first_attributed_at: mongodb::bson::DateTime::now(),
             user_id: None,
@@ -286,20 +286,12 @@ impl LinksRepository for MockLinksRepo {
             id: ObjectId::new(),
             tenant_id: *tenant_id,
             install_id: install_id.to_string(),
-            first_link_id: String::new(),
+            first_link_id: None,
             first_app_version: String::new(),
             first_attributed_at: mongodb::bson::DateTime::now(),
             user_id: Some(user_id.to_string()),
             identified_at: Some(mongodb::bson::DateTime::now()),
         }))
-    }
-
-    async fn find_install_by_user(
-        &self,
-        _tenant_id: &ObjectId,
-        _user_id: &str,
-    ) -> Result<Option<crate::services::links::models::Install>, String> {
-        Ok(None)
     }
 
     async fn backfill_user_id_on_attribution_events(

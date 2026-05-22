@@ -323,7 +323,10 @@ async fn identify_dispatches_webhook_with_link_metadata() {
     let evt = &events[0];
     assert_eq!(evt.tenant_id, tenant_id.to_hex());
     assert_eq!(evt.user_id, "user-abc");
-    assert_eq!(evt.link_id, "welcome-link");
+    // Pre-Phase-6 installs include the legacy first_link_id; new installs
+    // omit it. The mock seeds first_link_id, so `Some("welcome-link")` is
+    // the expected shape.
+    assert_eq!(evt.link_id.as_deref(), Some("welcome-link"));
     assert_eq!(evt.install_id, "install-id-7");
 
     let metadata = evt

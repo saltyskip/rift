@@ -97,16 +97,6 @@ pub trait LinksRepository: Send + Sync {
         user_id: &str,
     ) -> Result<IdentifyOutcome, String>;
 
-    /// Find the install for a given `user_id` within a tenant. Used by
-    /// the conversion ingestion path to resolve `user_id → first_link_id`
-    /// so events can be attributed back to the link that drove the
-    /// install.
-    async fn find_install_by_user(
-        &self,
-        tenant_id: &ObjectId,
-        user_id: &str,
-    ) -> Result<Option<Install>, String>;
-
     /// Backfill `user_id` onto every `attribution_events` row for this
     /// install where `user_id` is currently NULL. Called from the identify
     /// path so pre-identify anonymous events become user-scoped queryable
@@ -260,12 +250,8 @@ impl LinksRepo {
             doc! { "tenant_id": 1, "first_link_id": 1 },
             "installs_tenant_first_link"
         );
-        // Conversion lookup: user_id → install (→ first_link_id).
-        ensure_index!(
-            installs,
-            doc! { "tenant_id": 1, "user_id": 1 },
-            "installs_tenant_user"
-        );
+        // ^^ Legacy index — Phase 6 stopped reading first_link_id.
+        // Left in place; dropping requires a separate ops step.
 
         LinksRepo {
             links,
@@ -522,6 +508,9 @@ impl LinksRepository for LinksRepo {
         use mongodb::options::ReturnDocument;
         let now = DateTime::now();
 
+        // Phase 6: `first_link_id` is no longer written. Credit is
+        // computed at read time from `attribution_events`. The `installs`
+        // row still exists for the user_id binding path.
         let install = self
             .installs
             .find_one_and_update(
@@ -531,7 +520,6 @@ impl LinksRepository for LinksRepo {
                         "_id": ObjectId::new(),
                         "tenant_id": &tenant_id,
                         "install_id": install_id,
-                        "first_link_id": link_id,
                         "first_app_version": app_version,
                         "first_attributed_at": now,
                     }
@@ -550,7 +538,7 @@ impl LinksRepository for LinksRepo {
             id: ObjectId::new(), // not authoritative — we never use this in retouch path
             tenant_id,
             install_id: install_id.to_string(),
-            first_link_id: link_id.to_string(),
+            first_link_id: None,
             first_app_version: app_version.to_string(),
             first_attributed_at: now,
             user_id: None,
@@ -625,17 +613,6 @@ impl LinksRepository for LinksRepo {
         } else {
             IdentifyOutcome::NewBind(install)
         })
-    }
-
-    async fn find_install_by_user(
-        &self,
-        tenant_id: &ObjectId,
-        user_id: &str,
-    ) -> Result<Option<Install>, String> {
-        self.installs
-            .find_one(doc! { "tenant_id": tenant_id, "user_id": user_id })
-            .await
-            .map_err(|e| e.to_string())
     }
 
     async fn backfill_user_id_on_attribution_events(

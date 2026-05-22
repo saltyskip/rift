@@ -67,7 +67,11 @@ pub struct ConversionEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversionMeta {
     pub tenant_id: ObjectId,
-    pub link_id: String,
+    /// Legacy field — Phase 6 stopped writing it (credit is computed at
+    /// read time from the user's journey via `attribution_events`). Old
+    /// rows still carry a string; new rows have `None`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub link_id: Option<String>,
     pub source_id: ObjectId,
     pub conversion_type: String,
     /// Retention bucket frozen at insert time — see ClickMeta for details.
