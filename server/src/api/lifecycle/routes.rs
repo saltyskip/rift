@@ -204,6 +204,7 @@ pub async fn lifecycle_attribute(
             &req.link_id,
             &req.install_id,
             &req.app_version,
+            req.context.clone().map(Into::into),
         )
         .await
     {
@@ -277,7 +278,7 @@ pub async fn lifecycle_identify(
             .into_response();
     }
 
-    let Some(repo) = &state.links_repo else {
+    let Some(svc) = &state.links_service else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "Database not configured", "code": "no_database" })),
@@ -285,7 +286,7 @@ pub async fn lifecycle_identify(
             .into_response();
     };
 
-    let outcome = repo
+    let outcome = svc
         .identify_install(&tenant.0, &req.install_id, &req.user_id)
         .await;
 

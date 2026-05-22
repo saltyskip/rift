@@ -9,12 +9,15 @@ use super::repo::LinksRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
 use crate::services::affiliates::repo::AffiliatesRepository;
+use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::auth::permissions::{AuthContext, Permission, ResourceScope};
 use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
 use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
+use crate::services::install_events::models::InstallContext;
+use crate::services::install_events::repo::InstallEventsRepository;
 
 // ── Service ──
 
@@ -36,6 +39,12 @@ pub struct LinksService {
     /// harness boots without it. Stats fall back to an empty conversion list
     /// when absent, matching the legacy route-handler behavior.
     conversions_repo: Option<Arc<dyn ConversionsRepository>>,
+    /// Owner of the user-scoped identity table. Optional during the
+    /// Phase 1 cutover; identify_install gracefully no-ops the new write
+    /// path when absent so legacy boot paths keep working.
+    app_users_repo: Option<Arc<dyn AppUsersRepository>>,
+    /// Owner of the server-derived install lifecycle stream.
+    install_events_repo: Option<Arc<dyn InstallEventsRepository>>,
     threat_feed: ThreatFeed,
     public_url: String,
     quota: Option<Arc<dyn QuotaChecker>>,
@@ -49,11 +58,143 @@ impl LinksService {
             domains_repo: deps.domains_repo,
             affiliates_repo: deps.affiliates_repo,
             conversions_repo: deps.conversions_repo,
+            app_users_repo: deps.app_users_repo,
+            install_events_repo: deps.install_events_repo,
             threat_feed: deps.threat_feed,
             public_url: deps.public_url,
             quota: deps.quota,
             tiers: deps.tiers,
         }
+    }
+
+    /// Orchestrate a `/lifecycle/identify` call:
+    ///
+    /// 1. Bind the install in the legacy `installs` collection (keeps
+    ///    pre-cutover read paths working until Phase 6).
+    /// 2. Upsert the `app_users` identity row, adding `install_id` to the
+    ///    user's `install_ids` array.
+    /// 3. Backfill `attribution_events.user_id` for prior anonymous events
+    ///    on this install, filling NULLs only — never overwriting.
+    ///
+    /// The legacy step (1) is the only one whose outcome we surface to the
+    /// caller; (2) and (3) are durability/backfill writes that log warnings
+    /// on failure but never fail the request. Per CLAUDE.md, all
+    /// transport layers must call this method instead of touching the
+    /// repos directly.
+    pub async fn identify_install(
+        &self,
+        tenant_id: &ObjectId,
+        install_id: &str,
+        user_id: &str,
+    ) -> Result<IdentifyOutcome, String> {
+        let outcome = self
+            .links_repo
+            .identify_install(tenant_id, install_id, user_id)
+            .await?;
+
+        // Only run the app_users + backfill + install_events side-effects
+        // on a real bind. AlreadyBound is an idempotent replay; NotFound
+        // has nothing to bind. Both skip the side-effects intentionally.
+        if matches!(outcome, IdentifyOutcome::NewBind(_)) {
+            // Capture the user's prior install_ids BEFORE the upsert adds
+            // the current one — this is what feeds the reinstall vs
+            // new_device classification.
+            let prior_install_ids: Vec<String> = match &self.app_users_repo {
+                Some(app_users) => match app_users.find_by_user_id(tenant_id, user_id).await {
+                    Ok(Some(existing)) => existing.install_ids,
+                    Ok(None) => Vec::new(),
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            user_id,
+                            "app_users prior lookup failed during identify"
+                        );
+                        Vec::new()
+                    }
+                },
+                None => Vec::new(),
+            };
+
+            if let Some(app_users) = &self.app_users_repo {
+                if let Err(e) = app_users
+                    .upsert_with_install(tenant_id, user_id, install_id)
+                    .await
+                {
+                    tracing::warn!(
+                        error = %e,
+                        install_id,
+                        user_id,
+                        "app_users upsert failed during identify"
+                    );
+                }
+            }
+
+            match self
+                .links_repo
+                .backfill_user_id_on_attribution_events(tenant_id, install_id, user_id)
+                .await
+            {
+                Ok(n) if n > 0 => {
+                    tracing::debug!(
+                        backfilled = n,
+                        install_id,
+                        user_id,
+                        "attribution_events user_id backfilled"
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        install_id,
+                        user_id,
+                        "attribution_events backfill failed during identify"
+                    );
+                }
+            }
+
+            // Fan-out install lifecycle events: install.identified, plus
+            // install.reinstalled or install.new_device when prior installs
+            // exist. Compares device_model against the user's prior
+            // installs' device_models to classify.
+            if let Some(install_events) = &self.install_events_repo {
+                let current_device_model = install_events
+                    .get_device_model(tenant_id, install_id)
+                    .await
+                    .ok()
+                    .flatten();
+
+                let mut prior_device_models = Vec::with_capacity(prior_install_ids.len());
+                for prior_id in &prior_install_ids {
+                    if let Ok(Some(model)) =
+                        install_events.get_device_model(tenant_id, prior_id).await
+                    {
+                        prior_device_models.push(model);
+                    }
+                }
+
+                if let Err(e) = install_events
+                    .record_identify_lifecycle(
+                        tenant_id,
+                        install_id,
+                        user_id,
+                        &prior_install_ids,
+                        &prior_device_models,
+                        current_device_model.as_deref(),
+                    )
+                    .await
+                {
+                    tracing::warn!(
+                        error = %e,
+                        install_id,
+                        user_id,
+                        "install_events identify fan-out failed"
+                    );
+                }
+            }
+        }
+
+        Ok(outcome)
     }
 
     /// Fire-and-forget click recording. Runs the `TrackEvent` quota check
@@ -116,6 +257,7 @@ impl LinksService {
         link_id: &str,
         install_id: &str,
         app_version: &str,
+        context: Option<InstallContext>,
     ) -> Result<AttributeOutcome, String> {
         if let Some(q) = &self.quota {
             if let Err(e) = q.check(&tenant_id, Resource::TrackEvent).await {
@@ -128,7 +270,8 @@ impl LinksService {
             None => "30d".to_string(),
         };
 
-        self.links_repo
+        let outcome = self
+            .links_repo
             .record_attribute_event(
                 tenant_id,
                 link_id,
@@ -136,7 +279,29 @@ impl LinksService {
                 app_version,
                 retention_bucket,
             )
-            .await
+            .await?;
+
+        // Fan-out: write install.created (first time) or install.opened
+        // (subsequent). Best-effort — failure here doesn't fail the
+        // attribute call.
+        if let Some(install_events) = &self.install_events_repo {
+            let ctx = context.unwrap_or_else(|| InstallContext {
+                app_version: Some(app_version.to_string()),
+                ..InstallContext::default()
+            });
+            if let Err(e) = install_events
+                .record_attribute_lifecycle(&tenant_id, install_id, &ctx)
+                .await
+            {
+                tracing::warn!(
+                    error = %e,
+                    install_id,
+                    "install_events fan-out failed during attribute"
+                );
+            }
+        }
+
+        Ok(outcome)
     }
 
     #[tracing::instrument(skip(self, req, ctx))]

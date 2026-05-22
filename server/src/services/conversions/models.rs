@@ -43,6 +43,10 @@ pub struct Source {
 /// aggregation pipelines.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversionEvent {
+    /// Document identifier. Auto-generated on insert; round-tripped on
+    /// read so `GET /v1/conversions/{id}` can fetch by it.
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
     pub meta: ConversionMeta,
     /// Time the event occurred. For integration parsers this may be extracted from
     /// the upstream event (e.g. Stripe's `created`); for custom sources it defaults to now.

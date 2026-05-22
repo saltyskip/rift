@@ -328,6 +328,36 @@ impl LinksRepository for MockLinksRepo {
     ) -> Result<Option<crate::services::links::models::Install>, String> {
         Ok(None)
     }
+
+    async fn backfill_user_id_on_attribution_events(
+        &self,
+        _tenant_id: &ObjectId,
+        _install_id: &str,
+        _user_id: &str,
+    ) -> Result<u64, String> {
+        Ok(0)
+    }
+
+    async fn distinct_install_ids_credited_to_links(
+        &self,
+        _tenant_id: &ObjectId,
+        _link_ids: &[String],
+        _from: DateTime,
+        _to: DateTime,
+        _credit: crate::services::links::models::CreditModel,
+    ) -> Result<Vec<String>, String> {
+        Ok(vec![])
+    }
+
+    async fn count_clicks_for_links(
+        &self,
+        _tenant_id: &ObjectId,
+        _link_ids: &[String],
+        _from: DateTime,
+        _to: DateTime,
+    ) -> Result<u64, String> {
+        Ok(0)
+    }
 }
 
 // ── Mock DomainsRepository ──
@@ -404,6 +434,8 @@ fn make_service(links: Vec<Link>, has_verified_domain: bool) -> LinksService {
         domains_repo: Some(domains),
         affiliates_repo: None,
         conversions_repo: None,
+        app_users_repo: None,
+        install_events_repo: None,
         threat_feed: ThreatFeed::new(),
         public_url: "https://riftl.ink".to_string(),
         quota: None,

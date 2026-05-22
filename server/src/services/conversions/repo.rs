@@ -67,6 +67,17 @@ pub trait ConversionsRepository: Send + Sync {
         tenant_id: &ObjectId,
         link_id: &str,
     ) -> Result<Vec<ConversionDetail>, String>;
+
+    /// Count conversions per type for a set of user_ids within a time
+    /// range. Returns one entry per non-zero conversion type.
+    /// Empty input → empty output.
+    async fn count_by_type_for_users(
+        &self,
+        tenant_id: &ObjectId,
+        user_ids: &[String],
+        from: DateTime,
+        to: DateTime,
+    ) -> Result<Vec<(String, u64)>, String>;
 }
 
 // ── Repository ──
@@ -323,6 +334,54 @@ impl ConversionsRepository for ConversionsRepo {
             });
         }
 
+        Ok(results)
+    }
+
+    async fn count_by_type_for_users(
+        &self,
+        tenant_id: &ObjectId,
+        user_ids: &[String],
+        from: DateTime,
+        to: DateTime,
+    ) -> Result<Vec<(String, u64)>, String> {
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let bson_ids: Vec<mongodb::bson::Bson> = user_ids
+            .iter()
+            .map(|s| mongodb::bson::Bson::String(s.clone()))
+            .collect();
+        let pipeline = vec![
+            doc! {
+                "$match": {
+                    "meta.tenant_id": tenant_id,
+                    "user_id": { "$in": bson_ids },
+                    "occurred_at": { "$gte": from, "$lte": to },
+                }
+            },
+            doc! {
+                "$group": {
+                    "_id": "$meta.conversion_type",
+                    "count": { "$sum": 1 },
+                }
+            },
+        ];
+
+        let mut cursor = self
+            .events
+            .aggregate(pipeline)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut results = Vec::new();
+        while cursor.advance().await.map_err(|e| e.to_string())? {
+            let raw: Document = cursor.deserialize_current().map_err(|e| e.to_string())?;
+            let conversion_type = raw.get_str("_id").map_err(|e| e.to_string())?.to_string();
+            let count = raw.get_i64("count").unwrap_or(0).max(0) as u64;
+            if count > 0 {
+                results.push((conversion_type, count));
+            }
+        }
         Ok(results)
     }
 }
