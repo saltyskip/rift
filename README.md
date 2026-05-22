@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./.github/assets/banner.gif" alt="Rift" width="100%">
+</p>
+
 # Rift
 
 **Deep links for humans and agents.** — [riftl.ink](https://riftl.ink)
