@@ -290,7 +290,7 @@ The server exposes an MCP endpoint at `/mcp` (streamable HTTP transport). To ena
 }
 ```
 
-This gives Claude access to `create_link`, `get_link`, `list_links`, `update_link`, and `delete_link` tools. The API key authenticates each MCP session — use the same `rl_live_` key you'd use with the REST API.
+This gives Claude access to the `links.*` and `sources.*` tool namespaces (`links.create`, `links.bulk_create`, `links.get`, `links.list`, `links.stats`, `links.update`, `links.delete`, `sources.create`, `sources.list`). The API key authenticates each MCP session — use the same `rl_live_` key you'd use with the REST API.
 
 ## Environment Variables
 
