@@ -6,7 +6,7 @@ use rand::RngCore;
 
 use crate::ensure_index;
 
-use super::models::{ConversionDedup, ConversionDetail, ConversionEvent, Source, SourceType};
+use super::models::{ConversionDedup, ConversionEvent, Source, SourceType};
 
 // ── Trait ──
 
@@ -59,14 +59,6 @@ pub trait ConversionsRepository: Send + Sync {
     ) -> Result<bool, String>;
 
     // ── Aggregations ──
-
-    /// Count and sum conversions for a link, grouped by `(conversion_type, currency)`.
-    /// Used by the link stats endpoint.
-    async fn get_conversion_counts_for_link(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
-    ) -> Result<Vec<ConversionDetail>, String>;
 
     /// Count conversions per type for a set of user_ids within a time
     /// range. Returns one entry per non-zero conversion type.
@@ -293,48 +285,6 @@ impl ConversionsRepository for ConversionsRepo {
             Err(e) if e.to_string().contains("E11000") => Ok(false),
             Err(e) => Err(e.to_string()),
         }
-    }
-
-    async fn get_conversion_counts_for_link(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
-    ) -> Result<Vec<ConversionDetail>, String> {
-        let pipeline = vec![
-            doc! {
-                "$match": {
-                    "meta.tenant_id": tenant_id,
-                    "meta.link_id": link_id,
-                }
-            },
-            doc! {
-                "$group": {
-                    "_id": "$meta.conversion_type",
-                    "count": { "$sum": 1 },
-                }
-            },
-        ];
-
-        let mut cursor = self
-            .events
-            .aggregate(pipeline)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let mut results = Vec::new();
-        while cursor.advance().await.map_err(|e| e.to_string())? {
-            let raw: Document = cursor.deserialize_current().map_err(|e| e.to_string())?;
-
-            let conversion_type = raw.get_str("_id").map_err(|e| e.to_string())?.to_string();
-            let count = raw.get_i64("count").unwrap_or(0).max(0) as u64;
-
-            results.push(ConversionDetail {
-                conversion_type,
-                count,
-            });
-        }
-
-        Ok(results)
     }
 
     async fn count_by_type_for_users(

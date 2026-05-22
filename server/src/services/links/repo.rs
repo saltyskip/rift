@@ -12,7 +12,6 @@ use mongodb::bson::Document;
 use super::models::{
     AttributeOutcome, AttributionEvent, AttributionEventMeta, BulkInsertError, ClickEvent,
     ClickMeta, CreateLinkInput, CreditModel, IdentifyOutcome, Install, Link, LinkStatus,
-    TimeseriesDataPoint,
 };
 
 // ── Trait ──
@@ -69,16 +68,6 @@ pub trait LinksRepository: Send + Sync {
         retention_bucket: String,
     ) -> Result<(), String>;
 
-    async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
-
-    async fn get_click_timeseries(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
-        from: DateTime,
-        to: DateTime,
-    ) -> Result<Vec<TimeseriesDataPoint>, String>;
-
     /// Record a `/lifecycle/attribute` call. Appends an immutable event to
     /// the `attribution_events` time-series collection AND upserts the
     /// install's first-touch state in `installs`. `installs.first_link_id`
@@ -107,19 +96,6 @@ pub trait LinksRepository: Send + Sync {
         install_id: &str,
         user_id: &str,
     ) -> Result<IdentifyOutcome, String>;
-
-    /// Count distinct installs first-attributed to this link.
-    async fn count_installs_by_first_link(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
-    ) -> Result<u64, String>;
-
-    /// Count installs first-attributed to this link whose `user_id` is
-    /// bound — i.e. installs that progressed through
-    /// `PUT /v1/lifecycle/identify`. `identify_count` in the stats
-    /// response.
-    async fn count_identifies(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
 
     /// Find the install for a given `user_id` within a tenant. Used by
     /// the conversion ingestion path to resolve `user_id → first_link_id`
@@ -531,65 +507,6 @@ impl LinksRepository for LinksRepo {
         Ok(())
     }
 
-    async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
-        self.click_events
-            .count_documents(doc! { "meta.tenant_id": tenant_id, "meta.link_id": link_id })
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    async fn get_click_timeseries(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
-        from: DateTime,
-        to: DateTime,
-    ) -> Result<Vec<TimeseriesDataPoint>, String> {
-        let pipeline = vec![
-            doc! {
-                "$match": {
-                    "meta.tenant_id": tenant_id,
-                    "meta.link_id": link_id,
-                    "clicked_at": { "$gte": from, "$lte": to }
-                }
-            },
-            doc! {
-                "$group": {
-                    "_id": {
-                        "$dateToString": { "format": "%Y-%m-%d", "date": "$clicked_at" }
-                    },
-                    "clicks": { "$sum": 1 }
-                }
-            },
-            doc! { "$sort": { "_id": 1 } },
-            doc! {
-                "$project": {
-                    "_id": 0,
-                    "date": "$_id",
-                    "clicks": 1
-                }
-            },
-        ];
-
-        let mut cursor = self
-            .click_events
-            .aggregate(pipeline)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let mut results = Vec::new();
-        while cursor.advance().await.map_err(|e| e.to_string())? {
-            let doc = cursor.deserialize_current().map_err(|e| e.to_string())?;
-            let date = doc.get_str("date").map_err(|e| e.to_string())?.to_string();
-            let clicks = doc
-                .get_i64("clicks")
-                .or_else(|_| doc.get_i32("clicks").map(|v| v as i64))
-                .map_err(|e| e.to_string())? as u64;
-            results.push(TimeseriesDataPoint { date, clicks });
-        }
-        Ok(results)
-    }
-
     async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
@@ -708,29 +625,6 @@ impl LinksRepository for LinksRepo {
         } else {
             IdentifyOutcome::NewBind(install)
         })
-    }
-
-    async fn count_installs_by_first_link(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
-    ) -> Result<u64, String> {
-        self.installs
-            .count_documents(doc! { "tenant_id": tenant_id, "first_link_id": link_id })
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    async fn count_identifies(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
-        // Identify-completed installs first-attributed to this link.
-        self.installs
-            .count_documents(doc! {
-                "tenant_id": tenant_id,
-                "first_link_id": link_id,
-                "user_id": { "$ne": null },
-            })
-            .await
-            .map_err(|e| e.to_string())
     }
 
     async fn find_install_by_user(

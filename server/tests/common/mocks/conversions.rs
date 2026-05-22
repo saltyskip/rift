@@ -3,7 +3,7 @@ use mongodb::bson::oid::ObjectId;
 use std::collections::HashSet;
 use std::sync::Mutex;
 
-use rift::services::conversions::models::{ConversionDetail, ConversionEvent, Source, SourceType};
+use rift::services::conversions::models::{ConversionEvent, Source, SourceType};
 use rift::services::conversions::repo::ConversionsRepository;
 
 #[derive(Default)]
@@ -68,14 +68,6 @@ impl ConversionsRepository for MockConversionsRepo {
             keys.insert(key);
             Ok(true)
         }
-    }
-
-    async fn get_conversion_counts_for_link(
-        &self,
-        _tenant_id: &ObjectId,
-        _link_id: &str,
-    ) -> Result<Vec<ConversionDetail>, String> {
-        Ok(Vec::new())
     }
 
     async fn count_by_type_for_users(

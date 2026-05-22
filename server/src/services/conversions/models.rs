@@ -133,19 +133,6 @@ pub struct ListSourcesResponse {
     pub sources: Vec<SourceDetail>,
 }
 
-/// Aggregated counts per `(link, type)` for embedding in `LinkStatsResponse`.
-/// Computed on read from `conversion_events` via an aggregation pipeline.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
-pub struct ConversionDetail {
-    /// Customer-defined conversion type (e.g. "signup", "purchase", "deposit").
-    #[schema(example = "deposit")]
-    pub conversion_type: String,
-    /// Number of conversion events of this type attributed to the link.
-    #[schema(example = 19)]
-    pub count: u64,
-}
-
 // ── Ingestion result (service layer output) ──
 
 /// Outcome of processing a batch of parsed conversions in `ConversionsService::ingest_parsed`.

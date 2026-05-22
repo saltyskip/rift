@@ -8,7 +8,6 @@ use crate::services::affiliates::repo::AffiliatesRepository;
 use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::billing::quota::QuotaChecker;
 use crate::services::billing::service::TierResolver;
-use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::install_events::repo::InstallEventsRepository;
 use crate::services::links::repo::LinksRepository;
@@ -22,7 +21,6 @@ pub struct LinksServiceDeps {
     pub links_repo: Arc<dyn LinksRepository>,
     pub domains_repo: Option<Arc<dyn DomainsRepository>>,
     pub affiliates_repo: Option<Arc<dyn AffiliatesRepository>>,
-    pub conversions_repo: Option<Arc<dyn ConversionsRepository>>,
     /// `app_users` is the new user-scoped identity table. Optional during
     /// the Phase 1 cutover so reduced-feature builds without a database
     /// can still construct the service.
@@ -695,33 +693,6 @@ pub struct IdentifyResponse {
     pub success: bool,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
-#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
-pub struct LinkStatsResponse {
-    /// The link these stats are for.
-    #[schema(example = "summer-menu-2025")]
-    pub link_id: String,
-    /// Total landing-page visits across all platforms.
-    #[schema(example = 1420)]
-    pub click_count: u64,
-    /// First-launch installs attributed to this link.
-    #[schema(example = 312)]
-    pub install_count: u64,
-    /// Installs that progressed through `PUT /v1/lifecycle/identify` — i.e.
-    /// the user_id is bound to the install. `identify` is the deterministic
-    /// join in the attribution funnel.
-    #[schema(example = 198)]
-    pub identify_count: u64,
-    /// Sum of conversion events across all types for this link. The
-    /// per-type breakdown lives in `conversions`.
-    #[schema(example = 47)]
-    pub convert_count: u64,
-    /// Aggregated conversion counts per type. Empty when conversion
-    /// tracking is not configured or no events have been recorded.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub conversions: Vec<crate::services::conversions::models::ConversionDetail>,
-}
-
 /// Trust envelope included in every resolved link response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RiftMeta {
@@ -849,39 +820,6 @@ impl From<AttributeContext> for crate::services::install_events::models::Install
             timezone: c.timezone,
         }
     }
-}
-
-// ── Timeseries Analytics Models ──
-
-#[derive(Debug, Deserialize, IntoParams)]
-pub struct TimeseriesQuery {
-    /// Start of date range (RFC 3339). Defaults to 30 days ago.
-    pub from: Option<String>,
-    /// End of date range (RFC 3339). Defaults to now.
-    pub to: Option<String>,
-    /// Bucket granularity. Only "daily" supported.
-    pub granularity: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct TimeseriesDataPoint {
-    #[schema(example = "2025-06-15")]
-    pub date: String,
-    #[schema(example = 47)]
-    pub clicks: u64,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct TimeseriesResponse {
-    #[schema(example = "summer-menu-2025")]
-    pub link_id: String,
-    #[schema(example = "daily")]
-    pub granularity: String,
-    #[schema(example = "2025-06-01T00:00:00Z")]
-    pub from: String,
-    #[schema(example = "2025-06-30T23:59:59Z")]
-    pub to: String,
-    pub data: Vec<TimeseriesDataPoint>,
 }
 
 // ── Errors ──

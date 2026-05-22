@@ -110,7 +110,6 @@ pub async fn spawn_app() -> TestApp {
             ),
             affiliates_repo: Some(affiliates_repo.clone()
                 as Arc<dyn rift::services::affiliates::repo::AffiliatesRepository>),
-            conversions_repo: Some(conversions_repo.clone()),
             app_users_repo: None,
             install_events_repo: None,
             threat_feed: threat_feed.clone(),
