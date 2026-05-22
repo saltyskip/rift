@@ -10,17 +10,17 @@ User-agent: ChatGPT-User
 Allow: /
 
 User-agent: CCBot
-Disallow: /
+Allow: /
 
 User-agent: ByteSpider
-Disallow: /
+Allow: /
 
 User-agent: ClaudeBot
 Allow: /
 
 Sitemap: ${siteUrl}/sitemap.xml
 Host: ${siteUrl}
-Content-Signal: search=yes, ai-input=yes, ai-train=no
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
 Schemamap: ${siteUrl}/schema-map.xml
 `;
 
