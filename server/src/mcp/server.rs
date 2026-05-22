@@ -6,7 +6,7 @@ use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{InitializeRequestParams, InitializeResult, ServerCapabilities, ServerInfo};
 use rmcp::service::RequestContext;
-use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
 use rmcp::transport::streamable_http_server::tower::StreamableHttpServerConfig;
 use rmcp::transport::StreamableHttpService;
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler};
@@ -392,8 +392,19 @@ pub fn mcp_router(
                 public_url.clone(),
             ))
         },
-        Arc::new(LocalSessionManager::default()),
-        StreamableHttpServerConfig::default(),
+        // Stateless + JSON: our tools are request-response only, so sessions
+        // are dead weight and break across multi-instance deployments where
+        // initialize and tools/list can hit different machines. `json_response`
+        // returns application/json directly instead of SSE, which simple MCP
+        // clients parse more reliably. If we ever add streaming tools
+        // (progress, subscriptions, sampling), swap NeverSessionManager for a
+        // MongoDB-backed SessionManager and flip both flags back.
+        Arc::new(NeverSessionManager::default()),
+        StreamableHttpServerConfig {
+            stateful_mode: false,
+            json_response: true,
+            ..Default::default()
+        },
     );
 
     axum::Router::new()
