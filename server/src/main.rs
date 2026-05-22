@@ -430,7 +430,6 @@ async fn run_server(cfg: Config) {
                 links_repo: repo.clone(),
                 domains_repo: domains_repo.clone(),
                 affiliates_repo: affiliates_repo.clone(),
-                conversions_repo: conversions_repo.clone(),
                 app_users_repo: app_users_repo.clone(),
                 install_events_repo: install_events_repo.clone(),
                 threat_feed: threat_feed.clone(),

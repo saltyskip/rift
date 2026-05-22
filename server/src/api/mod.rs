@@ -61,7 +61,6 @@ use crate::app::AppState;
         links::routes::create_links_bulk,
         links::routes::get_link,
         links::routes::list_links,
-        links::routes::get_link_stats,
         links::routes::get_link_qr,
         links::routes::update_link,
         links::routes::delete_link,
@@ -73,8 +72,6 @@ use crate::app::AppState;
         lifecycle::routes::lifecycle_identify,
         // Analytics — funnel stats across any set of links
         analytics::routes::get_stats,
-        // Link timeseries (lives in links since it's link-scoped analytics)
-        links::routes::get_link_timeseries,
         // Webhooks — event notifications
         webhooks::routes::create_webhook,
         webhooks::routes::list_webhooks,
@@ -119,7 +116,6 @@ use crate::app::AppState;
         crate::services::links::models::UpdateLinkRequest,
         crate::services::links::models::LinkDetail,
         crate::services::links::models::ListLinksResponse,
-        crate::services::links::models::LinkStatsResponse,
         crate::services::links::models::ResolvedLink,
         crate::services::links::models::RiftMeta,
         crate::services::links::models::ClickRequest,
@@ -134,8 +130,6 @@ use crate::app::AppState;
         crate::services::analytics::models::Funnel,
         crate::services::analytics::models::NewUsers,
         crate::services::analytics::models::ReturningUsers,
-        crate::services::links::models::TimeseriesDataPoint,
-        crate::services::links::models::TimeseriesResponse,
         auth::secret_keys::models::RequestCreateKeyRequest,
         auth::secret_keys::models::ConfirmCreateKeyRequest,
         auth::secret_keys::models::CreateKeyResponse,
@@ -181,7 +175,6 @@ use crate::app::AppState;
         crate::services::conversions::models::SourceDetail,
         crate::api::conversions::models::SdkConversionRequest,
         crate::services::conversions::models::ListSourcesResponse,
-        crate::services::conversions::models::ConversionDetail,
         crate::api::billing::models::BillingStatusResponse,
         crate::api::billing::models::LimitsView,
         crate::api::billing::models::CheckoutSessionResponse,

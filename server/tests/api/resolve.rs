@@ -82,46 +82,6 @@ async fn resolve_missing_link_returns_404() {
 }
 
 #[tokio::test]
-async fn resolve_increments_click_count() {
-    let app = common::spawn_app().await;
-    let (key, tenant_id) = common::seed_api_key(&app).await;
-    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
-
-    app.client
-        .post(app.url("/v1/links"))
-        .header("Authorization", format!("Bearer {key}"))
-        .json(&serde_json::json!({
-            "custom_id": "click-count",
-            "web_url": "https://example.com"
-        }))
-        .send()
-        .await
-        .unwrap();
-
-    // Resolve 3 times.
-    for _ in 0..3 {
-        app.client
-            .get(app.url("/r/click-count"))
-            .header("Accept", "application/json")
-            .send()
-            .await
-            .unwrap();
-    }
-
-    // Check stats.
-    let resp = app
-        .client
-        .get(app.url("/v1/links/click-count/stats"))
-        .header("Authorization", format!("Bearer {key}"))
-        .send()
-        .await
-        .unwrap();
-
-    let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["click_count"], 3);
-}
-
-#[tokio::test]
 async fn resolve_no_destination_shows_landing() {
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;

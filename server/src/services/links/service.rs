@@ -13,7 +13,6 @@ use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::auth::permissions::{AuthContext, Permission, ResourceScope};
 use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
-use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::install_events::models::InstallContext;
@@ -35,10 +34,6 @@ pub struct LinksService {
     /// "no affiliates configured" → `AffiliateNotFound` for explicit values
     /// and a graceful pass-through for unscoped/no-affiliate creates.
     affiliates_repo: Option<Arc<dyn AffiliatesRepository>>,
-    /// Optional because conversion tracking is feature-flagged and the test
-    /// harness boots without it. Stats fall back to an empty conversion list
-    /// when absent, matching the legacy route-handler behavior.
-    conversions_repo: Option<Arc<dyn ConversionsRepository>>,
     /// Owner of the user-scoped identity table. Optional during the
     /// Phase 1 cutover; identify_install gracefully no-ops the new write
     /// path when absent so legacy boot paths keep working.
@@ -57,7 +52,6 @@ impl LinksService {
             links_repo: deps.links_repo,
             domains_repo: deps.domains_repo,
             affiliates_repo: deps.affiliates_repo,
-            conversions_repo: deps.conversions_repo,
             app_users_repo: deps.app_users_repo,
             install_events_repo: deps.install_events_repo,
             threat_feed: deps.threat_feed,
@@ -653,69 +647,6 @@ impl LinksService {
         }
 
         Ok(self.link_to_detail(&link).await)
-    }
-
-    /// Aggregate click / install / identify / conversion counts for a link.
-    ///
-    /// Conversion data is additive: if the conversions repo is not configured
-    /// or its aggregation fails, the response still returns the load-bearing
-    /// counters with an empty `conversions` list, rather than failing the
-    /// whole call.
-    #[tracing::instrument(skip(self, ctx))]
-    #[requires(Permission::LinksRead)]
-    pub async fn get_link_stats(
-        &self,
-        ctx: &AuthContext,
-        link_id: &str,
-    ) -> Result<LinkStatsResponse, LinkError> {
-        let tenant_id = &ctx.tenant_id;
-        let link = self
-            .links_repo
-            .find_link_by_tenant_and_id(tenant_id, link_id)
-            .await
-            .map_err(LinkError::Internal)?
-            .ok_or(LinkError::NotFound)?;
-
-        if let ResourceScope::Affiliate { affiliate_id } = ctx.resource_scope {
-            if link.affiliate_id != Some(affiliate_id) {
-                return Err(LinkError::NotFound);
-            }
-        }
-
-        let click_count = self
-            .links_repo
-            .count_clicks(tenant_id, link_id)
-            .await
-            .unwrap_or(0);
-        let install_count = self
-            .links_repo
-            .count_installs_by_first_link(tenant_id, link_id)
-            .await
-            .unwrap_or(0);
-        let identify_count = self
-            .links_repo
-            .count_identifies(tenant_id, link_id)
-            .await
-            .unwrap_or(0);
-
-        let conversions = if let Some(conv_repo) = &self.conversions_repo {
-            conv_repo
-                .get_conversion_counts_for_link(tenant_id, link_id)
-                .await
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        let convert_count: u64 = conversions.iter().map(|c| c.count).sum();
-
-        Ok(LinkStatsResponse {
-            link_id: link_id.to_string(),
-            click_count,
-            install_count,
-            identify_count,
-            convert_count,
-            conversions,
-        })
     }
 
     #[tracing::instrument(skip(self, ctx))]

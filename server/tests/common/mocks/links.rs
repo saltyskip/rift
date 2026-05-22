@@ -1,12 +1,11 @@
 use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
-use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use rift::services::links::models::BulkInsertError;
 use rift::services::links::models::{
     AttributeOutcome, ClickEvent, ClickMeta, CreateLinkInput, IdentifyOutcome,
-    Install as RealInstall, Link, LinkStatus, TimeseriesDataPoint,
+    Install as RealInstall, Link, LinkStatus,
 };
 use rift::services::links::repo::LinksRepository;
 
@@ -237,49 +236,6 @@ impl LinksRepository for MockLinksRepo {
         Ok(())
     }
 
-    async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
-        Ok(self
-            .clicks
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|c| &c.meta.tenant_id == tenant_id && c.meta.link_id == link_id)
-            .count() as u64)
-    }
-
-    async fn get_click_timeseries(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
-        from: DateTime,
-        to: DateTime,
-    ) -> Result<Vec<TimeseriesDataPoint>, String> {
-        let clicks = self.clicks.lock().unwrap();
-        let mut buckets: BTreeMap<String, u64> = BTreeMap::new();
-
-        for click in clicks.iter() {
-            if &click.meta.tenant_id == tenant_id
-                && click.meta.link_id == link_id
-                && click.clicked_at >= from
-                && click.clicked_at <= to
-            {
-                let date = click
-                    .clicked_at
-                    .try_to_rfc3339_string()
-                    .unwrap_or_default()
-                    .chars()
-                    .take(10)
-                    .collect::<String>();
-                *buckets.entry(date).or_insert(0) += 1;
-            }
-        }
-
-        Ok(buckets
-            .into_iter()
-            .map(|(date, clicks)| TimeseriesDataPoint { date, clicks })
-            .collect())
-    }
-
     async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
@@ -357,32 +313,6 @@ impl LinksRepository for MockLinksRepo {
             }
             Some(_) => Ok(IdentifyOutcome::NotFound),
         }
-    }
-
-    async fn count_installs_by_first_link(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
-    ) -> Result<u64, String> {
-        Ok(self
-            .installs
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|a| &a.tenant_id == tenant_id && a.first_link_id == link_id)
-            .count() as u64)
-    }
-
-    async fn count_identifies(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
-        Ok(self
-            .installs
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|a| {
-                &a.tenant_id == tenant_id && a.first_link_id == link_id && a.user_id.is_some()
-            })
-            .count() as u64)
     }
 
     async fn find_install_by_user(

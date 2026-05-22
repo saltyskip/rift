@@ -3,7 +3,6 @@ use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::secret_keys::repo::KeyScope;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::models::BulkInsertError;
-use crate::services::links::models::TimeseriesDataPoint;
 use crate::services::links::repo::LinksRepository;
 use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
@@ -255,20 +254,6 @@ impl LinksRepository for MockLinksRepo {
         Ok(())
     }
 
-    async fn count_clicks(&self, _tenant_id: &ObjectId, _link_id: &str) -> Result<u64, String> {
-        Ok(0)
-    }
-
-    async fn get_click_timeseries(
-        &self,
-        _tenant_id: &ObjectId,
-        _link_id: &str,
-        _from: DateTime,
-        _to: DateTime,
-    ) -> Result<Vec<TimeseriesDataPoint>, String> {
-        Ok(vec![])
-    }
-
     async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
@@ -307,18 +292,6 @@ impl LinksRepository for MockLinksRepo {
             user_id: Some(user_id.to_string()),
             identified_at: Some(mongodb::bson::DateTime::now()),
         }))
-    }
-
-    async fn count_installs_by_first_link(
-        &self,
-        _tenant_id: &ObjectId,
-        _link_id: &str,
-    ) -> Result<u64, String> {
-        Ok(0)
-    }
-
-    async fn count_identifies(&self, _tenant_id: &ObjectId, _link_id: &str) -> Result<u64, String> {
-        Ok(0)
     }
 
     async fn find_install_by_user(
@@ -433,7 +406,6 @@ fn make_service(links: Vec<Link>, has_verified_domain: bool) -> LinksService {
         links_repo: repo,
         domains_repo: Some(domains),
         affiliates_repo: None,
-        conversions_repo: None,
         app_users_repo: None,
         install_events_repo: None,
         threat_feed: ThreatFeed::new(),
