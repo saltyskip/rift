@@ -5,6 +5,7 @@ const resourceLinks = [
   ["Alternatives", "/alternatives"],
   ["OpenAPI Spec", "/api-reference"],
   ["X / Twitter", "https://x.com/riftlinks"],
+  ["GitHub", "https://github.com/saltyskip/rift"],
 ] as const;
 
 export function Footer() {
