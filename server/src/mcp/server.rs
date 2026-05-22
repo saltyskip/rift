@@ -3,7 +3,7 @@ use axum::middleware::Next;
 use axum::response::Response;
 use mongodb::bson::oid::ObjectId;
 use rmcp::handler::server::tool::ToolRouter;
-use rmcp::handler::server::wrapper::Parameters;
+use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{InitializeRequestParams, InitializeResult, ServerCapabilities, ServerInfo};
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
@@ -19,7 +19,10 @@ use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::conversions::models::SourceType;
 use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::links::models::LinkError;
-use crate::services::links::models::{BulkCreateLinksRequest, CreateLinkRequest};
+use crate::services::links::models::{
+    BulkCreateLinksRequest, BulkCreateLinksResponse, CreateLinkRequest, CreateLinkResponse,
+    LinkDetail, LinkStatsResponse, ListLinksResponse,
+};
 use crate::services::links::service::LinksService;
 
 crate::impl_container!(RiftMcp);
@@ -100,7 +103,7 @@ impl RiftMcp {
     async fn create_link(
         &self,
         Parameters(req): Parameters<CreateLinkRequest>,
-    ) -> Result<String, String> {
+    ) -> Result<Json<CreateLinkResponse>, String> {
         let ctx = self.auth_context()?;
         let resp = self
             .service
@@ -108,7 +111,7 @@ impl RiftMcp {
             .await
             .map_err(|e| e.to_string())?;
 
-        Ok(format!("Created link: {}\nURL: {}", resp.link_id, resp.url))
+        Ok(Json(resp))
     }
 
     #[tool(
@@ -126,10 +129,10 @@ impl RiftMcp {
     async fn create_links(
         &self,
         Parameters(req): Parameters<BulkCreateLinksRequest>,
-    ) -> Result<String, String> {
+    ) -> Result<Json<BulkCreateLinksResponse>, String> {
         let ctx = self.auth_context()?;
         match self.service.create_links_bulk(&ctx, req).await {
-            Ok(resp) => serde_json::to_string_pretty(&resp).map_err(|e| e.to_string()),
+            Ok(resp) => Ok(Json(resp)),
             Err(LinkError::BatchValidationFailed(errors)) => {
                 // Render the per-row failures as a bullet list so the model
                 // can self-correct in the next call.
@@ -162,7 +165,7 @@ impl RiftMcp {
     async fn get_link(
         &self,
         Parameters(input): Parameters<GetLinkInput>,
-    ) -> Result<String, String> {
+    ) -> Result<Json<LinkDetail>, String> {
         let ctx = self.auth_context()?;
         let detail = self
             .service
@@ -170,7 +173,7 @@ impl RiftMcp {
             .await
             .map_err(|e| e.to_string())?;
 
-        serde_json::to_string_pretty(&detail).map_err(|e| e.to_string())
+        Ok(Json(detail))
     }
 
     #[tool(
@@ -188,7 +191,7 @@ impl RiftMcp {
     async fn get_link_stats(
         &self,
         Parameters(input): Parameters<GetLinkStatsInput>,
-    ) -> Result<String, String> {
+    ) -> Result<Json<LinkStatsResponse>, String> {
         let ctx = self.auth_context()?;
         let stats = self
             .service
@@ -196,7 +199,7 @@ impl RiftMcp {
             .await
             .map_err(|e| e.to_string())?;
 
-        serde_json::to_string_pretty(&stats).map_err(|e| e.to_string())
+        Ok(Json(stats))
     }
 
     #[tool(
@@ -214,7 +217,7 @@ impl RiftMcp {
     async fn list_links(
         &self,
         Parameters(input): Parameters<ListLinksInput>,
-    ) -> Result<String, String> {
+    ) -> Result<Json<ListLinksResponse>, String> {
         let ctx = self.auth_context()?;
         let resp = self
             .service
@@ -222,7 +225,7 @@ impl RiftMcp {
             .await
             .map_err(|e| e.to_string())?;
 
-        serde_json::to_string_pretty(&resp).map_err(|e| e.to_string())
+        Ok(Json(resp))
     }
 
     #[tool(
@@ -240,7 +243,7 @@ impl RiftMcp {
     async fn update_link(
         &self,
         Parameters(input): Parameters<UpdateLinkInput>,
-    ) -> Result<String, String> {
+    ) -> Result<Json<LinkDetail>, String> {
         let ctx = self.auth_context()?;
         let detail = self
             .service
@@ -248,7 +251,7 @@ impl RiftMcp {
             .await
             .map_err(|e| e.to_string())?;
 
-        serde_json::to_string_pretty(&detail).map_err(|e| e.to_string())
+        Ok(Json(detail))
     }
 
     #[tool(
@@ -266,14 +269,17 @@ impl RiftMcp {
     async fn delete_link(
         &self,
         Parameters(input): Parameters<DeleteLinkInput>,
-    ) -> Result<String, String> {
+    ) -> Result<Json<DeleteLinkOutput>, String> {
         let ctx = self.auth_context()?;
         self.service
             .delete_link(&ctx, &input.link_id)
             .await
             .map_err(|e| e.to_string())?;
 
-        Ok(format!("Deleted link: {}", input.link_id))
+        Ok(Json(DeleteLinkOutput {
+            link_id: input.link_id,
+            deleted: true,
+        }))
     }
 
     #[tool(
@@ -291,7 +297,7 @@ impl RiftMcp {
     async fn create_source(
         &self,
         Parameters(input): Parameters<CreateSourceInput>,
-    ) -> Result<String, String> {
+    ) -> Result<Json<CreateSourceOutput>, String> {
         let tenant_id = self.tenant_id()?;
         let repo = self
             .conversions_repo
@@ -314,12 +320,12 @@ impl RiftMcp {
             .map_err(|e| e.to_string())?;
 
         let webhook_url = self.webhook_url_for(&source.url_token);
-        Ok(format!(
-            "Created source: {}\nID: {}\nWebhook URL: {}",
-            source.name,
-            source.id.to_hex(),
-            webhook_url
-        ))
+        Ok(Json(CreateSourceOutput {
+            id: source.id.to_hex(),
+            name: source.name,
+            source_type: source.source_type,
+            webhook_url,
+        }))
     }
 
     #[tool(
@@ -337,7 +343,7 @@ impl RiftMcp {
     async fn list_sources(
         &self,
         Parameters(_input): Parameters<ListSourcesInput>,
-    ) -> Result<String, String> {
+    ) -> Result<Json<ListSourcesOutput>, String> {
         let tenant_id = self.tenant_id()?;
         let repo = self
             .conversions_repo
@@ -357,21 +363,18 @@ impl RiftMcp {
             sources.push(default);
         }
 
-        let summary: Vec<_> = sources
-            .iter()
-            .map(|s| {
-                serde_json::json!({
-                    "id": s.id.to_hex(),
-                    "name": s.name,
-                    "source_type": s.source_type,
-                    "webhook_url": self.webhook_url_for(&s.url_token),
-                    "created_at": s.created_at.try_to_rfc3339_string().unwrap_or_default(),
-                })
+        let summaries: Vec<SourceSummary> = sources
+            .into_iter()
+            .map(|s| SourceSummary {
+                webhook_url: self.webhook_url_for(&s.url_token),
+                id: s.id.to_hex(),
+                name: s.name,
+                source_type: s.source_type,
+                created_at: s.created_at.try_to_rfc3339_string().unwrap_or_default(),
             })
             .collect();
 
-        serde_json::to_string_pretty(&serde_json::json!({ "sources": summary }))
-            .map_err(|e| e.to_string())
+        Ok(Json(ListSourcesOutput { sources: summaries }))
     }
 }
 
