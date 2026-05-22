@@ -33,9 +33,23 @@ impl RiftClient {
         install_id: String,
         app_version: String,
     ) -> Result<bool, RiftError> {
+        self.attribute_with_context(link_id, install_id, app_version, None)
+            .await
+    }
+
+    /// Same as [`Self::attribute`] but with an optional device-context
+    /// payload. The Swift / Kotlin wrappers read their UIDevice / Build
+    /// equivalents and pass the populated [`DeviceContext`] up.
+    pub async fn attribute_with_context(
+        &self,
+        link_id: String,
+        install_id: String,
+        app_version: String,
+        context: Option<DeviceContext>,
+    ) -> Result<bool, RiftError> {
         let result = self
             .inner
-            .attribute(link_id, install_id, app_version)
+            .attribute_with_context(link_id, install_id, app_version, context.map(Into::into))
             .await
             .map_err(map_error)?;
         Ok(result.success)
