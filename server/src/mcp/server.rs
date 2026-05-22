@@ -85,8 +85,18 @@ impl RiftMcp {
 
 #[tool_router]
 impl RiftMcp {
-    #[tool(description = "Create a new Rift deep link with platform-specific destinations")]
-    #[tracing::instrument(skip(self, req), fields(tool = "create_link"))]
+    #[tool(
+        name = "links.create",
+        description = "Create a new Rift deep link with platform-specific destinations",
+        annotations(
+            title = "Create link",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false,
+        )
+    )]
+    #[tracing::instrument(skip(self, req), fields(tool = "links.create"))]
     async fn create_link(
         &self,
         Parameters(req): Parameters<CreateLinkRequest>,
@@ -102,9 +112,17 @@ impl RiftMcp {
     }
 
     #[tool(
-        description = "Atomically create up to 100 Rift deep links sharing one template. Provide either `custom_ids` (caller-supplied slugs) or `count` (auto-generated). Requires a verified custom domain. Returns all created links or an error listing every per-row problem so they can be fixed in one pass."
+        name = "links.bulk_create",
+        description = "Atomically create up to 100 Rift deep links sharing one template. Provide either `custom_ids` (caller-supplied slugs) or `count` (auto-generated). Requires a verified custom domain. Returns all created links or an error listing every per-row problem so they can be fixed in one pass.",
+        annotations(
+            title = "Bulk create links",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false,
+        )
     )]
-    #[tracing::instrument(skip(self, req), fields(tool = "create_links"))]
+    #[tracing::instrument(skip(self, req), fields(tool = "links.bulk_create"))]
     async fn create_links(
         &self,
         Parameters(req): Parameters<BulkCreateLinksRequest>,
@@ -129,8 +147,18 @@ impl RiftMcp {
         }
     }
 
-    #[tool(description = "Get details of a Rift deep link by its ID")]
-    #[tracing::instrument(skip(self), fields(tool = "get_link"))]
+    #[tool(
+        name = "links.get",
+        description = "Get details of a Rift deep link by its ID",
+        annotations(
+            title = "Get link",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
+    #[tracing::instrument(skip(self), fields(tool = "links.get"))]
     async fn get_link(
         &self,
         Parameters(input): Parameters<GetLinkInput>,
@@ -146,9 +174,17 @@ impl RiftMcp {
     }
 
     #[tool(
-        description = "Get performance stats for a Rift deep link: click_count (landing-page visits), install_count (first-launch installs attributed to this link), identify_count (installs that bound a user_id via /v1/lifecycle/identify), convert_count (sum of conversion events), and a per-type conversions breakdown."
+        name = "links.stats",
+        description = "Get performance stats for a Rift deep link: click_count (landing-page visits), install_count (first-launch installs attributed to this link), identify_count (installs that bound a user_id via /v1/lifecycle/identify), convert_count (sum of conversion events), and a per-type conversions breakdown.",
+        annotations(
+            title = "Get link stats",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
-    #[tracing::instrument(skip(self), fields(tool = "get_link_stats"))]
+    #[tracing::instrument(skip(self), fields(tool = "links.stats"))]
     async fn get_link_stats(
         &self,
         Parameters(input): Parameters<GetLinkStatsInput>,
@@ -163,8 +199,18 @@ impl RiftMcp {
         serde_json::to_string_pretty(&stats).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "List your Rift deep links with cursor-based pagination")]
-    #[tracing::instrument(skip(self), fields(tool = "list_links"))]
+    #[tool(
+        name = "links.list",
+        description = "List your Rift deep links with cursor-based pagination",
+        annotations(
+            title = "List links",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
+    #[tracing::instrument(skip(self), fields(tool = "links.list"))]
     async fn list_links(
         &self,
         Parameters(input): Parameters<ListLinksInput>,
@@ -180,9 +226,17 @@ impl RiftMcp {
     }
 
     #[tool(
-        description = "Update an existing Rift deep link's destinations or metadata. Omit a field to leave it unchanged; pass `null` to clear a nullable field (e.g. `\"ios_deep_link\": null`)."
+        name = "links.update",
+        description = "Update an existing Rift deep link's destinations or metadata. Omit a field to leave it unchanged; pass `null` to clear a nullable field (e.g. `\"ios_deep_link\": null`).",
+        annotations(
+            title = "Update link",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false,
+        )
     )]
-    #[tracing::instrument(skip(self, input), fields(tool = "update_link"))]
+    #[tracing::instrument(skip(self, input), fields(tool = "links.update"))]
     async fn update_link(
         &self,
         Parameters(input): Parameters<UpdateLinkInput>,
@@ -197,8 +251,18 @@ impl RiftMcp {
         serde_json::to_string_pretty(&detail).map_err(|e| e.to_string())
     }
 
-    #[tool(description = "Delete a Rift deep link permanently")]
-    #[tracing::instrument(skip(self), fields(tool = "delete_link"))]
+    #[tool(
+        name = "links.delete",
+        description = "Delete a Rift deep link permanently",
+        annotations(
+            title = "Delete link",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
+    #[tracing::instrument(skip(self), fields(tool = "links.delete"))]
     async fn delete_link(
         &self,
         Parameters(input): Parameters<DeleteLinkInput>,
@@ -213,9 +277,17 @@ impl RiftMcp {
     }
 
     #[tool(
-        description = "Create a new conversion tracking source. Returns a webhook URL that your backend POSTs conversion events to. v1 supports source_type \"custom\" only — point your own backend at the returned URL. Conversions are attributed to links via the user_id field in the event payload."
+        name = "sources.create",
+        description = "Create a new conversion tracking source. Returns a webhook URL that your backend POSTs conversion events to. v1 supports source_type \"custom\" only — point your own backend at the returned URL. Conversions are attributed to links via the user_id field in the event payload.",
+        annotations(
+            title = "Create conversion source",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false,
+        )
     )]
-    #[tracing::instrument(skip(self), fields(tool = "create_source"))]
+    #[tracing::instrument(skip(self), fields(tool = "sources.create"))]
     async fn create_source(
         &self,
         Parameters(input): Parameters<CreateSourceInput>,
@@ -251,9 +323,17 @@ impl RiftMcp {
     }
 
     #[tool(
-        description = "List all conversion tracking sources for your tenant. Auto-creates a 'default' custom source if none exist, so the first call always returns at least one usable webhook URL."
+        name = "sources.list",
+        description = "List all conversion tracking sources for your tenant. Auto-creates a 'default' custom source if none exist, so the first call always returns at least one usable webhook URL.",
+        annotations(
+            title = "List conversion sources",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
     )]
-    #[tracing::instrument(skip(self), fields(tool = "list_sources"))]
+    #[tracing::instrument(skip(self), fields(tool = "sources.list"))]
     async fn list_sources(
         &self,
         Parameters(_input): Parameters<ListSourcesInput>,

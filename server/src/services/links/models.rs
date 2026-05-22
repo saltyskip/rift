@@ -496,21 +496,27 @@ pub struct LinkDetail {
 #[derive(Debug, Deserialize, ToSchema)]
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct BulkLinkTemplate {
+    /// iOS deep link URI applied to every link in the batch (e.g. "myapp://product/123").
     #[serde(default)]
     #[schema(example = "tablefour://restaurant/782/reserve")]
     pub ios_deep_link: Option<String>,
+    /// Android deep link URI applied to every link in the batch.
     #[serde(default)]
     #[schema(example = "tablefour://restaurant/782/reserve")]
     pub android_deep_link: Option<String>,
+    /// Web fallback URL applied to every link (desktop / unknown platforms).
     #[serde(default)]
     #[schema(example = "https://tablefour.com/restaurant/782")]
     pub web_url: Option<String>,
+    /// App Store link for iOS applied to every link in the batch.
     #[serde(default)]
     #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
     pub ios_store_url: Option<String>,
+    /// Play Store link for Android applied to every link in the batch.
     #[serde(default)]
     #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
     pub android_store_url: Option<String>,
+    /// Arbitrary key-value metadata copied onto every link in the batch.
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
     /// Affiliate this whole batch should be attributed to. Optional for full-scope
@@ -519,8 +525,10 @@ pub struct BulkLinkTemplate {
     #[schema(value_type = Option<String>, example = "665a1b2c3d4e5f6a7b8c9d0e")]
     #[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]
     pub affiliate_id: Option<ObjectId>,
+    /// Structured context for AI agents applied to every link in the batch.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
+    /// Open Graph / Twitter preview data applied to every link in the batch.
     #[serde(default)]
     pub social_preview: Option<SocialPreview>,
 }
@@ -532,9 +540,14 @@ pub struct BulkLinkTemplate {
 #[derive(Debug, Deserialize, ToSchema)]
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct BulkCreateLinksRequest {
+    /// Shared destinations and metadata applied to every link in the batch.
     pub template: BulkLinkTemplate,
+    /// Caller-supplied vanity slugs (3-64 chars, alphanumeric + hyphens).
+    /// Mutually exclusive with `count`.
     #[serde(default)]
     pub custom_ids: Option<Vec<String>>,
+    /// Number of links to generate with auto-assigned 8-char IDs.
+    /// Mutually exclusive with `custom_ids`. Max 100 per batch.
     #[serde(default)]
     #[schema(example = 50)]
     pub count: Option<u32>,
