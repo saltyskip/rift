@@ -42,6 +42,16 @@ pub trait AppUsersRepository: Send + Sync {
         tenant_id: &ObjectId,
         install_ids: &[String],
     ) -> Result<Vec<String>, String>;
+
+    /// Resolve a single install_id back to the user_id it's bound to (if
+    /// any). Used by `record_attribute_event` to stamp `user_id` onto the
+    /// time-series row at write time — eliminating the OR-clause on the
+    /// read side and removing the need for a separate `installs` collection.
+    async fn find_user_id_for_install(
+        &self,
+        tenant_id: &ObjectId,
+        install_id: &str,
+    ) -> Result<Option<String>, String>;
 }
 
 // ── Repository ──
@@ -158,5 +168,18 @@ impl AppUsersRepository for AppUsersRepo {
             .into_iter()
             .filter_map(|v| v.as_str().map(|s| s.to_string()))
             .collect())
+    }
+
+    async fn find_user_id_for_install(
+        &self,
+        tenant_id: &ObjectId,
+        install_id: &str,
+    ) -> Result<Option<String>, String> {
+        let doc = self
+            .app_users
+            .find_one(doc! { "tenant_id": tenant_id, "install_ids": install_id })
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(doc.map(|d| d.user_id))
     }
 }

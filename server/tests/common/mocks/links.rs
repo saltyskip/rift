@@ -3,24 +3,13 @@ use mongodb::bson::{oid::ObjectId, DateTime, Document};
 use std::sync::Mutex;
 
 use rift::services::links::models::BulkInsertError;
-use rift::services::links::models::{
-    AttributeOutcome, ClickEvent, ClickMeta, CreateLinkInput, IdentifyOutcome,
-    Install as RealInstall, Link, LinkStatus,
-};
+use rift::services::links::models::{ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus};
 use rift::services::links::repo::LinksRepository;
-
-struct Install {
-    tenant_id: ObjectId,
-    install_id: String,
-    first_link_id: Option<String>,
-    user_id: Option<String>,
-}
 
 #[derive(Default)]
 pub struct MockLinksRepo {
     pub links: Mutex<Vec<Link>>,
     pub clicks: Mutex<Vec<ClickEvent>>,
-    installs: Mutex<Vec<Install>>,
 }
 
 #[async_trait]
@@ -238,81 +227,14 @@ impl LinksRepository for MockLinksRepo {
 
     async fn record_attribute_event(
         &self,
-        tenant_id: ObjectId,
-        link_id: &str,
-        install_id: &str,
+        _tenant_id: ObjectId,
+        _link_id: &str,
+        _install_id: &str,
         _app_version: &str,
+        _user_id: Option<&str>,
         _retention_bucket: String,
-    ) -> Result<AttributeOutcome, String> {
-        // Mirrors the real repo: first call inserts the install with this
-        // link as first_link_id (FirstTouch); subsequent calls preserve
-        // the original first_link_id and return Retouch.
-        let mut installs = self.installs.lock().unwrap();
-        let real = |i: &Install| RealInstall {
-            id: ObjectId::new(),
-            tenant_id: i.tenant_id,
-            install_id: i.install_id.clone(),
-            first_link_id: i.first_link_id.clone(),
-            first_app_version: "test".to_string(),
-            first_attributed_at: DateTime::now(),
-            user_id: i.user_id.clone(),
-            identified_at: None,
-        };
-        if let Some(existing) = installs
-            .iter()
-            .find(|a| a.tenant_id == tenant_id && a.install_id == install_id)
-        {
-            return Ok(AttributeOutcome::Retouch(real(existing)));
-        }
-        let new_install = Install {
-            tenant_id,
-            install_id: install_id.to_string(),
-            first_link_id: Some(link_id.to_string()),
-            user_id: None,
-        };
-        let payload = real(&new_install);
-        installs.push(new_install);
-        Ok(AttributeOutcome::FirstTouch(payload))
-    }
-
-    async fn identify_install(
-        &self,
-        tenant_id: &ObjectId,
-        install_id: &str,
-        user_id: &str,
-    ) -> Result<IdentifyOutcome, String> {
-        // Distinguishes a fresh bind from an idempotent rebind so callers
-        // (identify-webhook fire-site) can suppress the webhook in the
-        // idempotent case.
-        let mut installs = self.installs.lock().unwrap();
-        let Some(install) = installs
-            .iter_mut()
-            .find(|a| &a.tenant_id == tenant_id && a.install_id == install_id)
-        else {
-            return Ok(IdentifyOutcome::NotFound);
-        };
-
-        let real = |install: &Install| RealInstall {
-            id: ObjectId::new(),
-            tenant_id: install.tenant_id,
-            install_id: install.install_id.clone(),
-            first_link_id: install.first_link_id.clone(),
-            first_app_version: "test".to_string(),
-            first_attributed_at: DateTime::now(),
-            user_id: Some(user_id.to_string()),
-            identified_at: Some(DateTime::now()),
-        };
-
-        match install.user_id.as_deref() {
-            None => {
-                install.user_id = Some(user_id.to_string());
-                Ok(IdentifyOutcome::NewBind(real(install)))
-            }
-            Some(existing) if existing == user_id => {
-                Ok(IdentifyOutcome::AlreadyBound(real(install)))
-            }
-            Some(_) => Ok(IdentifyOutcome::NotFound),
-        }
+    ) -> Result<(), String> {
+        Ok(())
     }
 
     async fn backfill_user_id_on_attribution_events(

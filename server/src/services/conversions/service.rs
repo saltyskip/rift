@@ -195,7 +195,6 @@ impl ConversionsService {
                     event_id: event_id.to_hex(),
                     tenant_id: tenant_id.to_hex(),
                     source_id: source_id.to_hex(),
-                    link_id: None,
                     conversion_type: event.conversion_type.clone(),
                     user_id: event.user_id.clone(),
                     metadata: metadata_json,

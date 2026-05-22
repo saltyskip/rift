@@ -1,10 +1,10 @@
 //! SDK-authenticated lifecycle endpoints.
 //!
 //! Three verbs of the growth funnel — `click`, `attribute`, `identify` —
-//! plus the matching webhooks. The data lives in the `links` service
-//! (`Install` + `AttributionEvent` documents), but the `/v1/lifecycle/*`
-//! URL surface and the `pk_live_` SDK auth gate make this its own
-//! transport slice.
+//! plus the matching webhooks. Data lives in the `links` service
+//! (`attribution_events`) and the `app_users` service (identity); the
+//! `/v1/lifecycle/*` URL surface and the `pk_live_` SDK auth gate make
+//! this its own transport slice.
 
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -20,7 +20,7 @@ use crate::core::webhook_dispatcher::{
     AttributeEventPayload, ClickEventPayload, IdentifyEventPayload,
 };
 use crate::services::links::models::{
-    AttributeOutcome, AttributeRequest, ClickRequest, IdentifyOutcome, IdentifyRequest, Install,
+    AttributeRequest, ClickRequest, IdentifyOutcome, IdentifyRequest, LinkError,
 };
 
 // ── POST /v1/lifecycle/click — SDK-authenticated click ──
@@ -197,7 +197,7 @@ pub async fn lifecycle_attribute(
             .into_response();
     };
 
-    let outcome = match svc
+    let user_id = match svc
         .record_attribute_event(
             link.tenant_id,
             &req.link_id,
@@ -207,7 +207,7 @@ pub async fn lifecycle_attribute(
         )
         .await
     {
-        Ok(o) => o,
+        Ok(uid) => uid,
         Err(e) => {
             tracing::error!("Failed to record attribute event: {e}");
             return (
@@ -219,13 +219,10 @@ pub async fn lifecycle_attribute(
     };
 
     // Every `attribute` call fires the webhook. `user_id` is populated when
-    // the install was already identified (existing-install re-attribution
-    // path) — that's how downstream subscribers credit a teammate who
-    // clicks a campaign link without reinstalling.
+    // the install was already identified (resolved by the service via
+    // `app_users`) — that's how downstream subscribers credit a teammate
+    // who clicks a campaign link without reinstalling.
     if let Some(dispatcher) = &state.webhook_dispatcher {
-        let install = match &outcome {
-            AttributeOutcome::FirstTouch(i) | AttributeOutcome::Retouch(i) => i,
-        };
         let link_metadata = link
             .metadata
             .as_ref()
@@ -235,7 +232,7 @@ pub async fn lifecycle_attribute(
             link_id: req.link_id.clone(),
             install_id: req.install_id.clone(),
             app_version: req.app_version.clone(),
-            user_id: install.user_id.clone(),
+            user_id,
             link_metadata,
             timestamp: Utc::now().to_rfc3339(),
         });
@@ -259,7 +256,7 @@ pub async fn lifecycle_attribute(
         (status = 200, description = "Install bound to user"),
         (status = 400, description = "Invalid request", body = crate::error::ErrorResponse),
         (status = 401, description = "Unauthorized", body = crate::error::ErrorResponse),
-        (status = 404, description = "No install found for this install_id", body = crate::error::ErrorResponse),
+        (status = 409, description = "Install already bound to a different user", body = crate::error::ErrorResponse),
     ),
     security(("api_key" = [])),
 )]
@@ -285,37 +282,48 @@ pub async fn lifecycle_identify(
             .into_response();
     };
 
-    let outcome = svc
+    match svc
         .identify_install(&tenant.0, &req.install_id, &req.user_id)
-        .await;
-
-    match outcome {
-        Ok(IdentifyOutcome::NewBind(install)) => {
-            // First-time bind for this install — fire the `identify`
-            // webhook so subscribers can react (credit the user for a
-            // welcome bonus campaign, etc.). Failures inside the fire-site
-            // are non-fatal: the bind already committed; webhook dispatch
-            // is best-effort.
-            fire_identify_event(&state, install).await;
-            Json(json!({ "success": true })).into_response()
-        }
-        Ok(IdentifyOutcome::AlreadyBound(_)) => {
-            // Idempotent replay — install was already bound to this same
-            // user_id. Return 200 (desired end state holds) but
-            // intentionally skip the webhook so subscribers don't
-            // double-fulfill credits / entitlements on SDK auto-retry.
+        .await
+    {
+        Ok(outcome @ (IdentifyOutcome::Created | IdentifyOutcome::InstallAdded)) => {
+            // Real state change — fire the `identify` webhook so
+            // subscribers can react (welcome bonus, etc.). Best-effort.
             tracing::debug!(
                 install_id = %req.install_id,
                 user_id = %req.user_id,
-                "identify already bound to this user; skipping webhook"
+                ?outcome,
+                "identify bound; firing webhook"
+            );
+            fire_identify_event(&state, &tenant.0, &req.install_id, &req.user_id);
+            Json(json!({ "success": true })).into_response()
+        }
+        Ok(IdentifyOutcome::AlreadyPresent) => {
+            // Idempotent replay — return 200 but skip the webhook so
+            // subscribers don't double-fulfill on SDK auto-retry.
+            tracing::debug!(
+                install_id = %req.install_id,
+                user_id = %req.user_id,
+                "identify already present; skipping webhook"
             );
             Json(json!({ "success": true })).into_response()
         }
-        Ok(IdentifyOutcome::NotFound) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "No install found for this install_id", "code": "not_found" })),
-        )
-            .into_response(),
+        Err(LinkError::IdentifyConflict { existing_user_id }) => {
+            tracing::info!(
+                install_id = %req.install_id,
+                attempted_user_id = %req.user_id,
+                existing_user_id = %existing_user_id,
+                "identify rejected: install already bound to a different user"
+            );
+            (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": "install_id is already bound to a different user",
+                    "code": "identify_conflict",
+                })),
+            )
+                .into_response()
+        }
         Err(e) => {
             tracing::error!("Failed to identify install: {e}");
             (
@@ -327,48 +335,22 @@ pub async fn lifecycle_identify(
     }
 }
 
-/// Dispatch the `identify` webhook. Post-Phase-6, the payload carries
-/// IDs only; receivers compute any link context from their own webhook
-/// stream.
-///
-/// Legacy installs (pre-Phase-6, still carrying `first_link_id`)
-/// opportunistically include the first-touch link metadata for
-/// back-compat. New installs omit it because no link is frozen on the
-/// install row.
-async fn fire_identify_event(state: &Arc<AppState>, install: Install) {
+/// Dispatch the `identify` webhook. Payload carries IDs only — receivers
+/// can correlate against their own click/attribute webhook stream if they
+/// want link context.
+fn fire_identify_event(
+    state: &Arc<AppState>,
+    tenant_id: &mongodb::bson::oid::ObjectId,
+    install_id: &str,
+    user_id: &str,
+) {
     let Some(dispatcher) = &state.webhook_dispatcher else {
         return;
     };
-
-    // Best-effort link metadata for legacy first_link_id installs.
-    let (legacy_link_id, link_metadata) = match (&install.first_link_id, &state.links_repo) {
-        (Some(link_id), Some(repo)) => match repo
-            .find_link_by_tenant_and_id(&install.tenant_id, link_id)
-            .await
-        {
-            Ok(Some(l)) => {
-                let meta = l
-                    .metadata
-                    .as_ref()
-                    .and_then(|d| serde_json::to_value(d).ok());
-                (Some(link_id.clone()), meta)
-            }
-            _ => (Some(link_id.clone()), None),
-        },
-        _ => (None, None),
-    };
-
-    // `user_id` is always `Some` here — `IdentifyOutcome::NewBind` is
-    // constructed post-update with `user_id` set. Defensive default keeps
-    // the contract local rather than panicking on a future refactor.
-    let user_id = install.user_id.clone().unwrap_or_default();
-
     dispatcher.dispatch_identify(IdentifyEventPayload {
-        tenant_id: install.tenant_id.to_hex(),
-        user_id,
-        link_id: legacy_link_id,
-        install_id: install.install_id,
-        link_metadata,
+        tenant_id: tenant_id.to_hex(),
+        user_id: user_id.to_string(),
+        install_id: install_id.to_string(),
         timestamp: Utc::now().to_rfc3339(),
     });
 }

@@ -86,4 +86,16 @@ impl AppUsersRepository for MockAppUsersRepo {
         }
         Ok(out)
     }
+
+    async fn find_user_id_for_install(
+        &self,
+        tenant_id: &ObjectId,
+        install_id: &str,
+    ) -> Result<Option<String>, String> {
+        let rows = self.rows.lock().unwrap();
+        Ok(rows
+            .iter()
+            .find(|r| &r.tenant_id == tenant_id && r.install_ids.iter().any(|i| i == install_id))
+            .map(|r| r.user_id.clone()))
+    }
 }

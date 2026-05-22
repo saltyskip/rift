@@ -10,8 +10,8 @@ use crate::ensure_index;
 use mongodb::bson::Document;
 
 use super::models::{
-    AttributeOutcome, AttributionEvent, AttributionEventMeta, BulkInsertError, ClickEvent,
-    ClickMeta, CreateLinkInput, CreditModel, IdentifyOutcome, Install, Link, LinkStatus,
+    AttributionEvent, AttributionEventMeta, BulkInsertError, ClickEvent, ClickMeta,
+    CreateLinkInput, CreditModel, Link, LinkStatus,
 };
 
 // ── Trait ──
@@ -68,34 +68,20 @@ pub trait LinksRepository: Send + Sync {
         retention_bucket: String,
     ) -> Result<(), String>;
 
-    /// Record a `/lifecycle/attribute` call. Appends an immutable event to
-    /// the `attribution_events` time-series collection AND upserts the
-    /// install's first-touch state in `installs`. `installs.first_link_id`
-    /// is set only on insert, so subsequent `attribute` calls for the same
-    /// install append to the event log but preserve the original
-    /// first-touch attribution.
-    ///
-    /// Returns `FirstTouch` on insert (`installs` row didn't exist), or
-    /// `Retouch` on every subsequent call. Both carry the install row
-    /// (with `user_id` if already bound) so the caller can build the
-    /// outbound webhook payload without a second query.
+    /// Append an immutable `/lifecycle/attribute` event to the
+    /// `attribution_events` time-series collection. `user_id` is stamped
+    /// at write time when the install is already bound (resolved by the
+    /// service via `app_users`) so user-scoped reads don't need an
+    /// OR-clause on `null`.
     async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
         link_id: &str,
         install_id: &str,
         app_version: &str,
+        user_id: Option<&str>,
         retention_bucket: String,
-    ) -> Result<AttributeOutcome, String>;
-
-    /// Bind `user_id` onto the install's row in `installs`. Idempotent
-    /// at the same `(install_id, user_id)` pair (returns `AlreadyBound`).
-    async fn identify_install(
-        &self,
-        tenant_id: &ObjectId,
-        install_id: &str,
-        user_id: &str,
-    ) -> Result<IdentifyOutcome, String>;
+    ) -> Result<(), String>;
 
     /// Backfill `user_id` onto every `attribution_events` row for this
     /// install where `user_id` is currently NULL. Called from the identify
@@ -147,10 +133,6 @@ crate::impl_container!(LinksRepo);
 pub struct LinksRepo {
     links: Collection<Link>,
     click_events: Collection<ClickEvent>,
-    /// Materialized first-touch + user_id binding per `(tenant_id,
-    /// install_id)`. Mutable. Source of truth for stats counts and
-    /// `user_id → link_id` conversion lookups.
-    installs: Collection<Install>,
     /// Immutable time-series log of every `/lifecycle/attribute` call.
     /// Time-bucketed analytics + tier-based retention; never mutated.
     attribution_events: Collection<AttributionEvent>,
@@ -216,12 +198,6 @@ impl LinksRepo {
         )
         .await;
 
-        // `installs` is a regular (non-time-series) collection because we
-        // need to mutate `user_id` after insert — time-series rows are
-        // immutable. The time-series `attribution_events` is the
-        // append-only event log; `installs` is the mutable projection.
-        let installs = database.collection::<Install>("installs");
-
         // Drop the old global unique index if it exists (replaced by compound index).
         let _ = links.drop_index("link_id_unique").await;
 
@@ -238,25 +214,9 @@ impl LinksRepo {
             "links_tenant_affiliate"
         );
 
-        ensure_index!(
-            installs,
-            doc! { "tenant_id": 1, "install_id": 1 },
-            IndexOptions::builder().unique(true).build(),
-            "installs_tenant_install_unique"
-        );
-        // Stats: count distinct installs first-attributed to a link.
-        ensure_index!(
-            installs,
-            doc! { "tenant_id": 1, "first_link_id": 1 },
-            "installs_tenant_first_link"
-        );
-        // ^^ Legacy index — Phase 6 stopped reading first_link_id.
-        // Left in place; dropping requires a separate ops step.
-
         LinksRepo {
             links,
             click_events,
-            installs,
             attribution_events,
         }
     }
@@ -499,57 +459,11 @@ impl LinksRepository for LinksRepo {
         link_id: &str,
         install_id: &str,
         app_version: &str,
+        user_id: Option<&str>,
         retention_bucket: String,
-    ) -> Result<AttributeOutcome, String> {
-        // Step 1: try to insert a fresh install row. `$setOnInsert` keeps
-        // first-touch attribution stable across re-attributions. On insert
-        // we capture `installs.first_link_id = link_id`; on no-op (row
-        // already exists) the existing first_link_id stays.
-        use mongodb::options::ReturnDocument;
-        let now = DateTime::now();
-
-        // Phase 6: `first_link_id` is no longer written. Credit is
-        // computed at read time from `attribution_events`. The `installs`
-        // row still exists for the user_id binding path.
-        let install = self
-            .installs
-            .find_one_and_update(
-                doc! { "tenant_id": &tenant_id, "install_id": install_id },
-                doc! {
-                    "$setOnInsert": {
-                        "_id": ObjectId::new(),
-                        "tenant_id": &tenant_id,
-                        "install_id": install_id,
-                        "first_app_version": app_version,
-                        "first_attributed_at": now,
-                    }
-                },
-            )
-            .upsert(true)
-            .return_document(ReturnDocument::Before)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let is_first_touch = install.is_none();
-        // Resolved post-update install. On first-touch we construct it
-        // in-memory rather than re-query; on retouch we use the Before doc
-        // (it's unchanged because $setOnInsert is a no-op).
-        let install = install.unwrap_or_else(|| Install {
-            id: ObjectId::new(), // not authoritative — we never use this in retouch path
-            tenant_id,
-            install_id: install_id.to_string(),
-            first_link_id: None,
-            first_app_version: app_version.to_string(),
-            first_attributed_at: now,
-            user_id: None,
-            identified_at: None,
-        });
-
-        // Step 2: append an immutable event to the time series. Includes
-        // the install's current user_id so downstream subscribers can
-        // act on existing-install re-attribution without a second roundtrip.
+    ) -> Result<(), String> {
         let event = AttributionEvent {
-            timestamp: now,
+            timestamp: DateTime::now(),
             meta: AttributionEventMeta {
                 tenant_id,
                 install_id: install_id.to_string(),
@@ -557,62 +471,13 @@ impl LinksRepository for LinksRepo {
             },
             link_id: link_id.to_string(),
             app_version: app_version.to_string(),
-            user_id: install.user_id.clone(),
+            user_id: user_id.map(|s| s.to_string()),
         };
         self.attribution_events
             .insert_one(&event)
             .await
             .map_err(|e| e.to_string())?;
-
-        Ok(if is_first_touch {
-            AttributeOutcome::FirstTouch(install)
-        } else {
-            AttributeOutcome::Retouch(install)
-        })
-    }
-
-    async fn identify_install(
-        &self,
-        tenant_id: &ObjectId,
-        install_id: &str,
-        user_id: &str,
-    ) -> Result<IdentifyOutcome, String> {
-        // `find_one_and_update` with `ReturnDocument::Before` lets us
-        // distinguish a new bind from an idempotent rebind in a single
-        // roundtrip: if `before.user_id == Some(user_id)`, this was a no-op
-        // and the webhook should NOT fire.
-        use mongodb::options::ReturnDocument;
-        let before = self
-            .installs
-            .find_one_and_update(
-                doc! {
-                    "tenant_id": tenant_id,
-                    "install_id": install_id,
-                    "$or": [
-                        { "user_id": { "$exists": false } },
-                        { "user_id": null },
-                        { "user_id": user_id },
-                    ]
-                },
-                doc! { "$set": { "user_id": user_id, "identified_at": DateTime::now() } },
-            )
-            .return_document(ReturnDocument::Before)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let Some(mut install) = before else {
-            return Ok(IdentifyOutcome::NotFound);
-        };
-
-        let was_already_bound = install.user_id.as_deref() == Some(user_id);
-        install.user_id = Some(user_id.to_string());
-        install.identified_at = Some(DateTime::now());
-
-        Ok(if was_already_bound {
-            IdentifyOutcome::AlreadyBound(install)
-        } else {
-            IdentifyOutcome::NewBind(install)
-        })
+        Ok(())
     }
 
     async fn backfill_user_id_on_attribution_events(

@@ -256,42 +256,14 @@ impl LinksRepository for MockLinksRepo {
 
     async fn record_attribute_event(
         &self,
-        tenant_id: ObjectId,
-        link_id: &str,
-        install_id: &str,
-        app_version: &str,
+        _tenant_id: ObjectId,
+        _link_id: &str,
+        _install_id: &str,
+        _app_version: &str,
+        _user_id: Option<&str>,
         _retention_bucket: String,
-    ) -> Result<crate::services::links::models::AttributeOutcome, String> {
-        use crate::services::links::models::{AttributeOutcome, Install};
-        Ok(AttributeOutcome::FirstTouch(Install {
-            id: ObjectId::new(),
-            tenant_id,
-            install_id: install_id.to_string(),
-            first_link_id: Some(link_id.to_string()),
-            first_app_version: app_version.to_string(),
-            first_attributed_at: mongodb::bson::DateTime::now(),
-            user_id: None,
-            identified_at: None,
-        }))
-    }
-
-    async fn identify_install(
-        &self,
-        tenant_id: &ObjectId,
-        install_id: &str,
-        user_id: &str,
-    ) -> Result<crate::services::links::models::IdentifyOutcome, String> {
-        use crate::services::links::models::{IdentifyOutcome, Install};
-        Ok(IdentifyOutcome::NewBind(Install {
-            id: ObjectId::new(),
-            tenant_id: *tenant_id,
-            install_id: install_id.to_string(),
-            first_link_id: None,
-            first_app_version: String::new(),
-            first_attributed_at: mongodb::bson::DateTime::now(),
-            user_id: Some(user_id.to_string()),
-            identified_at: Some(mongodb::bson::DateTime::now()),
-        }))
+    ) -> Result<(), String> {
+        Ok(())
     }
 
     async fn backfill_user_id_on_attribution_events(

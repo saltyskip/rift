@@ -160,42 +160,6 @@ pub struct ClickEvent {
     pub platform: Option<String>,
 }
 
-/// Install state — one row per `(tenant_id, install_id)`. Holds the
-/// first-touch link attribution and (optionally) the bound user_id. This
-/// is the **mutable** projection over the immutable `attribution_events`
-/// time-series log; the event log is the source of truth, this is the
-/// materialized state for fast lookups (stats, conversions).
-///
-/// Updated by:
-/// - `/v1/lifecycle/attribute`: upsert with `first_link_id` set on insert
-///   only (preserves first-touch semantics for stats).
-/// - `/v1/lifecycle/identify`: `$set user_id`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Install {
-    #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub tenant_id: ObjectId,
-    /// Unique per install (generated client-side).
-    pub install_id: String,
-    /// First link that attributed this install. Legacy field — Phase 6
-    /// stopped writing it for new installs (credit is computed at read
-    /// time from `attribution_events`). Old rows still carry a value;
-    /// new rows have `None`.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub first_link_id: Option<String>,
-    /// App version recorded at first-touch.
-    pub first_app_version: String,
-    /// Soonest attribution timestamp for this install.
-    pub first_attributed_at: DateTime,
-    /// User id bound via `/lifecycle/identify`. None until the user
-    /// authenticates.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user_id: Option<String>,
-    /// When `user_id` was first bound (None until identify completes).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub identified_at: Option<DateTime>,
-}
-
 /// One row per `/lifecycle/attribute` call. Stored in a MongoDB
 /// time-series collection (timeField = `timestamp`, metaField = `meta`).
 /// Immutable — re-attribution to a new link is recorded as a NEW event
@@ -208,10 +172,9 @@ pub struct AttributionEvent {
     pub meta: AttributionEventMeta,
     pub link_id: String,
     pub app_version: String,
-    /// User id at the moment of the event. Often `None` for the first
-    /// event of an install (user hasn't signed in yet). Filled by the
-    /// route handler if `installs.user_id` is already set, so downstream
-    /// subscribers can act immediately on existing-install re-attribution.
+    /// User id at the moment of the event. `None` until the install is
+    /// identified; once `app_users` has a binding, the service stamps this
+    /// at write time so user-scoped reads don't need an OR-clause.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
 }
@@ -228,38 +191,22 @@ pub struct AttributionEventMeta {
     pub retention_bucket: String,
 }
 
-/// Result of `LinksRepository::record_attribute_event`.
+/// Result of `LinksService::identify_install`.
 ///
-/// `FirstTouch` and `Retouch` both successfully record an event; they
-/// differ only in whether `installs` was newly inserted (first-touch
-/// attribution for this install) vs already existed (re-attribution to
-/// a new or same link). Both fire the `attribute` webhook. The caller
-/// uses the returned `Install` to build the outbound payload (need
-/// `user_id` if it's already bound — that's the existing-install path).
-#[derive(Debug, Clone)]
-pub enum AttributeOutcome {
-    FirstTouch(Install),
-    Retouch(Install),
-}
-
-/// Result of `LinksRepository::identify_install`.
-///
-/// Distinguishes a real state change (`NewBind` — fire `identify` webhook)
-/// from an idempotent replay (`AlreadyBound` — suppress). The carried
-/// `Install` reflects the post-update state for payload construction.
-#[derive(Debug, Clone)]
+/// Drives the route handler's response + webhook decisions. `Created`
+/// and `InstallAdded` are real state changes that fire the `identify`
+/// webhook; `AlreadyPresent` is an idempotent replay that returns 200
+/// without firing. Conflict cases (install already bound to a different
+/// user) surface via `LinkError::IdentifyConflict`, not this enum.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdentifyOutcome {
-    /// Bind changed state — `user_id` was previously absent and we just
-    /// set it. Fire the `identify` webhook.
-    NewBind(Install),
-    /// Install was already bound to this same `user_id`. Route returns 200
-    /// but webhook is suppressed.
-    #[allow(dead_code)]
-    AlreadyBound(Install),
-    /// No install row matched. Either `install_id` is unknown for this
-    /// tenant, or it's already bound to a different user — both surface
-    /// as 404.
-    NotFound,
+    /// First identify for this user_id — `app_users` row created with
+    /// `install_id` in `install_ids`.
+    Created,
+    /// User existed; this install_id was a new device or reinstall.
+    InstallAdded,
+    /// User existed and already had this install_id bound. No-op.
+    AlreadyPresent,
 }
 
 /// Attribution credit model applied at read time by the stats endpoint.
@@ -848,6 +795,13 @@ pub enum LinkError {
     AffiliateNotFound,
     Forbidden(AuthzError),
     QuotaExceeded(QuotaError),
+    /// `/lifecycle/identify` rejected because the install_id is already
+    /// bound to a different user. Carries the existing user_id for
+    /// observability (the route does NOT echo it to the client). Returns
+    /// HTTP 409.
+    IdentifyConflict {
+        existing_user_id: String,
+    },
     Internal(String),
     // ── Bulk-create only ──
     BatchTooLarge {
@@ -898,6 +852,9 @@ impl fmt::Display for LinkError {
             Self::AffiliateNotFound => write!(f, "Affiliate not found"),
             Self::Forbidden(e) => write!(f, "{e}"),
             Self::QuotaExceeded(e) => write!(f, "{e}"),
+            Self::IdentifyConflict { .. } => {
+                write!(f, "install_id is already bound to a different user")
+            }
             Self::Internal(e) => write!(f, "Internal error: {e}"),
             Self::BatchTooLarge { max, got } => {
                 write!(f, "Batch too large: {got} items (max {max})")
@@ -934,6 +891,7 @@ impl LinkError {
             Self::AffiliateNotFound => "affiliate_not_found",
             Self::Forbidden(e) => e.code(),
             Self::QuotaExceeded(_) => "quota_exceeded",
+            Self::IdentifyConflict { .. } => "identify_conflict",
             Self::Internal(_) => "db_error",
             Self::BatchTooLarge { .. } => "batch_too_large",
             Self::BatchEmpty => "batch_empty",

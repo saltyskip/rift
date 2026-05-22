@@ -9,6 +9,7 @@ use super::repo::LinksRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
 use crate::services::affiliates::repo::AffiliatesRepository;
+use crate::services::app_users::models::AppUserUpsert;
 use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::auth::permissions::{AuthContext, Permission, ResourceScope};
 use crate::services::billing::quota::{QuotaChecker, Resource};
@@ -63,128 +64,143 @@ impl LinksService {
 
     /// Orchestrate a `/lifecycle/identify` call:
     ///
-    /// 1. Bind the install in the legacy `installs` collection (keeps
-    ///    pre-cutover read paths working until Phase 6).
+    /// 1. Reject if `install_id` is already bound to a *different* user
+    ///    (rebind protection — see `LinkError::IdentifyConflict`).
     /// 2. Upsert the `app_users` identity row, adding `install_id` to the
-    ///    user's `install_ids` array.
+    ///    user's `install_ids` array (idempotent via `$addToSet`).
     /// 3. Backfill `attribution_events.user_id` for prior anonymous events
     ///    on this install, filling NULLs only — never overwriting.
+    /// 4. Fan-out `install_events` (`identified` plus `reinstalled` /
+    ///    `new_device` based on prior install device_models).
     ///
-    /// The legacy step (1) is the only one whose outcome we surface to the
-    /// caller; (2) and (3) are durability/backfill writes that log warnings
-    /// on failure but never fail the request. Per CLAUDE.md, all
-    /// transport layers must call this method instead of touching the
-    /// repos directly.
+    /// Per CLAUDE.md, all transport layers must call this method instead
+    /// of touching the repos directly.
     pub async fn identify_install(
         &self,
         tenant_id: &ObjectId,
         install_id: &str,
         user_id: &str,
-    ) -> Result<IdentifyOutcome, String> {
-        let outcome = self
-            .links_repo
-            .identify_install(tenant_id, install_id, user_id)
-            .await?;
+    ) -> Result<IdentifyOutcome, LinkError> {
+        let Some(app_users) = &self.app_users_repo else {
+            // No app_users repo configured (reduced-feature build / test
+            // harness without identity). Identify is a no-op in that mode.
+            return Ok(IdentifyOutcome::AlreadyPresent);
+        };
 
-        // Only run the app_users + backfill + install_events side-effects
-        // on a real bind. AlreadyBound is an idempotent replay; NotFound
-        // has nothing to bind. Both skip the side-effects intentionally.
-        if matches!(outcome, IdentifyOutcome::NewBind(_)) {
-            // Capture the user's prior install_ids BEFORE the upsert adds
-            // the current one — this is what feeds the reinstall vs
-            // new_device classification.
-            let prior_install_ids: Vec<String> = match &self.app_users_repo {
-                Some(app_users) => match app_users.find_by_user_id(tenant_id, user_id).await {
-                    Ok(Some(existing)) => existing.install_ids,
-                    Ok(None) => Vec::new(),
-                    Err(e) => {
-                        tracing::warn!(
-                            error = %e,
-                            user_id,
-                            "app_users prior lookup failed during identify"
-                        );
-                        Vec::new()
-                    }
-                },
-                None => Vec::new(),
-            };
-
-            if let Some(app_users) = &self.app_users_repo {
-                if let Err(e) = app_users
-                    .upsert_with_install(tenant_id, user_id, install_id)
-                    .await
-                {
-                    tracing::warn!(
-                        error = %e,
-                        install_id,
-                        user_id,
-                        "app_users upsert failed during identify"
-                    );
-                }
+        // 1. Rebind guard. If the install is already bound to a different
+        //    user, refuse — option B from the cutover discussion. The
+        //    SDK's expected behavior is one install ↔ one user; rebinding
+        //    silently would let a logged-out + re-logged-in flow on a
+        //    shared device leak attribution across users.
+        if let Some(existing) = app_users
+            .find_user_id_for_install(tenant_id, install_id)
+            .await
+            .map_err(LinkError::Internal)?
+        {
+            if existing != user_id {
+                return Err(LinkError::IdentifyConflict {
+                    existing_user_id: existing,
+                });
             }
+        }
 
-            match self
-                .links_repo
-                .backfill_user_id_on_attribution_events(tenant_id, install_id, user_id)
-                .await
-            {
-                Ok(n) if n > 0 => {
-                    tracing::debug!(
-                        backfilled = n,
-                        install_id,
-                        user_id,
-                        "attribution_events user_id backfilled"
-                    );
-                }
-                Ok(_) => {}
+        // 2. Capture the user's prior install_ids BEFORE the upsert adds
+        //    the current one — this is what feeds the reinstall vs
+        //    new_device classification in step 4.
+        let prior_install_ids: Vec<String> =
+            match app_users.find_by_user_id(tenant_id, user_id).await {
+                Ok(Some(existing)) => existing.install_ids,
+                Ok(None) => Vec::new(),
                 Err(e) => {
                     tracing::warn!(
                         error = %e,
-                        install_id,
                         user_id,
-                        "attribution_events backfill failed during identify"
+                        "app_users prior lookup failed during identify"
                     );
+                    Vec::new()
+                }
+            };
+
+        let upsert = app_users
+            .upsert_with_install(tenant_id, user_id, install_id)
+            .await
+            .map_err(LinkError::Internal)?;
+
+        let outcome = match upsert {
+            AppUserUpsert::Created => IdentifyOutcome::Created,
+            AppUserUpsert::InstallAdded => IdentifyOutcome::InstallAdded,
+            AppUserUpsert::AlreadyPresent => IdentifyOutcome::AlreadyPresent,
+        };
+
+        // 3 + 4 only run on real state changes. AlreadyPresent is an
+        // idempotent SDK retry — skip side-effects to avoid double-firing
+        // identify webhooks or redundantly rewriting backfilled rows.
+        if outcome == IdentifyOutcome::AlreadyPresent {
+            return Ok(outcome);
+        }
+
+        // 3. Backfill attribution_events.user_id for prior anonymous
+        //    events on this install. Best-effort; failure logs but
+        //    doesn't fail the identify.
+        match self
+            .links_repo
+            .backfill_user_id_on_attribution_events(tenant_id, install_id, user_id)
+            .await
+        {
+            Ok(n) if n > 0 => {
+                tracing::debug!(
+                    backfilled = n,
+                    install_id,
+                    user_id,
+                    "attribution_events user_id backfilled"
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    install_id,
+                    user_id,
+                    "attribution_events backfill failed during identify"
+                );
+            }
+        }
+
+        // 4. Fan-out install lifecycle events. Compares device_model
+        //    against the user's prior installs' device_models to classify
+        //    reinstall vs new_device.
+        if let Some(install_events) = &self.install_events_repo {
+            let current_device_model = install_events
+                .get_device_model(tenant_id, install_id)
+                .await
+                .ok()
+                .flatten();
+
+            let mut prior_device_models = Vec::with_capacity(prior_install_ids.len());
+            for prior_id in &prior_install_ids {
+                if let Ok(Some(model)) = install_events.get_device_model(tenant_id, prior_id).await
+                {
+                    prior_device_models.push(model);
                 }
             }
 
-            // Fan-out install lifecycle events: install.identified, plus
-            // install.reinstalled or install.new_device when prior installs
-            // exist. Compares device_model against the user's prior
-            // installs' device_models to classify.
-            if let Some(install_events) = &self.install_events_repo {
-                let current_device_model = install_events
-                    .get_device_model(tenant_id, install_id)
-                    .await
-                    .ok()
-                    .flatten();
-
-                let mut prior_device_models = Vec::with_capacity(prior_install_ids.len());
-                for prior_id in &prior_install_ids {
-                    if let Ok(Some(model)) =
-                        install_events.get_device_model(tenant_id, prior_id).await
-                    {
-                        prior_device_models.push(model);
-                    }
-                }
-
-                if let Err(e) = install_events
-                    .record_identify_lifecycle(
-                        tenant_id,
-                        install_id,
-                        user_id,
-                        &prior_install_ids,
-                        &prior_device_models,
-                        current_device_model.as_deref(),
-                    )
-                    .await
-                {
-                    tracing::warn!(
-                        error = %e,
-                        install_id,
-                        user_id,
-                        "install_events identify fan-out failed"
-                    );
-                }
+            if let Err(e) = install_events
+                .record_identify_lifecycle(
+                    tenant_id,
+                    install_id,
+                    user_id,
+                    &prior_install_ids,
+                    &prior_device_models,
+                    current_device_model.as_deref(),
+                )
+                .await
+            {
+                tracing::warn!(
+                    error = %e,
+                    install_id,
+                    user_id,
+                    "install_events identify fan-out failed"
+                );
             }
         }
 
@@ -238,13 +254,13 @@ impl LinksService {
     }
 
     /// Record a `/lifecycle/attribute` event. Runs the `TrackEvent` quota
-    /// gate, resolves the tenant's retention bucket, then delegates to the
-    /// repository (which inserts the immutable time-series event and
-    /// upserts the install's first-touch state in one logical step).
+    /// gate, resolves the tenant's retention bucket, looks up the
+    /// install's bound user_id (if any) via `app_users`, then inserts the
+    /// immutable time-series event with `user_id` stamped at write time.
     ///
-    /// Returned `AttributeOutcome` distinguishes first-touch from retouch;
-    /// both carry the install row so the route handler can build the
-    /// outbound webhook payload (including `user_id` if already bound).
+    /// Returns the bound `user_id` (when known) so the route handler can
+    /// include it in the outbound `attribute` webhook payload without
+    /// re-querying.
     pub async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
@@ -252,7 +268,7 @@ impl LinksService {
         install_id: &str,
         app_version: &str,
         context: Option<InstallContext>,
-    ) -> Result<AttributeOutcome, String> {
+    ) -> Result<Option<String>, String> {
         if let Some(q) = &self.quota {
             if let Err(e) = q.check(&tenant_id, Resource::TrackEvent).await {
                 tracing::info!(error = %e, "attribute_track_quota_skipped");
@@ -264,13 +280,28 @@ impl LinksService {
             None => "30d".to_string(),
         };
 
-        let outcome = self
-            .links_repo
+        // Resolve user_id at write time so the row doesn't need to be
+        // backfilled later for already-identified installs. Best-effort —
+        // a lookup failure logs and falls back to None (the next identify
+        // will backfill).
+        let user_id = match &self.app_users_repo {
+            Some(app_users) => app_users
+                .find_user_id_for_install(&tenant_id, install_id)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, install_id, "app_users user_id lookup failed");
+                    None
+                }),
+            None => None,
+        };
+
+        self.links_repo
             .record_attribute_event(
                 tenant_id,
                 link_id,
                 install_id,
                 app_version,
+                user_id.as_deref(),
                 retention_bucket,
             )
             .await?;
@@ -295,7 +326,7 @@ impl LinksService {
             }
         }
 
-        Ok(outcome)
+        Ok(user_id)
     }
 
     #[tracing::instrument(skip(self, req, ctx))]

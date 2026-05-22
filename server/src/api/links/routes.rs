@@ -810,7 +810,7 @@ fn link_error_to_response(err: LinkError) -> Response {
         | LinkError::BatchEmpty
         | LinkError::BatchModeAmbiguous
         | LinkError::BatchModeMissing => StatusCode::BAD_REQUEST,
-        LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
+        LinkError::LinkIdTaken(_) | LinkError::IdentifyConflict { .. } => StatusCode::CONFLICT,
         LinkError::NotFound | LinkError::AffiliateNotFound => StatusCode::NOT_FOUND,
         LinkError::QuotaExceeded(_)
         | LinkError::Forbidden(_)
