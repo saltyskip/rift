@@ -1,12 +1,8 @@
 <p align="center">
-  <img src="./.github/assets/banner.svg" alt="Rift" width="100%">
+  <img src="./.github/assets/banner.gif" alt="Rift" width="100%">
 </p>
 
 # Rift
-
-<p align="center">
-  <a href="https://github.com/saltyskip/rift/stargazers"><img src="https://img.shields.io/github/stars/saltyskip/rift?style=for-the-badge&logo=github&color=2dd4bf&labelColor=0a0a0a" alt="Star this repo"></a>
-</p>
 
 **Deep links for humans and agents.** — [riftl.ink](https://riftl.ink)
 
