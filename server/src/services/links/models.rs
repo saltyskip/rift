@@ -5,10 +5,12 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::core::threat_feed::ThreatFeed;
 use crate::services::affiliates::repo::AffiliatesRepository;
+use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::billing::quota::QuotaChecker;
 use crate::services::billing::service::TierResolver;
 use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::domains::repo::DomainsRepository;
+use crate::services::install_events::repo::InstallEventsRepository;
 use crate::services::links::repo::LinksRepository;
 
 /// Construction-time dependencies for [`super::service::LinksService`].
@@ -21,6 +23,14 @@ pub struct LinksServiceDeps {
     pub domains_repo: Option<Arc<dyn DomainsRepository>>,
     pub affiliates_repo: Option<Arc<dyn AffiliatesRepository>>,
     pub conversions_repo: Option<Arc<dyn ConversionsRepository>>,
+    /// `app_users` is the new user-scoped identity table. Optional during
+    /// the Phase 1 cutover so reduced-feature builds without a database
+    /// can still construct the service.
+    pub app_users_repo: Option<Arc<dyn AppUsersRepository>>,
+    /// Server-derived lifecycle stream (created / opened / identified /
+    /// reinstalled / new_device). Optional for the same reason as
+    /// `app_users_repo`.
+    pub install_events_repo: Option<Arc<dyn InstallEventsRepository>>,
     pub threat_feed: ThreatFeed,
     pub public_url: String,
     pub quota: Option<Arc<dyn QuotaChecker>>,
@@ -250,6 +260,45 @@ pub enum IdentifyOutcome {
     /// tenant, or it's already bound to a different user — both surface
     /// as 404.
     NotFound,
+}
+
+/// Attribution credit model applied at read time by the stats endpoint.
+///
+/// Defines which installs count toward a given link set:
+///
+/// - `LastTouch` (default): install's most-recent attribute event in the
+///   query window has `link_id` in the set. Matches the marketer's mental
+///   model of "which campaign closed this user."
+/// - `FirstTouch`: install's first attribute event in the window has
+///   `link_id` in the set. The acquisition-source model.
+/// - `Touched`: install has any attribute event with `link_id` in the
+///   set. Most generous — counts every install that ever encountered the
+///   link, including those credited elsewhere by stricter models.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreditModel {
+    FirstTouch,
+    LastTouch,
+    Touched,
+}
+
+impl CreditModel {
+    /// Parse the `?credit=` query value. Unknown / missing → default
+    /// (`LastTouch`).
+    pub fn parse(s: Option<&str>) -> Self {
+        match s.unwrap_or("last_touch") {
+            "first_touch" => Self::FirstTouch,
+            "touched" => Self::Touched,
+            _ => Self::LastTouch,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FirstTouch => "first_touch",
+            Self::LastTouch => "last_touch",
+            Self::Touched => "touched",
+        }
+    }
 }
 
 // ── Internal Types ──
@@ -703,6 +752,64 @@ pub struct AttributeRequest {
     pub install_id: String,
     #[schema(example = "2.4.1")]
     pub app_version: String,
+    /// Optional device + app context captured by the SDK from public OS
+    /// APIs (no permissions required). Used server-side to enrich
+    /// `install.created` events and to distinguish `install.reinstalled`
+    /// from `install.new_device` on identify. Absent on older SDK
+    /// versions that pre-date the context-capture release.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub context: Option<AttributeContext>,
+}
+
+/// Device / app context captured by the SDK. Mirror of
+/// [`crate::services::install_events::models::InstallContext`] at the
+/// API boundary — kept as a separate type so OpenAPI schemas don't leak
+/// internal storage types.
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
+pub struct AttributeContext {
+    #[schema(example = "2.4.1")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub app_version: Option<String>,
+    #[schema(example = "ios")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub platform: Option<String>,
+    #[schema(example = "iOS")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub os: Option<String>,
+    #[schema(example = "17.4.1")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub os_version: Option<String>,
+    #[schema(example = "iPhone15,4")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub device_model: Option<String>,
+    #[schema(example = "Apple")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub device_manufacturer: Option<String>,
+    #[schema(example = "en_US")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub locale: Option<String>,
+    #[schema(example = "US")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub region: Option<String>,
+    #[schema(example = "America/Los_Angeles")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub timezone: Option<String>,
+}
+
+impl From<AttributeContext> for crate::services::install_events::models::InstallContext {
+    fn from(c: AttributeContext) -> Self {
+        Self {
+            app_version: c.app_version,
+            platform: c.platform,
+            os: c.os,
+            os_version: c.os_version,
+            device_model: c.device_model,
+            device_manufacturer: c.device_manufacturer,
+            locale: c.locale,
+            region: c.region,
+            timezone: c.timezone,
+        }
+    }
 }
 
 // ── Timeseries Analytics Models ──

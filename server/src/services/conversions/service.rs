@@ -143,6 +143,7 @@ impl ConversionsService {
                 None => "30d".to_string(),
             };
             let record = ConversionEvent {
+                id: Some(ObjectId::new()),
                 meta: ConversionMeta {
                     tenant_id,
                     link_id: link_id.clone(),

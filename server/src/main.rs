@@ -201,13 +201,15 @@ async fn run_server(cfg: Config) {
         tokens_repo,
         affiliates_repo,
         sessions_repo,
+        app_users_repo,
+        install_events_repo,
     ) = if cfg.mongo_uri.is_empty() {
         tracing::warn!(
             "MONGO_URI not set — auth, links, domains, apps, webhooks, sdk_keys, conversions, and affiliates disabled"
         );
         (
             None, None, None, None, None, None, None, None, None, None, None, None, None, None,
-            None,
+            None, None, None,
         )
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
@@ -261,6 +263,13 @@ async fn run_server(cfg: Config) {
                         crate::services::auth::sessions::repo::SessionsRepoMongo::new(&database)
                             .await,
                     );
+                let app_users: Arc<dyn crate::services::app_users::repo::AppUsersRepository> =
+                    Arc::new(crate::services::app_users::repo::AppUsersRepo::new(&database).await);
+                let install_events: Arc<
+                    dyn crate::services::install_events::repo::InstallEventsRepository,
+                > = Arc::new(
+                    crate::services::install_events::repo::InstallEventsRepo::new(&database).await,
+                );
                 (
                     Some(tenants),
                     Some(users),
@@ -277,6 +286,8 @@ async fn run_server(cfg: Config) {
                     Some(tokens),
                     Some(affiliates),
                     Some(sessions),
+                    Some(app_users),
+                    Some(install_events),
                 )
             }
             None => {
@@ -285,7 +296,7 @@ async fn run_server(cfg: Config) {
                 );
                 (
                     None, None, None, None, None, None, None, None, None, None, None, None, None,
-                    None, None,
+                    None, None, None, None,
                 )
             }
         }
@@ -420,6 +431,8 @@ async fn run_server(cfg: Config) {
                 domains_repo: domains_repo.clone(),
                 affiliates_repo: affiliates_repo.clone(),
                 conversions_repo: conversions_repo.clone(),
+                app_users_repo: app_users_repo.clone(),
+                install_events_repo: install_events_repo.clone(),
                 threat_feed: threat_feed.clone(),
                 public_url: cfg.public_url.clone(),
                 quota: quota_service.clone(),
@@ -527,6 +540,18 @@ async fn run_server(cfg: Config) {
         _ => None,
     };
 
+    let analytics_service = match (&links_repo, &install_events_repo, &app_users_repo) {
+        (Some(l), Some(ie), Some(au)) => Some(Arc::new(
+            crate::services::analytics::service::AnalyticsService::new(
+                l.clone(),
+                ie.clone(),
+                au.clone(),
+                conversions_repo.clone(),
+            ),
+        )),
+        _ => None,
+    };
+
     let origin_matcher = crate::core::origin::OriginMatcher::from_env(&cfg);
 
     let state = Arc::new(AppState {
@@ -545,6 +570,7 @@ async fn run_server(cfg: Config) {
         webhook_dispatcher,
         sdk_keys_repo,
         conversions_repo,
+        analytics_service,
         links_service,
         domains_service,
         webhooks_service,

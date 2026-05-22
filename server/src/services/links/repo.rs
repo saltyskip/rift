@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use cached::proc_macro::cached;
 use cached::Cached;
-use mongodb::bson::{doc, oid::ObjectId, DateTime};
+use mongodb::bson::{self, doc, oid::ObjectId, DateTime};
 use mongodb::options::{IndexOptions, TimeseriesGranularity, TimeseriesOptions};
 use mongodb::{Collection, Database};
 
@@ -11,7 +11,8 @@ use mongodb::bson::Document;
 
 use super::models::{
     AttributeOutcome, AttributionEvent, AttributionEventMeta, BulkInsertError, ClickEvent,
-    ClickMeta, CreateLinkInput, IdentifyOutcome, Install, Link, LinkStatus, TimeseriesDataPoint,
+    ClickMeta, CreateLinkInput, CreditModel, IdentifyOutcome, Install, Link, LinkStatus,
+    TimeseriesDataPoint,
 };
 
 // ── Trait ──
@@ -129,6 +130,48 @@ pub trait LinksRepository: Send + Sync {
         tenant_id: &ObjectId,
         user_id: &str,
     ) -> Result<Option<Install>, String>;
+
+    /// Backfill `user_id` onto every `attribution_events` row for this
+    /// install where `user_id` is currently NULL. Called from the identify
+    /// path so pre-identify anonymous events become user-scoped queryable
+    /// without OR-clauses on the read side.
+    ///
+    /// The "only fill NULLs" rule preserves history on rebind: events that
+    /// already carry a prior user_id are never overwritten.
+    ///
+    /// Returns the number of rows updated.
+    async fn backfill_user_id_on_attribution_events(
+        &self,
+        tenant_id: &ObjectId,
+        install_id: &str,
+        user_id: &str,
+    ) -> Result<u64, String>;
+
+    /// Distinct install_ids credited to the given link set within the
+    /// time range, under the chosen attribution model:
+    ///
+    /// - `Touched`:    install has ANY event with `link_id` in set
+    /// - `FirstTouch`: install's FIRST event in range has `link_id` in set
+    /// - `LastTouch`:  install's LAST event in range has `link_id` in set
+    ///
+    /// Returns an empty set if `link_ids` is empty.
+    async fn distinct_install_ids_credited_to_links(
+        &self,
+        tenant_id: &ObjectId,
+        link_ids: &[String],
+        from: DateTime,
+        to: DateTime,
+        credit: CreditModel,
+    ) -> Result<Vec<String>, String>;
+
+    /// Count click events for a set of links in the time range.
+    async fn count_clicks_for_links(
+        &self,
+        tenant_id: &ObjectId,
+        link_ids: &[String],
+        from: DateTime,
+        to: DateTime,
+    ) -> Result<u64, String>;
 }
 
 // ── Repository ──
@@ -697,6 +740,137 @@ impl LinksRepository for LinksRepo {
     ) -> Result<Option<Install>, String> {
         self.installs
             .find_one(doc! { "tenant_id": tenant_id, "user_id": user_id })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn backfill_user_id_on_attribution_events(
+        &self,
+        tenant_id: &ObjectId,
+        install_id: &str,
+        user_id: &str,
+    ) -> Result<u64, String> {
+        // Filter by meta (indexed; the time-series collection's primary
+        // shard key). `user_id` is a top-level data field, so the $set is
+        // a normal field update — supported by MongoDB time-series
+        // collections on 5.0+.
+        let result = self
+            .attribution_events
+            .update_many(
+                doc! {
+                    "meta.tenant_id": tenant_id,
+                    "meta.install_id": install_id,
+                    "user_id": { "$eq": null },
+                },
+                doc! { "$set": { "user_id": user_id } },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result.modified_count)
+    }
+
+    async fn distinct_install_ids_credited_to_links(
+        &self,
+        tenant_id: &ObjectId,
+        link_ids: &[String],
+        from: DateTime,
+        to: DateTime,
+        credit: CreditModel,
+    ) -> Result<Vec<String>, String> {
+        if link_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let bson_ids: Vec<bson::Bson> = link_ids
+            .iter()
+            .map(|s| bson::Bson::String(s.clone()))
+            .collect();
+
+        // `Touched` is a simple distinct over events with link_id in set.
+        // `FirstTouch` / `LastTouch` require grouping by install and
+        // picking the boundary event in the time range.
+        match credit {
+            CreditModel::Touched => {
+                let values = self
+                    .attribution_events
+                    .distinct(
+                        "meta.install_id",
+                        doc! {
+                            "meta.tenant_id": tenant_id,
+                            "meta.link_id": { "$in": bson_ids },
+                            "timestamp": { "$gte": from, "$lte": to },
+                        },
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+                return Ok(values
+                    .into_iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect());
+            }
+            CreditModel::FirstTouch | CreditModel::LastTouch => {}
+        }
+
+        // Sort direction picks first vs last per install. $first inside
+        // the group then captures the boundary event's link_id.
+        let sort_dir: i32 = if matches!(credit, CreditModel::FirstTouch) {
+            1
+        } else {
+            -1
+        };
+        let pipeline = vec![
+            doc! {
+                "$match": {
+                    "meta.tenant_id": tenant_id,
+                    "timestamp": { "$gte": from, "$lte": to },
+                }
+            },
+            doc! { "$sort": { "meta.install_id": 1, "timestamp": sort_dir } },
+            doc! {
+                "$group": {
+                    "_id": "$meta.install_id",
+                    "boundary_link_id": { "$first": "$link_id" },
+                }
+            },
+            doc! { "$match": { "boundary_link_id": { "$in": bson_ids } } },
+            doc! { "$project": { "_id": 1 } },
+        ];
+
+        let mut cursor = self
+            .attribution_events
+            .aggregate(pipeline)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut out = Vec::new();
+        while cursor.advance().await.map_err(|e| e.to_string())? {
+            let raw: Document = cursor.deserialize_current().map_err(|e| e.to_string())?;
+            if let Ok(s) = raw.get_str("_id") {
+                out.push(s.to_string());
+            }
+        }
+        Ok(out)
+    }
+
+    async fn count_clicks_for_links(
+        &self,
+        tenant_id: &ObjectId,
+        link_ids: &[String],
+        from: DateTime,
+        to: DateTime,
+    ) -> Result<u64, String> {
+        if link_ids.is_empty() {
+            return Ok(0);
+        }
+        let bson_ids: Vec<bson::Bson> = link_ids
+            .iter()
+            .map(|s| bson::Bson::String(s.clone()))
+            .collect();
+        self.click_events
+            .count_documents(doc! {
+                "meta.tenant_id": tenant_id,
+                "meta.link_id": { "$in": bson_ids },
+                "clicked_at": { "$gte": from, "$lte": to },
+            })
             .await
             .map_err(|e| e.to_string())
     }

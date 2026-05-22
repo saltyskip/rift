@@ -77,4 +77,14 @@ impl ConversionsRepository for MockConversionsRepo {
     ) -> Result<Vec<ConversionDetail>, String> {
         Ok(Vec::new())
     }
+
+    async fn count_by_type_for_users(
+        &self,
+        _tenant_id: &ObjectId,
+        _user_ids: &[String],
+        _from: mongodb::bson::DateTime,
+        _to: mongodb::bson::DateTime,
+    ) -> Result<Vec<(String, u64)>, String> {
+        Ok(Vec::new())
+    }
 }

@@ -111,6 +111,8 @@ pub async fn spawn_app() -> TestApp {
             affiliates_repo: Some(affiliates_repo.clone()
                 as Arc<dyn rift::services::affiliates::repo::AffiliatesRepository>),
             conversions_repo: Some(conversions_repo.clone()),
+            app_users_repo: None,
+            install_events_repo: None,
             threat_feed: threat_feed.clone(),
             public_url: config.public_url.clone(),
             quota: None,
@@ -161,6 +163,7 @@ pub async fn spawn_app() -> TestApp {
         webhook_dispatcher: Some(webhook_dispatcher.clone() as Arc<dyn WebhookDispatcher>),
         sdk_keys_repo: Some(sdk_keys_repo.clone()
             as Arc<dyn rift::services::auth::publishable_keys::repo::SdkKeysRepository>),
+        analytics_service: None,
         links_service,
         domains_service: Some(Arc::new(
             rift::services::domains::service::DomainsService::new(

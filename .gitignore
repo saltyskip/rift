@@ -38,3 +38,6 @@ sdk/mobile/dist/android/kotlin/
 preview-*.html
 .claude/worktrees/
 .mcp.json
+
+# Working design docs (kept on disk, not tracked)
+ATTRIBUTION_PLAN.md

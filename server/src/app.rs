@@ -5,6 +5,7 @@ use crate::core::config::Config;
 use crate::core::origin::OriginMatcher;
 use crate::core::webhook_dispatcher::WebhookDispatcher;
 use crate::services::affiliates::service::AffiliatesService;
+use crate::services::analytics::service::AnalyticsService;
 use crate::services::apps::repo::AppsRepository;
 use crate::services::auth::oauth::OauthService;
 use crate::services::auth::publishable_keys::repo::SdkKeysRepository;
@@ -47,6 +48,7 @@ pub struct AppState {
     pub webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
     pub sdk_keys_repo: Option<Arc<dyn SdkKeysRepository>>,
     pub conversions_repo: Option<Arc<dyn ConversionsRepository>>,
+    pub analytics_service: Option<Arc<AnalyticsService>>,
     pub links_service: Option<Arc<LinksService>>,
     pub domains_service: Option<Arc<DomainsService>>,
     pub webhooks_service: Option<Arc<WebhooksService>>,

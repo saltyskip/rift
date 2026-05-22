@@ -1,4 +1,5 @@
 pub mod affiliates;
+pub mod analytics;
 pub mod apps;
 pub mod auth;
 pub mod billing;
@@ -70,6 +71,8 @@ use crate::app::AppState;
         lifecycle::routes::lifecycle_click,
         lifecycle::routes::lifecycle_attribute,
         lifecycle::routes::lifecycle_identify,
+        // Analytics — funnel stats across any set of links
+        analytics::routes::get_stats,
         // Link timeseries (lives in links since it's link-scoped analytics)
         links::routes::get_link_timeseries,
         // Webhooks — event notifications
@@ -125,7 +128,12 @@ use crate::app::AppState;
         crate::services::links::models::AttributeResponse,
         crate::services::links::models::IdentifyResponse,
         crate::services::links::models::AgentContext,
+        crate::services::links::models::AttributeContext,
         crate::services::links::models::SocialPreview,
+        crate::services::analytics::models::FunnelResult,
+        crate::services::analytics::models::Funnel,
+        crate::services::analytics::models::NewUsers,
+        crate::services::analytics::models::ReturningUsers,
         crate::services::links::models::TimeseriesDataPoint,
         crate::services::links::models::TimeseriesResponse,
         auth::secret_keys::models::RequestCreateKeyRequest,
@@ -195,6 +203,7 @@ use crate::app::AppState;
         (name = "Apps", description = "App configuration and association files (AASA / Asset Links)"),
         (name = "Links", description = "Create, list, update, delete, and resolve deep links"),
         (name = "Lifecycle", description = "Funnel event ingestion — click, attribute, identify, convert"),
+        (name = "Analytics", description = "Funnel stats and (future) timeseries across any set of links — branched response (new vs returning) → conversions"),
         (name = "Webhooks", description = "Real-time event notifications for clicks, attributes, identifies, and conversions"),
         (name = "Sources", description = "Configured webhook receivers that produce conversion events"),
         (name = "Affiliates", description = "Named partners with scoped credentials that mint links pinned to their affiliate"),
@@ -235,6 +244,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(auth::router(state.clone()))
         .merge(links::router(state.clone()))
         .merge(lifecycle::router(state.clone()))
+        .merge(analytics::router(state.clone()))
         .merge(domains::router(state.clone()))
         .merge(apps::router(state.clone()))
         .merge(webhooks::router(state.clone()))
