@@ -555,13 +555,18 @@ impl LinksRepository for LinksRepo {
         // picking the boundary event in the time range.
         match credit {
             CreditModel::Touched => {
+                // `link_id` is a top-level field on AttributionEvent, not
+                // in `meta` (meta = tenant_id + install_id +
+                // retention_bucket only). A previous version of this
+                // filter used `meta.link_id` and silently returned an
+                // empty set on every Touched query.
                 let values = self
                     .attribution_events
                     .distinct(
                         "meta.install_id",
                         doc! {
                             "meta.tenant_id": tenant_id,
-                            "meta.link_id": { "$in": bson_ids },
+                            "link_id": { "$in": bson_ids },
                             "timestamp": { "$gte": from, "$lte": to },
                         },
                     )
