@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use cached::proc_macro::cached;
 use cached::Cached;
-use mongodb::bson::{doc, oid::ObjectId, DateTime};
+use mongodb::bson::{self, doc, oid::ObjectId, DateTime};
 use mongodb::options::{IndexOptions, TimeseriesGranularity, TimeseriesOptions};
 use mongodb::{Collection, Database};
 
@@ -10,8 +10,8 @@ use crate::ensure_index;
 use mongodb::bson::Document;
 
 use super::models::{
-    AttributeOutcome, AttributionEvent, AttributionEventMeta, BulkInsertError, ClickEvent,
-    ClickMeta, CreateLinkInput, IdentifyOutcome, Install, Link, LinkStatus, TimeseriesDataPoint,
+    AttributionEvent, AttributionEventMeta, BulkInsertError, ClickEvent, ClickMeta,
+    CreateLinkInput, CreditModel, CreditedLinks, Link, LinkStatus,
 };
 
 // ── Trait ──
@@ -68,67 +68,80 @@ pub trait LinksRepository: Send + Sync {
         retention_bucket: String,
     ) -> Result<(), String>;
 
-    async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
-
-    async fn get_click_timeseries(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
-        from: DateTime,
-        to: DateTime,
-    ) -> Result<Vec<TimeseriesDataPoint>, String>;
-
-    /// Record a `/lifecycle/attribute` call. Appends an immutable event to
-    /// the `attribution_events` time-series collection AND upserts the
-    /// install's first-touch state in `installs`. `installs.first_link_id`
-    /// is set only on insert, so subsequent `attribute` calls for the same
-    /// install append to the event log but preserve the original
-    /// first-touch attribution.
-    ///
-    /// Returns `FirstTouch` on insert (`installs` row didn't exist), or
-    /// `Retouch` on every subsequent call. Both carry the install row
-    /// (with `user_id` if already bound) so the caller can build the
-    /// outbound webhook payload without a second query.
+    /// Append an immutable `/lifecycle/attribute` event to the
+    /// `attribution_events` time-series collection. `user_id` is stamped
+    /// at write time when the install is already bound (resolved by the
+    /// service via `app_users`) so user-scoped reads don't need an
+    /// OR-clause on `null`.
     async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
         link_id: &str,
         install_id: &str,
         app_version: &str,
+        user_id: Option<&str>,
         retention_bucket: String,
-    ) -> Result<AttributeOutcome, String>;
+    ) -> Result<(), String>;
 
-    /// Bind `user_id` onto the install's row in `installs`. Idempotent
-    /// at the same `(install_id, user_id)` pair (returns `AlreadyBound`).
-    async fn identify_install(
+    /// Backfill `user_id` onto every `attribution_events` row for this
+    /// install where `user_id` is currently NULL. Called from the identify
+    /// path so pre-identify anonymous events become user-scoped queryable
+    /// without OR-clauses on the read side.
+    ///
+    /// The "only fill NULLs" rule preserves history on rebind: events that
+    /// already carry a prior user_id are never overwritten.
+    ///
+    /// Returns the number of rows updated.
+    async fn backfill_user_id_on_attribution_events(
         &self,
         tenant_id: &ObjectId,
         install_id: &str,
         user_id: &str,
-    ) -> Result<IdentifyOutcome, String>;
-
-    /// Count distinct installs first-attributed to this link.
-    async fn count_installs_by_first_link(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
     ) -> Result<u64, String>;
 
-    /// Count installs first-attributed to this link whose `user_id` is
-    /// bound — i.e. installs that progressed through
-    /// `PUT /v1/lifecycle/identify`. `identify_count` in the stats
-    /// response.
-    async fn count_identifies(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String>;
+    /// Distinct install_ids credited to the given link set within the
+    /// time range, under the chosen attribution model:
+    ///
+    /// - `Touched`:    install has ANY event with `link_id` in set
+    /// - `FirstTouch`: install's FIRST event in range has `link_id` in set
+    /// - `LastTouch`:  install's LAST event in range has `link_id` in set
+    ///
+    /// Returns an empty set if `link_ids` is empty.
+    async fn distinct_install_ids_credited_to_links(
+        &self,
+        tenant_id: &ObjectId,
+        link_ids: &[String],
+        from: DateTime,
+        to: DateTime,
+        credit: CreditModel,
+    ) -> Result<Vec<String>, String>;
 
-    /// Find the install for a given `user_id` within a tenant. Used by
-    /// the conversion ingestion path to resolve `user_id → first_link_id`
-    /// so events can be attributed back to the link that drove the
-    /// install.
-    async fn find_install_by_user(
+    /// Count click events for a set of links in the time range.
+    async fn count_clicks_for_links(
+        &self,
+        tenant_id: &ObjectId,
+        link_ids: &[String],
+        from: DateTime,
+        to: DateTime,
+    ) -> Result<u64, String>;
+
+    /// Resolve the user's credited links at a moment in time.
+    ///
+    /// Walks the user's `attribution_events` with `timestamp ≤ at_or_before`
+    /// and returns the first-touch and last-touch link_ids in one round
+    /// trip. Both are returned so webhook payloads can carry both
+    /// flavours — receivers pick whichever matches their attribution
+    /// philosophy without needing to query Rift back.
+    ///
+    /// Returns `(None, None)` for a user with no attribution events on
+    /// or before the cutoff (a backend-fired conversion for a user who
+    /// hasn't done a `/lifecycle/attribute` yet, for example).
+    async fn credited_links_for_user(
         &self,
         tenant_id: &ObjectId,
         user_id: &str,
-    ) -> Result<Option<Install>, String>;
+        at_or_before: DateTime,
+    ) -> Result<CreditedLinks, String>;
 }
 
 // ── Repository ──
@@ -138,10 +151,6 @@ crate::impl_container!(LinksRepo);
 pub struct LinksRepo {
     links: Collection<Link>,
     click_events: Collection<ClickEvent>,
-    /// Materialized first-touch + user_id binding per `(tenant_id,
-    /// install_id)`. Mutable. Source of truth for stats counts and
-    /// `user_id → link_id` conversion lookups.
-    installs: Collection<Install>,
     /// Immutable time-series log of every `/lifecycle/attribute` call.
     /// Time-bucketed analytics + tier-based retention; never mutated.
     attribution_events: Collection<AttributionEvent>,
@@ -207,11 +216,16 @@ impl LinksRepo {
         )
         .await;
 
-        // `installs` is a regular (non-time-series) collection because we
-        // need to mutate `user_id` after insert — time-series rows are
-        // immutable. The time-series `attribution_events` is the
-        // append-only event log; `installs` is the mutable projection.
-        let installs = database.collection::<Install>("installs");
+        // Powers the credited-link lookups used by the funnel's
+        // conversion count and by the identify/conversion webhooks. The
+        // filter shape is `(meta.tenant_id, user_id, timestamp ≤ ?)`
+        // with a sort on timestamp — the planner can serve first/last
+        // touch with one index walk per user.
+        ensure_index!(
+            attribution_events,
+            doc! { "meta.tenant_id": 1, "user_id": 1, "timestamp": 1 },
+            "attribution_events_tenant_user_time"
+        );
 
         // Drop the old global unique index if it exists (replaced by compound index).
         let _ = links.drop_index("link_id_unique").await;
@@ -229,29 +243,9 @@ impl LinksRepo {
             "links_tenant_affiliate"
         );
 
-        ensure_index!(
-            installs,
-            doc! { "tenant_id": 1, "install_id": 1 },
-            IndexOptions::builder().unique(true).build(),
-            "installs_tenant_install_unique"
-        );
-        // Stats: count distinct installs first-attributed to a link.
-        ensure_index!(
-            installs,
-            doc! { "tenant_id": 1, "first_link_id": 1 },
-            "installs_tenant_first_link"
-        );
-        // Conversion lookup: user_id → install (→ first_link_id).
-        ensure_index!(
-            installs,
-            doc! { "tenant_id": 1, "user_id": 1 },
-            "installs_tenant_user"
-        );
-
         LinksRepo {
             links,
             click_events,
-            installs,
             attribution_events,
         }
     }
@@ -488,120 +482,17 @@ impl LinksRepository for LinksRepo {
         Ok(())
     }
 
-    async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
-        self.click_events
-            .count_documents(doc! { "meta.tenant_id": tenant_id, "meta.link_id": link_id })
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    async fn get_click_timeseries(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
-        from: DateTime,
-        to: DateTime,
-    ) -> Result<Vec<TimeseriesDataPoint>, String> {
-        let pipeline = vec![
-            doc! {
-                "$match": {
-                    "meta.tenant_id": tenant_id,
-                    "meta.link_id": link_id,
-                    "clicked_at": { "$gte": from, "$lte": to }
-                }
-            },
-            doc! {
-                "$group": {
-                    "_id": {
-                        "$dateToString": { "format": "%Y-%m-%d", "date": "$clicked_at" }
-                    },
-                    "clicks": { "$sum": 1 }
-                }
-            },
-            doc! { "$sort": { "_id": 1 } },
-            doc! {
-                "$project": {
-                    "_id": 0,
-                    "date": "$_id",
-                    "clicks": 1
-                }
-            },
-        ];
-
-        let mut cursor = self
-            .click_events
-            .aggregate(pipeline)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let mut results = Vec::new();
-        while cursor.advance().await.map_err(|e| e.to_string())? {
-            let doc = cursor.deserialize_current().map_err(|e| e.to_string())?;
-            let date = doc.get_str("date").map_err(|e| e.to_string())?.to_string();
-            let clicks = doc
-                .get_i64("clicks")
-                .or_else(|_| doc.get_i32("clicks").map(|v| v as i64))
-                .map_err(|e| e.to_string())? as u64;
-            results.push(TimeseriesDataPoint { date, clicks });
-        }
-        Ok(results)
-    }
-
     async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
         link_id: &str,
         install_id: &str,
         app_version: &str,
+        user_id: Option<&str>,
         retention_bucket: String,
-    ) -> Result<AttributeOutcome, String> {
-        // Step 1: try to insert a fresh install row. `$setOnInsert` keeps
-        // first-touch attribution stable across re-attributions. On insert
-        // we capture `installs.first_link_id = link_id`; on no-op (row
-        // already exists) the existing first_link_id stays.
-        use mongodb::options::ReturnDocument;
-        let now = DateTime::now();
-
-        let install = self
-            .installs
-            .find_one_and_update(
-                doc! { "tenant_id": &tenant_id, "install_id": install_id },
-                doc! {
-                    "$setOnInsert": {
-                        "_id": ObjectId::new(),
-                        "tenant_id": &tenant_id,
-                        "install_id": install_id,
-                        "first_link_id": link_id,
-                        "first_app_version": app_version,
-                        "first_attributed_at": now,
-                    }
-                },
-            )
-            .upsert(true)
-            .return_document(ReturnDocument::Before)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let is_first_touch = install.is_none();
-        // Resolved post-update install. On first-touch we construct it
-        // in-memory rather than re-query; on retouch we use the Before doc
-        // (it's unchanged because $setOnInsert is a no-op).
-        let install = install.unwrap_or_else(|| Install {
-            id: ObjectId::new(), // not authoritative — we never use this in retouch path
-            tenant_id,
-            install_id: install_id.to_string(),
-            first_link_id: link_id.to_string(),
-            first_app_version: app_version.to_string(),
-            first_attributed_at: now,
-            user_id: None,
-            identified_at: None,
-        });
-
-        // Step 2: append an immutable event to the time series. Includes
-        // the install's current user_id so downstream subscribers can
-        // act on existing-install re-attribution without a second roundtrip.
+    ) -> Result<(), String> {
         let event = AttributionEvent {
-            timestamp: now,
+            timestamp: DateTime::now(),
             meta: AttributionEventMeta {
                 tenant_id,
                 install_id: install_id.to_string(),
@@ -609,96 +500,208 @@ impl LinksRepository for LinksRepo {
             },
             link_id: link_id.to_string(),
             app_version: app_version.to_string(),
-            user_id: install.user_id.clone(),
+            user_id: user_id.map(|s| s.to_string()),
         };
         self.attribution_events
             .insert_one(&event)
             .await
             .map_err(|e| e.to_string())?;
-
-        Ok(if is_first_touch {
-            AttributeOutcome::FirstTouch(install)
-        } else {
-            AttributeOutcome::Retouch(install)
-        })
+        Ok(())
     }
 
-    async fn identify_install(
+    async fn backfill_user_id_on_attribution_events(
         &self,
         tenant_id: &ObjectId,
         install_id: &str,
         user_id: &str,
-    ) -> Result<IdentifyOutcome, String> {
-        // `find_one_and_update` with `ReturnDocument::Before` lets us
-        // distinguish a new bind from an idempotent rebind in a single
-        // roundtrip: if `before.user_id == Some(user_id)`, this was a no-op
-        // and the webhook should NOT fire.
-        use mongodb::options::ReturnDocument;
-        let before = self
-            .installs
-            .find_one_and_update(
+    ) -> Result<u64, String> {
+        // Filter by meta (indexed; the time-series collection's primary
+        // shard key). `user_id` is a top-level data field, so the $set is
+        // a normal field update — supported by MongoDB time-series
+        // collections on 5.0+.
+        let result = self
+            .attribution_events
+            .update_many(
                 doc! {
-                    "tenant_id": tenant_id,
-                    "install_id": install_id,
-                    "$or": [
-                        { "user_id": { "$exists": false } },
-                        { "user_id": null },
-                        { "user_id": user_id },
-                    ]
+                    "meta.tenant_id": tenant_id,
+                    "meta.install_id": install_id,
+                    "user_id": { "$eq": null },
                 },
-                doc! { "$set": { "user_id": user_id, "identified_at": DateTime::now() } },
+                doc! { "$set": { "user_id": user_id } },
             )
-            .return_document(ReturnDocument::Before)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result.modified_count)
+    }
+
+    async fn distinct_install_ids_credited_to_links(
+        &self,
+        tenant_id: &ObjectId,
+        link_ids: &[String],
+        from: DateTime,
+        to: DateTime,
+        credit: CreditModel,
+    ) -> Result<Vec<String>, String> {
+        if link_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let bson_ids: Vec<bson::Bson> = link_ids
+            .iter()
+            .map(|s| bson::Bson::String(s.clone()))
+            .collect();
+
+        // `Touched` is a simple distinct over events with link_id in set.
+        // `FirstTouch` / `LastTouch` require grouping by install and
+        // picking the boundary event in the time range.
+        match credit {
+            CreditModel::Touched => {
+                let values = self
+                    .attribution_events
+                    .distinct(
+                        "meta.install_id",
+                        doc! {
+                            "meta.tenant_id": tenant_id,
+                            "meta.link_id": { "$in": bson_ids },
+                            "timestamp": { "$gte": from, "$lte": to },
+                        },
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+                return Ok(values
+                    .into_iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect());
+            }
+            CreditModel::FirstTouch | CreditModel::LastTouch => {}
+        }
+
+        // Sort direction picks first vs last per install. $first inside
+        // the group then captures the boundary event's link_id.
+        let sort_dir: i32 = if matches!(credit, CreditModel::FirstTouch) {
+            1
+        } else {
+            -1
+        };
+        let pipeline = vec![
+            doc! {
+                "$match": {
+                    "meta.tenant_id": tenant_id,
+                    "timestamp": { "$gte": from, "$lte": to },
+                }
+            },
+            doc! { "$sort": { "meta.install_id": 1, "timestamp": sort_dir } },
+            doc! {
+                "$group": {
+                    "_id": "$meta.install_id",
+                    "boundary_link_id": { "$first": "$link_id" },
+                }
+            },
+            doc! { "$match": { "boundary_link_id": { "$in": bson_ids } } },
+            doc! { "$project": { "_id": 1 } },
+        ];
+
+        let mut cursor = self
+            .attribution_events
+            .aggregate(pipeline)
             .await
             .map_err(|e| e.to_string())?;
 
-        let Some(mut install) = before else {
-            return Ok(IdentifyOutcome::NotFound);
-        };
-
-        let was_already_bound = install.user_id.as_deref() == Some(user_id);
-        install.user_id = Some(user_id.to_string());
-        install.identified_at = Some(DateTime::now());
-
-        Ok(if was_already_bound {
-            IdentifyOutcome::AlreadyBound(install)
-        } else {
-            IdentifyOutcome::NewBind(install)
-        })
+        let mut out = Vec::new();
+        while cursor.advance().await.map_err(|e| e.to_string())? {
+            let raw: Document = cursor.deserialize_current().map_err(|e| e.to_string())?;
+            if let Ok(s) = raw.get_str("_id") {
+                out.push(s.to_string());
+            }
+        }
+        Ok(out)
     }
 
-    async fn count_installs_by_first_link(
+    async fn count_clicks_for_links(
         &self,
         tenant_id: &ObjectId,
-        link_id: &str,
+        link_ids: &[String],
+        from: DateTime,
+        to: DateTime,
     ) -> Result<u64, String> {
-        self.installs
-            .count_documents(doc! { "tenant_id": tenant_id, "first_link_id": link_id })
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    async fn count_identifies(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
-        // Identify-completed installs first-attributed to this link.
-        self.installs
+        if link_ids.is_empty() {
+            return Ok(0);
+        }
+        let bson_ids: Vec<bson::Bson> = link_ids
+            .iter()
+            .map(|s| bson::Bson::String(s.clone()))
+            .collect();
+        self.click_events
             .count_documents(doc! {
-                "tenant_id": tenant_id,
-                "first_link_id": link_id,
-                "user_id": { "$ne": null },
+                "meta.tenant_id": tenant_id,
+                "meta.link_id": { "$in": bson_ids },
+                "clicked_at": { "$gte": from, "$lte": to },
             })
             .await
             .map_err(|e| e.to_string())
     }
 
-    async fn find_install_by_user(
+    async fn credited_links_for_user(
         &self,
         tenant_id: &ObjectId,
         user_id: &str,
-    ) -> Result<Option<Install>, String> {
-        self.installs
-            .find_one(doc! { "tenant_id": tenant_id, "user_id": user_id })
+        at_or_before: DateTime,
+    ) -> Result<CreditedLinks, String> {
+        // One aggregation, two boundaries via $facet — the filter walks
+        // the (meta.tenant_id, user_id, timestamp) index for each
+        // branch; `$first` after a sort gives the boundary event in O(1)
+        // index hops once the planner picks the right walk direction.
+        let match_stage = doc! {
+            "meta.tenant_id": tenant_id,
+            "user_id": user_id,
+            "timestamp": { "$lte": at_or_before },
+        };
+        let pipeline = vec![
+            doc! { "$match": match_stage },
+            doc! {
+                "$facet": {
+                    "first": [
+                        { "$sort": { "timestamp": 1 } },
+                        { "$limit": 1 },
+                        { "$project": { "_id": 0, "link_id": 1 } },
+                    ],
+                    "last": [
+                        { "$sort": { "timestamp": -1 } },
+                        { "$limit": 1 },
+                        { "$project": { "_id": 0, "link_id": 1 } },
+                    ],
+                }
+            },
+        ];
+
+        let mut cursor = self
+            .attribution_events
+            .aggregate(pipeline)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+
+        if !cursor.advance().await.map_err(|e| e.to_string())? {
+            return Ok(CreditedLinks::default());
+        }
+        let raw: Document = cursor.deserialize_current().map_err(|e| e.to_string())?;
+
+        let extract = |key: &str| -> Option<String> {
+            raw.get_array(key)
+                .ok()?
+                .first()?
+                .as_document()?
+                .get_str("link_id")
+                .ok()
+                .map(|s| s.to_string())
+        };
+
+        Ok(CreditedLinks {
+            first_touch_link_id: extract("first"),
+            last_touch_link_id: extract("last"),
+            // Metadata is enriched in the service layer (cached
+            // `find_link_by_tenant_and_id`) — the repo returns IDs only.
+            first_touch_link_metadata: None,
+            last_touch_link_metadata: None,
+        })
     }
 }
 

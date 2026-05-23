@@ -129,6 +129,38 @@ pub struct AttributeRequest {
     pub link_id: String,
     pub install_id: String,
     pub app_version: String,
+    /// Device + app context captured from public OS APIs. Sent so the
+    /// server can enrich `install.created` events and distinguish
+    /// `install.reinstalled` from `install.new_device` on identify.
+    /// Absent on older callers; server treats missing as "no context."
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<DeviceContext>,
+}
+
+/// Device / app metadata captured from public OS APIs (no permissions).
+/// Mirrors `crate::services::links::models::AttributeContext` on the
+/// server side. All fields optional — callers populate what they can
+/// from their platform's `UIDevice` / `Build` equivalent.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct DeviceContext {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub os: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub os_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_manufacturer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
 }
 
 /// Response from `POST /v1/lifecycle/attribute`. See server-side
@@ -248,12 +280,28 @@ impl RiftClient {
         install_id: impl Into<String>,
         app_version: impl Into<String>,
     ) -> Result<AttributeResponse, RiftClientError> {
+        self.attribute_with_context(link_id, install_id, app_version, None)
+            .await
+    }
+
+    /// Same as [`Self::attribute`] but with an optional device-context
+    /// payload. Platform SDKs (iOS / Android) read their UIDevice / Build
+    /// equivalents and pass the captured values up so the server can
+    /// distinguish reinstall vs new_device on identify.
+    pub async fn attribute_with_context(
+        &self,
+        link_id: impl Into<String>,
+        install_id: impl Into<String>,
+        app_version: impl Into<String>,
+        context: Option<DeviceContext>,
+    ) -> Result<AttributeResponse, RiftClientError> {
         self.post(
             "/v1/lifecycle/attribute",
             &AttributeRequest {
                 link_id: link_id.into(),
                 install_id: install_id.into(),
                 app_version: app_version.into(),
+                context,
             },
             false,
         )

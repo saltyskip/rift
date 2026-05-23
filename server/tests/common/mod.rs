@@ -16,9 +16,9 @@ use rift::services::auth::users::repo::UsersRepository;
 use rift::services::domains::repo::DomainsRepository;
 
 use mocks::{
-    MockAffiliatesRepo, MockAppsRepo, MockConversionsRepo, MockDomainsRepo, MockLinksRepo,
-    MockSdkKeysRepo, MockSecretKeysRepo, MockTenantsRepo, MockTokensRepo, MockUsageRepo,
-    MockUsersRepo, MockWebhookDispatcher, MockWebhooksRepo,
+    MockAffiliatesRepo, MockAppUsersRepo, MockAppsRepo, MockConversionsRepo, MockDomainsRepo,
+    MockLinksRepo, MockSdkKeysRepo, MockSecretKeysRepo, MockTenantsRepo, MockTokensRepo,
+    MockUsageRepo, MockUsersRepo, MockWebhookDispatcher, MockWebhooksRepo,
 };
 
 #[allow(dead_code)]
@@ -102,6 +102,9 @@ pub async fn spawn_app() -> TestApp {
     let conversions_repo: Arc<dyn rift::services::conversions::repo::ConversionsRepository> =
         Arc::new(MockConversionsRepo::default());
 
+    let app_users_repo: Arc<dyn rift::services::app_users::repo::AppUsersRepository> =
+        Arc::new(MockAppUsersRepo::default());
+
     let links_service = Some(Arc::new(rift::services::links::service::LinksService::new(
         rift::services::links::models::LinksServiceDeps {
             links_repo: links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>,
@@ -110,7 +113,8 @@ pub async fn spawn_app() -> TestApp {
             ),
             affiliates_repo: Some(affiliates_repo.clone()
                 as Arc<dyn rift::services::affiliates::repo::AffiliatesRepository>),
-            conversions_repo: Some(conversions_repo.clone()),
+            app_users_repo: Some(app_users_repo.clone()),
+            install_events_repo: None,
             threat_feed: threat_feed.clone(),
             public_url: config.public_url.clone(),
             quota: None,
@@ -121,7 +125,8 @@ pub async fn spawn_app() -> TestApp {
     let conversions_service = Some(Arc::new(
         rift::services::conversions::service::ConversionsService::new(
             conversions_repo.clone(),
-            links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>,
+            Some(app_users_repo.clone()),
+            Some(links_repo.clone() as Arc<dyn rift::services::links::repo::LinksRepository>),
             Some(webhook_dispatcher.clone() as Arc<dyn WebhookDispatcher>),
             None,
             None,
@@ -161,6 +166,7 @@ pub async fn spawn_app() -> TestApp {
         webhook_dispatcher: Some(webhook_dispatcher.clone() as Arc<dyn WebhookDispatcher>),
         sdk_keys_repo: Some(sdk_keys_repo.clone()
             as Arc<dyn rift::services::auth::publishable_keys::repo::SdkKeysRepository>),
+        analytics_service: None,
         links_service,
         domains_service: Some(Arc::new(
             rift::services::domains::service::DomainsService::new(

@@ -9,12 +9,15 @@ use super::repo::LinksRepository;
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
 use crate::services::affiliates::repo::AffiliatesRepository;
+use crate::services::app_users::models::AppUserUpsert;
+use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::auth::permissions::{AuthContext, Permission, ResourceScope};
 use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
-use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
+use crate::services::install_events::models::InstallContext;
+use crate::services::install_events::repo::InstallEventsRepository;
 
 // ── Service ──
 
@@ -32,10 +35,12 @@ pub struct LinksService {
     /// "no affiliates configured" → `AffiliateNotFound` for explicit values
     /// and a graceful pass-through for unscoped/no-affiliate creates.
     affiliates_repo: Option<Arc<dyn AffiliatesRepository>>,
-    /// Optional because conversion tracking is feature-flagged and the test
-    /// harness boots without it. Stats fall back to an empty conversion list
-    /// when absent, matching the legacy route-handler behavior.
-    conversions_repo: Option<Arc<dyn ConversionsRepository>>,
+    /// Owner of the user-scoped identity table. Optional during the
+    /// Phase 1 cutover; identify_install gracefully no-ops the new write
+    /// path when absent so legacy boot paths keep working.
+    app_users_repo: Option<Arc<dyn AppUsersRepository>>,
+    /// Owner of the server-derived install lifecycle stream.
+    install_events_repo: Option<Arc<dyn InstallEventsRepository>>,
     threat_feed: ThreatFeed,
     public_url: String,
     quota: Option<Arc<dyn QuotaChecker>>,
@@ -48,12 +53,176 @@ impl LinksService {
             links_repo: deps.links_repo,
             domains_repo: deps.domains_repo,
             affiliates_repo: deps.affiliates_repo,
-            conversions_repo: deps.conversions_repo,
+            app_users_repo: deps.app_users_repo,
+            install_events_repo: deps.install_events_repo,
             threat_feed: deps.threat_feed,
             public_url: deps.public_url,
             quota: deps.quota,
             tiers: deps.tiers,
         }
+    }
+
+    /// Orchestrate a `/lifecycle/identify` call:
+    ///
+    /// 1. Reject if `install_id` is already bound to a *different* user
+    ///    (rebind protection — see `LinkError::IdentifyConflict`).
+    /// 2. Upsert the `app_users` identity row, adding `install_id` to the
+    ///    user's `install_ids` array (idempotent via `$addToSet`).
+    /// 3. Backfill `attribution_events.user_id` for prior anonymous events
+    ///    on this install, filling NULLs only — never overwriting.
+    /// 4. Fan-out `install_events` (`identified` plus `reinstalled` /
+    ///    `new_device` based on prior install device_models).
+    ///
+    /// Per CLAUDE.md, all transport layers must call this method instead
+    /// of touching the repos directly.
+    pub async fn identify_install(
+        &self,
+        tenant_id: &ObjectId,
+        install_id: &str,
+        user_id: &str,
+    ) -> Result<IdentifyOutcome, LinkError> {
+        let Some(app_users) = &self.app_users_repo else {
+            // No app_users repo configured (reduced-feature build / test
+            // harness without identity). Identify is a no-op in that mode.
+            return Ok(IdentifyOutcome::AlreadyPresent);
+        };
+
+        // 1. Rebind guard. If the install is already bound to a different
+        //    user, refuse — option B from the cutover discussion. The
+        //    SDK's expected behavior is one install ↔ one user; rebinding
+        //    silently would let a logged-out + re-logged-in flow on a
+        //    shared device leak attribution across users.
+        if let Some(existing) = app_users
+            .find_user_id_for_install(tenant_id, install_id)
+            .await
+            .map_err(LinkError::Internal)?
+        {
+            if existing != user_id {
+                return Err(LinkError::IdentifyConflict {
+                    existing_user_id: existing,
+                });
+            }
+        }
+
+        // 2. Capture the user's prior install_ids BEFORE the upsert adds
+        //    the current one — this is what feeds the reinstall vs
+        //    new_device classification in step 4.
+        let prior_install_ids: Vec<String> =
+            match app_users.find_by_user_id(tenant_id, user_id).await {
+                Ok(Some(existing)) => existing.install_ids,
+                Ok(None) => Vec::new(),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        user_id,
+                        "app_users prior lookup failed during identify"
+                    );
+                    Vec::new()
+                }
+            };
+
+        let upsert = app_users
+            .upsert_with_install(tenant_id, user_id, install_id)
+            .await
+            .map_err(LinkError::Internal)?;
+
+        // 3 + 4 only run on real state changes. AlreadyPresent is an
+        // idempotent SDK retry — skip side-effects to avoid double-firing
+        // identify webhooks or redundantly rewriting backfilled rows.
+        if matches!(upsert, AppUserUpsert::AlreadyPresent) {
+            return Ok(IdentifyOutcome::AlreadyPresent);
+        }
+
+        // 3. Backfill attribution_events.user_id for prior anonymous
+        //    events on this install. Best-effort; failure logs but
+        //    doesn't fail the identify.
+        match self
+            .links_repo
+            .backfill_user_id_on_attribution_events(tenant_id, install_id, user_id)
+            .await
+        {
+            Ok(n) if n > 0 => {
+                tracing::debug!(
+                    backfilled = n,
+                    install_id,
+                    user_id,
+                    "attribution_events user_id backfilled"
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    install_id,
+                    user_id,
+                    "attribution_events backfill failed during identify"
+                );
+            }
+        }
+
+        // 4. Fan-out install lifecycle events. Compares device_model
+        //    against the user's prior installs' device_models to classify
+        //    reinstall vs new_device.
+        if let Some(install_events) = &self.install_events_repo {
+            let current_device_model = install_events
+                .get_device_model(tenant_id, install_id)
+                .await
+                .ok()
+                .flatten();
+
+            let mut prior_device_models = Vec::with_capacity(prior_install_ids.len());
+            for prior_id in &prior_install_ids {
+                if let Ok(Some(model)) = install_events.get_device_model(tenant_id, prior_id).await
+                {
+                    prior_device_models.push(model);
+                }
+            }
+
+            if let Err(e) = install_events
+                .record_identify_lifecycle(
+                    tenant_id,
+                    install_id,
+                    user_id,
+                    &prior_install_ids,
+                    &prior_device_models,
+                    current_device_model.as_deref(),
+                )
+                .await
+            {
+                tracing::warn!(
+                    error = %e,
+                    install_id,
+                    user_id,
+                    "install_events identify fan-out failed"
+                );
+            }
+        }
+
+        // 5. Compute first/last touch credit AFTER the backfill — by
+        //    this point the user's attribution chain includes the newly
+        //    identified install's prior anonymous events, so the credit
+        //    reflects the unified chain. Best-effort lookup; on failure
+        //    the webhook still fires with both fields absent.
+        let credited_ids = self
+            .links_repo
+            .credited_links_for_user(tenant_id, user_id, mongodb::bson::DateTime::now())
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    error = %e,
+                    user_id,
+                    "credited_links_for_user failed during identify"
+                );
+                Default::default()
+            });
+        let credited =
+            enrich_credited_with_metadata(self.links_repo.as_ref(), tenant_id, credited_ids).await;
+
+        Ok(match upsert {
+            AppUserUpsert::Created => IdentifyOutcome::Created(credited),
+            AppUserUpsert::InstallAdded => IdentifyOutcome::InstallAdded(credited),
+            AppUserUpsert::AlreadyPresent => unreachable!("guarded above"),
+        })
     }
 
     /// Fire-and-forget click recording. Runs the `TrackEvent` quota check
@@ -103,20 +272,21 @@ impl LinksService {
     }
 
     /// Record a `/lifecycle/attribute` event. Runs the `TrackEvent` quota
-    /// gate, resolves the tenant's retention bucket, then delegates to the
-    /// repository (which inserts the immutable time-series event and
-    /// upserts the install's first-touch state in one logical step).
+    /// gate, resolves the tenant's retention bucket, looks up the
+    /// install's bound user_id (if any) via `app_users`, then inserts the
+    /// immutable time-series event with `user_id` stamped at write time.
     ///
-    /// Returned `AttributeOutcome` distinguishes first-touch from retouch;
-    /// both carry the install row so the route handler can build the
-    /// outbound webhook payload (including `user_id` if already bound).
+    /// Returns the bound `user_id` (when known) so the route handler can
+    /// include it in the outbound `attribute` webhook payload without
+    /// re-querying.
     pub async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
         link_id: &str,
         install_id: &str,
         app_version: &str,
-    ) -> Result<AttributeOutcome, String> {
+        context: Option<InstallContext>,
+    ) -> Result<Option<String>, String> {
         if let Some(q) = &self.quota {
             if let Err(e) = q.check(&tenant_id, Resource::TrackEvent).await {
                 tracing::info!(error = %e, "attribute_track_quota_skipped");
@@ -128,15 +298,53 @@ impl LinksService {
             None => "30d".to_string(),
         };
 
+        // Resolve user_id at write time so the row doesn't need to be
+        // backfilled later for already-identified installs. Best-effort —
+        // a lookup failure logs and falls back to None (the next identify
+        // will backfill).
+        let user_id = match &self.app_users_repo {
+            Some(app_users) => app_users
+                .find_user_id_for_install(&tenant_id, install_id)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, install_id, "app_users user_id lookup failed");
+                    None
+                }),
+            None => None,
+        };
+
         self.links_repo
             .record_attribute_event(
                 tenant_id,
                 link_id,
                 install_id,
                 app_version,
+                user_id.as_deref(),
                 retention_bucket,
             )
-            .await
+            .await?;
+
+        // Fan-out: write install.created (first time) or install.opened
+        // (subsequent). Best-effort — failure here doesn't fail the
+        // attribute call.
+        if let Some(install_events) = &self.install_events_repo {
+            let ctx = context.unwrap_or_else(|| InstallContext {
+                app_version: Some(app_version.to_string()),
+                ..InstallContext::default()
+            });
+            if let Err(e) = install_events
+                .record_attribute_lifecycle(&tenant_id, install_id, &ctx)
+                .await
+            {
+                tracing::warn!(
+                    error = %e,
+                    install_id,
+                    "install_events fan-out failed during attribute"
+                );
+            }
+        }
+
+        Ok(user_id)
     }
 
     #[tracing::instrument(skip(self, req, ctx))]
@@ -490,69 +698,6 @@ impl LinksService {
         Ok(self.link_to_detail(&link).await)
     }
 
-    /// Aggregate click / install / identify / conversion counts for a link.
-    ///
-    /// Conversion data is additive: if the conversions repo is not configured
-    /// or its aggregation fails, the response still returns the load-bearing
-    /// counters with an empty `conversions` list, rather than failing the
-    /// whole call.
-    #[tracing::instrument(skip(self, ctx))]
-    #[requires(Permission::LinksRead)]
-    pub async fn get_link_stats(
-        &self,
-        ctx: &AuthContext,
-        link_id: &str,
-    ) -> Result<LinkStatsResponse, LinkError> {
-        let tenant_id = &ctx.tenant_id;
-        let link = self
-            .links_repo
-            .find_link_by_tenant_and_id(tenant_id, link_id)
-            .await
-            .map_err(LinkError::Internal)?
-            .ok_or(LinkError::NotFound)?;
-
-        if let ResourceScope::Affiliate { affiliate_id } = ctx.resource_scope {
-            if link.affiliate_id != Some(affiliate_id) {
-                return Err(LinkError::NotFound);
-            }
-        }
-
-        let click_count = self
-            .links_repo
-            .count_clicks(tenant_id, link_id)
-            .await
-            .unwrap_or(0);
-        let install_count = self
-            .links_repo
-            .count_installs_by_first_link(tenant_id, link_id)
-            .await
-            .unwrap_or(0);
-        let identify_count = self
-            .links_repo
-            .count_identifies(tenant_id, link_id)
-            .await
-            .unwrap_or(0);
-
-        let conversions = if let Some(conv_repo) = &self.conversions_repo {
-            conv_repo
-                .get_conversion_counts_for_link(tenant_id, link_id)
-                .await
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        let convert_count: u64 = conversions.iter().map(|c| c.count).sum();
-
-        Ok(LinkStatsResponse {
-            link_id: link_id.to_string(),
-            click_count,
-            install_count,
-            identify_count,
-            convert_count,
-            conversions,
-        })
-    }
-
     #[tracing::instrument(skip(self, ctx))]
     #[requires(Permission::LinksRead)]
     pub async fn list_links(
@@ -838,6 +983,52 @@ impl LinksService {
         let domain = resolve_verified_primary_domain(self.domains_repo.as_deref(), tenant_id).await;
         build_canonical_link_url(&self.public_url, link_id, domain.as_deref())
     }
+}
+
+/// Enrich a bare-IDs `CreditedLinks` with the corresponding link
+/// metadata. Used by webhook fire-sites (identify, conversion) so the
+/// outbound payload carries `*_link_metadata` next to `*_link_id`.
+///
+/// Both lookups hit the 1-hour link cache, so the cost is negligible
+/// in steady state. Lookup failures are swallowed (logged) and the
+/// metadata field stays `None` — better than failing the webhook
+/// dispatch over a stale cache miss.
+pub async fn enrich_credited_with_metadata(
+    links_repo: &dyn LinksRepository,
+    tenant_id: &ObjectId,
+    mut credited: CreditedLinks,
+) -> CreditedLinks {
+    async fn fetch_metadata(
+        repo: &dyn LinksRepository,
+        tenant_id: &ObjectId,
+        link_id: &str,
+    ) -> Option<serde_json::Value> {
+        repo.find_link_by_tenant_and_id(tenant_id, link_id)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, link_id, "credited link metadata lookup failed");
+                None
+            })
+            .and_then(|l| {
+                l.metadata
+                    .as_ref()
+                    .and_then(|d| serde_json::to_value(d).ok())
+            })
+    }
+
+    if let Some(id) = credited.first_touch_link_id.as_deref() {
+        credited.first_touch_link_metadata = fetch_metadata(links_repo, tenant_id, id).await;
+    }
+    if let Some(id) = credited.last_touch_link_id.as_deref() {
+        // Skip the second lookup when first == last (single-touch
+        // user): same link, same cached metadata.
+        if credited.first_touch_link_id.as_deref() == Some(id) {
+            credited.last_touch_link_metadata = credited.first_touch_link_metadata.clone();
+        } else {
+            credited.last_touch_link_metadata = fetch_metadata(links_repo, tenant_id, id).await;
+        }
+    }
+    credited
 }
 
 pub fn build_canonical_link_url(

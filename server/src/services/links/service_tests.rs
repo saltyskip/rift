@@ -3,7 +3,6 @@ use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::secret_keys::repo::KeyScope;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::models::BulkInsertError;
-use crate::services::links::models::TimeseriesDataPoint;
 use crate::services::links::repo::LinksRepository;
 use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
@@ -255,78 +254,55 @@ impl LinksRepository for MockLinksRepo {
         Ok(())
     }
 
-    async fn count_clicks(&self, _tenant_id: &ObjectId, _link_id: &str) -> Result<u64, String> {
-        Ok(0)
-    }
-
-    async fn get_click_timeseries(
-        &self,
-        _tenant_id: &ObjectId,
-        _link_id: &str,
-        _from: DateTime,
-        _to: DateTime,
-    ) -> Result<Vec<TimeseriesDataPoint>, String> {
-        Ok(vec![])
-    }
-
     async fn record_attribute_event(
         &self,
-        tenant_id: ObjectId,
-        link_id: &str,
-        install_id: &str,
-        app_version: &str,
+        _tenant_id: ObjectId,
+        _link_id: &str,
+        _install_id: &str,
+        _app_version: &str,
+        _user_id: Option<&str>,
         _retention_bucket: String,
-    ) -> Result<crate::services::links::models::AttributeOutcome, String> {
-        use crate::services::links::models::{AttributeOutcome, Install};
-        Ok(AttributeOutcome::FirstTouch(Install {
-            id: ObjectId::new(),
-            tenant_id,
-            install_id: install_id.to_string(),
-            first_link_id: link_id.to_string(),
-            first_app_version: app_version.to_string(),
-            first_attributed_at: mongodb::bson::DateTime::now(),
-            user_id: None,
-            identified_at: None,
-        }))
+    ) -> Result<(), String> {
+        Ok(())
     }
 
-    async fn identify_install(
-        &self,
-        tenant_id: &ObjectId,
-        install_id: &str,
-        user_id: &str,
-    ) -> Result<crate::services::links::models::IdentifyOutcome, String> {
-        use crate::services::links::models::{IdentifyOutcome, Install};
-        Ok(IdentifyOutcome::NewBind(Install {
-            id: ObjectId::new(),
-            tenant_id: *tenant_id,
-            install_id: install_id.to_string(),
-            first_link_id: String::new(),
-            first_app_version: String::new(),
-            first_attributed_at: mongodb::bson::DateTime::now(),
-            user_id: Some(user_id.to_string()),
-            identified_at: Some(mongodb::bson::DateTime::now()),
-        }))
-    }
-
-    async fn count_installs_by_first_link(
+    async fn backfill_user_id_on_attribution_events(
         &self,
         _tenant_id: &ObjectId,
-        _link_id: &str,
+        _install_id: &str,
+        _user_id: &str,
     ) -> Result<u64, String> {
         Ok(0)
     }
 
-    async fn count_identifies(&self, _tenant_id: &ObjectId, _link_id: &str) -> Result<u64, String> {
+    async fn distinct_install_ids_credited_to_links(
+        &self,
+        _tenant_id: &ObjectId,
+        _link_ids: &[String],
+        _from: DateTime,
+        _to: DateTime,
+        _credit: crate::services::links::models::CreditModel,
+    ) -> Result<Vec<String>, String> {
+        Ok(vec![])
+    }
+
+    async fn count_clicks_for_links(
+        &self,
+        _tenant_id: &ObjectId,
+        _link_ids: &[String],
+        _from: DateTime,
+        _to: DateTime,
+    ) -> Result<u64, String> {
         Ok(0)
     }
 
-    async fn find_install_by_user(
+    async fn credited_links_for_user(
         &self,
         _tenant_id: &ObjectId,
         _user_id: &str,
-    ) -> Result<Option<crate::services::links::models::Install>, String> {
-        Ok(None)
+        _at_or_before: DateTime,
+    ) -> Result<crate::services::links::models::CreditedLinks, String> {
+        Ok(Default::default())
     }
 }
 
@@ -403,7 +379,8 @@ fn make_service(links: Vec<Link>, has_verified_domain: bool) -> LinksService {
         links_repo: repo,
         domains_repo: Some(domains),
         affiliates_repo: None,
-        conversions_repo: None,
+        app_users_repo: None,
+        install_events_repo: None,
         threat_feed: ThreatFeed::new(),
         public_url: "https://riftl.ink".to_string(),
         quota: None,

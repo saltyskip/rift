@@ -1,9 +1,12 @@
 pub mod affiliates;
+pub mod analytics;
+pub mod app_users;
 pub mod apps;
 pub mod auth;
 pub mod billing;
 pub mod conversions;
 pub mod domains;
+pub mod install_events;
 pub mod links;
 pub mod tokens;
 pub mod webhooks;

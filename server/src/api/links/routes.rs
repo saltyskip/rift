@@ -230,39 +230,6 @@ pub async fn delete_link(
     }
 }
 
-// ── GET /v1/links/{link_id}/stats — Conversion stats (authenticated) ──
-
-#[utoipa::path(
-    get,
-    path = "/v1/links/{link_id}/stats",
-    tag = "Links",
-    params(("link_id" = String, Path, description = "Link ID")),
-    responses(
-        (status = 200, description = "Link stats", body = LinkStatsResponse),
-        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
-    ),
-    security(("api_key" = []), ("x402" = [])),
-)]
-#[tracing::instrument(skip(state, ctx))]
-pub async fn get_link_stats(
-    State(state): State<Arc<AppState>>,
-    axum::Extension(ctx): axum::Extension<AuthContext>,
-    Path(link_id): Path<String>,
-) -> Response {
-    let Some(ref svc) = state.links_service else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "Database not configured", "code": "no_database" })),
-        )
-            .into_response();
-    };
-
-    match svc.get_link_stats(&ctx, &link_id).await {
-        Ok(stats) => Json(stats).into_response(),
-        Err(e) => link_error_to_response(e),
-    }
-}
-
 // ── GET /v1/links/{link_id}/qr.{format} — Styled QR export ──
 //
 // Positioned as a generate-and-save endpoint: callers fetch once and embed
@@ -790,127 +757,6 @@ async fn do_resolve(
     }
 }
 
-// ── GET /v1/links/{link_id}/timeseries — Click timeseries (authenticated) ──
-
-#[utoipa::path(
-    get,
-    path = "/v1/links/{link_id}/timeseries",
-    tag = "Links",
-    params(
-        ("link_id" = String, Path, description = "Link ID"),
-        TimeseriesQuery,
-    ),
-    responses(
-        (status = 200, description = "Timeseries data", body = TimeseriesResponse),
-        (status = 400, description = "Invalid parameters", body = crate::error::ErrorResponse),
-        (status = 404, description = "Link not found", body = crate::error::ErrorResponse),
-    ),
-    security(("api_key" = []), ("x402" = [])),
-)]
-#[tracing::instrument(skip(state))]
-pub async fn get_link_timeseries(
-    State(state): State<Arc<AppState>>,
-    axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(link_id): Path<String>,
-    Query(query): Query<TimeseriesQuery>,
-) -> Response {
-    let Some(repo) = &state.links_repo else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "Database not configured", "code": "no_database" })),
-        )
-            .into_response();
-    };
-
-    // Validate granularity.
-    let granularity = query.granularity.as_deref().unwrap_or("daily");
-    if granularity != "daily" {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Only 'daily' granularity is supported", "code": "invalid_granularity" })),
-        )
-            .into_response();
-    }
-
-    // Parse date range.
-    let now = DateTime::now();
-    let thirty_days_ms = 30 * 24 * 60 * 60 * 1000_i64;
-    let ninety_days_ms = 90 * 24 * 60 * 60 * 1000_i64;
-
-    let from = match &query.from {
-        Some(s) => DateTime::parse_rfc3339_str(s).map_err(|_| ()).or_else(|_| {
-            // Try date-only format: "2026-03-01" -> "2026-03-01T00:00:00Z"
-            DateTime::parse_rfc3339_str(format!("{s}T00:00:00Z")).map_err(|_| ())
-        }),
-        None => Ok(DateTime::from_millis(
-            now.timestamp_millis() - thirty_days_ms,
-        )),
-    };
-    let to = match &query.to {
-        Some(s) => DateTime::parse_rfc3339_str(s)
-            .map_err(|_| ())
-            .or_else(|_| DateTime::parse_rfc3339_str(format!("{s}T23:59:59Z")).map_err(|_| ())),
-        None => Ok(now),
-    };
-
-    let (from, to) = match (from, to) {
-        (Ok(f), Ok(t)) => (f, t),
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "Invalid date format. Use RFC 3339 (e.g. 2026-03-01T00:00:00Z) or YYYY-MM-DD", "code": "invalid_date" })),
-            )
-                .into_response();
-        }
-    };
-
-    // Validate range.
-    if to.timestamp_millis() - from.timestamp_millis() > ninety_days_ms {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Date range cannot exceed 90 days", "code": "range_too_large" })),
-        )
-            .into_response();
-    }
-
-    // Verify link exists for this tenant.
-    if repo
-        .find_link_by_tenant_and_id(&tenant.0, &link_id)
-        .await
-        .ok()
-        .flatten()
-        .is_none()
-    {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Link not found", "code": "not_found" })),
-        )
-            .into_response();
-    }
-
-    match repo
-        .get_click_timeseries(&tenant.0, &link_id, from, to)
-        .await
-    {
-        Ok(data) => Json(json!({
-            "link_id": link_id,
-            "granularity": granularity,
-            "from": from.try_to_rfc3339_string().unwrap_or_default(),
-            "to": to.try_to_rfc3339_string().unwrap_or_default(),
-            "data": data,
-        }))
-        .into_response(),
-        Err(e) => {
-            tracing::error!("Failed to get timeseries: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": "Internal error", "code": "db_error" })),
-            )
-                .into_response()
-        }
-    }
-}
-
 // ── GET /llms.txt — Machine-readable link context for LLMs ──
 
 #[tracing::instrument]
@@ -964,7 +810,7 @@ fn link_error_to_response(err: LinkError) -> Response {
         | LinkError::BatchEmpty
         | LinkError::BatchModeAmbiguous
         | LinkError::BatchModeMissing => StatusCode::BAD_REQUEST,
-        LinkError::LinkIdTaken(_) => StatusCode::CONFLICT,
+        LinkError::LinkIdTaken(_) | LinkError::IdentifyConflict { .. } => StatusCode::CONFLICT,
         LinkError::NotFound | LinkError::AffiliateNotFound => StatusCode::NOT_FOUND,
         LinkError::QuotaExceeded(_)
         | LinkError::Forbidden(_)

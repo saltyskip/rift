@@ -400,8 +400,9 @@ async fn attribution_link_rejects_rebind_to_different_user() {
         .unwrap();
     assert_eq!(resp.status(), 200);
 
-    // Attempt to rebind to user B — rejected as not found (the underlying
-    // repo update filter doesn't match because user_id is already set).
+    // Attempt to rebind to user B — rejected as 409 Conflict. Rebind
+    // protection is a hard guard against shared-device leakage; the SDK
+    // should call `clear_user_id` before binding to a new user.
     let resp = app
         .client
         .put(app.url("/v1/lifecycle/identify"))
@@ -413,11 +414,17 @@ async fn attribution_link_rejects_rebind_to_different_user() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 404);
+    assert_eq!(resp.status(), 409);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "identify_conflict");
 }
 
 #[tokio::test]
-async fn attribution_link_returns_404_for_missing_install() {
+async fn attribution_link_identifies_without_prior_install() {
+    // Post-cutover: identify creates the app_users binding directly. There
+    // is no separate "install row" prerequisite, so identifying an
+    // install_id that hasn't seen an attribute event succeeds. Users who
+    // sign in before tapping their first attributed link are first-class.
     let app = common::spawn_app().await;
     let (_api_key, tenant_id) = common::seed_api_key(&app).await;
     common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
@@ -436,7 +443,7 @@ async fn attribution_link_returns_404_for_missing_install() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status(), 404);
+    assert_eq!(resp.status(), 200);
 }
 
 #[tokio::test]

@@ -1,27 +1,15 @@
 use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
-use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use rift::services::links::models::BulkInsertError;
-use rift::services::links::models::{
-    AttributeOutcome, ClickEvent, ClickMeta, CreateLinkInput, IdentifyOutcome,
-    Install as RealInstall, Link, LinkStatus, TimeseriesDataPoint,
-};
+use rift::services::links::models::{ClickEvent, ClickMeta, CreateLinkInput, Link, LinkStatus};
 use rift::services::links::repo::LinksRepository;
-
-struct Install {
-    tenant_id: ObjectId,
-    install_id: String,
-    first_link_id: String,
-    user_id: Option<String>,
-}
 
 #[derive(Default)]
 pub struct MockLinksRepo {
     pub links: Mutex<Vec<Link>>,
     pub clicks: Mutex<Vec<ClickEvent>>,
-    installs: Mutex<Vec<Install>>,
 }
 
 #[async_trait]
@@ -237,172 +225,54 @@ impl LinksRepository for MockLinksRepo {
         Ok(())
     }
 
-    async fn count_clicks(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
-        Ok(self
-            .clicks
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|c| &c.meta.tenant_id == tenant_id && c.meta.link_id == link_id)
-            .count() as u64)
-    }
-
-    async fn get_click_timeseries(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
-        from: DateTime,
-        to: DateTime,
-    ) -> Result<Vec<TimeseriesDataPoint>, String> {
-        let clicks = self.clicks.lock().unwrap();
-        let mut buckets: BTreeMap<String, u64> = BTreeMap::new();
-
-        for click in clicks.iter() {
-            if &click.meta.tenant_id == tenant_id
-                && click.meta.link_id == link_id
-                && click.clicked_at >= from
-                && click.clicked_at <= to
-            {
-                let date = click
-                    .clicked_at
-                    .try_to_rfc3339_string()
-                    .unwrap_or_default()
-                    .chars()
-                    .take(10)
-                    .collect::<String>();
-                *buckets.entry(date).or_insert(0) += 1;
-            }
-        }
-
-        Ok(buckets
-            .into_iter()
-            .map(|(date, clicks)| TimeseriesDataPoint { date, clicks })
-            .collect())
-    }
-
     async fn record_attribute_event(
         &self,
-        tenant_id: ObjectId,
-        link_id: &str,
-        install_id: &str,
+        _tenant_id: ObjectId,
+        _link_id: &str,
+        _install_id: &str,
         _app_version: &str,
+        _user_id: Option<&str>,
         _retention_bucket: String,
-    ) -> Result<AttributeOutcome, String> {
-        // Mirrors the real repo: first call inserts the install with this
-        // link as first_link_id (FirstTouch); subsequent calls preserve
-        // the original first_link_id and return Retouch.
-        let mut installs = self.installs.lock().unwrap();
-        let real = |i: &Install| RealInstall {
-            id: ObjectId::new(),
-            tenant_id: i.tenant_id,
-            install_id: i.install_id.clone(),
-            first_link_id: i.first_link_id.clone(),
-            first_app_version: "test".to_string(),
-            first_attributed_at: DateTime::now(),
-            user_id: i.user_id.clone(),
-            identified_at: None,
-        };
-        if let Some(existing) = installs
-            .iter()
-            .find(|a| a.tenant_id == tenant_id && a.install_id == install_id)
-        {
-            return Ok(AttributeOutcome::Retouch(real(existing)));
-        }
-        let new_install = Install {
-            tenant_id,
-            install_id: install_id.to_string(),
-            first_link_id: link_id.to_string(),
-            user_id: None,
-        };
-        let payload = real(&new_install);
-        installs.push(new_install);
-        Ok(AttributeOutcome::FirstTouch(payload))
+    ) -> Result<(), String> {
+        Ok(())
     }
 
-    async fn identify_install(
+    async fn backfill_user_id_on_attribution_events(
         &self,
-        tenant_id: &ObjectId,
-        install_id: &str,
-        user_id: &str,
-    ) -> Result<IdentifyOutcome, String> {
-        // Distinguishes a fresh bind from an idempotent rebind so callers
-        // (identify-webhook fire-site) can suppress the webhook in the
-        // idempotent case.
-        let mut installs = self.installs.lock().unwrap();
-        let Some(install) = installs
-            .iter_mut()
-            .find(|a| &a.tenant_id == tenant_id && a.install_id == install_id)
-        else {
-            return Ok(IdentifyOutcome::NotFound);
-        };
-
-        let real = |install: &Install| RealInstall {
-            id: ObjectId::new(),
-            tenant_id: install.tenant_id,
-            install_id: install.install_id.clone(),
-            first_link_id: install.first_link_id.clone(),
-            first_app_version: "test".to_string(),
-            first_attributed_at: DateTime::now(),
-            user_id: Some(user_id.to_string()),
-            identified_at: Some(DateTime::now()),
-        };
-
-        match install.user_id.as_deref() {
-            None => {
-                install.user_id = Some(user_id.to_string());
-                Ok(IdentifyOutcome::NewBind(real(install)))
-            }
-            Some(existing) if existing == user_id => {
-                Ok(IdentifyOutcome::AlreadyBound(real(install)))
-            }
-            Some(_) => Ok(IdentifyOutcome::NotFound),
-        }
-    }
-
-    async fn count_installs_by_first_link(
-        &self,
-        tenant_id: &ObjectId,
-        link_id: &str,
+        _tenant_id: &ObjectId,
+        _install_id: &str,
+        _user_id: &str,
     ) -> Result<u64, String> {
-        Ok(self
-            .installs
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|a| &a.tenant_id == tenant_id && a.first_link_id == link_id)
-            .count() as u64)
+        Ok(0)
     }
 
-    async fn count_identifies(&self, tenant_id: &ObjectId, link_id: &str) -> Result<u64, String> {
-        Ok(self
-            .installs
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|a| {
-                &a.tenant_id == tenant_id && a.first_link_id == link_id && a.user_id.is_some()
-            })
-            .count() as u64)
-    }
-
-    async fn find_install_by_user(
+    async fn distinct_install_ids_credited_to_links(
         &self,
-        tenant_id: &ObjectId,
-        user_id: &str,
-    ) -> Result<Option<RealInstall>, String> {
-        let installs = self.installs.lock().unwrap();
-        Ok(installs
-            .iter()
-            .find(|a| &a.tenant_id == tenant_id && a.user_id.as_deref() == Some(user_id))
-            .map(|a| RealInstall {
-                id: ObjectId::new(),
-                tenant_id: a.tenant_id,
-                install_id: a.install_id.clone(),
-                first_link_id: a.first_link_id.clone(),
-                first_app_version: "test".to_string(),
-                first_attributed_at: DateTime::now(),
-                user_id: a.user_id.clone(),
-                identified_at: None,
-            }))
+        _tenant_id: &ObjectId,
+        _link_ids: &[String],
+        _from: DateTime,
+        _to: DateTime,
+        _credit: rift::services::links::models::CreditModel,
+    ) -> Result<Vec<String>, String> {
+        Ok(vec![])
+    }
+
+    async fn count_clicks_for_links(
+        &self,
+        _tenant_id: &ObjectId,
+        _link_ids: &[String],
+        _from: DateTime,
+        _to: DateTime,
+    ) -> Result<u64, String> {
+        Ok(0)
+    }
+
+    async fn credited_links_for_user(
+        &self,
+        _tenant_id: &ObjectId,
+        _user_id: &str,
+        _at_or_before: DateTime,
+    ) -> Result<rift::services::links::models::CreditedLinks, String> {
+        Ok(Default::default())
     }
 }

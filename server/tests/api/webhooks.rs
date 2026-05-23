@@ -323,19 +323,14 @@ async fn identify_dispatches_webhook_with_link_metadata() {
     let evt = &events[0];
     assert_eq!(evt.tenant_id, tenant_id.to_hex());
     assert_eq!(evt.user_id, "user-abc");
-    assert_eq!(evt.link_id, "welcome-link");
     assert_eq!(evt.install_id, "install-id-7");
-
-    let metadata = evt
-        .link_metadata
-        .as_ref()
-        .expect("link_metadata should be populated from Link.metadata");
-    assert_eq!(metadata["bonus_type"], "welcome");
-    assert_eq!(metadata["bonus_amount_usdc"], 10);
 }
 
 #[tokio::test]
-async fn identify_without_prior_attribution_does_not_dispatch() {
+async fn identify_without_prior_attribution_still_dispatches() {
+    // Identify creates the app_users binding directly — it does not
+    // require a prior attribution. Users who sign in before tapping their
+    // first attributed link still get an `identify` webhook.
     let app = common::spawn_app().await;
     let (_, tenant_id) = common::seed_api_key(&app).await;
     common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
@@ -346,16 +341,18 @@ async fn identify_without_prior_attribution_does_not_dispatch() {
         .put(app.url("/v1/lifecycle/identify"))
         .header("Authorization", format!("Bearer {sdk_key}"))
         .json(&serde_json::json!({
-            "install_id": "never-installed",
+            "install_id": "no-prior-attr",
             "user_id": "user-xyz",
         }))
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 404);
+    assert_eq!(resp.status(), 200);
 
     let events = app.webhook_dispatcher.identify_payloads.lock().unwrap();
-    assert_eq!(events.len(), 0);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].user_id, "user-xyz");
+    assert_eq!(events[0].install_id, "no-prior-attr");
 }
 
 #[tokio::test]

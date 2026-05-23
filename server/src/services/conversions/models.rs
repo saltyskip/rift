@@ -43,6 +43,10 @@ pub struct Source {
 /// aggregation pipelines.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversionEvent {
+    /// Document identifier. Auto-generated on insert; round-tripped on
+    /// read so `GET /v1/conversions/{id}` can fetch by it.
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
     pub meta: ConversionMeta,
     /// Time the event occurred. For integration parsers this may be extracted from
     /// the upstream event (e.g. Stripe's `created`); for custom sources it defaults to now.
@@ -63,7 +67,11 @@ pub struct ConversionEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversionMeta {
     pub tenant_id: ObjectId,
-    pub link_id: String,
+    /// Legacy field — Phase 6 stopped writing it (credit is computed at
+    /// read time from the user's journey via `attribution_events`). Old
+    /// rows still carry a string; new rows have `None`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub link_id: Option<String>,
     pub source_id: ObjectId,
     pub conversion_type: String,
     /// Retention bucket frozen at insert time — see ClickMeta for details.
@@ -127,19 +135,6 @@ pub struct SourceDetail {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ListSourcesResponse {
     pub sources: Vec<SourceDetail>,
-}
-
-/// Aggregated counts per `(link, type)` for embedding in `LinkStatsResponse`.
-/// Computed on read from `conversion_events` via an aggregation pipeline.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
-pub struct ConversionDetail {
-    /// Customer-defined conversion type (e.g. "signup", "purchase", "deposit").
-    #[schema(example = "deposit")]
-    pub conversion_type: String,
-    /// Number of conversion events of this type attributed to the link.
-    #[schema(example = 19)]
-    pub count: u64,
 }
 
 // ── Ingestion result (service layer output) ──

@@ -5,10 +5,11 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::core::threat_feed::ThreatFeed;
 use crate::services::affiliates::repo::AffiliatesRepository;
+use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::billing::quota::QuotaChecker;
 use crate::services::billing::service::TierResolver;
-use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::domains::repo::DomainsRepository;
+use crate::services::install_events::repo::InstallEventsRepository;
 use crate::services::links::repo::LinksRepository;
 
 /// Construction-time dependencies for [`super::service::LinksService`].
@@ -20,7 +21,14 @@ pub struct LinksServiceDeps {
     pub links_repo: Arc<dyn LinksRepository>,
     pub domains_repo: Option<Arc<dyn DomainsRepository>>,
     pub affiliates_repo: Option<Arc<dyn AffiliatesRepository>>,
-    pub conversions_repo: Option<Arc<dyn ConversionsRepository>>,
+    /// `app_users` is the new user-scoped identity table. Optional during
+    /// the Phase 1 cutover so reduced-feature builds without a database
+    /// can still construct the service.
+    pub app_users_repo: Option<Arc<dyn AppUsersRepository>>,
+    /// Server-derived lifecycle stream (created / opened / identified /
+    /// reinstalled / new_device). Optional for the same reason as
+    /// `app_users_repo`.
+    pub install_events_repo: Option<Arc<dyn InstallEventsRepository>>,
     pub threat_feed: ThreatFeed,
     pub public_url: String,
     pub quota: Option<Arc<dyn QuotaChecker>>,
@@ -152,40 +160,6 @@ pub struct ClickEvent {
     pub platform: Option<String>,
 }
 
-/// Install state — one row per `(tenant_id, install_id)`. Holds the
-/// first-touch link attribution and (optionally) the bound user_id. This
-/// is the **mutable** projection over the immutable `attribution_events`
-/// time-series log; the event log is the source of truth, this is the
-/// materialized state for fast lookups (stats, conversions).
-///
-/// Updated by:
-/// - `/v1/lifecycle/attribute`: upsert with `first_link_id` set on insert
-///   only (preserves first-touch semantics for stats).
-/// - `/v1/lifecycle/identify`: `$set user_id`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Install {
-    #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub tenant_id: ObjectId,
-    /// Unique per install (generated client-side).
-    pub install_id: String,
-    /// First link that attributed this install. Set on insert only; later
-    /// `/lifecycle/attribute` calls for the same install append to the
-    /// event log but do not overwrite this field.
-    pub first_link_id: String,
-    /// App version recorded at first-touch.
-    pub first_app_version: String,
-    /// Soonest attribution timestamp for this install.
-    pub first_attributed_at: DateTime,
-    /// User id bound via `/lifecycle/identify`. None until the user
-    /// authenticates.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user_id: Option<String>,
-    /// When `user_id` was first bound (None until identify completes).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub identified_at: Option<DateTime>,
-}
-
 /// One row per `/lifecycle/attribute` call. Stored in a MongoDB
 /// time-series collection (timeField = `timestamp`, metaField = `meta`).
 /// Immutable — re-attribution to a new link is recorded as a NEW event
@@ -198,10 +172,9 @@ pub struct AttributionEvent {
     pub meta: AttributionEventMeta,
     pub link_id: String,
     pub app_version: String,
-    /// User id at the moment of the event. Often `None` for the first
-    /// event of an install (user hasn't signed in yet). Filled by the
-    /// route handler if `installs.user_id` is already set, so downstream
-    /// subscribers can act immediately on existing-install re-attribution.
+    /// User id at the moment of the event. `None` until the install is
+    /// identified; once `app_users` has a binding, the service stamps this
+    /// at write time so user-scoped reads don't need an OR-clause.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
 }
@@ -218,38 +191,84 @@ pub struct AttributionEventMeta {
     pub retention_bucket: String,
 }
 
-/// Result of `LinksRepository::record_attribute_event`.
+/// Result of `LinksService::identify_install`.
 ///
-/// `FirstTouch` and `Retouch` both successfully record an event; they
-/// differ only in whether `installs` was newly inserted (first-touch
-/// attribution for this install) vs already existed (re-attribution to
-/// a new or same link). Both fire the `attribute` webhook. The caller
-/// uses the returned `Install` to build the outbound payload (need
-/// `user_id` if it's already bound — that's the existing-install path).
-#[derive(Debug, Clone)]
-pub enum AttributeOutcome {
-    FirstTouch(Install),
-    Retouch(Install),
+/// Drives the route handler's response + webhook decisions. `Created`
+/// and `InstallAdded` are real state changes that fire the `identify`
+/// webhook (and carry the user's credited links so the payload can
+/// include them without a second query); `AlreadyPresent` is an
+/// idempotent replay that returns 200 without firing. Conflict cases
+/// (install already bound to a different user) surface via
+/// `LinkError::IdentifyConflict`, not this enum.
+#[derive(Debug, Clone, PartialEq)]
+pub enum IdentifyOutcome {
+    /// First identify for this user_id — `app_users` row created with
+    /// `install_id` in `install_ids`.
+    Created(CreditedLinks),
+    /// User existed; this install_id was a new device or reinstall.
+    InstallAdded(CreditedLinks),
+    /// User existed and already had this install_id bound. No-op.
+    AlreadyPresent,
 }
 
-/// Result of `LinksRepository::identify_install`.
+/// Attribution credit model applied at read time by the stats endpoint.
 ///
-/// Distinguishes a real state change (`NewBind` — fire `identify` webhook)
-/// from an idempotent replay (`AlreadyBound` — suppress). The carried
-/// `Install` reflects the post-update state for payload construction.
-#[derive(Debug, Clone)]
-pub enum IdentifyOutcome {
-    /// Bind changed state — `user_id` was previously absent and we just
-    /// set it. Fire the `identify` webhook.
-    NewBind(Install),
-    /// Install was already bound to this same `user_id`. Route returns 200
-    /// but webhook is suppressed.
-    #[allow(dead_code)]
-    AlreadyBound(Install),
-    /// No install row matched. Either `install_id` is unknown for this
-    /// tenant, or it's already bound to a different user — both surface
-    /// as 404.
-    NotFound,
+/// Defines which installs count toward a given link set:
+///
+/// - `LastTouch` (default): install's most-recent attribute event in the
+///   query window has `link_id` in the set. Matches the marketer's mental
+///   model of "which campaign closed this user."
+/// - `FirstTouch`: install's first attribute event in the window has
+///   `link_id` in the set. The acquisition-source model.
+/// - `Touched`: install has any attribute event with `link_id` in the
+///   set. Most generous — counts every install that ever encountered the
+///   link, including those credited elsewhere by stricter models.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreditModel {
+    FirstTouch,
+    LastTouch,
+    Touched,
+}
+
+impl CreditModel {
+    /// Parse the `?credit=` query value. Unknown / missing → default
+    /// (`LastTouch`).
+    pub fn parse(s: Option<&str>) -> Self {
+        match s.unwrap_or("last_touch") {
+            "first_touch" => Self::FirstTouch,
+            "touched" => Self::Touched,
+            _ => Self::LastTouch,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FirstTouch => "first_touch",
+            Self::LastTouch => "last_touch",
+            Self::Touched => "touched",
+        }
+    }
+}
+
+/// Credited links for a user, resolved by walking their
+/// `attribution_events` chain. The repo's
+/// [`crate::services::links::repo::LinksRepository::credited_links_for_user`]
+/// returns this with only the `*_link_id` fields populated; the
+/// service layer enriches `*_link_metadata` via cached
+/// `find_link_by_tenant_and_id` before handing it to the webhook
+/// fire-sites. Both flavours are returned so receivers using either
+/// credit model get the canonical metadata in one delivery — no
+/// follow-up query to Rift required.
+///
+/// All four fields are `None` when the user has no attribution events
+/// at or before the cutoff timestamp (e.g. a backend-fired conversion
+/// for a user whose SDK has never called `/lifecycle/attribute`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CreditedLinks {
+    pub first_touch_link_id: Option<String>,
+    pub first_touch_link_metadata: Option<serde_json::Value>,
+    pub last_touch_link_id: Option<String>,
+    pub last_touch_link_metadata: Option<serde_json::Value>,
 }
 
 // ── Internal Types ──
@@ -646,33 +665,6 @@ pub struct IdentifyResponse {
     pub success: bool,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
-#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
-pub struct LinkStatsResponse {
-    /// The link these stats are for.
-    #[schema(example = "summer-menu-2025")]
-    pub link_id: String,
-    /// Total landing-page visits across all platforms.
-    #[schema(example = 1420)]
-    pub click_count: u64,
-    /// First-launch installs attributed to this link.
-    #[schema(example = 312)]
-    pub install_count: u64,
-    /// Installs that progressed through `PUT /v1/lifecycle/identify` — i.e.
-    /// the user_id is bound to the install. `identify` is the deterministic
-    /// join in the attribution funnel.
-    #[schema(example = 198)]
-    pub identify_count: u64,
-    /// Sum of conversion events across all types for this link. The
-    /// per-type breakdown lives in `conversions`.
-    #[schema(example = 47)]
-    pub convert_count: u64,
-    /// Aggregated conversion counts per type. Empty when conversion
-    /// tracking is not configured or no events have been recorded.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub conversions: Vec<crate::services::conversions::models::ConversionDetail>,
-}
-
 /// Trust envelope included in every resolved link response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RiftMeta {
@@ -742,39 +734,64 @@ pub struct AttributeRequest {
     pub install_id: String,
     #[schema(example = "2.4.1")]
     pub app_version: String,
+    /// Optional device + app context captured by the SDK from public OS
+    /// APIs (no permissions required). Used server-side to enrich
+    /// `install.created` events and to distinguish `install.reinstalled`
+    /// from `install.new_device` on identify. Absent on older SDK
+    /// versions that pre-date the context-capture release.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub context: Option<AttributeContext>,
 }
 
-// ── Timeseries Analytics Models ──
-
-#[derive(Debug, Deserialize, IntoParams)]
-pub struct TimeseriesQuery {
-    /// Start of date range (RFC 3339). Defaults to 30 days ago.
-    pub from: Option<String>,
-    /// End of date range (RFC 3339). Defaults to now.
-    pub to: Option<String>,
-    /// Bucket granularity. Only "daily" supported.
-    pub granularity: Option<String>,
+/// Device / app context captured by the SDK. Mirror of
+/// [`crate::services::install_events::models::InstallContext`] at the
+/// API boundary — kept as a separate type so OpenAPI schemas don't leak
+/// internal storage types.
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
+pub struct AttributeContext {
+    #[schema(example = "2.4.1")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub app_version: Option<String>,
+    #[schema(example = "ios")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub platform: Option<String>,
+    #[schema(example = "iOS")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub os: Option<String>,
+    #[schema(example = "17.4.1")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub os_version: Option<String>,
+    #[schema(example = "iPhone15,4")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub device_model: Option<String>,
+    #[schema(example = "Apple")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub device_manufacturer: Option<String>,
+    #[schema(example = "en_US")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub locale: Option<String>,
+    #[schema(example = "US")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub region: Option<String>,
+    #[schema(example = "America/Los_Angeles")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub timezone: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct TimeseriesDataPoint {
-    #[schema(example = "2025-06-15")]
-    pub date: String,
-    #[schema(example = 47)]
-    pub clicks: u64,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct TimeseriesResponse {
-    #[schema(example = "summer-menu-2025")]
-    pub link_id: String,
-    #[schema(example = "daily")]
-    pub granularity: String,
-    #[schema(example = "2025-06-01T00:00:00Z")]
-    pub from: String,
-    #[schema(example = "2025-06-30T23:59:59Z")]
-    pub to: String,
-    pub data: Vec<TimeseriesDataPoint>,
+impl From<AttributeContext> for crate::services::install_events::models::InstallContext {
+    fn from(c: AttributeContext) -> Self {
+        Self {
+            app_version: c.app_version,
+            platform: c.platform,
+            os: c.os,
+            os_version: c.os_version,
+            device_model: c.device_model,
+            device_manufacturer: c.device_manufacturer,
+            locale: c.locale,
+            region: c.region,
+            timezone: c.timezone,
+        }
+    }
 }
 
 // ── Errors ──
@@ -801,6 +818,13 @@ pub enum LinkError {
     AffiliateNotFound,
     Forbidden(AuthzError),
     QuotaExceeded(QuotaError),
+    /// `/lifecycle/identify` rejected because the install_id is already
+    /// bound to a different user. Carries the existing user_id for
+    /// observability (the route does NOT echo it to the client). Returns
+    /// HTTP 409.
+    IdentifyConflict {
+        existing_user_id: String,
+    },
     Internal(String),
     // ── Bulk-create only ──
     BatchTooLarge {
@@ -851,6 +875,9 @@ impl fmt::Display for LinkError {
             Self::AffiliateNotFound => write!(f, "Affiliate not found"),
             Self::Forbidden(e) => write!(f, "{e}"),
             Self::QuotaExceeded(e) => write!(f, "{e}"),
+            Self::IdentifyConflict { .. } => {
+                write!(f, "install_id is already bound to a different user")
+            }
             Self::Internal(e) => write!(f, "Internal error: {e}"),
             Self::BatchTooLarge { max, got } => {
                 write!(f, "Batch too large: {got} items (max {max})")
@@ -887,6 +914,7 @@ impl LinkError {
             Self::AffiliateNotFound => "affiliate_not_found",
             Self::Forbidden(e) => e.code(),
             Self::QuotaExceeded(_) => "quota_exceeded",
+            Self::IdentifyConflict { .. } => "identify_conflict",
             Self::Internal(_) => "db_error",
             Self::BatchTooLarge { .. } => "batch_too_large",
             Self::BatchEmpty => "batch_empty",

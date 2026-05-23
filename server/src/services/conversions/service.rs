@@ -6,6 +6,7 @@ use super::models::ParsedConversion;
 use super::models::{ConversionEvent, ConversionMeta, IngestResult, Source};
 use super::repo::ConversionsRepository;
 use crate::core::webhook_dispatcher::{ConversionEventPayload, WebhookDispatcher};
+use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
 use crate::services::links::repo::LinksRepository;
@@ -16,7 +17,14 @@ crate::impl_container!(ConversionsService);
 /// parse, delegate here, return status).
 pub struct ConversionsService {
     conversions_repo: Arc<dyn ConversionsRepository>,
-    links_repo: Arc<dyn LinksRepository>,
+    /// User-existence check for attribution. Optional during the cutover
+    /// so reduced-feature builds keep booting; ingest treats `None` as
+    /// "trust the caller" and accepts every event with a user_id.
+    app_users_repo: Option<Arc<dyn AppUsersRepository>>,
+    /// Used to compute first/last touch credit at webhook fire time so
+    /// receivers don't have to query Rift back. Optional for the same
+    /// reduced-feature reason as `app_users_repo`.
+    links_repo: Option<Arc<dyn LinksRepository>>,
     webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
     tiers: Option<Arc<dyn TierResolver>>,
     quota: Option<Arc<dyn QuotaChecker>>,
@@ -25,13 +33,15 @@ pub struct ConversionsService {
 impl ConversionsService {
     pub fn new(
         conversions_repo: Arc<dyn ConversionsRepository>,
-        links_repo: Arc<dyn LinksRepository>,
+        app_users_repo: Option<Arc<dyn AppUsersRepository>>,
+        links_repo: Option<Arc<dyn LinksRepository>>,
         webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
         tiers: Option<Arc<dyn TierResolver>>,
         quota: Option<Arc<dyn QuotaChecker>>,
     ) -> Self {
         Self {
             conversions_repo,
+            app_users_repo,
             links_repo,
             webhook_dispatcher,
             tiers,
@@ -97,28 +107,37 @@ impl ConversionsService {
                 }
             }
 
-            // 2. Attribution lookup — need user_id → Install → first_link_id.
-            // Conversions without a matching install are counted as
-            // "unattributed" and dropped (not counted in stats).
-            let link_id = match &event.user_id {
-                Some(uid) => self
-                    .links_repo
-                    .find_install_by_user(&tenant_id, uid)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|i| i.first_link_id),
-                None => None,
-            };
-            let Some(link_id) = link_id else {
+            // 2. Attribution check — require a known user. Credit is
+            // computed at read time from the user's journey, so the
+            // ingest path no longer needs to resolve a link_id; it just
+            // confirms the user_id exists in `app_users` (or trusts
+            // the caller when `app_users_repo` isn't wired).
+            let Some(user_id) = event.user_id.as_ref() else {
                 tracing::debug!(
                     source_id = %source_id,
-                    user_id = ?event.user_id,
-                    "conversion has no matching attribution; skipping",
+                    "conversion has no user_id; skipping",
                 );
                 result.unattributed += 1;
                 continue;
             };
+            let user_known = match &self.app_users_repo {
+                Some(repo) => repo
+                    .find_by_user_id(&tenant_id, user_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some(),
+                None => true,
+            };
+            if !user_known {
+                tracing::debug!(
+                    source_id = %source_id,
+                    user_id = %user_id,
+                    "conversion user_id not found in app_users; skipping",
+                );
+                result.unattributed += 1;
+                continue;
+            }
 
             // 2b. Quota check (TrackEvent) — same "events per month" counter
             // as clicks. Runs post-dedup so a duplicate doesn't consume the
@@ -143,9 +162,13 @@ impl ConversionsService {
                 None => "30d".to_string(),
             };
             let record = ConversionEvent {
+                id: Some(ObjectId::new()),
                 meta: ConversionMeta {
                     tenant_id,
-                    link_id: link_id.clone(),
+                    // Credit is computed at read time; no link_id frozen
+                    // in storage. Legacy field kept on the schema for
+                    // back-compat with pre-Phase-6 rows.
+                    link_id: None,
                     source_id,
                     conversion_type: event.conversion_type.clone(),
                     retention_bucket,
@@ -175,13 +198,49 @@ impl ConversionsService {
                     .as_ref()
                     .and_then(|doc| serde_json::to_value(doc).ok());
 
+                // Resolve first/last touch credit by walking the user's
+                // attribution chain up to (and including) the conversion
+                // moment, then enrich with the credited links' metadata
+                // so receivers can act on the campaign without querying
+                // Rift back. Best-effort: a lookup failure logs and falls
+                // back to absent fields rather than failing ingest.
+                let credited = match &self.links_repo {
+                    Some(repo) => {
+                        let ids = repo
+                            .credited_links_for_user(
+                                &tenant_id,
+                                user_id,
+                                event.occurred_at.unwrap_or_else(DateTime::now),
+                            )
+                            .await
+                            .unwrap_or_else(|e| {
+                                tracing::warn!(
+                                    error = %e,
+                                    user_id = %user_id,
+                                    "credited_links_for_user failed during conversion ingest"
+                                );
+                                Default::default()
+                            });
+                        crate::services::links::service::enrich_credited_with_metadata(
+                            repo.as_ref(),
+                            &tenant_id,
+                            ids,
+                        )
+                        .await
+                    }
+                    None => Default::default(),
+                };
+
                 dispatcher.dispatch_conversion(ConversionEventPayload {
                     event_id: event_id.to_hex(),
                     tenant_id: tenant_id.to_hex(),
                     source_id: source_id.to_hex(),
-                    link_id: link_id.clone(),
                     conversion_type: event.conversion_type.clone(),
                     user_id: event.user_id.clone(),
+                    first_touch_link_id: credited.first_touch_link_id,
+                    first_touch_link_metadata: credited.first_touch_link_metadata,
+                    last_touch_link_id: credited.last_touch_link_id,
+                    last_touch_link_metadata: credited.last_touch_link_metadata,
                     metadata: metadata_json,
                     timestamp: DateTime::now().try_to_rfc3339_string().unwrap_or_default(),
                 });

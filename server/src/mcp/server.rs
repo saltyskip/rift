@@ -21,7 +21,7 @@ use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::links::models::LinkError;
 use crate::services::links::models::{
     BulkCreateLinksRequest, BulkCreateLinksResponse, CreateLinkRequest, CreateLinkResponse,
-    LinkDetail, LinkStatsResponse, ListLinksResponse,
+    LinkDetail, ListLinksResponse,
 };
 use crate::services::links::service::LinksService;
 
@@ -174,32 +174,6 @@ impl RiftMcp {
             .map_err(|e| e.to_string())?;
 
         Ok(Json(detail))
-    }
-
-    #[tool(
-        name = "links.stats",
-        description = "Get performance stats for a Rift deep link: click_count (landing-page visits), install_count (first-launch installs attributed to this link), identify_count (installs that bound a user_id via /v1/lifecycle/identify), convert_count (sum of conversion events), and a per-type conversions breakdown.",
-        annotations(
-            title = "Get link stats",
-            read_only_hint = true,
-            destructive_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false,
-        )
-    )]
-    #[tracing::instrument(skip(self), fields(tool = "links.stats"))]
-    async fn get_link_stats(
-        &self,
-        Parameters(input): Parameters<GetLinkStatsInput>,
-    ) -> Result<Json<LinkStatsResponse>, String> {
-        let ctx = self.auth_context()?;
-        let stats = self
-            .service
-            .get_link_stats(&ctx, &input.link_id)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        Ok(Json(stats))
     }
 
     #[tool(

@@ -2,6 +2,7 @@ pub mod m001_auth_split;
 pub mod m002_billing_foundation;
 pub mod m003_unify_tokens;
 pub mod m004_secret_key_scope_backfill;
+pub mod m005_attribution_cutover;
 
 use async_trait::async_trait;
 use mongodb::Database;
@@ -19,6 +20,7 @@ pub fn all() -> Vec<Box<dyn Migration>> {
         Box::new(m002_billing_foundation::M002BillingFoundation),
         Box::new(m003_unify_tokens::M003UnifyTokens),
         Box::new(m004_secret_key_scope_backfill::M004SecretKeyScopeBackfill),
+        Box::new(m005_attribution_cutover::M005AttributionCutover),
     ]
 }
 
