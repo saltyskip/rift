@@ -11,7 +11,7 @@ use mongodb::bson::Document;
 
 use super::models::{
     AttributionEvent, AttributionEventMeta, BulkInsertError, ClickEvent, ClickMeta,
-    CreateLinkInput, CreditModel, Link, LinkStatus,
+    CreateLinkInput, CreditModel, CreditedLinks, Link, LinkStatus,
 };
 
 // ── Trait ──
@@ -124,6 +124,24 @@ pub trait LinksRepository: Send + Sync {
         from: DateTime,
         to: DateTime,
     ) -> Result<u64, String>;
+
+    /// Resolve the user's credited links at a moment in time.
+    ///
+    /// Walks the user's `attribution_events` with `timestamp ≤ at_or_before`
+    /// and returns the first-touch and last-touch link_ids in one round
+    /// trip. Both are returned so webhook payloads can carry both
+    /// flavours — receivers pick whichever matches their attribution
+    /// philosophy without needing to query Rift back.
+    ///
+    /// Returns `(None, None)` for a user with no attribution events on
+    /// or before the cutoff (a backend-fired conversion for a user who
+    /// hasn't done a `/lifecycle/attribute` yet, for example).
+    async fn credited_links_for_user(
+        &self,
+        tenant_id: &ObjectId,
+        user_id: &str,
+        at_or_before: DateTime,
+    ) -> Result<CreditedLinks, String>;
 }
 
 // ── Repository ──
@@ -197,6 +215,17 @@ impl LinksRepo {
             "meta",
         )
         .await;
+
+        // Powers the credited-link lookups used by the funnel's
+        // conversion count and by the identify/conversion webhooks. The
+        // filter shape is `(meta.tenant_id, user_id, timestamp ≤ ?)`
+        // with a sort on timestamp — the planner can serve first/last
+        // touch with one index walk per user.
+        ensure_index!(
+            attribution_events,
+            doc! { "meta.tenant_id": 1, "user_id": 1, "timestamp": 1 },
+            "attribution_events_tenant_user_time"
+        );
 
         // Drop the old global unique index if it exists (replaced by compound index).
         let _ = links.drop_index("link_id_unique").await;
@@ -609,6 +638,70 @@ impl LinksRepository for LinksRepo {
             })
             .await
             .map_err(|e| e.to_string())
+    }
+
+    async fn credited_links_for_user(
+        &self,
+        tenant_id: &ObjectId,
+        user_id: &str,
+        at_or_before: DateTime,
+    ) -> Result<CreditedLinks, String> {
+        // One aggregation, two boundaries via $facet — the filter walks
+        // the (meta.tenant_id, user_id, timestamp) index for each
+        // branch; `$first` after a sort gives the boundary event in O(1)
+        // index hops once the planner picks the right walk direction.
+        let match_stage = doc! {
+            "meta.tenant_id": tenant_id,
+            "user_id": user_id,
+            "timestamp": { "$lte": at_or_before },
+        };
+        let pipeline = vec![
+            doc! { "$match": match_stage },
+            doc! {
+                "$facet": {
+                    "first": [
+                        { "$sort": { "timestamp": 1 } },
+                        { "$limit": 1 },
+                        { "$project": { "_id": 0, "link_id": 1 } },
+                    ],
+                    "last": [
+                        { "$sort": { "timestamp": -1 } },
+                        { "$limit": 1 },
+                        { "$project": { "_id": 0, "link_id": 1 } },
+                    ],
+                }
+            },
+        ];
+
+        let mut cursor = self
+            .attribution_events
+            .aggregate(pipeline)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !cursor.advance().await.map_err(|e| e.to_string())? {
+            return Ok(CreditedLinks::default());
+        }
+        let raw: Document = cursor.deserialize_current().map_err(|e| e.to_string())?;
+
+        let extract = |key: &str| -> Option<String> {
+            raw.get_array(key)
+                .ok()?
+                .first()?
+                .as_document()?
+                .get_str("link_id")
+                .ok()
+                .map(|s| s.to_string())
+        };
+
+        Ok(CreditedLinks {
+            first_touch_link_id: extract("first"),
+            last_touch_link_id: extract("last"),
+            // Metadata is enriched in the service layer (cached
+            // `find_link_by_tenant_and_id`) — the repo returns IDs only.
+            first_touch_link_metadata: None,
+            last_touch_link_metadata: None,
+        })
     }
 }
 

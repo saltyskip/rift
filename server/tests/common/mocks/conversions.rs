@@ -79,4 +79,15 @@ impl ConversionsRepository for MockConversionsRepo {
     ) -> Result<Vec<(String, u64)>, String> {
         Ok(Vec::new())
     }
+
+    async fn count_conversions_by_type_credited_to_links(
+        &self,
+        _tenant_id: &ObjectId,
+        _link_ids: &[String],
+        _from: mongodb::bson::DateTime,
+        _to: mongodb::bson::DateTime,
+        _credit: rift::services::links::models::CreditModel,
+    ) -> Result<Vec<(String, u64)>, String> {
+        Ok(Vec::new())
+    }
 }

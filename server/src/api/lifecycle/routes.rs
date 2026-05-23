@@ -20,7 +20,7 @@ use crate::core::webhook_dispatcher::{
     AttributeEventPayload, ClickEventPayload, IdentifyEventPayload,
 };
 use crate::services::links::models::{
-    AttributeRequest, ClickRequest, IdentifyOutcome, IdentifyRequest, LinkError,
+    AttributeRequest, ClickRequest, CreditedLinks, IdentifyOutcome, IdentifyRequest, LinkError,
 };
 
 // ── POST /v1/lifecycle/click — SDK-authenticated click ──
@@ -286,16 +286,15 @@ pub async fn lifecycle_identify(
         .identify_install(&tenant.0, &req.install_id, &req.user_id)
         .await
     {
-        Ok(outcome @ (IdentifyOutcome::Created | IdentifyOutcome::InstallAdded)) => {
+        Ok(IdentifyOutcome::Created(credited)) | Ok(IdentifyOutcome::InstallAdded(credited)) => {
             // Real state change — fire the `identify` webhook so
             // subscribers can react (welcome bonus, etc.). Best-effort.
             tracing::debug!(
                 install_id = %req.install_id,
                 user_id = %req.user_id,
-                ?outcome,
                 "identify bound; firing webhook"
             );
-            fire_identify_event(&state, &tenant.0, &req.install_id, &req.user_id);
+            fire_identify_event(&state, &tenant.0, &req.install_id, &req.user_id, credited);
             Json(json!({ "success": true })).into_response()
         }
         Ok(IdentifyOutcome::AlreadyPresent) => {
@@ -335,14 +334,16 @@ pub async fn lifecycle_identify(
     }
 }
 
-/// Dispatch the `identify` webhook. Payload carries IDs only — receivers
-/// can correlate against their own click/attribute webhook stream if they
-/// want link context.
+/// Dispatch the `identify` webhook. Carries `first_touch_link_id` and
+/// `last_touch_link_id` computed server-side from the user's unified
+/// attribution chain (post-backfill) so receivers can act on the
+/// acquisition source without querying Rift back.
 fn fire_identify_event(
     state: &Arc<AppState>,
     tenant_id: &mongodb::bson::oid::ObjectId,
     install_id: &str,
     user_id: &str,
+    credited: CreditedLinks,
 ) {
     let Some(dispatcher) = &state.webhook_dispatcher else {
         return;
@@ -351,6 +352,10 @@ fn fire_identify_event(
         tenant_id: tenant_id.to_hex(),
         user_id: user_id.to_string(),
         install_id: install_id.to_string(),
+        first_touch_link_id: credited.first_touch_link_id,
+        first_touch_link_metadata: credited.first_touch_link_metadata,
+        last_touch_link_id: credited.last_touch_link_id,
+        last_touch_link_metadata: credited.last_touch_link_metadata,
         timestamp: Utc::now().to_rfc3339(),
     });
 }

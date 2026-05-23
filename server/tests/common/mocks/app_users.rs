@@ -64,29 +64,6 @@ impl AppUsersRepository for MockAppUsersRepo {
             .cloned())
     }
 
-    async fn distinct_user_ids_for_installs(
-        &self,
-        tenant_id: &ObjectId,
-        install_ids: &[String],
-    ) -> Result<Vec<String>, String> {
-        let rows = self.rows.lock().unwrap();
-        let mut out = Vec::new();
-        for row in rows.iter() {
-            if &row.tenant_id != tenant_id {
-                continue;
-            }
-            if row
-                .install_ids
-                .iter()
-                .any(|i| install_ids.iter().any(|q| q == i))
-                && !out.iter().any(|u| u == &row.user_id)
-            {
-                out.push(row.user_id.clone());
-            }
-        }
-        Ok(out)
-    }
-
     async fn find_user_id_for_install(
         &self,
         tenant_id: &ObjectId,

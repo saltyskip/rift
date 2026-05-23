@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use super::models::{AnalyticsError, Funnel, FunnelParams, FunnelResult, NewUsers, ReturningUsers};
-use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::auth::permissions::{AuthContext, Permission};
 use crate::services::conversions::repo::ConversionsRepository;
 use crate::services::install_events::models::InstallEventType;
@@ -11,14 +10,13 @@ use crate::services::install_events::repo::InstallEventsRepository;
 use crate::services::links::repo::LinksRepository;
 
 crate::impl_container!(AnalyticsService);
-/// Orchestrates the funnel-stats query across the four repos that own
-/// the underlying data. Per CLAUDE.md, route handlers (REST today, MCP
+/// Orchestrates the funnel-stats query across the repos that own the
+/// underlying data. Per CLAUDE.md, route handlers (REST today, MCP
 /// later) must call this method instead of touching repos directly so
 /// that quota / authz / business-rule changes land in one place.
 pub struct AnalyticsService {
     links_repo: Arc<dyn LinksRepository>,
     install_events_repo: Arc<dyn InstallEventsRepository>,
-    app_users_repo: Arc<dyn AppUsersRepository>,
     /// Optional because conversion tracking is feature-flagged.
     /// Conversions block in the funnel falls back to empty when absent.
     conversions_repo: Option<Arc<dyn ConversionsRepository>>,
@@ -28,13 +26,11 @@ impl AnalyticsService {
     pub fn new(
         links_repo: Arc<dyn LinksRepository>,
         install_events_repo: Arc<dyn InstallEventsRepository>,
-        app_users_repo: Arc<dyn AppUsersRepository>,
         conversions_repo: Option<Arc<dyn ConversionsRepository>>,
     ) -> Self {
         Self {
             links_repo,
             install_events_repo,
-            app_users_repo,
             conversions_repo,
         }
     }
@@ -125,23 +121,26 @@ impl AnalyticsService {
             )
             .await?;
 
-        // 5. Conversions — resolve credited_installs → user_ids → counts.
-        //    Absent conversions_repo means the tenant hasn't configured
-        //    conversion tracking yet; surface an empty map rather than
-        //    failing the whole funnel.
+        // 5. Conversions — credit each conversion to a campaign by
+        //    walking the converter's `attribution_events` chain under
+        //    the chosen model, then count only those credited to the
+        //    queried link set. Avoids the user-scoped leak (one user
+        //    touched by campaigns A and B → conversion would appear in
+        //    both funnels). Absent conversions_repo = tenant hasn't
+        //    configured conversion tracking; surface empty.
         let conversions: BTreeMap<String, u64> = match &self.conversions_repo {
-            Some(cr) => {
-                let user_ids = self
-                    .app_users_repo
-                    .distinct_user_ids_for_installs(tenant_id, &credited_installs)
-                    .await
-                    .map_err(AnalyticsError::Internal)?;
-                cr.count_by_type_for_users(tenant_id, &user_ids, params.from, params.to)
-                    .await
-                    .map_err(AnalyticsError::Internal)?
-                    .into_iter()
-                    .collect()
-            }
+            Some(cr) => cr
+                .count_conversions_by_type_credited_to_links(
+                    tenant_id,
+                    &params.link_ids,
+                    params.from,
+                    params.to,
+                    params.credit,
+                )
+                .await
+                .map_err(AnalyticsError::Internal)?
+                .into_iter()
+                .collect(),
             None => BTreeMap::new(),
         };
 

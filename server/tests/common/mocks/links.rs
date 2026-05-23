@@ -266,4 +266,13 @@ impl LinksRepository for MockLinksRepo {
     ) -> Result<u64, String> {
         Ok(0)
     }
+
+    async fn credited_links_for_user(
+        &self,
+        _tenant_id: &ObjectId,
+        _user_id: &str,
+        _at_or_before: DateTime,
+    ) -> Result<rift::services::links::models::CreditedLinks, String> {
+        Ok(Default::default())
+    }
 }

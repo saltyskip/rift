@@ -126,17 +126,11 @@ impl LinksService {
             .await
             .map_err(LinkError::Internal)?;
 
-        let outcome = match upsert {
-            AppUserUpsert::Created => IdentifyOutcome::Created,
-            AppUserUpsert::InstallAdded => IdentifyOutcome::InstallAdded,
-            AppUserUpsert::AlreadyPresent => IdentifyOutcome::AlreadyPresent,
-        };
-
         // 3 + 4 only run on real state changes. AlreadyPresent is an
         // idempotent SDK retry — skip side-effects to avoid double-firing
         // identify webhooks or redundantly rewriting backfilled rows.
-        if outcome == IdentifyOutcome::AlreadyPresent {
-            return Ok(outcome);
+        if matches!(upsert, AppUserUpsert::AlreadyPresent) {
+            return Ok(IdentifyOutcome::AlreadyPresent);
         }
 
         // 3. Backfill attribution_events.user_id for prior anonymous
@@ -204,7 +198,31 @@ impl LinksService {
             }
         }
 
-        Ok(outcome)
+        // 5. Compute first/last touch credit AFTER the backfill — by
+        //    this point the user's attribution chain includes the newly
+        //    identified install's prior anonymous events, so the credit
+        //    reflects the unified chain. Best-effort lookup; on failure
+        //    the webhook still fires with both fields absent.
+        let credited_ids = self
+            .links_repo
+            .credited_links_for_user(tenant_id, user_id, mongodb::bson::DateTime::now())
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    error = %e,
+                    user_id,
+                    "credited_links_for_user failed during identify"
+                );
+                Default::default()
+            });
+        let credited =
+            enrich_credited_with_metadata(self.links_repo.as_ref(), tenant_id, credited_ids).await;
+
+        Ok(match upsert {
+            AppUserUpsert::Created => IdentifyOutcome::Created(credited),
+            AppUserUpsert::InstallAdded => IdentifyOutcome::InstallAdded(credited),
+            AppUserUpsert::AlreadyPresent => unreachable!("guarded above"),
+        })
     }
 
     /// Fire-and-forget click recording. Runs the `TrackEvent` quota check
@@ -965,6 +983,52 @@ impl LinksService {
         let domain = resolve_verified_primary_domain(self.domains_repo.as_deref(), tenant_id).await;
         build_canonical_link_url(&self.public_url, link_id, domain.as_deref())
     }
+}
+
+/// Enrich a bare-IDs `CreditedLinks` with the corresponding link
+/// metadata. Used by webhook fire-sites (identify, conversion) so the
+/// outbound payload carries `*_link_metadata` next to `*_link_id`.
+///
+/// Both lookups hit the 1-hour link cache, so the cost is negligible
+/// in steady state. Lookup failures are swallowed (logged) and the
+/// metadata field stays `None` — better than failing the webhook
+/// dispatch over a stale cache miss.
+pub async fn enrich_credited_with_metadata(
+    links_repo: &dyn LinksRepository,
+    tenant_id: &ObjectId,
+    mut credited: CreditedLinks,
+) -> CreditedLinks {
+    async fn fetch_metadata(
+        repo: &dyn LinksRepository,
+        tenant_id: &ObjectId,
+        link_id: &str,
+    ) -> Option<serde_json::Value> {
+        repo.find_link_by_tenant_and_id(tenant_id, link_id)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, link_id, "credited link metadata lookup failed");
+                None
+            })
+            .and_then(|l| {
+                l.metadata
+                    .as_ref()
+                    .and_then(|d| serde_json::to_value(d).ok())
+            })
+    }
+
+    if let Some(id) = credited.first_touch_link_id.as_deref() {
+        credited.first_touch_link_metadata = fetch_metadata(links_repo, tenant_id, id).await;
+    }
+    if let Some(id) = credited.last_touch_link_id.as_deref() {
+        // Skip the second lookup when first == last (single-touch
+        // user): same link, same cached metadata.
+        if credited.first_touch_link_id.as_deref() == Some(id) {
+            credited.last_touch_link_metadata = credited.first_touch_link_metadata.clone();
+        } else {
+            credited.last_touch_link_metadata = fetch_metadata(links_repo, tenant_id, id).await;
+        }
+    }
+    credited
 }
 
 pub fn build_canonical_link_url(

@@ -7,6 +7,7 @@ use rand::RngCore;
 use crate::ensure_index;
 
 use super::models::{ConversionDedup, ConversionEvent, Source, SourceType};
+use crate::services::links::models::CreditModel;
 
 // ── Trait ──
 
@@ -63,12 +64,38 @@ pub trait ConversionsRepository: Send + Sync {
     /// Count conversions per type for a set of user_ids within a time
     /// range. Returns one entry per non-zero conversion type.
     /// Empty input → empty output.
+    #[allow(dead_code)] // kept for reference / future debug; funnel uses the credited variant
     async fn count_by_type_for_users(
         &self,
         tenant_id: &ObjectId,
         user_ids: &[String],
         from: DateTime,
         to: DateTime,
+    ) -> Result<Vec<(String, u64)>, String>;
+
+    /// Count conversions per type whose **credited link** is in
+    /// `link_ids`, under the chosen attribution model. This is the
+    /// correct funnel-side conversion count: a conversion is attributed
+    /// to a campaign by walking the user's `attribution_events` chain
+    /// up to (and including) `occurred_at`, picking the boundary event
+    /// per the credit model, and checking whether its `link_id` is in
+    /// the campaign set.
+    ///
+    /// Why not just count conversions for the campaign's installs'
+    /// users? Because a multi-touch user (campaign A on phone, campaign
+    /// B on tablet, then conversion) would land in both A's and B's
+    /// funnel — double-credit. This method credits each conversion to
+    /// exactly one campaign per credit model (or to any campaign it
+    /// touched, for `Touched`).
+    ///
+    /// Returns an empty vec for empty `link_ids`.
+    async fn count_conversions_by_type_credited_to_links(
+        &self,
+        tenant_id: &ObjectId,
+        link_ids: &[String],
+        from: DateTime,
+        to: DateTime,
+        credit: CreditModel,
     ) -> Result<Vec<(String, u64)>, String>;
 }
 
@@ -309,6 +336,123 @@ impl ConversionsRepository for ConversionsRepo {
                     "occurred_at": { "$gte": from, "$lte": to },
                 }
             },
+            doc! {
+                "$group": {
+                    "_id": "$meta.conversion_type",
+                    "count": { "$sum": 1 },
+                }
+            },
+        ];
+
+        let mut cursor = self
+            .events
+            .aggregate(pipeline)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut results = Vec::new();
+        while cursor.advance().await.map_err(|e| e.to_string())? {
+            let raw: Document = cursor.deserialize_current().map_err(|e| e.to_string())?;
+            let conversion_type = raw.get_str("_id").map_err(|e| e.to_string())?.to_string();
+            let count = raw.get_i64("count").unwrap_or(0).max(0) as u64;
+            if count > 0 {
+                results.push((conversion_type, count));
+            }
+        }
+        Ok(results)
+    }
+
+    async fn count_conversions_by_type_credited_to_links(
+        &self,
+        tenant_id: &ObjectId,
+        link_ids: &[String],
+        from: DateTime,
+        to: DateTime,
+        credit: CreditModel,
+    ) -> Result<Vec<(String, u64)>, String> {
+        if link_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let bson_links: Vec<mongodb::bson::Bson> = link_ids
+            .iter()
+            .map(|s| mongodb::bson::Bson::String(s.clone()))
+            .collect();
+
+        // For first/last touch the inner pipeline walks the user's
+        // attribution chain up to occurred_at, picks the boundary event,
+        // and projects its link_id; the outer $match keeps the
+        // conversion only when that boundary link is in our campaign
+        // set. For touched, the inner pipeline filters to events whose
+        // link is already in the set — any match credits the conversion
+        // once.
+        let inner_pipeline: Vec<Document> = match credit {
+            CreditModel::Touched => vec![
+                doc! {
+                    "$match": {
+                        "$expr": {
+                            "$and": [
+                                { "$eq": ["$meta.tenant_id", tenant_id] },
+                                { "$eq": ["$user_id", "$$uid"] },
+                                { "$lte": ["$timestamp", "$$convo_t"] },
+                                { "$in": ["$link_id", bson_links.clone()] },
+                            ]
+                        }
+                    }
+                },
+                doc! { "$limit": 1 },
+                doc! { "$project": { "_id": 1 } },
+            ],
+            CreditModel::FirstTouch | CreditModel::LastTouch => {
+                let sort_dir: i32 = if matches!(credit, CreditModel::FirstTouch) {
+                    1
+                } else {
+                    -1
+                };
+                vec![
+                    doc! {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    { "$eq": ["$meta.tenant_id", tenant_id] },
+                                    { "$eq": ["$user_id", "$$uid"] },
+                                    { "$lte": ["$timestamp", "$$convo_t"] },
+                                ]
+                            }
+                        }
+                    },
+                    doc! { "$sort": { "timestamp": sort_dir } },
+                    doc! { "$limit": 1 },
+                    doc! { "$project": { "_id": 0, "link_id": 1 } },
+                ]
+            }
+        };
+
+        let post_lookup_match: Document = match credit {
+            CreditModel::Touched => doc! {
+                "$match": { "$expr": { "$gt": [{ "$size": "$credit" }, 0] } }
+            },
+            CreditModel::FirstTouch | CreditModel::LastTouch => doc! {
+                "$match": { "credit.0.link_id": { "$in": bson_links } }
+            },
+        };
+
+        let pipeline = vec![
+            doc! {
+                "$match": {
+                    "meta.tenant_id": tenant_id,
+                    "occurred_at": { "$gte": from, "$lte": to },
+                    "user_id": { "$ne": null },
+                }
+            },
+            doc! {
+                "$lookup": {
+                    "from": "attribution_events",
+                    "let": { "uid": "$user_id", "convo_t": "$occurred_at" },
+                    "pipeline": inner_pipeline,
+                    "as": "credit",
+                }
+            },
+            post_lookup_match,
             doc! {
                 "$group": {
                     "_id": "$meta.conversion_type",

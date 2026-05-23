@@ -195,16 +195,18 @@ pub struct AttributionEventMeta {
 ///
 /// Drives the route handler's response + webhook decisions. `Created`
 /// and `InstallAdded` are real state changes that fire the `identify`
-/// webhook; `AlreadyPresent` is an idempotent replay that returns 200
-/// without firing. Conflict cases (install already bound to a different
-/// user) surface via `LinkError::IdentifyConflict`, not this enum.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// webhook (and carry the user's credited links so the payload can
+/// include them without a second query); `AlreadyPresent` is an
+/// idempotent replay that returns 200 without firing. Conflict cases
+/// (install already bound to a different user) surface via
+/// `LinkError::IdentifyConflict`, not this enum.
+#[derive(Debug, Clone, PartialEq)]
 pub enum IdentifyOutcome {
     /// First identify for this user_id — `app_users` row created with
     /// `install_id` in `install_ids`.
-    Created,
+    Created(CreditedLinks),
     /// User existed; this install_id was a new device or reinstall.
-    InstallAdded,
+    InstallAdded(CreditedLinks),
     /// User existed and already had this install_id bound. No-op.
     AlreadyPresent,
 }
@@ -246,6 +248,27 @@ impl CreditModel {
             Self::Touched => "touched",
         }
     }
+}
+
+/// Credited links for a user, resolved by walking their
+/// `attribution_events` chain. The repo's
+/// [`crate::services::links::repo::LinksRepository::credited_links_for_user`]
+/// returns this with only the `*_link_id` fields populated; the
+/// service layer enriches `*_link_metadata` via cached
+/// `find_link_by_tenant_and_id` before handing it to the webhook
+/// fire-sites. Both flavours are returned so receivers using either
+/// credit model get the canonical metadata in one delivery — no
+/// follow-up query to Rift required.
+///
+/// All four fields are `None` when the user has no attribution events
+/// at or before the cutoff timestamp (e.g. a backend-fired conversion
+/// for a user whose SDK has never called `/lifecycle/attribute`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CreditedLinks {
+    pub first_touch_link_id: Option<String>,
+    pub first_touch_link_metadata: Option<serde_json::Value>,
+    pub last_touch_link_id: Option<String>,
+    pub last_touch_link_metadata: Option<serde_json::Value>,
 }
 
 // ── Internal Types ──

@@ -532,18 +532,18 @@ async fn run_server(cfg: Config) {
         Arc::new(ConversionsService::new(
             c.clone(),
             app_users_repo.clone(),
+            links_repo.clone(),
             webhook_dispatcher.clone(),
             tier_resolver.clone(),
             quota_service.clone(),
         ))
     });
 
-    let analytics_service = match (&links_repo, &install_events_repo, &app_users_repo) {
-        (Some(l), Some(ie), Some(au)) => Some(Arc::new(
+    let analytics_service = match (&links_repo, &install_events_repo) {
+        (Some(l), Some(ie)) => Some(Arc::new(
             crate::services::analytics::service::AnalyticsService::new(
                 l.clone(),
                 ie.clone(),
-                au.clone(),
                 conversions_repo.clone(),
             ),
         )),

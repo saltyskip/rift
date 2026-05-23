@@ -33,16 +33,6 @@ pub trait AppUsersRepository: Send + Sync {
         user_id: &str,
     ) -> Result<Option<AppUserDoc>, String>;
 
-    /// Distinct user_ids for users whose `install_ids` array contains any
-    /// of the given install_ids. Powers the funnel's conversion count by
-    /// resolving "touched installs → users who can have conversions."
-    /// Returns an empty set for an empty input.
-    async fn distinct_user_ids_for_installs(
-        &self,
-        tenant_id: &ObjectId,
-        install_ids: &[String],
-    ) -> Result<Vec<String>, String>;
-
     /// Resolve a single install_id back to the user_id it's bound to (if
     /// any). Used by `record_attribute_event` to stamp `user_id` onto the
     /// time-series row at write time — eliminating the OR-clause on the
@@ -139,35 +129,6 @@ impl AppUsersRepository for AppUsersRepo {
             .find_one(doc! { "tenant_id": tenant_id, "user_id": user_id })
             .await
             .map_err(|e| e.to_string())
-    }
-
-    async fn distinct_user_ids_for_installs(
-        &self,
-        tenant_id: &ObjectId,
-        install_ids: &[String],
-    ) -> Result<Vec<String>, String> {
-        if install_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let bson_ids: Vec<mongodb::bson::Bson> = install_ids
-            .iter()
-            .map(|s| mongodb::bson::Bson::String(s.clone()))
-            .collect();
-        let values = self
-            .app_users
-            .distinct(
-                "user_id",
-                doc! {
-                    "tenant_id": tenant_id,
-                    "install_ids": { "$in": bson_ids },
-                },
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok(values
-            .into_iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect())
     }
 
     async fn find_user_id_for_install(

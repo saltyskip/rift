@@ -9,6 +9,7 @@ use crate::core::webhook_dispatcher::{ConversionEventPayload, WebhookDispatcher}
 use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
+use crate::services::links::repo::LinksRepository;
 
 crate::impl_container!(ConversionsService);
 /// Orchestration layer for conversion ingestion. Keeps route handlers thin per
@@ -20,6 +21,10 @@ pub struct ConversionsService {
     /// so reduced-feature builds keep booting; ingest treats `None` as
     /// "trust the caller" and accepts every event with a user_id.
     app_users_repo: Option<Arc<dyn AppUsersRepository>>,
+    /// Used to compute first/last touch credit at webhook fire time so
+    /// receivers don't have to query Rift back. Optional for the same
+    /// reduced-feature reason as `app_users_repo`.
+    links_repo: Option<Arc<dyn LinksRepository>>,
     webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
     tiers: Option<Arc<dyn TierResolver>>,
     quota: Option<Arc<dyn QuotaChecker>>,
@@ -29,6 +34,7 @@ impl ConversionsService {
     pub fn new(
         conversions_repo: Arc<dyn ConversionsRepository>,
         app_users_repo: Option<Arc<dyn AppUsersRepository>>,
+        links_repo: Option<Arc<dyn LinksRepository>>,
         webhook_dispatcher: Option<Arc<dyn WebhookDispatcher>>,
         tiers: Option<Arc<dyn TierResolver>>,
         quota: Option<Arc<dyn QuotaChecker>>,
@@ -36,6 +42,7 @@ impl ConversionsService {
         Self {
             conversions_repo,
             app_users_repo,
+            links_repo,
             webhook_dispatcher,
             tiers,
             quota,
@@ -191,12 +198,49 @@ impl ConversionsService {
                     .as_ref()
                     .and_then(|doc| serde_json::to_value(doc).ok());
 
+                // Resolve first/last touch credit by walking the user's
+                // attribution chain up to (and including) the conversion
+                // moment, then enrich with the credited links' metadata
+                // so receivers can act on the campaign without querying
+                // Rift back. Best-effort: a lookup failure logs and falls
+                // back to absent fields rather than failing ingest.
+                let credited = match &self.links_repo {
+                    Some(repo) => {
+                        let ids = repo
+                            .credited_links_for_user(
+                                &tenant_id,
+                                user_id,
+                                event.occurred_at.unwrap_or_else(DateTime::now),
+                            )
+                            .await
+                            .unwrap_or_else(|e| {
+                                tracing::warn!(
+                                    error = %e,
+                                    user_id = %user_id,
+                                    "credited_links_for_user failed during conversion ingest"
+                                );
+                                Default::default()
+                            });
+                        crate::services::links::service::enrich_credited_with_metadata(
+                            repo.as_ref(),
+                            &tenant_id,
+                            ids,
+                        )
+                        .await
+                    }
+                    None => Default::default(),
+                };
+
                 dispatcher.dispatch_conversion(ConversionEventPayload {
                     event_id: event_id.to_hex(),
                     tenant_id: tenant_id.to_hex(),
                     source_id: source_id.to_hex(),
                     conversion_type: event.conversion_type.clone(),
                     user_id: event.user_id.clone(),
+                    first_touch_link_id: credited.first_touch_link_id,
+                    first_touch_link_metadata: credited.first_touch_link_metadata,
+                    last_touch_link_id: credited.last_touch_link_id,
+                    last_touch_link_metadata: credited.last_touch_link_metadata,
                     metadata: metadata_json,
                     timestamp: DateTime::now().try_to_rfc3339_string().unwrap_or_default(),
                 });
