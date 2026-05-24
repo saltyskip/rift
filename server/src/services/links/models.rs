@@ -480,6 +480,24 @@ where
     Option::deserialize(deserializer).map(Some)
 }
 
+/// Serializes `Option<ObjectId>` as a plain hex string (`"665a..."`) or
+/// `null`, matching what the schemars / utoipa hints already declare. The
+/// default bson `Serialize` impl emits extended JSON (`{"$oid": "..."}`)
+/// which clients validating against the declared schema reject — most
+/// visibly the MCP `Json<T>` wrapper, which strictly validates outputs.
+fn serialize_opt_object_id_as_hex<S>(
+    value: &Option<ObjectId>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match value {
+        Some(oid) => serializer.serialize_str(&oid.to_hex()),
+        None => serializer.serialize_none(),
+    }
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct LinkDetail {
@@ -513,7 +531,18 @@ pub struct LinkDetail {
     #[schema(example = "2025-06-15T10:30:00Z")]
     pub created_at: String,
     /// Affiliate this link is attributed to. None for unattributed links.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    ///
+    /// Serialized as a hex string so the output matches the schema hint
+    /// (`Option<String>`) we already advertise to schemars and utoipa. The
+    /// default bson ObjectId `Serialize` impl emits `{"$oid": "..."}`,
+    /// which fails MCP `Json<T>` schema validation and confuses REST
+    /// clients reading the OpenAPI spec. Hotfix only — see the public-ID
+    /// migration tracking issue for the proper fix that stops exposing
+    /// raw ObjectIds entirely.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_opt_object_id_as_hex"
+    )]
     #[schema(value_type = Option<String>, example = "665a1b2c3d4e5f6a7b8c9d0e")]
     #[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]
     pub affiliate_id: Option<ObjectId>,
