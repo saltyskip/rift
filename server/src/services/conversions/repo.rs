@@ -354,7 +354,7 @@ impl ConversionsRepository for ConversionsRepo {
         while cursor.advance().await.map_err(|e| e.to_string())? {
             let raw: Document = cursor.deserialize_current().map_err(|e| e.to_string())?;
             let conversion_type = raw.get_str("_id").map_err(|e| e.to_string())?.to_string();
-            let count = raw.get_i64("count").unwrap_or(0).max(0) as u64;
+            let count = count_field_as_u64(&raw, "count");
             if count > 0 {
                 results.push((conversion_type, count));
             }
@@ -471,7 +471,7 @@ impl ConversionsRepository for ConversionsRepo {
         while cursor.advance().await.map_err(|e| e.to_string())? {
             let raw: Document = cursor.deserialize_current().map_err(|e| e.to_string())?;
             let conversion_type = raw.get_str("_id").map_err(|e| e.to_string())?.to_string();
-            let count = raw.get_i64("count").unwrap_or(0).max(0) as u64;
+            let count = count_field_as_u64(&raw, "count");
             if count > 0 {
                 results.push((conversion_type, count));
             }
@@ -479,3 +479,23 @@ impl ConversionsRepository for ConversionsRepo {
         Ok(results)
     }
 }
+
+/// `$sum: 1` and `$count: {}` return BSON Int32 for small totals and
+/// promote to Int64 only when needed — but `Document::get_i64` errors
+/// on Int32 inputs. The previous `raw.get_i64("count").unwrap_or(0)`
+/// silently dropped every group whose count fit in 32 bits (i.e. every
+/// realistic value), and the row was filtered out by the `count > 0`
+/// guard. This helper accepts either width and treats anything else as
+/// zero.
+fn count_field_as_u64(doc: &Document, key: &str) -> u64 {
+    match doc.get(key) {
+        Some(mongodb::bson::Bson::Int64(n)) => (*n).max(0) as u64,
+        Some(mongodb::bson::Bson::Int32(n)) => (*n as i64).max(0) as u64,
+        Some(mongodb::bson::Bson::Double(n)) => n.max(0.0) as u64,
+        _ => 0,
+    }
+}
+
+#[cfg(test)]
+#[path = "repo_tests.rs"]
+mod tests;
