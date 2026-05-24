@@ -385,6 +385,12 @@ impl ConversionsRepository for ConversionsRepo {
         // set. For touched, the inner pipeline filters to events whose
         // link is already in the set — any match credits the conversion
         // once.
+        // Note: the inner pipeline runs against `attribution_events`,
+        // where `user_id` lives under `meta` (so the identify backfill
+        // can actually mutate it — Mongo time-series only updates
+        // meta-field paths). The outer `$$uid` is the conversion
+        // event's top-level user_id (insert-only there, no mutation
+        // concern).
         let inner_pipeline: Vec<Document> = match credit {
             CreditModel::Touched => vec![
                 doc! {
@@ -392,7 +398,7 @@ impl ConversionsRepository for ConversionsRepo {
                         "$expr": {
                             "$and": [
                                 { "$eq": ["$meta.tenant_id", tenant_id] },
-                                { "$eq": ["$user_id", "$$uid"] },
+                                { "$eq": ["$meta.user_id", "$$uid"] },
                                 { "$lte": ["$timestamp", "$$convo_t"] },
                                 { "$in": ["$link_id", bson_links.clone()] },
                             ]
@@ -414,7 +420,7 @@ impl ConversionsRepository for ConversionsRepo {
                             "$expr": {
                                 "$and": [
                                     { "$eq": ["$meta.tenant_id", tenant_id] },
-                                    { "$eq": ["$user_id", "$$uid"] },
+                                    { "$eq": ["$meta.user_id", "$$uid"] },
                                     { "$lte": ["$timestamp", "$$convo_t"] },
                                 ]
                             }
