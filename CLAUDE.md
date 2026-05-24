@@ -4,6 +4,28 @@ Deep links for humans and agents.
 
 **Stack:** Rust, Axum, MongoDB, Sentry, x402
 
+## Backlog / followup work
+
+When you identify a meaningful improvement, bug, or refactor that is **out of scope for the task you're working on**, surface it to the user and **ask whether to file a GitHub issue**. Do not:
+
+- File issues unilaterally — issue spam pollutes the tracker; the user decides what's worth tracking
+- Bury it in a `TODO` comment that nobody re-reads
+- Bolt it onto the current PR as "while I'm here" scope creep — harder to review, harder to revert
+- Leave it unmentioned and trust someone will remember
+
+The shape of the ask: one or two sentences naming the thing you noticed, a brief take on why it matters, then *"Want me to file an issue?"* If the user says yes, use `gh issue create --title ... --body ...` and include:
+
+- **Specific problem statement** — what's broken / suboptimal today, with file paths and line numbers
+- **Proposed fix(es)** — at least one option, ideally a few with tradeoffs
+- **Audit / scope** — every affected call site so future-you (or future-AI) can act without re-doing the discovery
+- **Reference back** — link the PR or commit that surfaced the followup
+
+**Pattern: narrow fix + tracking issue.** When a bug's root cause goes deeper than the immediate symptom, ship the narrow fix and *ask* whether to file the broader redesign as an issue. If filed, reference the issue number in the PR's commit message and in any code comment that explains why the narrow fix is intentionally narrow. This keeps PRs reviewable, ships safety fast, and lets the user decide whether the deeper work is worth tracking.
+
+Example: PR #157 hotfixed an `ObjectId`-as-extended-JSON serialization bug in `LinkDetail.affiliate_id`. The deeper concern — that we expose raw `ObjectId`s in public responses at all — was surfaced to the user, who asked for it to be filed; it's tracked in #156.
+
+The narrow exception: a `TODO:` comment is acceptable when it points at a very specific tactical follow-up tightly coupled to the surrounding code (e.g. *"TODO: move to service layer when MCP or another transport consumes this"*). It is NOT acceptable for open-ended ideas, design improvements, or anything that requires more than ~10 lines to act on. Those become "want me to file an issue?" moments.
+
 ## Architecture
 
 The server separates **domain logic** from **transport layers**:
