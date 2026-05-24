@@ -172,15 +172,12 @@ pub struct AttributionEvent {
     pub meta: AttributionEventMeta,
     pub link_id: String,
     pub app_version: String,
-    /// User id at the moment of the event. `None` until the install is
-    /// identified; once `app_users` has a binding, the service stamps this
-    /// at write time so user-scoped reads don't need an OR-clause.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user_id: Option<String>,
 }
 
 /// Time-series metadata. `tenant_id` + `install_id` are the join keys
-/// for queries; `retention_bucket` participates in per-tier TTL indexes.
+/// for queries; `retention_bucket` participates in per-tier TTL indexes;
+/// `user_id` is mutated post-hoc by the identify backfill (Mongo
+/// time-series only supports updates on meta-field paths).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttributionEventMeta {
     pub tenant_id: ObjectId,
@@ -189,6 +186,13 @@ pub struct AttributionEventMeta {
     /// used by `ensure_retention_ttl_indexes`. Stays with the event for
     /// life; tier upgrades don't extend historical retention.
     pub retention_bucket: String,
+    /// User id once the install identifies. `None` for events written
+    /// while the install was anonymous; backfilled to the bound user_id
+    /// on `/lifecycle/identify` (Mongo can mutate meta-field paths but
+    /// not arbitrary data fields on time-series — that's why this
+    /// lives here and not at the top level).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
 }
 
 /// Result of `LinksService::identify_install`.

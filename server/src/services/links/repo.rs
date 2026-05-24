@@ -70,9 +70,9 @@ pub trait LinksRepository: Send + Sync {
 
     /// Append an immutable `/lifecycle/attribute` event to the
     /// `attribution_events` time-series collection. `user_id` is stamped
-    /// at write time when the install is already bound (resolved by the
-    /// service via `app_users`) so user-scoped reads don't need an
-    /// OR-clause on `null`.
+    /// into `meta.user_id` at write time when the install is already
+    /// bound (resolved by the service via `app_users`) so user-anchored
+    /// reads can prune buckets.
     async fn record_attribute_event(
         &self,
         tenant_id: ObjectId,
@@ -83,13 +83,14 @@ pub trait LinksRepository: Send + Sync {
         retention_bucket: String,
     ) -> Result<(), String>;
 
-    /// Backfill `user_id` onto every `attribution_events` row for this
-    /// install where `user_id` is currently NULL. Called from the identify
-    /// path so pre-identify anonymous events become user-scoped queryable
-    /// without OR-clauses on the read side.
+    /// Backfill `meta.user_id` onto every `attribution_events` row for
+    /// this install. Called from the identify path so pre-identify
+    /// anonymous events become user-anchored after the binding.
     ///
-    /// The "only fill NULLs" rule preserves history on rebind: events that
-    /// already carry a prior user_id are never overwritten.
+    /// `user_id` lives in `meta` (not a data field) specifically because
+    /// MongoDB time-series only supports updates on meta-field paths.
+    /// A prior incarnation of this method put `user_id` at the top level
+    /// and the `update_many` silently no-opped on every call.
     ///
     /// Returns the number of rows updated.
     async fn backfill_user_id_on_attribution_events(
@@ -216,16 +217,16 @@ impl LinksRepo {
         )
         .await;
 
-        // Powers the credited-link lookups used by the funnel's
-        // conversion count and by the identify/conversion webhooks. The
-        // filter shape is `(meta.tenant_id, user_id, timestamp ≤ ?)`
-        // with a sort on timestamp — the planner can serve first/last
-        // touch with one index walk per user.
-        ensure_index!(
-            attribution_events,
-            doc! { "meta.tenant_id": 1, "user_id": 1, "timestamp": 1 },
-            "attribution_events_tenant_user_time"
-        );
+        // Best-effort drop of the obsolete (meta.tenant_id, user_id,
+        // timestamp) index. That filter shape never worked — Mongo
+        // time-series rejected the `user_id` data-field filter clause
+        // silently — and `user_id` now lives under `meta`, so the
+        // index would never get used even if it had matched. Bucket
+        // pruning on `meta.user_id` is handled implicitly by the
+        // time-series storage.
+        let _ = attribution_events
+            .drop_index("attribution_events_tenant_user_time")
+            .await;
 
         // Drop the old global unique index if it exists (replaced by compound index).
         let _ = links.drop_index("link_id_unique").await;
@@ -497,10 +498,10 @@ impl LinksRepository for LinksRepo {
                 tenant_id,
                 install_id: install_id.to_string(),
                 retention_bucket,
+                user_id: user_id.map(|s| s.to_string()),
             },
             link_id: link_id.to_string(),
             app_version: app_version.to_string(),
-            user_id: user_id.map(|s| s.to_string()),
         };
         self.attribution_events
             .insert_one(&event)
@@ -515,19 +516,21 @@ impl LinksRepository for LinksRepo {
         install_id: &str,
         user_id: &str,
     ) -> Result<u64, String> {
-        // Filter by meta (indexed; the time-series collection's primary
-        // shard key). `user_id` is a top-level data field, so the $set is
-        // a normal field update — supported by MongoDB time-series
-        // collections on 5.0+.
+        // Filter AND update must target meta-field paths only —
+        // MongoDB time-series silently no-ops if either touches a
+        // data field. That's why `user_id` lives in `meta`. The
+        // filter intentionally omits any "only fill nulls" clause:
+        // an idempotent `$set` to the same value is a no-op at
+        // bucket-rewrite time, and adding a data-field filter would
+        // re-introduce the silent failure.
         let result = self
             .attribution_events
             .update_many(
                 doc! {
                     "meta.tenant_id": tenant_id,
                     "meta.install_id": install_id,
-                    "user_id": { "$eq": null },
                 },
-                doc! { "$set": { "user_id": user_id } },
+                doc! { "$set": { "meta.user_id": user_id } },
             )
             .await
             .map_err(|e| e.to_string())?;
@@ -651,13 +654,14 @@ impl LinksRepository for LinksRepo {
         user_id: &str,
         at_or_before: DateTime,
     ) -> Result<CreditedLinks, String> {
-        // One aggregation, two boundaries via $facet — the filter walks
-        // the (meta.tenant_id, user_id, timestamp) index for each
-        // branch; `$first` after a sort gives the boundary event in O(1)
-        // index hops once the planner picks the right walk direction.
+        // One aggregation, two boundaries via $facet. The filter is
+        // entirely on meta-field paths so the time-series planner can
+        // prune buckets; `$first` after a sort gives the boundary
+        // event in O(1) hops once the planner picks the right walk
+        // direction.
         let match_stage = doc! {
             "meta.tenant_id": tenant_id,
-            "user_id": user_id,
+            "meta.user_id": user_id,
             "timestamp": { "$lte": at_or_before },
         };
         let pipeline = vec![
