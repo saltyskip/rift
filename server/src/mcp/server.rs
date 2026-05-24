@@ -1,7 +1,8 @@
 use axum::extract::Request;
+use axum::http::request::Parts;
 use axum::middleware::Next;
 use axum::response::Response;
-use mongodb::bson::oid::ObjectId;
+use rmcp::handler::server::common::Extension;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{InitializeRequestParams, InitializeResult, ServerCapabilities, ServerInfo};
@@ -10,7 +11,7 @@ use rmcp::transport::streamable_http_server::session::never::NeverSessionManager
 use rmcp::transport::streamable_http_server::tower::StreamableHttpServerConfig;
 use rmcp::transport::StreamableHttpService;
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use super::models::*;
 use crate::services::auth::keys;
@@ -31,16 +32,7 @@ pub struct RiftMcp {
     secret_keys_repo: Arc<dyn SecretKeysRepository>,
     conversions_repo: Option<Arc<dyn ConversionsRepository>>,
     public_url: String,
-    /// `(tenant_id, key_id)` resolved during `initialize`. Used to build
-    /// `AuthContext` for each tool call.
-    session: OnceLock<McpSession>,
     tool_router: ToolRouter<Self>,
-}
-
-#[derive(Clone, Copy)]
-struct McpSession {
-    tenant_id: ObjectId,
-    key_id: ObjectId,
 }
 
 impl RiftMcp {
@@ -55,28 +47,46 @@ impl RiftMcp {
             secret_keys_repo,
             conversions_repo,
             public_url,
-            session: OnceLock::new(),
             tool_router: Self::tool_router(),
         }
     }
 
-    fn tenant_id(&self) -> Result<ObjectId, String> {
-        self.session
-            .get()
-            .map(|s| s.tenant_id)
-            .ok_or_else(|| "Not authenticated".to_string())
-    }
+    /// Resolve auth from the `McpApiKey` injected by `extract_api_key_header`
+    /// into the request extensions. Called per-tool-invocation rather than
+    /// once at session init: the streamable-HTTP server runs in stateless
+    /// mode (`NeverSessionManager`), so each request gets a fresh `RiftMcp`
+    /// instance and there is no session to carry resolved auth state on.
+    /// REST middleware does the same per-request lookup (see
+    /// `api::auth::middleware::validate_api_key`).
+    ///
+    /// MCP rejects affiliate-scoped keys here for the same reason as before:
+    /// the tools don't yet honor partner scope, and silently granting Full
+    /// would let a partner create unattributed links via MCP.
+    async fn auth_context(&self, parts: &Parts) -> Result<AuthContext, String> {
+        let api_key = parts
+            .extensions
+            .get::<McpApiKey>()
+            .map(|k| k.0.clone())
+            .ok_or_else(|| "Missing x-api-key header".to_string())?;
 
-    /// Build an `AuthContext` for this MCP session. MCP rejects affiliate-
-    /// scoped keys at init, so we always synthesize a Full-tenant context.
-    fn auth_context(&self) -> Result<AuthContext, String> {
-        let s = self
-            .session
-            .get()
-            .ok_or_else(|| "Not authenticated".to_string())?;
+        let key_hash = keys::hash_key(&api_key);
+        let key_doc = self
+            .secret_keys_repo
+            .find_by_hash(&key_hash)
+            .await
+            .map_err(|e| format!("Key lookup failed: {e}"))?
+            .ok_or_else(|| "Invalid or unverified API key".to_string())?;
+
+        if matches!(key_doc.scope, Some(KeyScope::Affiliate { .. })) {
+            return Err(
+                "MCP does not support partner-scoped credentials. Use a full-tenant rl_live_ key."
+                    .to_string(),
+            );
+        }
+
         Ok(AuthContext::for_secret_key(
-            s.tenant_id,
-            s.key_id,
+            key_doc.tenant_id,
+            key_doc.id,
             Some(&KeyScope::Full),
         ))
     }
@@ -99,12 +109,13 @@ impl RiftMcp {
             open_world_hint = false,
         )
     )]
-    #[tracing::instrument(skip(self, req), fields(tool = "links.create"))]
+    #[tracing::instrument(skip(self, req, parts), fields(tool = "links.create"))]
     async fn create_link(
         &self,
         Parameters(req): Parameters<CreateLinkRequest>,
+        Extension(parts): Extension<Parts>,
     ) -> Result<Json<CreateLinkResponse>, String> {
-        let ctx = self.auth_context()?;
+        let ctx = self.auth_context(&parts).await?;
         let resp = self
             .service
             .create_link(&ctx, req)
@@ -125,12 +136,13 @@ impl RiftMcp {
             open_world_hint = false,
         )
     )]
-    #[tracing::instrument(skip(self, req), fields(tool = "links.bulk_create"))]
+    #[tracing::instrument(skip(self, req, parts), fields(tool = "links.bulk_create"))]
     async fn create_links(
         &self,
         Parameters(req): Parameters<BulkCreateLinksRequest>,
+        Extension(parts): Extension<Parts>,
     ) -> Result<Json<BulkCreateLinksResponse>, String> {
-        let ctx = self.auth_context()?;
+        let ctx = self.auth_context(&parts).await?;
         match self.service.create_links_bulk(&ctx, req).await {
             Ok(resp) => Ok(Json(resp)),
             Err(LinkError::BatchValidationFailed(errors)) => {
@@ -161,12 +173,13 @@ impl RiftMcp {
             open_world_hint = false,
         )
     )]
-    #[tracing::instrument(skip(self), fields(tool = "links.get"))]
+    #[tracing::instrument(skip(self, parts), fields(tool = "links.get"))]
     async fn get_link(
         &self,
         Parameters(input): Parameters<GetLinkInput>,
+        Extension(parts): Extension<Parts>,
     ) -> Result<Json<LinkDetail>, String> {
-        let ctx = self.auth_context()?;
+        let ctx = self.auth_context(&parts).await?;
         let detail = self
             .service
             .get_link(&ctx, &input.link_id)
@@ -187,12 +200,13 @@ impl RiftMcp {
             open_world_hint = false,
         )
     )]
-    #[tracing::instrument(skip(self), fields(tool = "links.list"))]
+    #[tracing::instrument(skip(self, parts), fields(tool = "links.list"))]
     async fn list_links(
         &self,
         Parameters(input): Parameters<ListLinksInput>,
+        Extension(parts): Extension<Parts>,
     ) -> Result<Json<ListLinksResponse>, String> {
-        let ctx = self.auth_context()?;
+        let ctx = self.auth_context(&parts).await?;
         let resp = self
             .service
             .list_links(&ctx, input.limit, input.cursor)
@@ -213,12 +227,13 @@ impl RiftMcp {
             open_world_hint = false,
         )
     )]
-    #[tracing::instrument(skip(self, input), fields(tool = "links.update"))]
+    #[tracing::instrument(skip(self, input, parts), fields(tool = "links.update"))]
     async fn update_link(
         &self,
         Parameters(input): Parameters<UpdateLinkInput>,
+        Extension(parts): Extension<Parts>,
     ) -> Result<Json<LinkDetail>, String> {
-        let ctx = self.auth_context()?;
+        let ctx = self.auth_context(&parts).await?;
         let detail = self
             .service
             .update_link(&ctx, &input.link_id, input.body)
@@ -239,12 +254,13 @@ impl RiftMcp {
             open_world_hint = false,
         )
     )]
-    #[tracing::instrument(skip(self), fields(tool = "links.delete"))]
+    #[tracing::instrument(skip(self, parts), fields(tool = "links.delete"))]
     async fn delete_link(
         &self,
         Parameters(input): Parameters<DeleteLinkInput>,
+        Extension(parts): Extension<Parts>,
     ) -> Result<Json<DeleteLinkOutput>, String> {
-        let ctx = self.auth_context()?;
+        let ctx = self.auth_context(&parts).await?;
         self.service
             .delete_link(&ctx, &input.link_id)
             .await
@@ -267,12 +283,13 @@ impl RiftMcp {
             open_world_hint = false,
         )
     )]
-    #[tracing::instrument(skip(self), fields(tool = "sources.create"))]
+    #[tracing::instrument(skip(self, parts), fields(tool = "sources.create"))]
     async fn create_source(
         &self,
         Parameters(input): Parameters<CreateSourceInput>,
+        Extension(parts): Extension<Parts>,
     ) -> Result<Json<CreateSourceOutput>, String> {
-        let tenant_id = self.tenant_id()?;
+        let tenant_id = self.auth_context(&parts).await?.tenant_id;
         let repo = self
             .conversions_repo
             .as_ref()
@@ -313,12 +330,13 @@ impl RiftMcp {
             open_world_hint = false,
         )
     )]
-    #[tracing::instrument(skip(self), fields(tool = "sources.list"))]
+    #[tracing::instrument(skip(self, parts), fields(tool = "sources.list"))]
     async fn list_sources(
         &self,
         Parameters(_input): Parameters<ListSourcesInput>,
+        Extension(parts): Extension<Parts>,
     ) -> Result<Json<ListSourcesOutput>, String> {
-        let tenant_id = self.tenant_id()?;
+        let tenant_id = self.auth_context(&parts).await?.tenant_id;
         let repo = self
             .conversions_repo
             .as_ref()
@@ -368,7 +386,13 @@ impl ServerHandler for RiftMcp {
         request: InitializeRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, McpError> {
-        // Try _meta.api_key first, then fall back to x-api-key HTTP header
+        // Auth is resolved per-tool-call from the `x-api-key` header (see
+        // `auth_context`). The streamable-HTTP server runs in stateless mode
+        // (`NeverSessionManager`), so anything we stored on this `RiftMcp`
+        // instance during initialize would not survive to the next request
+        // anyway. Initialize still validates the key when it's present so
+        // bad credentials fail fast at session start — but a missing key is
+        // not fatal here, the failure surfaces on the first tool call.
         let api_key = context
             .meta
             .0
@@ -381,49 +405,31 @@ impl ServerHandler for RiftMcp {
                     .get::<axum::http::request::Parts>()
                     .and_then(|parts| parts.extensions.get::<McpApiKey>())
                     .map(|k| k.0.clone())
-            })
-            .ok_or_else(|| {
-                McpError::invalid_params(
-                    "Missing API key: provide _meta.api_key or x-api-key header",
+            });
+
+        if let Some(api_key) = api_key {
+            let key_hash = keys::hash_key(&api_key);
+            let key_doc = self
+                .secret_keys_repo
+                .find_by_hash(&key_hash)
+                .await
+                .map_err(|e| McpError::internal_error(format!("Key lookup failed: {e}"), None))?
+                .ok_or_else(|| McpError::invalid_params("Invalid or unverified API key", None))?;
+
+            if matches!(key_doc.scope, Some(KeyScope::Affiliate { .. })) {
+                return Err(McpError::invalid_params(
+                    "MCP does not support partner-scoped credentials. Use a full-tenant rl_live_ key.",
                     None,
-                )
-            })?;
+                ));
+            }
 
-        // Hash and look up the key
-        let key_hash = keys::hash_key(&api_key);
-
-        let key_doc = self
-            .secret_keys_repo
-            .find_by_hash(&key_hash)
-            .await
-            .map_err(|e| McpError::internal_error(format!("Key lookup failed: {e}"), None))?
-            .ok_or_else(|| McpError::invalid_params("Invalid or unverified API key", None))?;
-
-        // Reject affiliate-scoped credentials. The MCP tools (`create_link`,
-        // `get_link`, etc.) don't yet honor partner scope, and silently
-        // granting Full would let a partner create unattributed links via
-        // MCP. When MCP grows partner support, source the scope from the
-        // session here and pass it through to each tool's service call.
-        if matches!(key_doc.scope, Some(KeyScope::Affiliate { .. })) {
-            return Err(McpError::invalid_params(
-                "MCP does not support partner-scoped credentials. Use a full-tenant rl_live_ key.",
-                None,
-            ));
+            let tenant_id = key_doc.tenant_id;
+            tracing::info!(%tenant_id, "MCP session authenticated");
+            sentry::configure_scope(|s| {
+                s.set_tag("tenant_id", tenant_id.to_string());
+                s.set_tag("transport", "mcp");
+            });
         }
-
-        let tenant_id = key_doc.tenant_id;
-        self.session
-            .set(McpSession {
-                tenant_id,
-                key_id: key_doc.id,
-            })
-            .map_err(|_| McpError::internal_error("Session already authenticated", None))?;
-
-        tracing::info!(%tenant_id, "MCP session authenticated");
-        sentry::configure_scope(|s| {
-            s.set_tag("tenant_id", tenant_id.to_string());
-            s.set_tag("transport", "mcp");
-        });
 
         // Default behavior: store peer info and return server info
         if context.peer.peer_info().is_none() {
