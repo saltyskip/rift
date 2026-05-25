@@ -38,3 +38,36 @@ jobs:
 
       - name: Test
         run: cargo test
+
+  flutter-dart-gen:
+    name: Flutter Dart Binding Generation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client/mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/mobile
+
+      - name: Install flutter_rust_bridge_codegen
+        run: cargo install flutter_rust_bridge_codegen
+
+      - name: Generate Dart bindings
+        run: |
+          mkdir -p dist/flutter/lib/src/rust dist/flutter/headers
+          flutter_rust_bridge_codegen generate \
+            --rust-input flutter_ffi/src/lib.rs \
+            --dart-output dist/flutter/lib/src/rust/frb_generated.dart \
+            --c-output dist/flutter/headers/rift_flutter_ffi.h \
+            --no-web
+
+      - name: Verify generated files
+        run: |
+          test -f dist/flutter/lib/src/rust/frb_generated.dart
+          echo "Dart bindings generated successfully"

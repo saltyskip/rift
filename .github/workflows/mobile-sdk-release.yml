@@ -117,9 +117,60 @@ jobs:
           path: client/mobile/android-sdk.tar.gz
           retention-days: 5
 
+  build-flutter:
+    name: Build Flutter SDK
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: client/mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Apple build targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin
+
+      - name: Add Android targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Setup Android NDK
+        uses: android-actions/setup-android@v3
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/mobile
+
+      - name: Install flutter_rust_bridge_codegen
+        run: cargo install flutter_rust_bridge_codegen
+
+      - name: Build Flutter SDK
+        run: ./build_flutter.sh
+
+      - name: Verify artifacts
+        run: |
+          test -f dist/flutter/lib/src/rust/frb_generated.dart
+          test -d dist/flutter/ios/rift_flutter_ffi.xcframework
+          test -d dist/flutter/android/jniLibs/arm64-v8a
+          echo "Flutter artifacts verified"
+
+      - name: Package Flutter SDK
+        run: tar -czf flutter-sdk.tar.gz -C dist flutter
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flutter-sdk
+          path: client/mobile/flutter-sdk.tar.gz
+          retention-days: 5
+
   release:
     name: Create GitHub Release
-    needs: [build-ios, build-android]
+    needs: [build-ios, build-android, build-flutter]
     runs-on: ubuntu-latest
 
     steps:
@@ -135,6 +186,11 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: android-sdk
+          path: artifacts/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: flutter-sdk
           path: artifacts/
 
       - name: Determine version
@@ -186,6 +242,7 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           mv artifacts/ios-sdk.tar.gz "artifacts/rift-ios-sdk-${TAG}.tar.gz"
           mv artifacts/android-sdk.tar.gz "artifacts/rift-android-sdk-${TAG}.tar.gz"
+          mv artifacts/flutter-sdk.tar.gz "artifacts/rift-flutter-sdk-${TAG}.tar.gz"
 
       # IMPORTANT — order matters here. Both the release tag and the SPM
       # semver tag must point at the commit that has the URL+checksum
@@ -251,9 +308,19 @@ jobs:
             ### Android (Gradle)
             Download `rift-android-sdk-${{ steps.version.outputs.tag }}.tar.gz`, extract into your project.
             Contains: jniLibs (arm64-v8a, armeabi-v7a, x86, x86_64), Kotlin bindings, `build.gradle.kts`
+
+            ### Flutter / Dart
+            Download `rift-flutter-sdk-${{ steps.version.outputs.tag }}.tar.gz`, extract, and add as a path dependency:
+            ```yaml
+            dependencies:
+              rift_flutter_ffi:
+                path: ./rift_flutter_ffi
+            ```
+            Contains: generated Dart bindings, hand-written wrapper, iOS XCFramework, Android jniLibs.
           files: |
             artifacts/rift-ios-sdk-${{ steps.version.outputs.tag }}.tar.gz
             artifacts/rift-android-sdk-${{ steps.version.outputs.tag }}.tar.gz
+            artifacts/rift-flutter-sdk-${{ steps.version.outputs.tag }}.tar.gz
             artifacts/rift_ffiFFI.xcframework.zip
           generate_release_notes: true
         env:
