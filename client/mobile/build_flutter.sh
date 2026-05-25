@@ -30,7 +30,8 @@ mkdir -p flutter_dart_wrappers/lib/src/rust
 flutter_rust_bridge_codegen generate \
     --rust-input "crate::api" \
     --rust-root "flutter_ffi/" \
-    --dart-root "flutter_dart_wrappers/"
+    --dart-root "flutter_dart_wrappers/" \
+    --dart-output "flutter_dart_wrappers/lib/src/rust"
 
 echo "[Rift] Dart bindings generated → flutter_dart_wrappers/lib/src/rust/"
 
