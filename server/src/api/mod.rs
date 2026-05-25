@@ -29,6 +29,7 @@ use crate::app::AppState;
         // Authentication — sessions (humans) + key management + team management
         auth::sessions::routes::sign_in,
         auth::sessions::routes::callback,
+        auth::sessions::routes::callback_confirm,
         auth::sessions::routes::me,
         auth::sessions::routes::sign_out,
         auth::sessions::routes::issue_secret_key,
@@ -137,6 +138,7 @@ use crate::app::AppState;
         auth::secret_keys::models::ListSecretKeysResponse,
         auth::sessions::models::SignInRequest,
         auth::sessions::models::SignInResponse,
+        auth::sessions::models::CallbackForm,
         auth::sessions::models::MeResponse,
         auth::sessions::models::UserSummary,
         auth::sessions::models::TenantSummary,
