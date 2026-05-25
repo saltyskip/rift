@@ -23,15 +23,17 @@ if ! command -v flutter_rust_bridge_codegen &>/dev/null; then
     cargo install flutter_rust_bridge_codegen
 fi
 
-# frb codegen reads the Rust source and emits Dart + C header.
+# frb codegen reads the Rust source and emits Dart bindings into the
+# flutter_dart_wrappers package. The generated file is included when we
+# copy flutter_dart_wrappers/ into dist/flutter/ below.
+mkdir -p flutter_dart_wrappers/lib/src/rust
 flutter_rust_bridge_codegen generate \
     --rust-input "crate::api" \
     --rust-root "flutter_ffi/" \
-    --dart-output "$DIST/lib/src/rust/frb_generated.dart" \
-    --c-output "$HEADERS_DIR/${CRATE}.h" \
-    --no-web
+    --dart-root "flutter_dart_wrappers/" \
+    --dart-output "lib/src/rust/frb_generated.dart"
 
-echo "[Rift] Dart bindings generated → $DIST/lib/src/rust/"
+echo "[Rift] Dart bindings generated → flutter_dart_wrappers/lib/src/rust/"
 
 # ── Step 2: Build iOS targets ────────────────────────────────────────────────
 

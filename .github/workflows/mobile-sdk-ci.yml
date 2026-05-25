@@ -60,15 +60,14 @@ jobs:
 
       - name: Generate Dart bindings
         run: |
-          mkdir -p dist/flutter/lib/src/rust dist/flutter/headers
+          mkdir -p flutter_dart_wrappers/lib/src/rust
           flutter_rust_bridge_codegen generate \
             --rust-input crate::api \
             --rust-root flutter_ffi/ \
-            --dart-output dist/flutter/lib/src/rust/frb_generated.dart \
-            --c-output dist/flutter/headers/rift_flutter_ffi.h \
-            --no-web
+            --dart-root flutter_dart_wrappers/ \
+            --dart-output lib/src/rust/frb_generated.dart
 
       - name: Verify generated files
         run: |
-          test -f dist/flutter/lib/src/rust/frb_generated.dart
+          test -f flutter_dart_wrappers/lib/src/rust/frb_generated.dart
           echo "Dart bindings generated successfully"

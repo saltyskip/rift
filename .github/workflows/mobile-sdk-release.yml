@@ -157,7 +157,7 @@ jobs:
           test -f dist/flutter/lib/src/rust/frb_generated.dart
           test -d dist/flutter/ios/rift_flutter_ffi.xcframework
           test -d dist/flutter/android/jniLibs/arm64-v8a
-          echo "Flutter artifacts verified"
+          echo "Flutter artifacts verified — frb_generated.dart, XCFramework, and Android jniLibs all present"
 
       - name: Package Flutter SDK
         run: tar -czf flutter-sdk.tar.gz -C dist flutter
