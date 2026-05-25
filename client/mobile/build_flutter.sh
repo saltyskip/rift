@@ -62,15 +62,13 @@ if ! command -v cargo-ndk &>/dev/null; then
     cargo install cargo-ndk
 fi
 
-declare -A ABI_MAP=(
-    [aarch64-linux-android]="arm64-v8a"
-    [armv7-linux-androideabi]="armeabi-v7a"
-    [i686-linux-android]="x86"
-    [x86_64-linux-android]="x86_64"
-)
-
-for target in "${!ABI_MAP[@]}"; do
-    abi="${ABI_MAP[$target]}"
+for target in aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android; do
+    case "$target" in
+        aarch64-linux-android)   abi="arm64-v8a"   ;;
+        armv7-linux-androideabi) abi="armeabi-v7a" ;;
+        i686-linux-android)      abi="x86"         ;;
+        x86_64-linux-android)    abi="x86_64"      ;;
+    esac
     echo "[Rift] Building $target ($abi)..."
     cargo ndk --target "$target" --platform 21 build --release -p "$CRATE"
     mkdir -p "$ANDROID_DIST/jniLibs/$abi"
