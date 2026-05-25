@@ -31,7 +31,7 @@ flutter_rust_bridge_codegen generate \
     --rust-input "crate::api" \
     --rust-root "flutter_ffi/" \
     --dart-root "flutter_dart_wrappers/" \
-    --dart-output "lib/src/rust/frb_generated.dart"
+    --dart-output "flutter_dart_wrappers/lib/src/rust/frb_generated.dart"
 
 echo "[Rift] Dart bindings generated → flutter_dart_wrappers/lib/src/rust/"
 

@@ -65,7 +65,7 @@ jobs:
             --rust-input crate::api \
             --rust-root flutter_ffi/ \
             --dart-root flutter_dart_wrappers/ \
-            --dart-output lib/src/rust/frb_generated.dart
+            --dart-output flutter_dart_wrappers/lib/src/rust/frb_generated.dart
 
       - name: Verify generated files
         run: |
