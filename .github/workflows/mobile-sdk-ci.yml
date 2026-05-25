@@ -62,7 +62,8 @@ jobs:
         run: |
           mkdir -p dist/flutter/lib/src/rust dist/flutter/headers
           flutter_rust_bridge_codegen generate \
-            --rust-input flutter_ffi/src/lib.rs \
+            --rust-input crate::api \
+            --rust-root flutter_ffi/ \
             --dart-output dist/flutter/lib/src/rust/frb_generated.dart \
             --c-output dist/flutter/headers/rift_flutter_ffi.h \
             --no-web

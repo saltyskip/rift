@@ -25,7 +25,8 @@ fi
 
 # frb codegen reads the Rust source and emits Dart + C header.
 flutter_rust_bridge_codegen generate \
-    --rust-input "flutter_ffi/src/lib.rs" \
+    --rust-input "crate::api" \
+    --rust-root "flutter_ffi/" \
     --dart-output "$DIST/lib/src/rust/frb_generated.dart" \
     --c-output "$HEADERS_DIR/${CRATE}.h" \
     --no-web
