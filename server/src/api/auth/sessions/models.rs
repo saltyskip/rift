@@ -30,6 +30,18 @@ pub struct CallbackQuery {
     pub next: Option<String>,
 }
 
+/// Form body for `POST /v1/auth/callback` — submitted by the interstitial
+/// HTML page that `GET /v1/auth/callback` renders. The GET handler doesn't
+/// consume the token (email link scanners like Avanan, Defender Safe Links,
+/// and ProofPoint pre-fetch links and would burn it before the user clicks);
+/// only this POST does. Scanners follow GETs but don't submit forms.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CallbackForm {
+    pub token: String,
+    #[serde(default)]
+    pub next: Option<String>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MeResponse {
     pub user: UserSummary,

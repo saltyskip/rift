@@ -13,7 +13,10 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     // Public — no auth, rate-limited inside the service layer.
     let public = Router::new()
         .route("/v1/auth/signin", post(routes::sign_in))
-        .route("/v1/auth/callback", get(routes::callback));
+        .route(
+            "/v1/auth/callback",
+            get(routes::callback).post(routes::callback_confirm),
+        );
 
     // Session-authed — `/me`, `/signout` are the dashboard's read/write
     // hooks. `/secret-keys/issue` is the instant-mint path used by the

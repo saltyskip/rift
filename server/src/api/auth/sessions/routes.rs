@@ -5,15 +5,15 @@
 //! function, single call site each) rather than abstracted into a dedicated
 //! cookie service.
 
-use axum::extract::{Query, State};
+use axum::extract::{Form, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use serde_json::json;
 use std::sync::Arc;
 
 use super::models::{
-    CallbackQuery, IssueKeyRequest, MeResponse, SignInRequest, SignInResponse, TenantSummary,
-    UserSummary,
+    CallbackForm, CallbackQuery, IssueKeyRequest, MeResponse, SignInRequest, SignInResponse,
+    TenantSummary, UserSummary,
 };
 use crate::api::auth::models::{SessionId, UserId};
 use crate::api::auth::secret_keys::models::CreateKeyResponse;
@@ -109,6 +109,13 @@ pub async fn sign_in(
 }
 
 // ── GET /v1/auth/callback?token=… ──
+//
+// Renders an interstitial HTML page with a POST form. Doesn't touch the
+// token — that happens in `callback_confirm`. The split exists because
+// corporate email security products (Avanan, Microsoft Defender Safe Links,
+// ProofPoint URL Defense, Mimecast) pre-fetch links via GET to scan them,
+// and would consume the single-use token before the human ever clicked.
+// Scanners don't submit forms, so the POST is human-only.
 
 #[utoipa::path(
     get,
@@ -116,18 +123,47 @@ pub async fn sign_in(
     tag = "Sessions",
     params(
         ("token" = String, Query, description = "Signin token from the magic-link email"),
-        ("next" = Option<String>, Query, description = "Optional same-origin path to redirect to (default `/account`). Rejected if it doesn't validate as same-origin against the marketing host."),
+        ("next" = Option<String>, Query, description = "Optional same-origin path to redirect to after sign-in"),
     ),
+    responses(
+        (status = 200, description = "HTML interstitial — user clicks Continue to POST and consume the token", content_type = "text/html"),
+    )
+)]
+#[tracing::instrument(skip(state))]
+pub async fn callback(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<CallbackQuery>,
+) -> Response {
+    let action = format!("{}/v1/auth/callback", state.config.public_url);
+    let html = interstitial_html(&action, &q.token, q.next.as_deref());
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        // Belt-and-braces: scanners shouldn't be caching this and neither
+        // should browsers — every render is for a one-shot token.
+        .header(header::CACHE_CONTROL, "no-store")
+        .header("X-Robots-Tag", "noindex")
+        .body(axum::body::Body::from(html))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+// ── POST /v1/auth/callback ──
+
+#[utoipa::path(
+    post,
+    path = "/v1/auth/callback",
+    tag = "Sessions",
+    request_body(content = CallbackForm, content_type = "application/x-www-form-urlencoded"),
     responses(
         (status = 303, description = "Session created — redirects to `?next` (or `/account`) with a `Set-Cookie: session_token=…` header"),
         (status = 303, description = "Token invalid or expired — redirects to `/signin?error=link_expired`"),
     )
 )]
-#[tracing::instrument(skip(state, headers))]
-pub async fn callback(
+#[tracing::instrument(skip(state, headers, form))]
+pub async fn callback_confirm(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Query(q): Query<CallbackQuery>,
+    Form(form): Form<CallbackForm>,
 ) -> Response {
     // The redirect base used for the "link expired" path — needs a
     // sensible default before we have an outcome to read the origin from.
@@ -145,7 +181,7 @@ pub async fn callback(
         .map(|s| s.to_string());
 
     match svc
-        .consume_sign_in(&q.token, Some(ip.as_str()), user_agent.as_deref())
+        .consume_sign_in(&form.token, Some(ip.as_str()), user_agent.as_deref())
         .await
     {
         Ok(outcome) => {
@@ -161,12 +197,13 @@ pub async fn callback(
 
             // Prefer the `next` captured at signin time (already sanitized
             // against its base, can't be tampered with by whoever clicked the
-            // emailed link). Fall back to a query-string `next` (e.g. team
-            // invite acceptance) and finally `/account`.
+            // emailed link). Fall back to a form-body `next` (carried through
+            // the interstitial from the original query string) and finally
+            // `/account`.
             let success_path = outcome
                 .next
                 .clone()
-                .or_else(|| q.next.as_deref().and_then(|n| sanitize_next(base, n)))
+                .or_else(|| form.next.as_deref().and_then(|n| sanitize_next(base, n)))
                 .unwrap_or_else(|| "/account".to_string());
             let success_url = format!("{base}{success_path}");
 
@@ -451,6 +488,74 @@ pub(crate) fn sanitize_next(base_url: &str, next: &str) -> Option<String> {
         out.push_str(q);
     }
     Some(out)
+}
+
+/// Minimal HTML interstitial served by `GET /v1/auth/callback`. The form
+/// POSTs back to the same path; `token` (and optional `next`) ride in hidden
+/// fields. No JS, no auto-submit — a JS-rendering scanner that wants to
+/// defeat this would have to click buttons, which none of the major email
+/// security products do today.
+fn interstitial_html(action: &str, token: &str, next: Option<&str>) -> String {
+    let token_attr = html_escape(token);
+    let next_field = next
+        .map(|n| {
+            format!(
+                r#"<input type="hidden" name="next" value="{}">"#,
+                html_escape(n)
+            )
+        })
+        .unwrap_or_default();
+    let action_attr = html_escape(action);
+
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sign in to Rift</title>
+<style>
+  body {{ font-family: system-ui, -apple-system, sans-serif; background: #fafafa; color: #18181b; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }}
+  .card {{ max-width: 420px; width: 100%; background: #fff; border: 1px solid #e4e4e7; border-radius: 12px; padding: 32px; text-align: center; box-sizing: border-box; }}
+  h1 {{ margin: 0 0 8px; font-size: 20px; font-weight: 600; }}
+  p {{ color: #71717a; margin: 0 0 24px; font-size: 14px; line-height: 1.5; }}
+  button {{ background: #0d9488; color: #fff; border: none; border-radius: 6px; padding: 12px 24px; font-size: 15px; font-weight: 500; cursor: pointer; width: 100%; }}
+  button:hover {{ background: #0f766e; }}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>Confirm sign in</h1>
+<p>Click below to finish signing in to Rift.</p>
+<form method="post" action="{action_attr}">
+<input type="hidden" name="token" value="{token_attr}">
+{next_field}
+<button type="submit">Continue</button>
+</form>
+</div>
+</body>
+</html>"#
+    )
+}
+
+/// Escape the five characters that matter inside HTML attribute values.
+/// The token is already URL-safe (hex), but `next` is user-controlled and
+/// could carry `&` / `<` / quotes — escaping uniformly is cheaper than
+/// reasoning about which inputs need it.
+fn html_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
