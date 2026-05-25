@@ -6,7 +6,7 @@ import { DocsCallout as Callout } from "@/components/docs-callout";
 export const metadata: Metadata = {
   title: "Riftl.ink Webhooks — Rift Docs",
   description:
-    "Receive real-time Riftl.ink notifications for click, attribution, and conversion events via HTTPS webhooks.",
+    "Receive real-time Riftl.ink notifications for click, attribute, identify, and conversion events via HTTPS webhooks.",
   alternates: { canonical: "/docs/webhooks" },
 };
 
@@ -30,7 +30,8 @@ export default function WebhooksPage() {
             <p>
               Provide an HTTPS URL and the event types you want to receive.
               Supported events: <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">click</code>,{" "}
-              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">attribution</code>, and{" "}
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">attribute</code>,{" "}
+              <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">identify</code>, and{" "}
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">conversion</code>.
             </p>
             <CodeBlock>{`curl -X POST https://api.riftl.ink/v1/webhooks \\
@@ -38,13 +39,13 @@ export default function WebhooksPage() {
   -H "Content-Type: application/json" \\
   -d '{
     "url": "https://yourserver.com/rift-webhook",
-    "events": ["click", "attribution", "conversion"]
+    "events": ["click", "attribute", "identify", "conversion"]
   }'`}</CodeBlock>
             <p>Response:</p>
             <CodeBlock lang="json">{`{
   "id": "6650a1b2c3d4e5f6a7b8c9d0",
   "url": "https://yourserver.com/rift-webhook",
-  "events": ["click", "attribution", "conversion"],
+  "events": ["click", "attribute", "identify", "conversion"],
   "secret": "a1b2c3d4...64-char-hex-string",
   "created_at": "2026-03-24T12:00:00Z"
 }`}</CodeBlock>
@@ -90,10 +91,10 @@ export default function WebhooksPage() {
 }`}</CodeBlock>
           </Step>
 
-          <Step n={5} title="Attribution event">
-            <p>Sent when an install is attributed to one of your links:</p>
+          <Step n={5} title="Attribute event">
+            <p>Sent when a mobile SDK reports a link touch via <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">POST /v1/lifecycle/attribute</code>. The optional <code>user_id</code> is present when the install was already identified (re-attribution by an existing user).</p>
             <CodeBlock lang="json">{`{
-  "event": "attribution",
+  "event": "attribute",
   "timestamp": "2026-03-24T15:05:00Z",
   "data": {
     "tenant_id": "6650a1b2c3d4e5f6a7b8c9d0",
@@ -105,7 +106,23 @@ export default function WebhooksPage() {
 }`}</CodeBlock>
           </Step>
 
-          <Step n={6} title="Conversion event">
+          <Step n={6} title="Identify event">
+            <p>Sent when <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">PUT /v1/lifecycle/identify</code> successfully binds an install to a user. Carries first-touch and last-touch link credit so receivers can react (grant entitlements, etc.) without a follow-up lookup.</p>
+            <CodeBlock lang="json">{`{
+  "event": "identify",
+  "timestamp": "2026-03-24T15:07:00Z",
+  "data": {
+    "tenant_id": "6650a1b2c3d4e5f6a7b8c9d0",
+    "user_id": "usr_abc123",
+    "install_id": "device-uuid-123",
+    "first_touch_link_id": "summer-sale",
+    "first_touch_link_metadata": { "bonus_type": "welcome" },
+    "timestamp": "2026-03-24T15:07:00Z"
+  }
+}`}</CodeBlock>
+          </Step>
+
+          <Step n={7} title="Conversion event">
             <p>
               Sent when a conversion event is ingested via a{" "}
               <a href="/docs/conversions" className="text-[#2dd4bf] hover:underline">
@@ -124,7 +141,8 @@ export default function WebhooksPage() {
     "event_id": "66a1b2c3d4e5f6a7b8c9d0e1",
     "tenant_id": "6650a1b2c3d4e5f6a7b8c9d0",
     "source_id": "66a1b2c3d4e5f6a7b8c9d0e2",
-    "link_id": "summer-sale",
+    "first_touch_link_id": "summer-sale",
+    "last_touch_link_id": "summer-sale",
     "conversion_type": "deposit",
     "user_id": "usr_abc123",
     "metadata": { "tx_hash": "0xabc..." },
@@ -139,7 +157,7 @@ export default function WebhooksPage() {
         <section className="space-y-6">
           <h2 className="text-2xl font-bold text-[#fafafa]">Verifying signatures</h2>
 
-          <Step n={7} title="Validate the HMAC signature">
+          <Step n={8} title="Validate the HMAC signature">
             <p>
               Every webhook request includes an{" "}
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">X-Rift-Signature</code>{" "}
@@ -185,7 +203,7 @@ function verifyWebhook(body, signature, secret) {
           </ul>
           <Callout type="info">
             Webhook delivery is best-effort. For zero-loss reconciliation, pull from{" "}
-            <code>GET /v1/links/{"{link_id}"}/stats</code> on a schedule — events are the durable
+            <code>GET /v1/analytics/stats?link_ids={"{link_id}"}</code> on a schedule — events are the durable
             source of truth inside Rift&apos;s store. The webhook is a push notification for
             convenience, not the canonical data path.
           </Callout>

@@ -113,9 +113,9 @@ rift.trackConversion(
 
           <Step n={3} title="Check your stats">
             <p>
-              Conversion counts roll up into the link stats endpoint immediately:
+              Conversion counts roll up into the funnel stats endpoint immediately:
             </p>
-            <CodeBlock>{`curl https://api.riftl.ink/v1/links/summer-sale/stats \\
+            <CodeBlock>{`curl "https://api.riftl.ink/v1/analytics/stats?link_ids=summer-sale" \\
   -H "Authorization: Bearer rl_live_YOUR_KEY"`}</CodeBlock>
           </Step>
         </section>
@@ -215,24 +215,25 @@ rift.setUserId("usr_abc123")`}</CodeBlock>
 
           <Step n={4} title="Check your stats">
             <p>
-              The link stats endpoint now returns a{" "}
+              The funnel stats endpoint returns a branched response with{" "}
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">
                 conversions
               </code>{" "}
-              array with counts grouped by type:
+              keyed by type:
             </p>
-            <CodeBlock>{`curl https://api.riftl.ink/v1/links/summer-sale/stats \\
+            <CodeBlock>{`curl "https://api.riftl.ink/v1/analytics/stats?link_ids=summer-sale" \\
   -H "Authorization: Bearer rl_live_YOUR_KEY"`}</CodeBlock>
             <CodeBlock lang="json">{`{
-  "link_id": "summer-sale",
-  "click_count": 1420,
-  "install_count": 340,
-  "identify_count": 198,
-  "convert_count": 110,
-  "conversions": [
-    { "conversion_type": "deposit", "count": 19 },
-    { "conversion_type": "signup", "count": 91 }
-  ]
+  "from": "2026-04-25T00:00:00Z",
+  "to": "2026-05-25T00:00:00Z",
+  "link_ids": ["summer-sale"],
+  "credit": "last_touch",
+  "funnel": {
+    "clicks": 1420,
+    "new_users": { "installed": 340, "identified": 198 },
+    "returning_users": { "reinstalled": 0, "new_device": 0, "engaged": 0 },
+    "conversions": { "deposit": 19, "signup": 91 }
+  }
 }`}</CodeBlock>
           </Step>
         </section>
@@ -355,7 +356,7 @@ rift.setUserId("usr_abc123")`}</CodeBlock>
           </p>
           <Callout type="info">
             Webhook delivery is best-effort with 4 retries. For zero-loss reconciliation, poll{" "}
-            <code>GET /v1/links/{"{link_id}"}/stats</code> on a schedule — events are the
+            <code>GET /v1/analytics/stats?link_ids={"{link_id}"}</code> on a schedule — events are the
             durable source of truth inside Rift&apos;s store. The webhook is a push notification
             for convenience, not the canonical data path.
           </Callout>

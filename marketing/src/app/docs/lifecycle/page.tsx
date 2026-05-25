@@ -474,12 +474,14 @@ lifecycleScope.launch {
   "data": {
     "tenant_id": "65f...",
     "user_id": "usr_abc123",
-    "link_id": "summer-sale",
     "install_id": "device-uuid",
-    "link_metadata": {
+    "first_touch_link_id": "summer-sale",
+    "first_touch_link_metadata": {
       "bonus_type": "welcome",
       "bonus_amount_usdc": "20"
-    }
+    },
+    "last_touch_link_id": "summer-sale",
+    "timestamp": "2026-05-15T12:34:56Z"
   }
 }`}</CodeBlock>
           </div>
@@ -588,38 +590,25 @@ lifecycleScope.launch {
         <section className="space-y-6">
           <h2 className="text-2xl font-bold text-[#fafafa]">Analytics</h2>
 
-          <Step n={1} title="Link stats">
+          <Step n={1} title="Funnel stats">
             <p>
-              Get aggregate click and install counts for a link. The response also
-              includes a <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">conversions</code>{" "}
-              array populated by <a href="/docs/conversions" className="text-[#2dd4bf] hover:underline">conversion tracking</a>:
+              Get the full funnel for a link — clicks, installs, identifies, and conversions keyed by type.
+              Pass one or more comma-separated link IDs. The <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">credit</code>{" "}
+              param defaults to <code>last_touch</code> (also supports <code>first_touch</code> and <code>touched</code>):
             </p>
-            <CodeBlock>{`curl https://api.riftl.ink/v1/links/summer-sale/stats \\
+            <CodeBlock>{`curl "https://api.riftl.ink/v1/analytics/stats?link_ids=summer-sale" \\
   -H "Authorization: Bearer rl_live_YOUR_KEY"`}</CodeBlock>
             <CodeBlock lang="json">{`{
-  "link_id": "summer-sale",
-  "click_count": 1234,
-  "install_count": 89,
-  "identify_count": 73,
-  "convert_count": 61,
-  "conversions": [
-    { "conversion_type": "deposit", "count": 19 },
-    { "conversion_type": "signup", "count": 42 }
-  ]
-}`}</CodeBlock>
-          </Step>
-
-          <Step n={2} title="Time series">
-            <p>Get daily click counts for a date range:</p>
-            <CodeBlock>{`curl "https://api.riftl.ink/v1/links/summer-sale/timeseries?from=2025-04-01T00:00:00Z&to=2025-04-07T00:00:00Z&granularity=daily" \\
-  -H "Authorization: Bearer rl_live_YOUR_KEY"`}</CodeBlock>
-            <CodeBlock lang="json">{`{
-  "link_id": "summer-sale",
-  "granularity": "daily",
-  "data": [
-    { "date": "2025-04-01", "clicks": 42 },
-    { "date": "2025-04-02", "clicks": 67 }
-  ]
+  "from": "2026-04-25T00:00:00Z",
+  "to": "2026-05-25T00:00:00Z",
+  "link_ids": ["summer-sale"],
+  "credit": "last_touch",
+  "funnel": {
+    "clicks": 1234,
+    "new_users": { "installed": 89, "identified": 73 },
+    "returning_users": { "reinstalled": 0, "new_device": 0, "engaged": 0 },
+    "conversions": { "deposit": 19, "signup": 42 }
+  }
 }`}</CodeBlock>
           </Step>
         </section>
