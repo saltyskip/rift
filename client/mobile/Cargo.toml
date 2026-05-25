@@ -5,4 +5,5 @@ members = [
     "ffi",
     "mobile",
     "uniffi-bindgen",
+    "flutter_ffi",
 ]

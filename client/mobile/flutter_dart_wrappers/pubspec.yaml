@@ -1,0 +1,30 @@
+name: rift_flutter_ffi
+description: Rift deep link SDK for Flutter — attribution, deferred deep linking, conversion tracking.
+version: 0.2.0
+homepage: https://riftl.ink
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true
+      ios:
+        ffiPlugin: true
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_rust_bridge: '>=2.0.0 <3.0.0'
+  freezed_annotation: ^2.4.1
+  meta: ^1.11.0
+  shared_preferences: ^2.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  build_runner: ^2.4.8
+  freezed: ^2.4.6
