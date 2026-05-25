@@ -51,6 +51,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x'
+          channel: stable
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: client/mobile
