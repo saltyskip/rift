@@ -161,6 +161,17 @@ enum LinksCommand {
         #[arg(long)]
         json: bool,
     },
+    /// List links on this tenant (paginated)
+    List {
+        /// Page size (server clamps; default ~50)
+        #[arg(long)]
+        limit: Option<i64>,
+        /// Opaque cursor from a previous `next_cursor` to fetch the next page
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -310,6 +321,11 @@ pub async fn run() -> Result<(), CliError> {
                 .await
             }
             LinksCommand::Test { target, json } => commands::test_link::run(target, json).await,
+            LinksCommand::List {
+                limit,
+                cursor,
+                json,
+            } => commands::list_links::run(limit, cursor, json).await,
         },
         Command::Apps(cmd) => match cmd {
             AppsCommand::Add {
