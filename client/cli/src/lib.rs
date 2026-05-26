@@ -158,6 +158,22 @@ enum LinksCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Funnel stats for one or more links (clicks → installs → identifies → conversions)
+    Stats {
+        /// Link IDs, comma-separated for multiple (e.g. ABC123,DEF456)
+        link_ids: String,
+        /// Start of date range, RFC 3339 (default: 30 days ago)
+        #[arg(long)]
+        from: Option<String>,
+        /// End of date range, RFC 3339 (default: now)
+        #[arg(long)]
+        to: Option<String>,
+        /// Attribution model: last_touch (default), first_touch, or touched
+        #[arg(long)]
+        credit: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -287,6 +303,22 @@ pub async fn run() -> Result<(), CliError> {
                 .await
             }
             LinksCommand::Test { target, json } => commands::test_link::run(target, json).await,
+            LinksCommand::Stats {
+                link_ids,
+                from,
+                to,
+                credit,
+                json,
+            } => {
+                commands::stats::run(commands::stats::Args {
+                    link_ids,
+                    from,
+                    to,
+                    credit,
+                    json,
+                })
+                .await
+            }
         },
         Command::Apps(cmd) => match cmd {
             AppsCommand::Add {

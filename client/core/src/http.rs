@@ -74,6 +74,21 @@ impl RiftClient {
         self.send(request).await
     }
 
+    /// `get` with `&[(key, value)]` query params appended via reqwest's
+    /// builder — avoids hand-rolling URL encoding for date strings, commas,
+    /// etc. Caller passes the raw values; reqwest encodes them.
+    pub(crate) async fn get_with_query<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+    ) -> Result<T, RiftClientError> {
+        let request = self
+            .apply_auth(self.http.get(self.url(path)), false)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .query(query);
+        self.send(request).await
+    }
+
     pub(crate) async fn get_bytes(&self, path: &str) -> Result<Vec<u8>, RiftClientError> {
         let request = self.apply_auth(self.http.get(self.url(path)), false);
         let response = request.send().await?;
