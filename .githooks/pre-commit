@@ -17,13 +17,21 @@ if git diff --cached --name-only | grep -q "^sdk/web/src/"; then
     echo "Web SDK IIFE updated and staged."
 fi
 
-# ── Server / rift-macros: rustfmt check ──
+# ── Rust crates: rustfmt check ──
 # Catches whitespace/wrap drift before push so CI's fmt step doesn't bounce
 # branches that compiled + passed tests locally. Clippy + tests stay in CI —
 # they're too slow for a pre-commit gate.
-staged_rs=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(server|rift-macros)/.*\.rs$' || true)
+#
+# The repo is several independent cargo projects (not a workspace), so each
+# has to be fmt-checked separately. Mobile crates have their own pre-commit
+# invoked at the top of this file.
+staged_rs=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(server|client/core|client/cli)/.*\.rs$' || true)
 if [ -n "$staged_rs" ]; then
-    for manifest in server/Cargo.toml rift-macros/Cargo.toml; do
+    for manifest in \
+        server/Cargo.toml \
+        server/rift-macros/Cargo.toml \
+        client/core/Cargo.toml \
+        client/cli/Cargo.toml; do
         if ! cargo fmt --manifest-path "$manifest" -- --check >/dev/null 2>&1; then
             echo "rustfmt would change files under $(dirname "$manifest")/. Run:" >&2
             echo "  cargo fmt --manifest-path $manifest" >&2
