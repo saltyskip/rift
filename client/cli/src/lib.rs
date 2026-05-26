@@ -11,33 +11,17 @@ use clap_complete::Shell;
 use error::CliError;
 
 #[derive(Parser)]
-#[command(
-    name = "rift",
-    version,
-    about = "Deep links for humans and agents",
-    long_about = "\
-Deep links for humans and agents.
-
-Quick reference (run `rift help <command>` for details):
-
-  Account     init, login, logout, whoami, doctor
-  Resources   links, apps, domains, team, analytics
-  Billing     subscribe, cancel, billing
-  Meta        version, update, completions
-
-Aliases: me=whoami, ver=version, signout=logout, ls=list, rm=remove, new=create"
-)]
+#[command(name = "rift", version, about = "Deep links for humans and agents")]
 pub struct Cli {
     #[command(subcommand)]
     command: Command,
 }
 
-// `display_order` locks help-listing into Account → Resources → Billing →
-// Meta even when variants are reorganized in the source. Numbers have gaps
-// so future additions slot in without renumbering. clap renders subcommands
-// in `display_order` ascending under a single "Commands:" header — true
-// grouped headers aren't natively supported for subcommands in clap 4, so
-// we lean on order + the `long_about` quick reference below.
+// `display_order` is what the custom root-help renderer (`print_grouped_help`
+// at the bottom of this file) uses to partition commands into groups. The
+// numeric ranges 10–19, 20–29, 30–39, 40–99 map to Account / Resources /
+// Billing / Meta. Numbers have gaps so future additions slot in without
+// renumbering — pick the right group's range when adding a command.
 #[derive(Subcommand)]
 enum Command {
     // ── Account ──
@@ -302,6 +286,21 @@ enum AnalyticsCommand {
 }
 
 pub async fn run() -> Result<(), CliError> {
+    // Intercept the root-help cases (`rift`, `rift -h`, `rift --help`) so we
+    // can render groups instead of clap's flat `Commands:` block. Anything
+    // deeper — `rift links --help`, `rift team rm -h` — falls through to
+    // clap's auto-help, which is fine since nested help is already scoped.
+    let argv: Vec<String> = std::env::args().collect();
+    let bare_or_root_help = match argv.as_slice() {
+        [_] => true,
+        [_, flag] if flag == "-h" || flag == "--help" => true,
+        _ => false,
+    };
+    if bare_or_root_help {
+        print_grouped_help();
+        return Ok(());
+    }
+
     let cli = Cli::parse();
     match cli.command {
         Command::Init {
@@ -447,4 +446,88 @@ pub async fn run() -> Result<(), CliError> {
         }
         Command::Completions { shell } => commands::completions::run(shell),
     }
+}
+
+// ── Custom grouped root-help renderer ──
+//
+// clap 4 doesn't natively group subcommands in its help output — it renders
+// every subcommand under a single `Commands:` header in `display_order`.
+// We get real grouped sections by partitioning subcommands ourselves: each
+// command carries a `display_order = N` and `N` falls into one of four
+// numeric ranges (Account 10–19, Resources 20–29, Billing 30–39, Meta
+// 40–99). Adding a new command means picking the right group's range; if a
+// future command needs a new group, add the (label, range) entry below.
+
+const GROUPS: &[(&str, std::ops::RangeInclusive<usize>)] = &[
+    ("Account", 10..=19),
+    ("Resources", 20..=29),
+    ("Billing", 30..=39),
+    ("Meta", 40..=99),
+];
+
+fn print_grouped_help() {
+    use clap::CommandFactory;
+    let cmd = Cli::command();
+    let bin = cmd.get_name();
+
+    if let Some(about) = cmd.get_about() {
+        println!("{about}");
+        println!();
+    }
+    println!("Usage: {bin} <COMMAND>");
+
+    // Pad the command-name column to the widest name across all groups so
+    // descriptions line up vertically through the entire help output, not
+    // just within each group.
+    let name_col = cmd
+        .get_subcommands()
+        .map(|s| s.get_name().len())
+        .max()
+        .unwrap_or(10);
+
+    let mut uncategorized: Vec<_> = Vec::new();
+    for (label, range) in GROUPS {
+        let mut subs: Vec<_> = cmd
+            .get_subcommands()
+            .filter(|s| range.contains(&s.get_display_order()))
+            .collect();
+        subs.sort_by_key(|s| s.get_display_order());
+        if subs.is_empty() {
+            continue;
+        }
+        println!();
+        println!("{label}:");
+        for sub in subs {
+            let name = sub.get_name();
+            let about = sub.get_about().map(|s| s.to_string()).unwrap_or_default();
+            println!("  {name:<name_col$}  {about}");
+        }
+    }
+    // Anything outside the known ranges (shouldn't happen, but defensive)
+    // gets its own section so it's visible rather than dropped.
+    for sub in cmd.get_subcommands() {
+        let order = sub.get_display_order();
+        let in_known_group = GROUPS.iter().any(|(_, r)| r.contains(&order));
+        if !in_known_group && sub.get_name() != "help" {
+            uncategorized.push(sub);
+        }
+    }
+    if !uncategorized.is_empty() {
+        println!();
+        println!("Other:");
+        for sub in uncategorized {
+            let name = sub.get_name();
+            let about = sub.get_about().map(|s| s.to_string()).unwrap_or_default();
+            println!("  {name:<name_col$}  {about}");
+        }
+    }
+
+    println!();
+    println!("Aliases: me=whoami, ver=version, signout=logout, ls=list, rm=remove, new=create");
+    println!();
+    println!("Options:");
+    println!("  -h, --help     Print help");
+    println!("  -V, --version  Print version");
+    println!();
+    println!("Run `{bin} <command> --help` for details on a specific command.");
 }
