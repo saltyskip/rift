@@ -87,7 +87,6 @@ impl RiftClient {
             .map_err(|e| RiftClientError::Network(e.to_string()))
     }
 
-    #[allow(dead_code)]
     pub(crate) async fn delete_empty(&self, path: &str) -> Result<(), RiftClientError> {
         let request = self.apply_auth(self.http.delete(self.url(path)), false);
         self.send_empty(request).await

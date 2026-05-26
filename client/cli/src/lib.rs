@@ -59,6 +59,9 @@ enum Command {
     /// Add and verify custom domains
     #[command(subcommand)]
     Domains(DomainsCommand),
+    /// Manage team members on your tenant
+    #[command(subcommand)]
+    Team(TeamCommand),
     /// Start or upgrade a paid subscription (opens Stripe in browser)
     Subscribe {
         /// One of: pro, business, scale
@@ -177,6 +180,29 @@ enum DomainsCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum TeamCommand {
+    /// Invite a teammate by email
+    Invite {
+        /// Email address of the person to invite
+        email: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List team members on this tenant
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a team member (by email or 24-char user id)
+    Remove {
+        /// Email address or user id to remove
+        who: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 pub async fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
     match cli.command {
@@ -276,6 +302,11 @@ pub async fn run() -> Result<(), CliError> {
             DomainsCommand::Setup { domain, json } => {
                 commands::setup_domain::run(domain, json).await
             }
+        },
+        Command::Team(cmd) => match cmd {
+            TeamCommand::Invite { email, json } => commands::team_invite::run(email, json).await,
+            TeamCommand::List { json } => commands::team_list::run(json).await,
+            TeamCommand::Remove { who, json } => commands::team_remove::run(who, json).await,
         },
         Command::Subscribe { tier, json } => commands::subscribe::run(tier, json).await,
         Command::Cancel { json } => commands::cancel::run(json).await,

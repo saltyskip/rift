@@ -10,5 +10,8 @@ pub mod qr;
 pub mod setup_app;
 pub mod setup_domain;
 pub mod subscribe;
+pub mod team_invite;
+pub mod team_list;
+pub mod team_remove;
 pub mod test_link;
 pub mod whoami;
