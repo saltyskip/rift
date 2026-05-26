@@ -9,11 +9,16 @@ fn rift() -> Command {
 
 #[test]
 fn version_flag() {
+    // Asserts shape ("rift <semver>"), not a frozen string — the CI release
+    // workflow bumps the patch on every push so a frozen literal would rot
+    // immediately. clap derives `--version` from the `Cargo.toml`
+    // `[package].version`, which is the same value `env!("CARGO_PKG_VERSION")`
+    // returns.
     rift()
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("rift 0.1.0"));
+        .stdout(predicate::str::is_match(r"^rift \d+\.\d+\.\d+\b").unwrap());
 }
 
 // ── Help ──

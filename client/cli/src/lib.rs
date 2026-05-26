@@ -79,6 +79,22 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Print the CLI version and build target
+    Version {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Download and install the latest CLI release
+    Update {
+        /// Show whether a newer version exists without installing
+        #[arg(long)]
+        check: bool,
+        /// Install a specific version (e.g. 0.1.3) instead of the latest
+        #[arg(long)]
+        version: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Generate shell completions
     Completions {
         /// Shell to generate completions for
@@ -311,6 +327,19 @@ pub async fn run() -> Result<(), CliError> {
         Command::Subscribe { tier, json } => commands::subscribe::run(tier, json).await,
         Command::Cancel { json } => commands::cancel::run(json).await,
         Command::Billing { json } => commands::billing::run(json).await,
+        Command::Version { json } => commands::version::run(json),
+        Command::Update {
+            check,
+            version,
+            json,
+        } => {
+            commands::update::run(commands::update::Args {
+                check,
+                version,
+                json,
+            })
+            .await
+        }
         Command::Completions { shell } => commands::completions::run(shell),
     }
 }
