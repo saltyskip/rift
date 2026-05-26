@@ -63,7 +63,14 @@ impl RiftClient {
     }
 
     pub(crate) async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, RiftClientError> {
-        let request = self.apply_auth(self.http.get(self.url(path)), false);
+        // `Accept: application/json` matters for content-negotiated endpoints
+        // like `GET /r/{link_id}`, which 302-redirects browsers and serves
+        // JSON only when the client opts in. Without this header the CLI's
+        // `rift links test` got back an HTML landing page and surfaced
+        // `error decoding response body`.
+        let request = self
+            .apply_auth(self.http.get(self.url(path)), false)
+            .header(reqwest::header::ACCEPT, "application/json");
         self.send(request).await
     }
 
@@ -100,6 +107,7 @@ impl RiftClient {
     ) -> Result<T, RiftClientError> {
         let request = self
             .apply_auth(self.http.post(self.url(path)), publishable_via_query)
+            .header(reqwest::header::ACCEPT, "application/json")
             .json(body);
         self.send(request).await
     }
@@ -111,6 +119,7 @@ impl RiftClient {
     ) -> Result<T, RiftClientError> {
         let request = self
             .apply_auth(self.http.put(self.url(path)), false)
+            .header(reqwest::header::ACCEPT, "application/json")
             .json(body);
         self.send(request).await
     }
