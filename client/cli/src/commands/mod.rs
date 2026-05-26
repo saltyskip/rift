@@ -1,3 +1,4 @@
+pub mod analytics_stats;
 pub mod billing;
 pub mod cancel;
 pub mod completions;
@@ -9,7 +10,6 @@ pub mod logout;
 pub mod qr;
 pub mod setup_app;
 pub mod setup_domain;
-pub mod stats;
 pub mod subscribe;
 pub mod team_invite;
 pub mod team_list;

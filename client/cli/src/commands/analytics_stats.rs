@@ -1,8 +1,10 @@
-//! `rift links stats <link-ids>` — funnel stats for one or more links.
+//! `rift analytics stats <link-ids>` — funnel stats for one or more links.
 //!
-//! Wraps `GET /v1/analytics/stats`. Accepts a comma-separated list of link
-//! IDs in a single positional argument so the shape matches the API; users
-//! who want a quick check on one link just pass the bare ID.
+//! Wraps `GET /v1/analytics/stats`. Lives under the `analytics` subcommand
+//! tree (not `links`) so the CLI namespacing tracks the API namespacing —
+//! future siblings like `rift analytics timeseries` slot in alongside.
+//! Accepts a comma-separated list of link IDs in a single positional
+//! argument; users who want a quick check on one link just pass the bare ID.
 
 use crate::context;
 use crate::error::CliError;

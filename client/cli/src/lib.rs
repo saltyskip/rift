@@ -62,6 +62,9 @@ enum Command {
     /// Manage team members on your tenant
     #[command(subcommand)]
     Team(TeamCommand),
+    /// Funnel stats and (future) timeseries across one or more links
+    #[command(subcommand)]
+    Analytics(AnalyticsCommand),
     /// Start or upgrade a paid subscription (opens Stripe in browser)
     Subscribe {
         /// One of: pro, business, scale
@@ -158,22 +161,6 @@ enum LinksCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Funnel stats for one or more links (clicks → installs → identifies → conversions)
-    Stats {
-        /// Link IDs, comma-separated for multiple (e.g. ABC123,DEF456)
-        link_ids: String,
-        /// Start of date range, RFC 3339 (default: 30 days ago)
-        #[arg(long)]
-        from: Option<String>,
-        /// End of date range, RFC 3339 (default: now)
-        #[arg(long)]
-        to: Option<String>,
-        /// Attribution model: last_touch (default), first_touch, or touched
-        #[arg(long)]
-        credit: Option<String>,
-        #[arg(long)]
-        json: bool,
-    },
 }
 
 #[derive(Subcommand)]
@@ -230,6 +217,26 @@ enum TeamCommand {
     Remove {
         /// Email address or user id to remove
         who: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum AnalyticsCommand {
+    /// Funnel stats for one or more links (clicks → installs → identifies → conversions)
+    Stats {
+        /// Link IDs, comma-separated for multiple (e.g. ABC123,DEF456)
+        link_ids: String,
+        /// Start of date range, RFC 3339 (default: 30 days ago)
+        #[arg(long)]
+        from: Option<String>,
+        /// End of date range, RFC 3339 (default: now)
+        #[arg(long)]
+        to: Option<String>,
+        /// Attribution model: last_touch (default), first_touch, or touched
+        #[arg(long)]
+        credit: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -303,22 +310,6 @@ pub async fn run() -> Result<(), CliError> {
                 .await
             }
             LinksCommand::Test { target, json } => commands::test_link::run(target, json).await,
-            LinksCommand::Stats {
-                link_ids,
-                from,
-                to,
-                credit,
-                json,
-            } => {
-                commands::stats::run(commands::stats::Args {
-                    link_ids,
-                    from,
-                    to,
-                    credit,
-                    json,
-                })
-                .await
-            }
         },
         Command::Apps(cmd) => match cmd {
             AppsCommand::Add {
@@ -355,6 +346,24 @@ pub async fn run() -> Result<(), CliError> {
             TeamCommand::Invite { email, json } => commands::team_invite::run(email, json).await,
             TeamCommand::List { json } => commands::team_list::run(json).await,
             TeamCommand::Remove { who, json } => commands::team_remove::run(who, json).await,
+        },
+        Command::Analytics(cmd) => match cmd {
+            AnalyticsCommand::Stats {
+                link_ids,
+                from,
+                to,
+                credit,
+                json,
+            } => {
+                commands::analytics_stats::run(commands::analytics_stats::Args {
+                    link_ids,
+                    from,
+                    to,
+                    credit,
+                    json,
+                })
+                .await
+            }
         },
         Command::Subscribe { tier, json } => commands::subscribe::run(tier, json).await,
         Command::Cancel { json } => commands::cancel::run(json).await,
