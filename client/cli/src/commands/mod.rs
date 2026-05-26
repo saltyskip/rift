@@ -5,6 +5,7 @@ pub mod completions;
 pub mod create_link;
 pub mod doctor;
 pub mod init;
+pub mod list_links;
 pub mod login;
 pub mod logout;
 pub mod qr;
