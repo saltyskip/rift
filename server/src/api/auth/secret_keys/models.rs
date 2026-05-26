@@ -10,6 +10,15 @@ pub struct VerifyQuery {
     pub token: String,
 }
 
+/// Form body for `POST /v1/auth/verify` — submitted by the interstitial
+/// HTML page rendered by `GET /v1/auth/verify`. The split exists so email
+/// link scanners (Avanan, Defender Safe Links, ProofPoint, Mimecast) can't
+/// pre-fetch the GET and consume the token before the invited user clicks.
+#[derive(Deserialize, ToSchema)]
+pub struct VerifyForm {
+    pub token: String,
+}
+
 // ── Secret Key CRUD ──
 
 #[derive(Debug, Deserialize, ToSchema)]

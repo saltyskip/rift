@@ -11,7 +11,10 @@ use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     // Public — team-invite acceptance from email.
-    let public = Router::new().route("/v1/auth/verify", get(routes::verify_email));
+    let public = Router::new().route(
+        "/v1/auth/verify",
+        get(routes::verify_email).post(routes::verify_email_confirm),
+    );
 
     // API-key-only: the email-code dance ("mint a key for a teammate")
     // requires confirming via a code sent to the teammate's email — only

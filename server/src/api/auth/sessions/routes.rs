@@ -15,6 +15,7 @@ use super::models::{
     CallbackForm, CallbackQuery, IssueKeyRequest, MeResponse, SignInRequest, SignInResponse,
     TenantSummary, UserSummary,
 };
+use crate::api::auth::email_interstitial::{self, InterstitialContent};
 use crate::api::auth::models::{SessionId, UserId};
 use crate::api::auth::secret_keys::models::CreateKeyResponse;
 use crate::app::AppState;
@@ -135,16 +136,16 @@ pub async fn callback(
     Query(q): Query<CallbackQuery>,
 ) -> Response {
     let action = format!("{}/v1/auth/callback", state.config.public_url);
-    let html = interstitial_html(&action, &q.token, q.next.as_deref());
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        // Belt-and-braces: scanners shouldn't be caching this and neither
-        // should browsers — every render is for a one-shot token.
-        .header(header::CACHE_CONTROL, "no-store")
-        .header("X-Robots-Tag", "noindex")
-        .body(axum::body::Body::from(html))
-        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+    email_interstitial::render(
+        &action,
+        &q.token,
+        q.next.as_deref(),
+        InterstitialContent {
+            title: "Confirm sign in",
+            body: "Click below to finish signing in to Rift.",
+            button: "Continue",
+        },
+    )
 }
 
 // ── POST /v1/auth/callback ──
@@ -488,74 +489,6 @@ pub(crate) fn sanitize_next(base_url: &str, next: &str) -> Option<String> {
         out.push_str(q);
     }
     Some(out)
-}
-
-/// Minimal HTML interstitial served by `GET /v1/auth/callback`. The form
-/// POSTs back to the same path; `token` (and optional `next`) ride in hidden
-/// fields. No JS, no auto-submit — a JS-rendering scanner that wants to
-/// defeat this would have to click buttons, which none of the major email
-/// security products do today.
-fn interstitial_html(action: &str, token: &str, next: Option<&str>) -> String {
-    let token_attr = html_escape(token);
-    let next_field = next
-        .map(|n| {
-            format!(
-                r#"<input type="hidden" name="next" value="{}">"#,
-                html_escape(n)
-            )
-        })
-        .unwrap_or_default();
-    let action_attr = html_escape(action);
-
-    format!(
-        r#"<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Sign in to Rift</title>
-<style>
-  body {{ font-family: system-ui, -apple-system, sans-serif; background: #fafafa; color: #18181b; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }}
-  .card {{ max-width: 420px; width: 100%; background: #fff; border: 1px solid #e4e4e7; border-radius: 12px; padding: 32px; text-align: center; box-sizing: border-box; }}
-  h1 {{ margin: 0 0 8px; font-size: 20px; font-weight: 600; }}
-  p {{ color: #71717a; margin: 0 0 24px; font-size: 14px; line-height: 1.5; }}
-  button {{ background: #0d9488; color: #fff; border: none; border-radius: 6px; padding: 12px 24px; font-size: 15px; font-weight: 500; cursor: pointer; width: 100%; }}
-  button:hover {{ background: #0f766e; }}
-</style>
-</head>
-<body>
-<div class="card">
-<h1>Confirm sign in</h1>
-<p>Click below to finish signing in to Rift.</p>
-<form method="post" action="{action_attr}">
-<input type="hidden" name="token" value="{token_attr}">
-{next_field}
-<button type="submit">Continue</button>
-</form>
-</div>
-</body>
-</html>"#
-    )
-}
-
-/// Escape the five characters that matter inside HTML attribute values.
-/// The token is already URL-safe (hex), but `next` is user-controlled and
-/// could carry `&` / `<` / quotes — escaping uniformly is cheaper than
-/// reasoning about which inputs need it.
-fn html_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            _ => out.push(c),
-        }
-    }
-    out
 }
 
 #[cfg(test)]

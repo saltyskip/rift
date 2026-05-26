@@ -1,3 +1,4 @@
+pub mod email_interstitial;
 pub mod forbidden_response;
 pub mod middleware;
 pub mod models;

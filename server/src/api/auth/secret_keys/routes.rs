@@ -1,5 +1,5 @@
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::extract::{Form, Path, Query, State};
+use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use mongodb::bson::oid::ObjectId;
 use serde_json::json;
@@ -7,14 +7,21 @@ use std::sync::Arc;
 
 use super::models::{
     ConfirmCreateKeyRequest, CreateKeyResponse, ListSecretKeysResponse, RequestCreateKeyRequest,
-    SecretKeyDetail, VerifyQuery,
+    SecretKeyDetail, VerifyForm, VerifyQuery,
 };
+use crate::api::auth::email_interstitial::{self, InterstitialContent};
 use crate::app::AppState;
 use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::secret_keys::models::SecretKeyError;
 use crate::services::auth::users::models::UserError;
 
 // ── Team-invite verification ──
+//
+// GET renders an HTML interstitial; only POST consumes the token. Without
+// this split, corporate email scanners (Avanan, Defender Safe Links,
+// ProofPoint, Mimecast) pre-fetch the link and burn the single-use token
+// before the invited user gets a chance to click. Same pattern as the
+// magic-link signin callback.
 
 #[utoipa::path(
     get,
@@ -24,8 +31,7 @@ use crate::services::auth::users::models::UserError;
         ("token" = String, Query, description = "Verification token from a team-invite email"),
     ),
     responses(
-        (status = 200, description = "Invite accepted; user is now a verified team member"),
-        (status = 400, description = "Invalid or expired token", body = crate::error::ErrorResponse),
+        (status = 200, description = "HTML interstitial — invitee clicks Accept to POST and consume the token", content_type = "text/html"),
     )
 )]
 #[tracing::instrument(skip(state, params))]
@@ -33,36 +39,61 @@ pub async fn verify_email(
     State(state): State<Arc<AppState>>,
     Query(params): Query<VerifyQuery>,
 ) -> Response {
+    let action = format!("{}/v1/auth/verify", state.config.public_url);
+    email_interstitial::render(
+        &action,
+        &params.token,
+        None,
+        InterstitialContent {
+            title: "Accept invitation",
+            body: "Click below to accept your invitation and join the team on Rift.",
+            button: "Accept",
+        },
+    )
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/auth/verify",
+    tag = "Team",
+    request_body(content = VerifyForm, content_type = "application/x-www-form-urlencoded"),
+    responses(
+        (status = 303, description = "Invite accepted — redirects to `${marketing_url}/signin?invite=accepted`"),
+        (status = 303, description = "Token invalid or expired — redirects to `${marketing_url}/signin?error=invite_invalid`"),
+    )
+)]
+#[tracing::instrument(skip(state, form))]
+pub async fn verify_email_confirm(
+    State(state): State<Arc<AppState>>,
+    Form(form): Form<VerifyForm>,
+) -> Response {
+    let signin_url = format!("{}/signin", state.config.marketing_url);
+    let success_url = format!("{signin_url}?invite=accepted");
+    let invalid_url = format!("{signin_url}?error=invite_invalid");
+
     let Some(users_svc) = &state.users_service else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "Auth not configured", "code": "no_database" })),
-        )
-            .into_response();
+        return redirect_to(&invalid_url);
     };
 
-    match users_svc.verify(&params.token).await {
+    match users_svc.verify(&form.token).await {
         Ok(result) => {
             tracing::info!(tenant_id = %result.tenant_id, email = %result.email, "Invited user verified");
-            (
-                StatusCode::OK,
-                Json(json!({
-                    "message": "Email verified! You now have access to this team. Sign in at /signin to continue.",
-                    "code": "verified"
-                })),
-            )
-                .into_response()
+            redirect_to(&success_url)
         }
-        Err(UserError::NotFound) => (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error": "Invalid or expired verification token",
-                "code": "invalid_token"
-            })),
-        )
-            .into_response(),
-        Err(e) => user_error_response(&e),
+        Err(UserError::NotFound) => redirect_to(&invalid_url),
+        Err(e) => {
+            tracing::error!(error = %e, "invite_verify_failed");
+            redirect_to(&invalid_url)
+        }
     }
+}
+
+fn redirect_to(url: &str) -> Response {
+    Response::builder()
+        .status(StatusCode::SEE_OTHER)
+        .header(header::LOCATION, url)
+        .body(axum::body::Body::empty())
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
 // ── Secret Key CRUD handlers ──
@@ -251,51 +282,6 @@ pub async fn delete_secret_key(
 }
 
 // ── Error response helpers ──
-
-fn user_error_response(e: &UserError) -> Response {
-    if let UserError::QuotaExceeded(q) = e {
-        let cloned = match q {
-            crate::services::billing::quota::QuotaError::Exceeded {
-                resource,
-                limit,
-                current,
-            } => crate::services::billing::quota::QuotaError::Exceeded {
-                resource: *resource,
-                limit: *limit,
-                current: *current,
-            },
-            crate::services::billing::quota::QuotaError::Billing(b) => {
-                crate::services::billing::quota::QuotaError::Billing(match b {
-                    crate::services::billing::models::BillingError::TenantNotFound => {
-                        crate::services::billing::models::BillingError::TenantNotFound
-                    }
-                    crate::services::billing::models::BillingError::Forbidden(a) => {
-                        crate::services::billing::models::BillingError::Forbidden(a.clone())
-                    }
-                    crate::services::billing::models::BillingError::Internal(s) => {
-                        crate::services::billing::models::BillingError::Internal(s.clone())
-                    }
-                })
-            }
-        };
-        return crate::api::billing::quota_response::to_response(cloned);
-    }
-    if let UserError::Forbidden(authz) = e {
-        return crate::api::auth::forbidden_response::to_response(authz.clone());
-    }
-    let status = match e {
-        UserError::InvalidEmail => StatusCode::BAD_REQUEST,
-        UserError::UserExists | UserError::LastUser => StatusCode::CONFLICT,
-        UserError::NotFound => StatusCode::NOT_FOUND,
-        UserError::QuotaExceeded(_) | UserError::Forbidden(_) => unreachable!("handled above"),
-        UserError::EmailFailed(_) | UserError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    (
-        status,
-        Json(json!({ "error": e.to_string(), "code": e.code() })),
-    )
-        .into_response()
-}
 
 fn sk_error_response(e: &SecretKeyError) -> Response {
     if let SecretKeyError::Forbidden(authz) = e {
