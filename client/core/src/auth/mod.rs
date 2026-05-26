@@ -46,6 +46,18 @@ pub struct ListUsersResponse {
     pub users: Vec<UserDetail>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct InviteUserRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InviteUserResponse {
+    pub id: String,
+    pub email: String,
+    pub status: String,
+}
+
 impl RiftClient {
     pub async fn signup(
         &self,
@@ -69,5 +81,24 @@ impl RiftClient {
 
     pub async fn list_users(&self) -> Result<ListUsersResponse, RiftClientError> {
         self.get("/v1/auth/users").await
+    }
+
+    pub async fn invite_user(
+        &self,
+        email: impl Into<String>,
+    ) -> Result<InviteUserResponse, RiftClientError> {
+        self.post(
+            "/v1/auth/users",
+            &InviteUserRequest {
+                email: email.into(),
+            },
+            false,
+        )
+        .await
+    }
+
+    pub async fn remove_user(&self, user_id: &str) -> Result<(), RiftClientError> {
+        self.delete_empty(&format!("/v1/auth/users/{user_id}"))
+            .await
     }
 }
