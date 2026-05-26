@@ -1,3 +1,4 @@
+pub mod analytics_stats;
 pub mod billing;
 pub mod cancel;
 pub mod completions;

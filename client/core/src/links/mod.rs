@@ -57,13 +57,42 @@ pub struct ListLinksResponse {
     pub next_cursor: Option<String>,
 }
 
+// ── /v1/analytics/stats response shapes ──
+//
+// Mirrors `services/analytics/models::FunnelResult` on the server. SDK owns
+// its own types per CLAUDE.md's mobile-SDK convention; the shape doesn't
+// drift in practice because `cargo test` would break the moment server JSON
+// stops deserializing here.
+
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LinkStatsResponse {
-    pub link_id: String,
-    pub click_count: u64,
-    pub install_count: u64,
-    pub identify_count: u64,
-    pub convert_count: u64,
+pub struct FunnelStats {
+    pub from: String,
+    pub to: String,
+    pub link_ids: Vec<String>,
+    pub credit: String,
+    pub funnel: Funnel,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Funnel {
+    pub clicks: u64,
+    pub new_users: FunnelNewUsers,
+    pub returning_users: FunnelReturningUsers,
+    /// Conversion event counts keyed by type ("signup", "purchase", etc.).
+    pub conversions: std::collections::BTreeMap<String, u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FunnelNewUsers {
+    pub installed: u64,
+    pub identified: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FunnelReturningUsers {
+    pub reinstalled: u64,
+    pub new_device: u64,
+    pub engaged: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -215,13 +244,6 @@ impl RiftClient {
         self.get(&path).await
     }
 
-    pub async fn get_link_stats(
-        &self,
-        link_id: &str,
-    ) -> Result<LinkStatsResponse, RiftClientError> {
-        self.get(&format!("/v1/links/{link_id}/stats")).await
-    }
-
     pub async fn get_link_timeseries(
         &self,
         link_id: &str,
@@ -238,6 +260,35 @@ impl RiftClient {
 
     pub async fn resolve_link(&self, link_id: &str) -> Result<ResolvedLink, RiftClientError> {
         self.get(&format!("/r/{link_id}")).await
+    }
+
+    /// Funnel stats across one or more links. Maps to
+    /// `GET /v1/analytics/stats?link_ids=…&from=…&to=…&credit=…`.
+    ///
+    /// `from`/`to` are RFC 3339 strings — server defaults to the last 30
+    /// days when either is omitted. `credit` is `last_touch` (default),
+    /// `first_touch`, or `touched`.
+    ///
+    /// Named `get_funnel_stats` (not `get_link_stats`) to disambiguate
+    /// from the per-link counts on `/v1/links/{id}/stats`.
+    pub async fn get_funnel_stats(
+        &self,
+        link_ids: &[String],
+        from: Option<&str>,
+        to: Option<&str>,
+        credit: Option<&str>,
+    ) -> Result<FunnelStats, RiftClientError> {
+        let mut query: Vec<(&str, String)> = vec![("link_ids", link_ids.join(","))];
+        if let Some(v) = from {
+            query.push(("from", v.to_string()));
+        }
+        if let Some(v) = to {
+            query.push(("to", v.to_string()));
+        }
+        if let Some(v) = credit {
+            query.push(("credit", v.to_string()));
+        }
+        self.get_with_query("/v1/analytics/stats", &query).await
     }
 
     pub async fn get_link_qr_png(
