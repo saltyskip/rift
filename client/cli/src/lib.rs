@@ -286,14 +286,15 @@ enum AnalyticsCommand {
 }
 
 pub async fn run() -> Result<(), CliError> {
-    // Intercept the root-help cases (`rift`, `rift -h`, `rift --help`) so we
-    // can render groups instead of clap's flat `Commands:` block. Anything
-    // deeper — `rift links --help`, `rift team rm -h` — falls through to
-    // clap's auto-help, which is fine since nested help is already scoped.
+    // Intercept the root-help cases (`rift`, `rift -h`, `rift --help`,
+    // `rift help`) so we can render groups instead of clap's flat
+    // `Commands:` block. Anything deeper — `rift links --help`,
+    // `rift help links`, `rift team rm -h` — falls through to clap's
+    // auto-help, which is fine since nested help is already scoped.
     let argv: Vec<String> = std::env::args().collect();
     let bare_or_root_help = match argv.as_slice() {
         [_] => true,
-        [_, flag] if flag == "-h" || flag == "--help" => true,
+        [_, flag] if flag == "-h" || flag == "--help" || flag == "help" => true,
         _ => false,
     };
     if bare_or_root_help {
@@ -467,18 +468,41 @@ const GROUPS: &[(&str, std::ops::RangeInclusive<usize>)] = &[
 
 fn print_grouped_help() {
     use clap::CommandFactory;
+    use console::Style;
+
     let cmd = Cli::command();
     let bin = cmd.get_name();
+
+    // `console::colors_enabled()` honors `NO_COLOR`, `CLICOLOR_FORCE`,
+    // and the TTY check — styling collapses to plain text when piped
+    // to a file or run under CI. Pre-compute the styles once so we don't
+    // re-check inside hot loops.
+    let on = console::colors_enabled();
+    let bold = if on {
+        Style::new().bold()
+    } else {
+        Style::new()
+    };
+    let name_style = if on {
+        Style::new().cyan().bold()
+    } else {
+        Style::new()
+    };
+    let group_style = if on {
+        Style::new().yellow().bold()
+    } else {
+        Style::new()
+    };
+    let dim = if on { Style::new().dim() } else { Style::new() };
 
     if let Some(about) = cmd.get_about() {
         println!("{about}");
         println!();
     }
-    println!("Usage: {bin} <COMMAND>");
+    println!("{} {bin} <COMMAND>", bold.apply_to("Usage:"));
 
-    // Pad the command-name column to the widest name across all groups so
-    // descriptions line up vertically through the entire help output, not
-    // just within each group.
+    // Pad on the *raw* name length, not the styled string's byte length —
+    // ANSI escape codes inflate `.len()` and would skew alignment.
     let name_col = cmd
         .get_subcommands()
         .map(|s| s.get_name().len())
@@ -496,15 +520,14 @@ fn print_grouped_help() {
             continue;
         }
         println!();
-        println!("{label}:");
+        println!("{}", group_style.apply_to(format!("{label}:")));
         for sub in subs {
-            let name = sub.get_name();
-            let about = sub.get_about().map(|s| s.to_string()).unwrap_or_default();
-            println!("  {name:<name_col$}  {about}");
+            print_row(sub, &name_style, name_col);
         }
     }
-    // Anything outside the known ranges (shouldn't happen, but defensive)
-    // gets its own section so it's visible rather than dropped.
+    // Anything outside the known ranges (shouldn't happen with the
+    // current display_order assignments, but defensive) lands in
+    // "Other:" so a forgotten command stays visible.
     for sub in cmd.get_subcommands() {
         let order = sub.get_display_order();
         let in_known_group = GROUPS.iter().any(|(_, r)| r.contains(&order));
@@ -514,20 +537,39 @@ fn print_grouped_help() {
     }
     if !uncategorized.is_empty() {
         println!();
-        println!("Other:");
+        println!("{}", group_style.apply_to("Other:"));
         for sub in uncategorized {
-            let name = sub.get_name();
-            let about = sub.get_about().map(|s| s.to_string()).unwrap_or_default();
-            println!("  {name:<name_col$}  {about}");
+            print_row(sub, &name_style, name_col);
         }
     }
 
     println!();
-    println!("Aliases: me=whoami, ver=version, signout=logout, ls=list, rm=remove, new=create");
+    println!(
+        "{}",
+        dim.apply_to(
+            "Aliases: me=whoami, ver=version, signout=logout, ls=list, rm=remove, new=create",
+        ),
+    );
     println!();
-    println!("Options:");
+    println!("{}", bold.apply_to("Options:"));
     println!("  -h, --help     Print help");
     println!("  -V, --version  Print version");
     println!();
-    println!("Run `{bin} <command> --help` for details on a specific command.");
+    println!(
+        "{}",
+        dim.apply_to(format!(
+            "Run `{bin} <command> --help` for details on a specific command."
+        )),
+    );
+}
+
+/// Render one `  <name>  <about>` row with the name padded to a fixed
+/// column. Pulled out because each group's loop does the same thing and
+/// the ANSI-aware padding is the kind of detail worth in one place.
+fn print_row(sub: &clap::Command, name_style: &console::Style, name_col: usize) {
+    let raw_name = sub.get_name();
+    let styled = name_style.apply_to(raw_name);
+    let pad = " ".repeat(name_col.saturating_sub(raw_name.len()));
+    let about = sub.get_about().map(|s| s.to_string()).unwrap_or_default();
+    println!("  {styled}{pad}  {about}");
 }
