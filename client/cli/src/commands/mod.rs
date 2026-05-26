@@ -14,4 +14,6 @@ pub mod team_invite;
 pub mod team_list;
 pub mod team_remove;
 pub mod test_link;
+pub mod update;
+pub mod version;
 pub mod whoami;
