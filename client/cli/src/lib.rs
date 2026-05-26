@@ -11,15 +11,38 @@ use clap_complete::Shell;
 use error::CliError;
 
 #[derive(Parser)]
-#[command(name = "rift", version, about = "Deep links for humans and agents")]
+#[command(
+    name = "rift",
+    version,
+    about = "Deep links for humans and agents",
+    long_about = "\
+Deep links for humans and agents.
+
+Quick reference (run `rift help <command>` for details):
+
+  Account     init, login, logout, whoami, doctor
+  Resources   links, apps, domains, team, analytics
+  Billing     subscribe, cancel, billing
+  Meta        version, update, completions
+
+Aliases: me=whoami, ver=version, signout=logout, ls=list, rm=remove, new=create"
+)]
 pub struct Cli {
     #[command(subcommand)]
     command: Command,
 }
 
+// `display_order` locks help-listing into Account → Resources → Billing →
+// Meta even when variants are reorganized in the source. Numbers have gaps
+// so future additions slot in without renumbering. clap renders subcommands
+// in `display_order` ascending under a single "Commands:" header — true
+// grouped headers aren't natively supported for subcommands in clap 4, so
+// we lean on order + the `long_about` quick reference below.
 #[derive(Subcommand)]
 enum Command {
+    // ── Account ──
     /// Create or verify your Rift account and connect this machine
+    #[command(display_order = 10)]
     Init {
         #[arg(long)]
         email: Option<String>,
@@ -29,6 +52,7 @@ enum Command {
         json: bool,
     },
     /// Connect this machine with an existing API key
+    #[command(display_order = 11)]
     Login {
         #[arg(long)]
         base_url: Option<String>,
@@ -36,36 +60,44 @@ enum Command {
         json: bool,
     },
     /// Remove stored credentials from this machine
+    #[command(display_order = 12, alias = "signout")]
     Logout {
         #[arg(long)]
         json: bool,
     },
     /// Show the current account and verify the API key
+    #[command(display_order = 13, alias = "me")]
     Whoami {
         #[arg(long)]
         json: bool,
     },
     /// Check what capabilities are unlocked and what to do next
+    #[command(display_order = 14)]
     Doctor {
         #[arg(long)]
         json: bool,
     },
+
+    // ── Resources ──
     /// Manage deep links
-    #[command(subcommand)]
+    #[command(subcommand, display_order = 20)]
     Links(LinksCommand),
     /// Register and manage mobile apps
-    #[command(subcommand)]
+    #[command(subcommand, display_order = 21)]
     Apps(AppsCommand),
     /// Add and verify custom domains
-    #[command(subcommand)]
+    #[command(subcommand, display_order = 22)]
     Domains(DomainsCommand),
     /// Manage team members on your tenant
-    #[command(subcommand)]
+    #[command(subcommand, display_order = 23)]
     Team(TeamCommand),
     /// Funnel stats and (future) timeseries across one or more links
-    #[command(subcommand)]
+    #[command(subcommand, display_order = 24)]
     Analytics(AnalyticsCommand),
+
+    // ── Billing ──
     /// Start or upgrade a paid subscription (opens Stripe in browser)
+    #[command(display_order = 30)]
     Subscribe {
         /// One of: pro, business, scale
         tier: String,
@@ -73,21 +105,27 @@ enum Command {
         json: bool,
     },
     /// Cancel your subscription at current_period_end
+    #[command(display_order = 31)]
     Cancel {
         #[arg(long)]
         json: bool,
     },
     /// Show plan tier, limits, and renewal date
+    #[command(display_order = 32)]
     Billing {
         #[arg(long)]
         json: bool,
     },
+
+    // ── Meta ──
     /// Print the CLI version and build target
+    #[command(display_order = 40, alias = "ver")]
     Version {
         #[arg(long)]
         json: bool,
     },
     /// Download and install the latest CLI release
+    #[command(display_order = 41)]
     Update {
         /// Show whether a newer version exists without installing
         #[arg(long)]
@@ -98,17 +136,20 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Generate shell completions
+    /// Generate shell completions (omit shell to print install instructions for your shell)
+    #[command(display_order = 42)]
     Completions {
-        /// Shell to generate completions for
+        /// Shell to generate completions for. If omitted, prints install
+        /// instructions for the shell named in `$SHELL`.
         #[arg(value_enum)]
-        shell: Shell,
+        shell: Option<Shell>,
     },
 }
 
 #[derive(Subcommand)]
 enum LinksCommand {
     /// Create a new deep link
+    #[command(aliases = ["new", "add"])]
     Create {
         #[arg(long)]
         web_url: Option<String>,
@@ -156,12 +197,14 @@ enum LinksCommand {
         json: bool,
     },
     /// Preview how a link resolves across platforms
+    #[command(aliases = ["resolve", "preview"])]
     Test {
         target: String,
         #[arg(long)]
         json: bool,
     },
     /// List links on this tenant (paginated)
+    #[command(alias = "ls")]
     List {
         /// Page size (server clamps; default ~50)
         #[arg(long)]
@@ -177,6 +220,7 @@ enum LinksCommand {
 #[derive(Subcommand)]
 enum AppsCommand {
     /// Register iOS or Android app metadata
+    #[command(aliases = ["new", "create"])]
     Add {
         #[arg(long)]
         platform: Option<String>,
@@ -202,6 +246,7 @@ enum AppsCommand {
 #[derive(Subcommand)]
 enum DomainsCommand {
     /// Add and verify a custom domain with guided DNS setup
+    #[command(aliases = ["add", "new"])]
     Setup {
         #[arg(long)]
         domain: Option<String>,
@@ -213,6 +258,7 @@ enum DomainsCommand {
 #[derive(Subcommand)]
 enum TeamCommand {
     /// Invite a teammate by email
+    #[command(aliases = ["add", "new"])]
     Invite {
         /// Email address of the person to invite
         email: String,
@@ -220,11 +266,13 @@ enum TeamCommand {
         json: bool,
     },
     /// List team members on this tenant
+    #[command(alias = "ls")]
     List {
         #[arg(long)]
         json: bool,
     },
     /// Remove a team member (by email or 24-char user id)
+    #[command(aliases = ["rm", "delete"])]
     Remove {
         /// Email address or user id to remove
         who: String,

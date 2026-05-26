@@ -130,10 +130,67 @@ install() {
     say ""
     say "$(bold "rift ${VERSION}") installed successfully"
     say "Run $(bold "rift init") to get started."
+    install_completions "${INSTALL_DIR}/${BINARY}"
   else
     say ""
     say "\033[33mwarning:\033[0m binary downloaded but could not run. Check your system compatibility."
   fi
+}
+
+# --- Shell completions ------------------------------------------------------
+#
+# Best-effort: detects $SHELL, drops the generated completion file under
+# ~/.rift/completions/ (or fish's auto-loaded path), and prints the one
+# `source` line the user needs to add. Silent + non-fatal on failure —
+# anyone who already wired completions or doesn't want them shouldn't see
+# noise. Set RIFT_SKIP_COMPLETIONS=1 to opt out.
+
+install_completions() {
+  RIFT_BIN="$1"
+
+  if [ -n "${RIFT_SKIP_COMPLETIONS:-}" ]; then
+    return 0
+  fi
+
+  SHELL_NAME=$(basename "${SHELL:-}")
+  COMP_DIR="${HOME}/.rift/completions"
+
+  case "$SHELL_NAME" in
+    zsh)
+      mkdir -p "$COMP_DIR" 2>/dev/null || return 0
+      if "$RIFT_BIN" completions zsh > "${COMP_DIR}/_rift" 2>/dev/null; then
+        say ""
+        say "Shell completions installed for zsh."
+        say "Add to your ~/.zshrc (once):"
+        say ""
+        say "  fpath=(\$HOME/.rift/completions \$fpath)"
+        say "  autoload -U compinit && compinit"
+      fi
+      ;;
+    bash)
+      mkdir -p "$COMP_DIR" 2>/dev/null || return 0
+      if "$RIFT_BIN" completions bash > "${COMP_DIR}/rift.bash" 2>/dev/null; then
+        say ""
+        say "Shell completions installed for bash."
+        say "Add to your ~/.bashrc (once):"
+        say ""
+        say "  source \$HOME/.rift/completions/rift.bash"
+      fi
+      ;;
+    fish)
+      FISH_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions"
+      mkdir -p "$FISH_DIR" 2>/dev/null || return 0
+      if "$RIFT_BIN" completions fish > "${FISH_DIR}/rift.fish" 2>/dev/null; then
+        say ""
+        say "Shell completions installed for fish (auto-loaded — no further action needed)."
+      fi
+      ;;
+    *)
+      # Unknown shell — leave a hint but don't write anything.
+      say ""
+      say "Run $(bold "rift completions") to set up tab-completion for your shell."
+      ;;
+  esac
 }
 
 # --- Main -------------------------------------------------------------------
