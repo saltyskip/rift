@@ -98,6 +98,7 @@ impl RiftClient {
     }
 
     pub async fn remove_user(&self, user_id: &str) -> Result<(), RiftClientError> {
-        self.delete_empty(&format!("/v1/auth/users/{user_id}")).await
+        self.delete_empty(&format!("/v1/auth/users/{user_id}"))
+            .await
     }
 }
