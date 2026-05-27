@@ -222,6 +222,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                     { "name": "Authentication", "tags": ["Signup", "Secret Keys", "Publishable Keys", "Team Members"] },
                     { "name": "Configuration", "tags": ["Domains", "Apps"] },
                     { "name": "Links", "tags": ["Links", "Lifecycle"] },
+                    { "name": "Analytics", "tags": ["Analytics"] },
                     { "name": "Integrations", "tags": ["Webhooks", "Sources", "Affiliates"] },
                     { "name": "Billing", "tags": ["Billing"] },
                     { "name": "System", "tags": ["System"] },
