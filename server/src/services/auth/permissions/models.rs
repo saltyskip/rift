@@ -4,6 +4,8 @@ use mongodb::bson::oid::ObjectId;
 use std::collections::BTreeSet;
 use std::fmt;
 
+use crate::core::public_id::{AffiliateId, TenantId, UserId};
+
 /// Closed set of operation types a caller can be authorized for. Wire
 /// representation is `<resource>:<action>` (see `to_wire_str`) — used in
 /// 403 error bodies and (future) OpenAPI security scope strings.
@@ -65,14 +67,15 @@ pub struct Scopes(pub(super) BTreeSet<Permission>);
 
 /// Who is making the call. The orthogonal "what resources can they touch?"
 /// dimension lives in `ResourceScope`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Principal {
     /// Browser/dashboard session.
     User {
-        user_id: ObjectId,
+        user_id: UserId,
+        /// Session id — still an ObjectId until the sessions resource migrates.
         session_id: ObjectId,
     },
-    /// `rl_live_…` secret key.
+    /// `rl_live_…` secret key. `key_id` stays ObjectId until secret_keys migrates.
     SecretKey { key_id: ObjectId },
 }
 
@@ -81,10 +84,10 @@ pub enum Principal {
 /// `LinksWrite` but only on its own affiliate's links. Instance-level
 /// filtering lives in the repos (`WHERE tenant_id = ? AND affiliate_id = ?`),
 /// not in scope checks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResourceScope {
     Tenant,
-    Affiliate { affiliate_id: ObjectId },
+    Affiliate { affiliate_id: AffiliateId },
 }
 
 /// Unified identity injected into request extensions by the auth middleware.
@@ -92,7 +95,7 @@ pub enum ResourceScope {
 /// `#[requires(...)]` proc-macro injects it for them).
 #[derive(Debug, Clone)]
 pub struct AuthContext {
-    pub tenant_id: ObjectId,
+    pub tenant_id: TenantId,
     pub principal: Principal,
     pub permissions: Scopes,
     pub resource_scope: ResourceScope,

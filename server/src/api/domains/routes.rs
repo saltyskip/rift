@@ -167,7 +167,7 @@ pub async fn list_domains(
             .into_response();
     };
 
-    match repo.list_by_tenant(&tenant.0).await {
+    match repo.list_by_tenant(&tenant.to_object_id()).await {
         Ok(domains) => {
             let details: Vec<DomainDetail> = domains
                 .iter()
@@ -221,7 +221,7 @@ pub async fn delete_domain(
             .into_response();
     };
 
-    match repo.delete_domain(&tenant.0, &domain).await {
+    match repo.delete_domain(&tenant.to_object_id(), &domain).await {
         Ok(true) => {
             // Remove TLS certificate from Fly.io (best-effort).
             // DB is authoritative — orphaned certs are harmless and can be cleaned up later.
@@ -300,7 +300,7 @@ pub async fn verify_domain(
             .into_response();
     };
 
-    if existing.tenant_id != tenant.0 {
+    if existing.tenant_id != tenant.to_object_id() {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Domain not found", "code": "not_found" })),

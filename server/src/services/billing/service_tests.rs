@@ -8,7 +8,11 @@ use async_trait::async_trait;
 use std::sync::Mutex;
 
 fn full_ctx_for(tenant_id: ObjectId) -> AuthContext {
-    AuthContext::for_secret_key(tenant_id, ObjectId::new(), Some(&KeyScope::Full))
+    AuthContext::for_secret_key(
+        crate::core::public_id::TenantId::from_object_id(tenant_id),
+        ObjectId::new(),
+        Some(&KeyScope::Full),
+    )
 }
 
 #[derive(Default)]

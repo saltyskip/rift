@@ -104,7 +104,7 @@ pub async fn create_stripe_checkout(
         cancel_url,
     };
 
-    match create_checkout_session(&cfg, tier, &tenant.0.to_hex()).await {
+    match create_checkout_session(&cfg, tier, &tenant.to_object_id().to_hex()).await {
         Ok(session) => (
             StatusCode::OK,
             Json(CheckoutSessionResponse {
@@ -170,7 +170,7 @@ pub async fn create_stripe_portal(
             .into_response();
     };
 
-    let tenant_doc = match tenants.find_by_id(&tenant.0).await {
+    let tenant_doc = match tenants.find_by_id(&tenant.to_object_id()).await {
         Ok(Some(t)) => t,
         Ok(None) => {
             return (
@@ -286,7 +286,7 @@ pub async fn cancel_subscription(
                 )
                     .into_response();
             };
-            let tenant_doc = match tenants.find_by_id(&tenant.0).await {
+            let tenant_doc = match tenants.find_by_id(&tenant.to_object_id()).await {
                 Ok(Some(t)) => t,
                 Ok(None) => {
                     return (

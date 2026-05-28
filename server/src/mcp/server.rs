@@ -85,7 +85,7 @@ impl RiftMcp {
         }
 
         Ok(AuthContext::for_secret_key(
-            key_doc.tenant_id,
+            crate::core::public_id::TenantId::from_object_id(key_doc.tenant_id),
             key_doc.id,
             Some(&KeyScope::Full),
         ))
@@ -289,7 +289,7 @@ impl RiftMcp {
         Parameters(input): Parameters<CreateSourceInput>,
         Extension(parts): Extension<Parts>,
     ) -> Result<Json<CreateSourceOutput>, String> {
-        let tenant_id = self.auth_context(&parts).await?.tenant_id;
+        let tenant_id = self.auth_context(&parts).await?.tenant_id.to_object_id();
         let repo = self
             .conversions_repo
             .as_ref()
@@ -336,7 +336,7 @@ impl RiftMcp {
         Parameters(_input): Parameters<ListSourcesInput>,
         Extension(parts): Extension<Parts>,
     ) -> Result<Json<ListSourcesOutput>, String> {
-        let tenant_id = self.auth_context(&parts).await?.tenant_id;
+        let tenant_id = self.auth_context(&parts).await?.tenant_id.to_object_id();
         let repo = self
             .conversions_repo
             .as_ref()

@@ -13,7 +13,11 @@ use std::sync::Mutex;
 /// every links-service test should land on the happy authorization path
 /// so the assertion focuses on business-logic behavior, not the gate.
 fn ctx(tenant_id: ObjectId) -> AuthContext {
-    AuthContext::for_secret_key(tenant_id, ObjectId::new(), Some(&KeyScope::Full))
+    AuthContext::for_secret_key(
+        crate::core::public_id::TenantId::from_object_id(tenant_id),
+        ObjectId::new(),
+        Some(&KeyScope::Full),
+    )
 }
 
 #[test]

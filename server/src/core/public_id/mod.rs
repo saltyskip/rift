@@ -36,44 +36,50 @@ pub trait IdPrefix {
 pub const HEX_LEN: usize = 24;
 
 crate::impl_container!(Id);
-/// Typed prefixed identifier wrapping a raw ObjectId hex string.
+/// Typed prefixed identifier wrapping a MongoDB `ObjectId`. The wire format
+/// adds the resource prefix (`<prefix>_<24-char-lowercase-hex>`) at serialize
+/// time; BSON serialization emits the native `ObjectId` so a single struct
+/// works as both a MongoDB document and an HTTP response.
 ///
-/// Construction goes through `from_object_id` (from a repo) or `parse` (from the wire);
-/// both validate the body is exactly 24 lowercase hex chars. Serializes as
-/// `<prefix>_<hex>`; deserializes by checking the prefix matches `P::PREFIX`.
+/// Construction is via `Id::from_object_id` (repo / middleware boundary) or
+/// `Id::parse` (wire-format strings). There is intentionally **no** blanket
+/// `From<ObjectId>` — every `ObjectId` → `Id<P>` conversion must name the
+/// target type so cross-resource ID mixups are caught at review time.
 pub struct Id<P: IdPrefix> {
-    /// The raw 24-char ObjectId hex. **No prefix.**
-    hex: String,
+    inner: ObjectId,
     _marker: PhantomData<fn() -> P>,
-}
-
-impl<P: IdPrefix> Default for Id<P> {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl<P: IdPrefix> Id<P> {
     /// Generate a fresh `Id` backed by a new `ObjectId`. Use this when creating
     /// a new resource that needs an ID assigned in application code (i.e. not
     /// letting MongoDB generate `_id` on insert).
+    ///
+    /// Intentionally NOT `Default::default()` — defaults should be cheap and
+    /// deterministic; this mints a fresh ObjectId (clock + counter).
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self::from_object_id(ObjectId::new())
     }
 
-    /// Construct from a MongoDB ObjectId. Repo layer only.
+    /// Construct from a MongoDB ObjectId. Repo / middleware layer only.
     pub fn from_object_id(oid: ObjectId) -> Self {
         Self {
-            hex: oid.to_hex(),
+            inner: oid,
             _marker: PhantomData,
         }
     }
 
-    /// Convert back to an `ObjectId` for storage queries. Repo layer only.
-    /// Infallible in practice because construction validates the hex body —
-    /// returns `Err` only if the underlying hex was somehow corrupted.
-    pub fn to_object_id(&self) -> Result<ObjectId, ParseIdError> {
-        ObjectId::parse_str(&self.hex).map_err(|_| ParseIdError::InvalidHex)
+    /// Borrow the underlying `ObjectId`. Infallible — there's no parsing.
+    pub fn as_object_id(&self) -> &ObjectId {
+        &self.inner
+    }
+
+    /// Convert to an owned `ObjectId` for storage queries. Infallible — the
+    /// `Id<P>` stores a parsed `ObjectId` directly.
+    #[allow(clippy::wrong_self_convention)] // `Id<P>` is Copy; `&self` matches the `&id.to_object_id()` call sites.
+    pub fn to_object_id(&self) -> ObjectId {
+        self.inner
     }
 
     /// Parse `<prefix>_<24-char-hex>`. The body must be lowercase hex (matching
@@ -95,55 +101,45 @@ impl<P: IdPrefix> Id<P> {
         if !body.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
             return Err(ParseIdError::InvalidHex);
         }
+        let oid = ObjectId::parse_str(body).map_err(|_| ParseIdError::InvalidHex)?;
         Ok(Self {
-            hex: body.to_string(),
+            inner: oid,
             _marker: PhantomData,
         })
     }
 
-    /// Borrow the raw hex body (no prefix). Repo layer use.
-    pub fn as_hex(&self) -> &str {
-        &self.hex
-    }
-}
-
-impl<P: IdPrefix> From<ObjectId> for Id<P> {
-    fn from(oid: ObjectId) -> Self {
-        Self::from_object_id(oid)
+    /// The raw 24-char lowercase hex of the underlying ObjectId (no prefix).
+    pub fn as_hex(&self) -> String {
+        self.inner.to_hex()
     }
 }
 
 // Direct conversion to `Bson` so `doc! { "_id": id }` produces a native ObjectId
-// without round-tripping through serde. Required because `bson::Bson::from` is
-// the path the `doc!` macro takes, and we want it to stay in the BSON-native
-// representation (not become a string). The `From<&T>` reference variant comes
+// without round-tripping through serde. The `From<&T>` reference variant comes
 // from bson's blanket `impl<T: Clone + Into<Bson>> From<&T> for Bson`.
 impl<P: IdPrefix> From<Id<P>> for Bson {
     fn from(id: Id<P>) -> Self {
-        // Construction validates the hex, so unwrap is safe in practice.
-        Bson::ObjectId(ObjectId::parse_str(&id.hex).expect("Id<P> stores validated hex"))
+        Bson::ObjectId(id.inner)
     }
 }
 
+impl<P: IdPrefix> Copy for Id<P> {}
 impl<P: IdPrefix> Clone for Id<P> {
     fn clone(&self) -> Self {
-        Self {
-            hex: self.hex.clone(),
-            _marker: PhantomData,
-        }
+        *self
     }
 }
 
 impl<P: IdPrefix> PartialEq for Id<P> {
     fn eq(&self, other: &Self) -> bool {
-        self.hex == other.hex
+        self.inner == other.inner
     }
 }
 impl<P: IdPrefix> Eq for Id<P> {}
 
 impl<P: IdPrefix> std::hash::Hash for Id<P> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.hex.hash(state);
+        self.inner.hash(state);
     }
 }
 
@@ -154,19 +150,19 @@ impl<P: IdPrefix> PartialOrd for Id<P> {
 }
 impl<P: IdPrefix> Ord for Id<P> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.hex.cmp(&other.hex)
+        self.inner.cmp(&other.inner)
     }
 }
 
 impl<P: IdPrefix> fmt::Display for Id<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}_{}", P::PREFIX, self.hex)
+        write!(f, "{}_{}", P::PREFIX, self.inner.to_hex())
     }
 }
 
 impl<P: IdPrefix> fmt::Debug for Id<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "\"{}_{}\"", P::PREFIX, self.hex)
+        write!(f, "\"{}_{}\"", P::PREFIX, self.inner.to_hex())
     }
 }
 
@@ -181,14 +177,13 @@ impl<P: IdPrefix> Serialize for Id<P> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
             // JSON / OpenAPI / MCP wire format: prefixed string.
-            serializer.collect_str(&format_args!("{}_{}", P::PREFIX, self.hex))
+            serializer.collect_str(&format_args!("{}_{}", P::PREFIX, self.inner.to_hex()))
         } else {
-            // BSON (and any other binary format that opts out of human-readable):
+            // BSON (raw, non-human-readable — what the mongodb driver uses):
             // serialize as a native ObjectId so MongoDB stores `_id` in its
-            // canonical form. This is the bridge that lets a single struct serve
-            // both as a BSON document and an HTTP response.
-            let oid = ObjectId::parse_str(&self.hex).map_err(serde::ser::Error::custom)?;
-            oid.serialize(serializer)
+            // canonical form. This is the bridge that lets a single struct
+            // serve both as a BSON document and an HTTP response.
+            self.inner.serialize(serializer)
         }
     }
 }
@@ -295,7 +290,9 @@ impl IdPrefix for PublishableKeyIdMarker {
 crate::impl_container!(SecretKeyIdMarker);
 pub struct SecretKeyIdMarker;
 impl IdPrefix for SecretKeyIdMarker {
-    const PREFIX: &'static str = "sk";
+    // `skid_` rather than `sk_` to avoid muscle-memory collision with Stripe's
+    // `sk_live_…` / `sk_test_…` secret-key value format.
+    const PREFIX: &'static str = "skid";
     const SCHEMA_NAME: &'static str = "SecretKeyId";
 }
 

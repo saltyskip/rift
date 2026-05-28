@@ -184,7 +184,10 @@ pub async fn create_affiliate_credential(
         return invalid_id();
     };
 
-    match svc.mint_credential(&ctx, oid, auth_key.0).await {
+    match svc
+        .mint_credential(&ctx, AffiliateId::from_object_id(oid), auth_key.0)
+        .await
+    {
         Ok(minted) => (
             StatusCode::CREATED,
             Json(CreateAffiliateCredentialResponse {
@@ -228,7 +231,10 @@ pub async fn list_affiliate_credentials(
         return invalid_id();
     };
 
-    match svc.list_credentials(&ctx, oid).await {
+    match svc
+        .list_credentials(&ctx, AffiliateId::from_object_id(oid))
+        .await
+    {
         Ok(keys) => {
             let creds: Vec<AffiliateCredentialDetail> = keys
                 .into_iter()
@@ -274,7 +280,10 @@ pub async fn revoke_affiliate_credential(
         return invalid_id();
     };
 
-    match svc.revoke_credential(&ctx, aff_oid, key_oid).await {
+    match svc
+        .revoke_credential(&ctx, AffiliateId::from_object_id(aff_oid), key_oid)
+        .await
+    {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => affiliate_error_to_response(e),
     }
@@ -284,7 +293,7 @@ pub async fn revoke_affiliate_credential(
 
 fn to_detail(a: &Affiliate) -> AffiliateDetail {
     AffiliateDetail {
-        id: a.id.clone(),
+        id: a.id,
         name: a.name.clone(),
         partner_key: a.partner_key.clone(),
         status: a.status,

@@ -272,7 +272,7 @@ pub async fn me(
         }
     };
 
-    let Some(user_detail) = users.into_iter().find(|u| u.id == user.0) else {
+    let Some(user_detail) = users.into_iter().find(|u| u.id == user.to_object_id()) else {
         // Session points at a user that no longer exists. Treat as a stale
         // session — caller should re-sign-in.
         return (
@@ -290,7 +290,7 @@ pub async fn me(
             is_owner: user_detail.is_owner,
         },
         tenant: TenantSummary {
-            id: ctx.tenant_id.to_hex(),
+            id: ctx.tenant_id.as_hex(),
         },
     })
     .into_response()

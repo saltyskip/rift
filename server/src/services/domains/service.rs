@@ -35,11 +35,16 @@ impl DomainsService {
         role: DomainRole,
     ) -> Result<Domain, DomainError> {
         if let Some(q) = &self.quota {
-            q.check(&ctx.tenant_id, Resource::CreateDomain).await?;
+            q.check(ctx.tenant_id.as_object_id(), Resource::CreateDomain)
+                .await?;
         }
 
         if role == DomainRole::Alternate {
-            if let Ok(Some(_)) = self.repo.find_alternate_by_tenant(&ctx.tenant_id).await {
+            if let Ok(Some(_)) = self
+                .repo
+                .find_alternate_by_tenant(ctx.tenant_id.as_object_id())
+                .await
+            {
                 return Err(DomainError::AlternateLimit);
             }
         }
@@ -57,7 +62,12 @@ impl DomainsService {
 
         match self
             .repo
-            .create_domain(ctx.tenant_id, domain, verification_token, role)
+            .create_domain(
+                ctx.tenant_id.to_object_id(),
+                domain,
+                verification_token,
+                role,
+            )
             .await
         {
             Ok(d) => Ok(d),

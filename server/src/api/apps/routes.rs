@@ -91,7 +91,7 @@ pub async fn create_app(
 
     let app = crate::services::apps::models::App {
         id: ObjectId::new(),
-        tenant_id: tenant.0,
+        tenant_id: tenant.to_object_id(),
         platform: platform.clone(),
         bundle_id: req.bundle_id,
         team_id: req.team_id,
@@ -147,7 +147,7 @@ pub async fn list_apps(
             .into_response();
     };
 
-    match repo.list_by_tenant(&tenant.0).await {
+    match repo.list_by_tenant(&tenant.to_object_id()).await {
         Ok(apps) => {
             let details: Vec<AppDetail> = apps.iter().map(to_detail).collect();
             Json(json!({ "apps": details })).into_response()
@@ -198,7 +198,7 @@ pub async fn delete_app(
             .into_response();
     };
 
-    match repo.delete_app(&tenant.0, &oid).await {
+    match repo.delete_app(&tenant.to_object_id(), &oid).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,

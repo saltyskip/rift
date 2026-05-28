@@ -66,7 +66,7 @@ pub async fn create_sdk_key(
         }
     };
 
-    if domain.tenant_id != tenant.0 {
+    if domain.tenant_id != tenant.to_object_id() {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "Domain not owned by this tenant", "code": "domain_not_owned" })),
@@ -86,7 +86,7 @@ pub async fn create_sdk_key(
     let now = DateTime::now();
     let doc = SdkKeyDoc {
         id: ObjectId::new(),
-        tenant_id: tenant.0,
+        tenant_id: tenant.to_object_id(),
         key_hash: hash,
         key_prefix: prefix,
         domain: req.domain.clone(),
@@ -139,7 +139,7 @@ pub async fn list_sdk_keys(
             .into_response();
     };
 
-    match sdk_keys_repo.list_by_tenant(&tenant.0).await {
+    match sdk_keys_repo.list_by_tenant(&tenant.to_object_id()).await {
         Ok(docs) => {
             let keys: Vec<SdkKeyDetail> = docs
                 .iter()
@@ -198,7 +198,7 @@ pub async fn revoke_sdk_key(
             .into_response();
     };
 
-    match sdk_keys_repo.revoke(&tenant.0, &oid).await {
+    match sdk_keys_repo.revoke(&tenant.to_object_id(), &oid).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,

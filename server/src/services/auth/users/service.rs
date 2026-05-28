@@ -130,7 +130,7 @@ impl UsersService {
 
         if self
             .users_repo
-            .find_by_tenant_and_email(&ctx.tenant_id, &email)
+            .find_by_tenant_and_email(ctx.tenant_id.as_object_id(), &email)
             .await
             .map_err(UserError::Internal)?
             .is_some()
@@ -140,13 +140,14 @@ impl UsersService {
 
         // Service-layer quota enforcement (applies to every transport).
         if let Some(q) = &self.quota {
-            q.check(&ctx.tenant_id, Resource::InviteTeamMember).await?;
+            q.check(ctx.tenant_id.as_object_id(), Resource::InviteTeamMember)
+                .await?;
         }
 
         let user_id = ObjectId::new();
         let user_doc = UserDoc {
             id: Some(user_id),
-            tenant_id: ctx.tenant_id,
+            tenant_id: ctx.tenant_id.to_object_id(),
             email: email.clone(),
             verified: false,
             is_owner: false,
@@ -200,7 +201,7 @@ impl UsersService {
     pub async fn list(&self, ctx: &AuthContext) -> Result<Vec<UserDetail>, UserError> {
         let docs = self
             .users_repo
-            .list_by_tenant(&ctx.tenant_id)
+            .list_by_tenant(ctx.tenant_id.as_object_id())
             .await
             .map_err(UserError::Internal)?;
 
@@ -221,7 +222,7 @@ impl UsersService {
     pub async fn delete(&self, ctx: &AuthContext, user_id: ObjectId) -> Result<(), UserError> {
         let count = self
             .users_repo
-            .count_verified_by_tenant(&ctx.tenant_id)
+            .count_verified_by_tenant(ctx.tenant_id.as_object_id())
             .await
             .map_err(UserError::Internal)?;
 
@@ -231,7 +232,7 @@ impl UsersService {
 
         let deleted = self
             .users_repo
-            .delete(&ctx.tenant_id, &user_id)
+            .delete(ctx.tenant_id.as_object_id(), &user_id)
             .await
             .map_err(UserError::Internal)?;
 

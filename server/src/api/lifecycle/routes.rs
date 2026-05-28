@@ -65,7 +65,7 @@ pub async fn lifecycle_click(
     };
 
     let link = repo
-        .find_link_by_tenant_and_id(&tenant.0, &req.link_id)
+        .find_link_by_tenant_and_id(&tenant.to_object_id(), &req.link_id)
         .await
         .ok()
         .flatten();
@@ -176,7 +176,7 @@ pub async fn lifecycle_attribute(
     };
 
     let link = repo
-        .find_link_by_tenant_and_id(&tenant.0, &req.link_id)
+        .find_link_by_tenant_and_id(&tenant.to_object_id(), &req.link_id)
         .await
         .ok()
         .flatten();
@@ -283,7 +283,7 @@ pub async fn lifecycle_identify(
     };
 
     match svc
-        .identify_install(&tenant.0, &req.install_id, &req.user_id)
+        .identify_install(&tenant.to_object_id(), &req.install_id, &req.user_id)
         .await
     {
         Ok(IdentifyOutcome::Created(credited)) | Ok(IdentifyOutcome::InstallAdded(credited)) => {
@@ -294,7 +294,13 @@ pub async fn lifecycle_identify(
                 user_id = %req.user_id,
                 "identify bound; firing webhook"
             );
-            fire_identify_event(&state, &tenant.0, &req.install_id, &req.user_id, credited);
+            fire_identify_event(
+                &state,
+                &tenant.to_object_id(),
+                &req.install_id,
+                &req.user_id,
+                credited,
+            );
             Json(json!({ "success": true })).into_response()
         }
         Ok(IdentifyOutcome::AlreadyPresent) => {

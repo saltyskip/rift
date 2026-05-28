@@ -49,7 +49,8 @@ impl AffiliatesService {
         validate_partner_key(&partner_key)?;
 
         if let Some(q) = &self.quota {
-            q.check(&ctx.tenant_id, Resource::CreateAffiliate).await?;
+            q.check(ctx.tenant_id.as_object_id(), Resource::CreateAffiliate)
+                .await?;
         }
 
         // Pre-check uniqueness for a clean error before hitting the DB write.
@@ -57,7 +58,7 @@ impl AffiliatesService {
         // backstop — see the E11000 catch below.
         if self
             .repo
-            .find_by_partner_key(&ctx.tenant_id.into(), &partner_key)
+            .find_by_partner_key(&ctx.tenant_id, &partner_key)
             .await
             .map_err(AffiliateError::Internal)?
             .is_some()
@@ -68,7 +69,7 @@ impl AffiliatesService {
         let now = DateTime::now();
         let affiliate = Affiliate {
             id: AffiliateId::new(),
-            tenant_id: ctx.tenant_id.into(),
+            tenant_id: ctx.tenant_id,
             name,
             partner_key: partner_key.clone(),
             status: AffiliateStatus::Active,
@@ -94,7 +95,7 @@ impl AffiliatesService {
         affiliate_id: AffiliateId,
     ) -> Result<Affiliate, AffiliateError> {
         self.repo
-            .get_by_id(&ctx.tenant_id.into(), &affiliate_id)
+            .get_by_id(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?
             .ok_or(AffiliateError::NotFound)
@@ -106,7 +107,7 @@ impl AffiliatesService {
         ctx: &AuthContext,
     ) -> Result<Vec<Affiliate>, AffiliateError> {
         self.repo
-            .list_by_tenant(&ctx.tenant_id.into())
+            .list_by_tenant(&ctx.tenant_id)
             .await
             .map_err(AffiliateError::Internal)
     }
@@ -129,7 +130,7 @@ impl AffiliatesService {
         let updated = self
             .repo
             .update_affiliate(
-                &ctx.tenant_id.into(),
+                &ctx.tenant_id,
                 &affiliate_id,
                 req.name.as_deref(),
                 req.status,
@@ -145,7 +146,7 @@ impl AffiliatesService {
         // Re-fetch so the response carries the persisted values (including
         // the new updated_at).
         self.repo
-            .get_by_id(&ctx.tenant_id.into(), &affiliate_id)
+            .get_by_id(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?
             .ok_or(AffiliateError::NotFound)
@@ -157,21 +158,23 @@ impl AffiliatesService {
     pub async fn mint_credential(
         &self,
         ctx: &AuthContext,
-        affiliate_id: ObjectId,
+        affiliate_id: AffiliateId,
+        // `created_by` is still ObjectId until users/secret_keys migrate.
         created_by: ObjectId,
     ) -> Result<MintedCredential, AffiliateError> {
         // Affiliate must exist in this tenant.
         self.repo
-            .get_by_id(&ctx.tenant_id.into(), &affiliate_id.into())
+            .get_by_id(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?
             .ok_or(AffiliateError::NotFound)?;
 
         // Per-affiliate cap. Counted at the repo level via the scope filter
         // so a compromised tenant key can't spam unbounded credentials.
+        let aff_oid = affiliate_id.to_object_id();
         let existing = self
             .secret_keys_repo
-            .list_by_tenant_and_affiliate(&ctx.tenant_id, &affiliate_id)
+            .list_by_tenant_and_affiliate(ctx.tenant_id.as_object_id(), &aff_oid)
             .await
             .map_err(AffiliateError::Internal)?;
         if existing.len() >= MAX_CREDENTIALS_PER_AFFILIATE {
@@ -180,16 +183,18 @@ impl AffiliatesService {
 
         let created_key = mint_scoped(
             self.secret_keys_repo.as_ref(),
-            ctx.tenant_id,
+            ctx.tenant_id.to_object_id(),
             created_by,
-            KeyScope::Affiliate { affiliate_id },
+            KeyScope::Affiliate {
+                affiliate_id: aff_oid,
+            },
         )
         .await
         .map_err(AffiliateError::Internal)?;
 
         Ok(MintedCredential {
             created_key,
-            affiliate_id: affiliate_id.into(),
+            affiliate_id,
         })
     }
 
@@ -200,17 +205,20 @@ impl AffiliatesService {
     pub async fn list_credentials(
         &self,
         ctx: &AuthContext,
-        affiliate_id: ObjectId,
+        affiliate_id: AffiliateId,
     ) -> Result<Vec<crate::services::auth::secret_keys::repo::SecretKeyDoc>, AffiliateError> {
         // Affiliate must exist (404 vs empty list — different semantics).
         self.repo
-            .get_by_id(&ctx.tenant_id.into(), &affiliate_id.into())
+            .get_by_id(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?
             .ok_or(AffiliateError::NotFound)?;
 
         self.secret_keys_repo
-            .list_by_tenant_and_affiliate(&ctx.tenant_id, &affiliate_id)
+            .list_by_tenant_and_affiliate(
+                ctx.tenant_id.as_object_id(),
+                &affiliate_id.to_object_id(),
+            )
             .await
             .map_err(AffiliateError::Internal)
     }
@@ -221,19 +229,24 @@ impl AffiliatesService {
     pub async fn revoke_credential(
         &self,
         ctx: &AuthContext,
-        affiliate_id: ObjectId,
+        affiliate_id: AffiliateId,
+        // `key_id` is still ObjectId — secret_keys hasn't migrated yet.
         key_id: ObjectId,
     ) -> Result<(), AffiliateError> {
         // Surface affiliate-not-found distinctly from credential-not-found.
         self.repo
-            .get_by_id(&ctx.tenant_id.into(), &affiliate_id.into())
+            .get_by_id(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?
             .ok_or(AffiliateError::NotFound)?;
 
         let deleted = self
             .secret_keys_repo
-            .delete_affiliate_credential(&ctx.tenant_id, &affiliate_id, &key_id)
+            .delete_affiliate_credential(
+                ctx.tenant_id.as_object_id(),
+                &affiliate_id.to_object_id(),
+                &key_id,
+            )
             .await
             .map_err(AffiliateError::Internal)?;
 
@@ -257,7 +270,7 @@ impl AffiliatesService {
     ) -> Result<(), AffiliateError> {
         let deleted = self
             .repo
-            .delete_affiliate(&ctx.tenant_id.into(), &affiliate_id)
+            .delete_affiliate(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?;
 

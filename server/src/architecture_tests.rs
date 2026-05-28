@@ -757,6 +757,9 @@ const OBJECT_ID_ALLOWED_FILES: &[&str] = &[
     "src/main.rs",
     "src/core/db.rs",
     "src/core/public_id/mod.rs",
+    // architecture_tests.rs scans for the word `ObjectId` — it has to mention
+    // it (in comments, parser test strings, and the error message).
+    "src/architecture_tests.rs",
 ];
 
 fn is_object_id_allowed(rel_str: &str) -> bool {
@@ -775,13 +778,38 @@ fn is_object_id_allowed(rel_str: &str) -> bool {
     if rel_str.contains("/repos/") {
         return true;
     }
-    // Sibling test files may reference any type.
+    // Sibling test files may reference any type — but ONLY if they sit next
+    // to a non-test `.rs` source file in the same directory. Without this
+    // gate, anyone could defeat the rule by naming any file `*_tests.rs`.
+    // The check covers both:
+    //   - `<stem>_tests.rs` next to `<stem>.rs` (e.g. `origin_tests.rs` next to `origin.rs`)
+    //   - `<stem>_tests.rs` next to `mod.rs` (sub-module pattern, e.g.
+    //     `core/public_id/public_id_tests.rs` next to `core/public_id/mod.rs`)
     if let Some(name) = std::path::Path::new(rel_str)
         .file_name()
         .and_then(|s| s.to_str())
     {
         if name.ends_with("_tests.rs") {
-            return true;
+            let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
+            let abs = std::path::Path::new(&manifest_dir).join(rel_str);
+            if let Some(parent) = abs.parent() {
+                // Look for any sibling `.rs` that isn't another test file.
+                if let Ok(entries) = std::fs::read_dir(parent) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p == abs {
+                            continue;
+                        }
+                        if p.extension().and_then(|s| s.to_str()) != Some("rs") {
+                            continue;
+                        }
+                        let n = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        if !n.ends_with("_tests.rs") {
+                            return true;
+                        }
+                    }
+                }
+            }
         }
     }
     false

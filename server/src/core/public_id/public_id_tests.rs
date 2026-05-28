@@ -6,29 +6,29 @@ use super::{AffiliateId, Id, ParseIdError, SourceId, TenantId, WebhookId, HEX_LE
 fn from_object_id_stores_hex() {
     let oid = ObjectId::new();
     let id: AffiliateId = AffiliateId::from_object_id(oid);
-    assert_eq!(id.as_hex(), &oid.to_hex());
+    assert_eq!(id.as_hex(), oid.to_hex());
     assert_eq!(id.as_hex().len(), HEX_LEN);
 }
 
 #[test]
 fn display_includes_prefix() {
     let oid = ObjectId::new();
-    let id: AffiliateId = oid.into();
+    let id = AffiliateId::from_object_id(oid);
     assert_eq!(format!("{id}"), format!("aff_{}", oid.to_hex()));
 }
 
 #[test]
 fn round_trip_to_object_id() {
     let oid = ObjectId::new();
-    let id: WebhookId = oid.into();
-    let back = id.to_object_id().unwrap();
+    let id = WebhookId::from_object_id(oid);
+    let back = id.to_object_id();
     assert_eq!(oid, back);
 }
 
 #[test]
 fn serialize_to_prefixed_string() {
     let oid = ObjectId::parse_str("665a1b2c3d4e5f6a7b8c9d0e").unwrap();
-    let id: AffiliateId = oid.into();
+    let id = AffiliateId::from_object_id(oid);
     let json = serde_json::to_string(&id).unwrap();
     assert_eq!(json, "\"aff_665a1b2c3d4e5f6a7b8c9d0e\"");
 }
@@ -91,7 +91,7 @@ fn fromstr_works() {
     let oid = ObjectId::new();
     let s = format!("tnt_{}", oid.to_hex());
     let id: TenantId = s.parse().unwrap();
-    assert_eq!(id.as_hex(), &oid.to_hex());
+    assert_eq!(id.as_hex(), oid.to_hex());
 }
 
 #[test]
@@ -126,27 +126,29 @@ fn schemars_schema_has_lowercase_hex_pattern() {
 #[test]
 fn equality_within_same_type() {
     let oid = ObjectId::new();
-    let a: AffiliateId = oid.into();
-    let b: AffiliateId = oid.into();
+    let a = AffiliateId::from_object_id(oid);
+    let b = AffiliateId::from_object_id(oid);
     assert_eq!(a, b);
 }
 
 #[test]
-fn ord_matches_hex_ord() {
-    let mut ids: Vec<AffiliateId> = (0..5).map(|_| AffiliateId::from(ObjectId::new())).collect();
-    let mut hexes: Vec<String> = ids.iter().map(|i| i.as_hex().to_string()).collect();
+fn ord_matches_objectid_ord() {
+    let mut ids: Vec<AffiliateId> = (0..5)
+        .map(|_| AffiliateId::from_object_id(ObjectId::new()))
+        .collect();
+    let mut oids: Vec<ObjectId> = ids.iter().map(|i| i.to_object_id()).collect();
     ids.sort();
-    hexes.sort();
-    let after: Vec<String> = ids.iter().map(|i| i.as_hex().to_string()).collect();
-    assert_eq!(after, hexes);
+    oids.sort();
+    let after: Vec<ObjectId> = ids.iter().map(|i| i.to_object_id()).collect();
+    assert_eq!(after, oids);
 }
 
 #[test]
 fn hash_consistency() {
     use std::collections::HashSet;
     let oid = ObjectId::new();
-    let id: AffiliateId = oid.into();
-    let clone = id.clone();
+    let id = AffiliateId::from_object_id(oid);
+    let clone = id;
     let mut set = HashSet::new();
     set.insert(id);
     assert!(set.contains(&clone));
@@ -170,7 +172,9 @@ fn bson_raw_serializes_as_native_object_id() {
         id: AffiliateId,
     }
     let oid = ObjectId::parse_str("665a1b2c3d4e5f6a7b8c9d0e").unwrap();
-    let h = Holder { id: oid.into() };
+    let h = Holder {
+        id: AffiliateId::from_object_id(oid),
+    };
     let raw: RawDocumentBuf = mongodb::bson::to_raw_document_buf(&h).unwrap();
     let value = raw.get("id").unwrap().unwrap();
     match value {
@@ -191,7 +195,7 @@ fn bson_raw_deserializes_from_native_object_id() {
     let doc = doc! { "id": oid };
     let bytes = mongodb::bson::to_vec(&doc).unwrap();
     let h: Holder = mongodb::bson::from_slice(&bytes).unwrap();
-    assert_eq!(h.id.as_hex(), &oid.to_hex());
+    assert_eq!(h.id.as_hex(), oid.to_hex());
 }
 
 #[test]
@@ -248,6 +252,18 @@ fn new_generates_distinct_ids() {
     let b = AffiliateId::new();
     assert_ne!(a, b);
     assert_eq!(a.as_hex().len(), HEX_LEN);
+}
+
+#[test]
+fn no_blanket_from_object_id() {
+    // The blanket `impl<P: IdPrefix> From<ObjectId> for Id<P>` was removed
+    // intentionally. Conversions must name the target type explicitly via
+    // `Id::from_object_id` so cross-resource ID mixups are caught at review.
+    let oid = ObjectId::new();
+    let t = TenantId::from_object_id(oid);
+    let a = AffiliateId::from_object_id(oid);
+    assert_eq!(t.to_object_id(), a.to_object_id());
+    // Cannot write `let _: TenantId = oid.into();` — that fails to compile.
 }
 
 // Compile-time: distinct marker types are not interchangeable.

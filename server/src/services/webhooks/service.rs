@@ -36,12 +36,13 @@ impl WebhooksService {
         created_at: mongodb::bson::DateTime,
     ) -> Result<Webhook, WebhookError> {
         if let Some(q) = &self.quota {
-            q.check(&ctx.tenant_id, Resource::CreateWebhook).await?;
+            q.check(ctx.tenant_id.as_object_id(), Resource::CreateWebhook)
+                .await?;
         }
 
         let webhook = Webhook {
             id,
-            tenant_id: ctx.tenant_id,
+            tenant_id: ctx.tenant_id.to_object_id(),
             url,
             secret,
             events,

@@ -64,10 +64,11 @@ pub async fn auth_gate(
         }
 
         // Inject tenant identity, key identity, and scope for downstream handlers.
-        req.extensions_mut().insert(TenantId(tenant_id));
+        req.extensions_mut()
+            .insert(TenantId::from_object_id(tenant_id));
         req.extensions_mut().insert(AuthKeyId(key_id));
         req.extensions_mut().insert(AuthContext::for_secret_key(
-            tenant_id,
+            TenantId::from_object_id(tenant_id),
             key_id,
             scope.as_ref(),
         ));
@@ -214,12 +215,14 @@ pub async fn session_auth_gate(
 
     match svc.lookup(&raw_token).await {
         Ok(Some(resolved)) => {
-            req.extensions_mut().insert(TenantId(resolved.tenant_id));
-            req.extensions_mut().insert(UserId(resolved.user_id));
+            req.extensions_mut()
+                .insert(TenantId::from_object_id(resolved.tenant_id));
+            req.extensions_mut()
+                .insert(UserId::from_object_id(resolved.user_id));
             req.extensions_mut().insert(SessionId(resolved.session_id));
             req.extensions_mut().insert(AuthContext::for_session(
-                resolved.tenant_id,
-                resolved.user_id,
+                TenantId::from_object_id(resolved.tenant_id),
+                UserId::from_object_id(resolved.user_id),
                 resolved.session_id,
             ));
 
@@ -271,12 +274,14 @@ pub async fn session_or_key_auth_gate(
     {
         match svc.lookup(&raw_token).await {
             Ok(Some(resolved)) => {
-                req.extensions_mut().insert(TenantId(resolved.tenant_id));
-                req.extensions_mut().insert(UserId(resolved.user_id));
+                req.extensions_mut()
+                    .insert(TenantId::from_object_id(resolved.tenant_id));
+                req.extensions_mut()
+                    .insert(UserId::from_object_id(resolved.user_id));
                 req.extensions_mut().insert(SessionId(resolved.session_id));
                 req.extensions_mut().insert(AuthContext::for_session(
-                    resolved.tenant_id,
-                    resolved.user_id,
+                    TenantId::from_object_id(resolved.tenant_id),
+                    UserId::from_object_id(resolved.user_id),
                     resolved.session_id,
                 ));
 
@@ -325,10 +330,11 @@ pub async fn session_or_key_auth_gate(
             }
         }
 
-        req.extensions_mut().insert(TenantId(tenant_id));
+        req.extensions_mut()
+            .insert(TenantId::from_object_id(tenant_id));
         req.extensions_mut().insert(AuthKeyId(key_id));
         req.extensions_mut().insert(AuthContext::for_secret_key(
-            tenant_id,
+            TenantId::from_object_id(tenant_id),
             key_id,
             scope.as_ref(),
         ));
@@ -444,7 +450,8 @@ pub async fn sdk_auth_gate(
             .into_response();
     }
 
-    req.extensions_mut().insert(TenantId(doc.tenant_id));
+    req.extensions_mut()
+        .insert(TenantId::from_object_id(doc.tenant_id));
     req.extensions_mut().insert(SdkDomain(doc.domain));
 
     next.run(req).await

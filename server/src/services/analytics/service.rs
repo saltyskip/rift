@@ -54,7 +54,7 @@ impl AnalyticsService {
             return Err(AnalyticsError::InvalidDateRange);
         }
 
-        let tenant_id = &ctx.tenant_id;
+        let tenant_id = ctx.tenant_id.as_object_id();
 
         // 2. Clicks — credit-independent. Direct count over click_events.
         let clicks = self
