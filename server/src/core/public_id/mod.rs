@@ -15,6 +15,7 @@ use std::marker::PhantomData;
 use std::str::FromStr;
 
 use mongodb::bson::oid::ObjectId;
+use mongodb::bson::Bson;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod models;
@@ -44,6 +45,12 @@ pub struct Id<P: IdPrefix> {
     /// The raw 24-char ObjectId hex. **No prefix.**
     hex: String,
     _marker: PhantomData<fn() -> P>,
+}
+
+impl<P: IdPrefix> Default for Id<P> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<P: IdPrefix> Id<P> {
@@ -103,6 +110,18 @@ impl<P: IdPrefix> Id<P> {
 impl<P: IdPrefix> From<ObjectId> for Id<P> {
     fn from(oid: ObjectId) -> Self {
         Self::from_object_id(oid)
+    }
+}
+
+// Direct conversion to `Bson` so `doc! { "_id": id }` produces a native ObjectId
+// without round-tripping through serde. Required because `bson::Bson::from` is
+// the path the `doc!` macro takes, and we want it to stay in the BSON-native
+// representation (not become a string). The `From<&T>` reference variant comes
+// from bson's blanket `impl<T: Clone + Into<Bson>> From<&T> for Bson`.
+impl<P: IdPrefix> From<Id<P>> for Bson {
+    fn from(id: Id<P>) -> Self {
+        // Construction validates the hex, so unwrap is safe in practice.
+        Bson::ObjectId(ObjectId::parse_str(&id.hex).expect("Id<P> stores validated hex"))
     }
 }
 

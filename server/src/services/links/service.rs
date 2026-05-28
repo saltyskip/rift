@@ -968,7 +968,7 @@ impl LinksService {
                     .affiliates_repo
                     .as_ref()
                     .ok_or(LinkError::AffiliateNotFound)?;
-                repo.get_by_id(tenant_id, &req)
+                repo.get_by_id(&(*tenant_id).into(), &req.into())
                     .await
                     .map_err(LinkError::Internal)?
                     .ok_or(LinkError::AffiliateNotFound)?;

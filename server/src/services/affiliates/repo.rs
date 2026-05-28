@@ -1,8 +1,9 @@
 use async_trait::async_trait;
-use mongodb::bson::{doc, oid::ObjectId, DateTime};
+use mongodb::bson::{doc, DateTime};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database};
 
+use crate::core::public_id::{AffiliateId, TenantId};
 use crate::ensure_index;
 
 use super::models::{Affiliate, AffiliateStatus};
@@ -12,31 +13,31 @@ pub trait AffiliatesRepository: Send + Sync {
     async fn create_affiliate(&self, affiliate: &Affiliate) -> Result<(), String>;
     async fn get_by_id(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
     ) -> Result<Option<Affiliate>, String>;
     async fn find_by_partner_key(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         partner_key: &str,
     ) -> Result<Option<Affiliate>, String>;
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Affiliate>, String>;
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<Affiliate>, String>;
     /// Total affiliates on this tenant — feeds the `CreateAffiliate` quota.
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String>;
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String>;
     /// Apply optional updates. Returns `Ok(true)` if a row was touched,
     /// `Ok(false)` if no affiliate matched. Always bumps `updated_at`.
     async fn update_affiliate(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
         name: Option<&str>,
         status: Option<AffiliateStatus>,
         now: DateTime,
     ) -> Result<bool, String>;
     async fn delete_affiliate(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
     ) -> Result<bool, String>;
 }
 
@@ -74,8 +75,8 @@ impl AffiliatesRepository for AffiliatesRepo {
 
     async fn get_by_id(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
     ) -> Result<Option<Affiliate>, String> {
         self.affiliates
             .find_one(doc! { "_id": affiliate_id, "tenant_id": tenant_id })
@@ -85,7 +86,7 @@ impl AffiliatesRepository for AffiliatesRepo {
 
     async fn find_by_partner_key(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         partner_key: &str,
     ) -> Result<Option<Affiliate>, String> {
         self.affiliates
@@ -94,7 +95,7 @@ impl AffiliatesRepository for AffiliatesRepo {
             .map_err(|e| e.to_string())
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Affiliate>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<Affiliate>, String> {
         let mut cursor = self
             .affiliates
             .find(doc! { "tenant_id": tenant_id })
@@ -109,7 +110,7 @@ impl AffiliatesRepository for AffiliatesRepo {
         Ok(affiliates)
     }
 
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String> {
         self.affiliates
             .count_documents(doc! { "tenant_id": tenant_id })
             .await
@@ -118,8 +119,8 @@ impl AffiliatesRepository for AffiliatesRepo {
 
     async fn update_affiliate(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
         name: Option<&str>,
         status: Option<AffiliateStatus>,
         now: DateTime,
@@ -150,8 +151,8 @@ impl AffiliatesRepository for AffiliatesRepo {
 
     async fn delete_affiliate(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
     ) -> Result<bool, String> {
         let result = self
             .affiliates

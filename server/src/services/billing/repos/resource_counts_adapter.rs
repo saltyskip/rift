@@ -34,7 +34,9 @@ impl ResourceCounts for RepoResourceCounts {
                 .await
                 .map(|n| n as u64),
             Resource::CreateWebhook => self.webhooks.count_by_tenant(tenant_id).await,
-            Resource::CreateAffiliate => self.affiliates.count_by_tenant(tenant_id).await,
+            Resource::CreateAffiliate => {
+                self.affiliates.count_by_tenant(&(*tenant_id).into()).await
+            }
             // TrackEvent uses the atomic counter path, not ResourceCounts.
             Resource::TrackEvent => Ok(0),
         }

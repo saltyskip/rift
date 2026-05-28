@@ -1,6 +1,8 @@
-use mongodb::bson::{oid::ObjectId, DateTime};
+use mongodb::bson::DateTime;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::core::public_id::{AffiliateId, TenantId};
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -20,8 +22,8 @@ pub enum AffiliateStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Affiliate {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub tenant_id: ObjectId,
+    pub id: AffiliateId,
+    pub tenant_id: TenantId,
     pub name: String,
     pub partner_key: String,
     pub status: AffiliateStatus,
@@ -46,8 +48,7 @@ pub struct CreateAffiliateRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AffiliateDetail {
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    pub id: String,
+    pub id: AffiliateId,
     #[schema(example = "Bcom")]
     pub name: String,
     #[schema(example = "bcom")]
@@ -81,12 +82,11 @@ pub struct UpdateAffiliateRequest {
 /// it again — list endpoints only return the prefix.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CreateAffiliateCredentialResponse {
-    /// Credential ObjectId (the secret key id).
+    /// Credential id (the secret key id).
     #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
     pub id: String,
     /// Affiliate this credential is scoped to.
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    pub affiliate_id: String,
+    pub affiliate_id: AffiliateId,
     /// Plaintext `rl_live_…` key. Shown only once.
     #[schema(example = "rl_live_4f2c3a8b9d0e1f2a3b4c5d6e7f8a9b0c")]
     pub api_key: String,
@@ -193,5 +193,5 @@ impl AffiliateError {
 /// and must be shown to the caller exactly once.
 pub struct MintedCredential {
     pub created_key: CreatedKey,
-    pub affiliate_id: mongodb::bson::oid::ObjectId,
+    pub affiliate_id: AffiliateId,
 }

@@ -320,7 +320,6 @@ const OBJECT_ID_BACKLOG: &[&str] = &[
     "src/api/lifecycle/routes.rs",
     "src/api/links/routes.rs",
     "src/api/webhooks/routes.rs",
-    "src/services/affiliates/models.rs",
     "src/services/affiliates/service.rs",
     "src/services/analytics/service.rs",
     "src/services/app_users/models.rs",
