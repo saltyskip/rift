@@ -176,7 +176,7 @@ Add a `.mcp.json` to your project root:
 }
 ```
 
-Claude will then have access to these tools: `create_link`, `get_link`, `list_links`, `update_link`, `delete_link`.
+Claude will then have access to these tools: `links.create`, `links.bulk_create`, `links.get`, `links.list`, `links.update`, `links.delete`, `sources.create`, `sources.list`.
 
 ### Setup with other MCP clients
 
