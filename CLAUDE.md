@@ -86,6 +86,17 @@ The reason: both `api/` and `mcp/` are transport layers that import from `servic
 
 - **Auth sub-slices** — `services/auth/` contains `tenants/` (billing entity), `users/` (team members, email verification), `secret_keys/` (signup/verify/CRUD, `rl_live_` keys with `service.rs`), `publishable_keys/` (SDK keys, `pk_live_` prefix), and `usage/` (request tracking). Transport routes live in `api/auth/`
 
+### Public identifiers — `Id<P>`, never raw `ObjectId`
+
+`mongodb::bson::oid::ObjectId` is the storage primary key. It lives in **repos and migrations only**. Everywhere else — models, services, route handlers, MCP tools, webhook payloads — uses `core::public_id::Id<P>` (or a per-resource alias like `AffiliateId`, `TenantId`, etc.). The point is type hygiene: service-layer code should not have a transitive dependency on the MongoDB crate just to talk about IDs. See issue #156.
+
+- **Wire format**: `<prefix>_<24-char-lowercase-hex>`, where the body is the raw `ObjectId::to_hex()`. No new ID format, no data migration. Example: `aff_665a1b2c3d4e5f6a7b8c9d0e`.
+- **Bridge**: `Id::from_object_id(oid)` (repo → typed) and `id.to_object_id()?` (typed → repo). Both are infallible in practice; construction validates the hex body.
+- **Adding a new resource alias**: declare a marker in `core/public_id/mod.rs` (`crate::impl_container!(FooIdMarker);`, then `impl IdPrefix for FooIdMarker { const PREFIX = "foo"; const SCHEMA_NAME = "FooId"; }`) and add `pub type FooId = Id<FooIdMarker>;` to `core/public_id/models.rs`.
+- **Typed at compile time**: `AffiliateId` and `WebhookId` are distinct types. Passing one where the other is expected fails to build.
+- **Enforced** by `architecture_tests::object_id_confined_to_storage_layer`. Allowlisted file patterns: `**/repo.rs`, `migrations/**`, `core/db.rs`, `core/public_id/mod.rs`, `app.rs`, `main.rs`, `*_tests.rs`. Pre-existing violators live in `OBJECT_ID_BACKLOG`; the symmetric `object_id_backlog_entries_still_have_violations` test fails if a listed file no longer contains `ObjectId`, so the backlog can only shrink.
+- **Exception**: `link_id` remains a custom vanity slug (product feature, not random), not an `Id<P>`.
+
 ### Cargo Features
 
 - `api` — HTTP API routes (enabled by default)

@@ -148,6 +148,89 @@ fn stepdown_rule_at_depth_zero() {
     }
 }
 
+/// Enforce that `ObjectId` (the MongoDB storage type) only appears in the
+/// storage layer. Anywhere else uses `core::public_id::Id<P>` instead.
+///
+/// **Allowlist** (files that may reference `ObjectId`):
+/// - `src/services/**/repo.rs` — repos own storage
+/// - `src/migrations/**.rs` — direct BSON manipulation
+/// - `src/core/db.rs` — connection wiring
+/// - `src/core/public_id/mod.rs` — the bridge type (`Id::from_object_id` / `to_object_id`)
+/// - `src/app.rs`, `src/main.rs` — bootstrap
+/// - `*_tests.rs` — sibling tests may reference any type
+///
+/// Existing violators are listed in `OBJECT_ID_BACKLOG`; each migration commit
+/// removes its entry. The backlog can only shrink — the symmetric test
+/// `object_id_backlog_entries_still_have_violations` fails if a listed file
+/// no longer contains `ObjectId`. See issue #156.
+#[test]
+fn object_id_confined_to_storage_layer() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let src = std::path::Path::new(&manifest_dir).join("src");
+
+    let mut violations: Vec<String> = Vec::new();
+    scan_for_object_id(&src, &manifest_dir, &mut violations);
+
+    if !violations.is_empty() {
+        panic!(
+            "\nFound {} reference(s) to `ObjectId` outside the storage layer allowlist:\n\n{}\n\n\
+             Per CLAUDE.md \"Public identifiers\": `ObjectId` lives only in repos and migrations.\n\
+             Use `core::public_id::Id<P>` (or a per-resource alias like `AffiliateId`)\n\
+             everywhere else. Convert at the repo boundary with `Id::from_object_id` /\n\
+             `id.to_object_id()`. See issue #156.\n",
+            violations.len(),
+            violations.join("\n")
+        );
+    }
+}
+
+/// Symmetric check on [`OBJECT_ID_BACKLOG`]: every entry must reference a file
+/// that still contains `ObjectId`. Migrated files have to be removed from the
+/// list so the rule starts biting on them. Also fails on entries that reference
+/// files no longer on disk (stale).
+#[test]
+fn object_id_backlog_entries_still_have_violations() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let mut stale: Vec<&str> = Vec::new();
+    let mut clean: Vec<&str> = Vec::new();
+    for entry in OBJECT_ID_BACKLOG {
+        let abs = std::path::Path::new(&manifest_dir).join(entry);
+        let Ok(content) = std::fs::read_to_string(&abs) else {
+            stale.push(entry);
+            continue;
+        };
+        if !file_mentions_object_id(&content) {
+            clean.push(entry);
+        }
+    }
+
+    let mut messages: Vec<String> = Vec::new();
+    if !stale.is_empty() {
+        messages.push(format!(
+            "Backlog references files that no longer exist:\n{}",
+            stale
+                .iter()
+                .map(|p| format!("  - {p}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+    if !clean.is_empty() {
+        messages.push(format!(
+            "Backlog references files that no longer mention `ObjectId`\n\
+             — remove them from `OBJECT_ID_BACKLOG`:\n{}",
+            clean
+                .iter()
+                .map(|p| format!("  - {p}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+    if !messages.is_empty() {
+        panic!("\n{}\n", messages.join("\n\n"));
+    }
+}
+
 /// Files where the architecture rules must NOT be violated.
 ///
 /// **Denylist**: every `.rs` under `src/` is enforced *except* those
@@ -217,6 +300,60 @@ const PUB_TYPES_CLEANUP_BACKLOG: &[&str] = &[];
 /// don't take `&AuthContext` aren't subject to the check by design (token
 /// primitives, session lookup, public OAuth start/callback, etc.).
 const AUTH_MIGRATION_BACKLOG: &[&str] = &[];
+
+/// Files that currently reference `ObjectId` outside the storage allowlist
+/// and have not yet been migrated to `core::public_id::Id<P>`. Each migration
+/// commit removes one entry; this list will reach empty when the cutover is
+/// done. See issue #156.
+///
+/// New files inherit enforcement — do not add entries here.
+const OBJECT_ID_BACKLOG: &[&str] = &[
+    "src/api/affiliates/routes.rs",
+    "src/api/apps/routes.rs",
+    "src/api/auth/middleware.rs",
+    "src/api/auth/models.rs",
+    "src/api/auth/publishable_keys/routes.rs",
+    "src/api/auth/secret_keys/routes.rs",
+    "src/api/auth/users/routes.rs",
+    "src/api/billing/stripe_webhook.rs",
+    "src/api/conversions/routes.rs",
+    "src/api/lifecycle/routes.rs",
+    "src/api/links/routes.rs",
+    "src/api/webhooks/routes.rs",
+    "src/services/affiliates/models.rs",
+    "src/services/affiliates/service.rs",
+    "src/services/analytics/service.rs",
+    "src/services/app_users/models.rs",
+    "src/services/apps/models.rs",
+    "src/services/auth/oauth/models.rs",
+    "src/services/auth/oauth/service.rs",
+    "src/services/auth/permissions/context.rs",
+    "src/services/auth/permissions/models.rs",
+    "src/services/auth/publishable_keys/models.rs",
+    "src/services/auth/secret_keys/models.rs",
+    "src/services/auth/secret_keys/service.rs",
+    "src/services/auth/sessions/models.rs",
+    "src/services/auth/sessions/service.rs",
+    "src/services/auth/tenants/models.rs",
+    "src/services/auth/tenants/service.rs",
+    "src/services/auth/usage/models.rs",
+    "src/services/auth/users/models.rs",
+    "src/services/auth/users/service.rs",
+    "src/services/billing/models.rs",
+    "src/services/billing/quota.rs",
+    "src/services/billing/repos/event_counters.rs",
+    "src/services/billing/repos/resource_counts_adapter.rs",
+    "src/services/billing/service.rs",
+    "src/services/conversions/models.rs",
+    "src/services/conversions/service.rs",
+    "src/services/domains/models.rs",
+    "src/services/install_events/models.rs",
+    "src/services/links/models.rs",
+    "src/services/links/service.rs",
+    "src/services/webhooks/dispatcher.rs",
+    "src/services/webhooks/models.rs",
+    "src/services/webhooks/service.rs",
+];
 
 /// Whether `path` is on the cleanup backlog (suppress pub-types check only).
 fn is_cleanup_backlog(path: &std::path::Path) -> bool {
@@ -612,6 +749,120 @@ fn has_requires_attribute_above(lines: &[&str], fn_line: usize) -> bool {
     false
 }
 
+// ── ObjectId-confinement scanner ──
+
+/// Files allowed to import / reference `ObjectId`. Anything else triggers
+/// `object_id_confined_to_storage_layer` (unless on `OBJECT_ID_BACKLOG`).
+const OBJECT_ID_ALLOWED_FILES: &[&str] = &[
+    "src/app.rs",
+    "src/main.rs",
+    "src/core/db.rs",
+    "src/core/public_id/mod.rs",
+];
+
+fn is_object_id_allowed(rel_str: &str) -> bool {
+    // Allowlisted exact paths.
+    if OBJECT_ID_ALLOWED_FILES.contains(&rel_str) {
+        return true;
+    }
+    // Repos and migrations own storage.
+    if rel_str.starts_with("src/migrations/") {
+        return true;
+    }
+    if rel_str.ends_with("/repo.rs") {
+        return true;
+    }
+    // Repos with sub-directories like `services/billing/repos/foo.rs` are repo files too.
+    if rel_str.contains("/repos/") {
+        return true;
+    }
+    // Sibling test files may reference any type.
+    if let Some(name) = std::path::Path::new(rel_str)
+        .file_name()
+        .and_then(|s| s.to_str())
+    {
+        if name.ends_with("_tests.rs") {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_object_id_backlog(rel_str: &str) -> bool {
+    OBJECT_ID_BACKLOG.contains(&rel_str)
+}
+
+/// Walk `dir` recursively. For every `.rs` file not on the allowlist and not
+/// on the backlog, record any `ObjectId` (whole-word) reference.
+fn scan_for_object_id(dir: &std::path::Path, manifest_dir: &str, violations: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_dir() {
+            scan_for_object_id(&path, manifest_dir, violations);
+            continue;
+        }
+        if path.extension().and_then(|s| s.to_str()) != Some("rs") {
+            continue;
+        }
+        let rel = path.strip_prefix(manifest_dir).unwrap_or(&path);
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        if is_object_id_allowed(&rel_str) || is_object_id_backlog(&rel_str) {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for (line_num, line) in content.lines().enumerate() {
+            // Strip line comments so we don't trip on doc-comments mentioning the type.
+            let code = strip_line_comment(line);
+            if contains_object_id_word(code) {
+                violations.push(format!("  {}:{}", rel_str, line_num + 1));
+            }
+        }
+    }
+}
+
+fn file_mentions_object_id(content: &str) -> bool {
+    content
+        .lines()
+        .any(|line| contains_object_id_word(strip_line_comment(line)))
+}
+
+/// Whole-word match for `ObjectId`. Rejects substrings (e.g. `MyObjectIdRef`).
+fn contains_object_id_word(s: &str) -> bool {
+    let needle = "ObjectId";
+    let bytes = s.as_bytes();
+    let nb = needle.as_bytes();
+    let mut i = 0;
+    while i + nb.len() <= bytes.len() {
+        if &bytes[i..i + nb.len()] == nb {
+            let prev_ok =
+                i == 0 || !matches!(bytes[i - 1], b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_');
+            let next = i + nb.len();
+            let next_ok = next == bytes.len()
+                || !matches!(bytes[next], b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_');
+            if prev_ok && next_ok {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Strip `//`-line comments. Naive: doesn't handle `//` inside string literals.
+/// Acceptable for this codebase — no source line has `//` inside a string before
+/// a meaningful `ObjectId` reference.
+fn strip_line_comment(line: &str) -> &str {
+    match line.find("//") {
+        Some(i) => &line[..i],
+        None => line,
+    }
+}
+
 #[cfg(test)]
 mod parser_tests {
     use super::parse_pub_type_name;
@@ -727,6 +978,70 @@ mod parser_tests {
         assert_eq!(classify_free_fn("pub const X: u32 = 1;"), None);
         assert_eq!(classify_free_fn("// pub fn commented out"), None);
         assert_eq!(classify_free_fn("let x = 1;"), None);
+    }
+
+    use super::{contains_object_id_word, is_object_id_allowed, strip_line_comment};
+
+    #[test]
+    fn word_match_accepts_standalone() {
+        assert!(contains_object_id_word("    pub id: ObjectId,"));
+        assert!(contains_object_id_word("fn foo(id: ObjectId) {"));
+        assert!(contains_object_id_word(
+            "pub tenant_id: mongodb::bson::oid::ObjectId,"
+        ));
+        assert!(contains_object_id_word("Vec<ObjectId>"));
+        assert!(contains_object_id_word("Option<ObjectId>"));
+        assert!(contains_object_id_word("ObjectId::parse_str(s)"));
+    }
+
+    #[test]
+    fn word_match_rejects_substring() {
+        assert!(!contains_object_id_word("MyObjectIdRef"));
+        assert!(!contains_object_id_word("ObjectIds"));
+        assert!(!contains_object_id_word("_ObjectId"));
+        assert!(!contains_object_id_word("foo123ObjectId"));
+    }
+
+    #[test]
+    fn strip_line_comment_works() {
+        assert_eq!(
+            strip_line_comment("pub x: i32, // ObjectId here"),
+            "pub x: i32, "
+        );
+        assert_eq!(strip_line_comment("// just a doc ObjectId"), "");
+        assert_eq!(strip_line_comment("pub id: ObjectId,"), "pub id: ObjectId,");
+    }
+
+    #[test]
+    fn allowlist_includes_repos() {
+        assert!(is_object_id_allowed("src/services/affiliates/repo.rs"));
+        assert!(is_object_id_allowed("src/services/auth/users/repo.rs"));
+        assert!(is_object_id_allowed(
+            "src/services/billing/repos/event_counters.rs"
+        ));
+    }
+
+    #[test]
+    fn allowlist_includes_migrations_and_bootstrap() {
+        assert!(is_object_id_allowed("src/migrations/m001_auth_split.rs"));
+        assert!(is_object_id_allowed("src/core/db.rs"));
+        assert!(is_object_id_allowed("src/core/public_id/mod.rs"));
+        assert!(is_object_id_allowed("src/app.rs"));
+        assert!(is_object_id_allowed("src/main.rs"));
+    }
+
+    #[test]
+    fn allowlist_includes_sibling_tests() {
+        assert!(is_object_id_allowed("src/services/billing/quota_tests.rs"));
+        assert!(is_object_id_allowed("src/services/links/service_tests.rs"));
+    }
+
+    #[test]
+    fn allowlist_excludes_transports_and_services() {
+        assert!(!is_object_id_allowed("src/api/affiliates/routes.rs"));
+        assert!(!is_object_id_allowed("src/services/affiliates/models.rs"));
+        assert!(!is_object_id_allowed("src/services/affiliates/service.rs"));
+        assert!(!is_object_id_allowed("src/mcp/models.rs"));
     }
 
     #[test]
