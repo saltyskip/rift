@@ -152,6 +152,104 @@ fn hash_consistency() {
     assert!(set.contains(&clone));
 }
 
+// ── BSON interop (the whole point of format-conditional serde) ──
+//
+// Important: `bson::to_bson` defaults to `is_human_readable() == true` in
+// bson 2.x — it's the "produce a structured Bson value" path. The actual
+// MongoDB driver uses the raw serializer (`to_raw_document_buf`, internally
+// called by `Collection::insert_one` / `find_one`), which sets
+// `is_human_readable() == false`. The driver path is what matters in production;
+// tests below exercise it.
+
+#[test]
+fn bson_raw_serializes_as_native_object_id() {
+    use mongodb::bson::{RawBsonRef, RawDocumentBuf};
+
+    #[derive(serde::Serialize)]
+    struct Holder {
+        id: AffiliateId,
+    }
+    let oid = ObjectId::parse_str("665a1b2c3d4e5f6a7b8c9d0e").unwrap();
+    let h = Holder { id: oid.into() };
+    let raw: RawDocumentBuf = mongodb::bson::to_raw_document_buf(&h).unwrap();
+    let value = raw.get("id").unwrap().unwrap();
+    match value {
+        RawBsonRef::ObjectId(got) => assert_eq!(got, oid),
+        other => panic!("expected RawBson::ObjectId, got {other:?}"),
+    }
+}
+
+#[test]
+fn bson_raw_deserializes_from_native_object_id() {
+    use mongodb::bson::doc;
+
+    #[derive(serde::Deserialize)]
+    struct Holder {
+        id: AffiliateId,
+    }
+    let oid = ObjectId::new();
+    let doc = doc! { "id": oid };
+    let bytes = mongodb::bson::to_vec(&doc).unwrap();
+    let h: Holder = mongodb::bson::from_slice(&bytes).unwrap();
+    assert_eq!(h.id.as_hex(), &oid.to_hex());
+}
+
+#[test]
+fn one_struct_serves_both_bson_and_json() {
+    // The whole pattern: a struct that's both a MongoDB doc and an HTTP response.
+    // No Doc/Response split, no conversion helpers.
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+    struct Affiliate {
+        #[serde(rename = "_id")]
+        id: AffiliateId,
+        tenant_id: TenantId,
+        name: String,
+    }
+
+    let original = Affiliate {
+        id: AffiliateId::new(),
+        tenant_id: TenantId::new(),
+        name: "Bcom".into(),
+    };
+
+    // BSON round-trip via the driver path (raw, non-human-readable).
+    let raw = mongodb::bson::to_raw_document_buf(&original).unwrap();
+    // Verify fields landed as native ObjectId, not as string.
+    assert!(matches!(
+        raw.get("_id").unwrap().unwrap(),
+        mongodb::bson::RawBsonRef::ObjectId(_)
+    ));
+    assert!(matches!(
+        raw.get("tenant_id").unwrap().unwrap(),
+        mongodb::bson::RawBsonRef::ObjectId(_)
+    ));
+    // Round-trip back.
+    let bytes = mongodb::bson::to_vec(&original).unwrap();
+    let from_bson: Affiliate = mongodb::bson::from_slice(&bytes).unwrap();
+    assert_eq!(from_bson, original);
+
+    // JSON round-trip — HTTP response path. Fields must be prefixed strings.
+    let json = serde_json::to_value(&original).unwrap();
+    assert_eq!(
+        json["_id"],
+        format!("aff_{}", original.id.as_hex()).as_str()
+    );
+    assert_eq!(
+        json["tenant_id"],
+        format!("tnt_{}", original.tenant_id.as_hex()).as_str()
+    );
+    let from_json: Affiliate = serde_json::from_value(json).unwrap();
+    assert_eq!(from_json, original);
+}
+
+#[test]
+fn new_generates_distinct_ids() {
+    let a = AffiliateId::new();
+    let b = AffiliateId::new();
+    assert_ne!(a, b);
+    assert_eq!(a.as_hex().len(), HEX_LEN);
+}
+
 // Compile-time: distinct marker types are not interchangeable.
 // fn _no_cross_assignment() {
 //     let a: AffiliateId = ObjectId::new().into();

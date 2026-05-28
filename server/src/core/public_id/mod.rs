@@ -47,6 +47,13 @@ pub struct Id<P: IdPrefix> {
 }
 
 impl<P: IdPrefix> Id<P> {
+    /// Generate a fresh `Id` backed by a new `ObjectId`. Use this when creating
+    /// a new resource that needs an ID assigned in application code (i.e. not
+    /// letting MongoDB generate `_id` on insert).
+    pub fn new() -> Self {
+        Self::from_object_id(ObjectId::new())
+    }
+
     /// Construct from a MongoDB ObjectId. Repo layer only.
     pub fn from_object_id(oid: ObjectId) -> Self {
         Self {
@@ -153,14 +160,31 @@ impl<P: IdPrefix> FromStr for Id<P> {
 
 impl<P: IdPrefix> Serialize for Id<P> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&format_args!("{}_{}", P::PREFIX, self.hex))
+        if serializer.is_human_readable() {
+            // JSON / OpenAPI / MCP wire format: prefixed string.
+            serializer.collect_str(&format_args!("{}_{}", P::PREFIX, self.hex))
+        } else {
+            // BSON (and any other binary format that opts out of human-readable):
+            // serialize as a native ObjectId so MongoDB stores `_id` in its
+            // canonical form. This is the bridge that lets a single struct serve
+            // both as a BSON document and an HTTP response.
+            let oid = ObjectId::parse_str(&self.hex).map_err(serde::ser::Error::custom)?;
+            oid.serialize(serializer)
+        }
     }
 }
 
 impl<'de, P: IdPrefix> Deserialize<'de> for Id<P> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let s = String::deserialize(deserializer)?;
-        Self::parse(&s).map_err(serde::de::Error::custom)
+        if deserializer.is_human_readable() {
+            // JSON / path params / MCP inputs: prefixed string.
+            let s = String::deserialize(deserializer)?;
+            Self::parse(&s).map_err(serde::de::Error::custom)
+        } else {
+            // BSON: native ObjectId.
+            let oid = ObjectId::deserialize(deserializer)?;
+            Ok(Self::from_object_id(oid))
+        }
     }
 }
 
