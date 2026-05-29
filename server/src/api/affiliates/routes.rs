@@ -1,7 +1,6 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -162,7 +161,7 @@ pub async fn delete_affiliate(
     post,
     path = "/v1/affiliates/{affiliate_id}/credentials",
     tag = "Affiliates",
-    params(("affiliate_id" = String, Path, description = "Affiliate ObjectId")),
+    params(("affiliate_id" = String, Path, description = "Affiliate id")),
     responses(
         (status = 201, description = "Credential minted; api_key shown once", body = CreateAffiliateCredentialResponse),
         (status = 403, description = "Caller scope cannot mint credentials", body = crate::error::ErrorResponse),
@@ -182,7 +181,11 @@ pub async fn create_affiliate_credential(
     };
 
     match svc
-        .mint_credential(&ctx, affiliate_id, auth_key.0.to_object_id())
+        .mint_credential(
+            &ctx,
+            affiliate_id,
+            crate::core::public_id::UserId::from_object_id(auth_key.0.to_object_id()),
+        )
         .await
     {
         Ok(minted) => (
@@ -208,7 +211,7 @@ pub async fn create_affiliate_credential(
     get,
     path = "/v1/affiliates/{affiliate_id}/credentials",
     tag = "Affiliates",
-    params(("affiliate_id" = String, Path, description = "Affiliate ObjectId")),
+    params(("affiliate_id" = String, Path, description = "Affiliate id")),
     responses(
         (status = 200, description = "List of credentials (no raw secrets)", body = ListAffiliateCredentialsResponse),
         (status = 404, description = "Affiliate not found", body = crate::error::ErrorResponse),
@@ -246,8 +249,8 @@ pub async fn list_affiliate_credentials(
     path = "/v1/affiliates/{affiliate_id}/credentials/{key_id}",
     tag = "Affiliates",
     params(
-        ("affiliate_id" = String, Path, description = "Affiliate ObjectId"),
-        ("key_id" = String, Path, description = "Credential ObjectId"),
+        ("affiliate_id" = String, Path, description = "Affiliate id"),
+        ("key_id" = String, Path, description = "Credential id"),
     ),
     responses(
         (status = 204, description = "Credential revoked"),
@@ -265,10 +268,7 @@ pub async fn revoke_affiliate_credential(
         return no_database();
     };
 
-    match svc
-        .revoke_credential(&ctx, affiliate_id, key_id.to_object_id())
-        .await
-    {
+    match svc.revoke_credential(&ctx, affiliate_id, key_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => affiliate_error_to_response(e),
     }
