@@ -1,6 +1,8 @@
-use mongodb::bson::{self, oid::ObjectId};
+use mongodb::bson;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+use crate::core::public_id::{AffiliateId, SecretKeyId, TenantId, UserId};
 
 /// Stored secret key (`rl_live_…`).
 ///
@@ -12,9 +14,9 @@ use std::fmt;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretKeyDoc {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub tenant_id: ObjectId,
-    pub created_by: ObjectId,
+    pub id: SecretKeyId,
+    pub tenant_id: TenantId,
+    pub created_by: UserId,
     pub key_hash: String,
     pub key_prefix: String,
     pub created_at: bson::DateTime,
@@ -36,7 +38,7 @@ pub enum KeyScope {
     /// Partner-scoped access. Key can only operate on the named affiliate's
     /// links (mint pinned to this id, read its own links). Cannot manage
     /// tenant resources.
-    Affiliate { affiliate_id: ObjectId },
+    Affiliate { affiliate_id: AffiliateId },
 }
 
 // ── Errors ──
@@ -112,15 +114,15 @@ impl SecretKeyError {
 // ── Service return types ──
 
 pub struct CreatedKey {
-    pub id: ObjectId,
+    pub id: SecretKeyId,
     pub key: String,
     pub key_prefix: String,
     pub created_at: bson::DateTime,
 }
 
 pub struct KeyDetail {
-    pub id: ObjectId,
+    pub id: SecretKeyId,
     pub key_prefix: String,
-    pub created_by: ObjectId,
+    pub created_by: UserId,
     pub created_at: bson::DateTime,
 }

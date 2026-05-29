@@ -313,7 +313,7 @@ impl LinksRepository for LinksRepo {
             .insert_one(&link)
             .await
             .map_err(|e| e.to_string())?;
-        invalidate_link_cache(&link.tenant_id, &link.link_id).await;
+        invalidate_link_cache(link.tenant_id.as_object_id(), &link.link_id).await;
         Ok(link)
     }
 
@@ -347,7 +347,7 @@ impl LinksRepository for LinksRepo {
                     .await
                     .map_err(|e| BulkInsertError::Internal(e.to_string()))?;
                 for d in &docs {
-                    invalidate_link_cache(&d.tenant_id, &d.link_id).await;
+                    invalidate_link_cache(d.tenant_id.as_object_id(), &d.link_id).await;
                 }
                 Ok(docs)
             }
@@ -467,7 +467,7 @@ impl LinksRepository for LinksRepo {
     ) -> Result<(), String> {
         let event = ClickEvent {
             meta: ClickMeta {
-                tenant_id,
+                tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
                 link_id: link_id.to_string(),
                 retention_bucket,
             },
@@ -495,7 +495,7 @@ impl LinksRepository for LinksRepo {
         let event = AttributionEvent {
             timestamp: DateTime::now(),
             meta: AttributionEventMeta {
-                tenant_id,
+                tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
                 install_id: install_id.to_string(),
                 retention_bucket,
                 user_id: user_id.map(|s| s.to_string()),
@@ -716,7 +716,7 @@ impl LinksRepository for LinksRepo {
 
 fn build_link(input: CreateLinkInput) -> Link {
     Link {
-        id: ObjectId::new(),
+        id: crate::core::public_id::LinkInternalId::new(),
         tenant_id: input.tenant_id,
         link_id: input.link_id,
         ios_deep_link: input.ios_deep_link,

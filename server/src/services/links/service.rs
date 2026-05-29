@@ -1,4 +1,3 @@
-use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
 use rift_macros::requires;
 use std::sync::Arc;
@@ -6,6 +5,7 @@ use uuid::Uuid;
 
 use super::models::*;
 use super::repo::LinksRepository;
+use crate::core::public_id::{AffiliateId, TenantId};
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
 use crate::services::affiliates::repo::AffiliatesRepository;
@@ -77,7 +77,7 @@ impl LinksService {
     /// of touching the repos directly.
     pub async fn identify_install(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         install_id: &str,
         user_id: &str,
     ) -> Result<IdentifyOutcome, LinkError> {
@@ -87,13 +87,15 @@ impl LinksService {
             return Ok(IdentifyOutcome::AlreadyPresent);
         };
 
+        let tenant_oid = tenant_id.as_object_id();
+
         // 1. Rebind guard. If the install is already bound to a different
         //    user, refuse — option B from the cutover discussion. The
         //    SDK's expected behavior is one install ↔ one user; rebinding
         //    silently would let a logged-out + re-logged-in flow on a
         //    shared device leak attribution across users.
         if let Some(existing) = app_users
-            .find_user_id_for_install(tenant_id, install_id)
+            .find_user_id_for_install(tenant_oid, install_id)
             .await
             .map_err(LinkError::Internal)?
         {
@@ -108,7 +110,7 @@ impl LinksService {
         //    the current one — this is what feeds the reinstall vs
         //    new_device classification in step 4.
         let prior_install_ids: Vec<String> =
-            match app_users.find_by_user_id(tenant_id, user_id).await {
+            match app_users.find_by_user_id(tenant_oid, user_id).await {
                 Ok(Some(existing)) => existing.install_ids,
                 Ok(None) => Vec::new(),
                 Err(e) => {
@@ -122,7 +124,7 @@ impl LinksService {
             };
 
         let upsert = app_users
-            .upsert_with_install(tenant_id, user_id, install_id)
+            .upsert_with_install(tenant_oid, user_id, install_id)
             .await
             .map_err(LinkError::Internal)?;
 
@@ -138,7 +140,7 @@ impl LinksService {
         //    doesn't fail the identify.
         match self
             .links_repo
-            .backfill_user_id_on_attribution_events(tenant_id, install_id, user_id)
+            .backfill_user_id_on_attribution_events(tenant_oid, install_id, user_id)
             .await
         {
             Ok(n) if n > 0 => {
@@ -165,14 +167,14 @@ impl LinksService {
         //    reinstall vs new_device.
         if let Some(install_events) = &self.install_events_repo {
             let current_device_model = install_events
-                .get_device_model(tenant_id, install_id)
+                .get_device_model(tenant_oid, install_id)
                 .await
                 .ok()
                 .flatten();
 
             let mut prior_device_models = Vec::with_capacity(prior_install_ids.len());
             for prior_id in &prior_install_ids {
-                if let Ok(Some(model)) = install_events.get_device_model(tenant_id, prior_id).await
+                if let Ok(Some(model)) = install_events.get_device_model(tenant_oid, prior_id).await
                 {
                     prior_device_models.push(model);
                 }
@@ -180,7 +182,7 @@ impl LinksService {
 
             if let Err(e) = install_events
                 .record_identify_lifecycle(
-                    tenant_id,
+                    tenant_oid,
                     install_id,
                     user_id,
                     &prior_install_ids,
@@ -205,7 +207,7 @@ impl LinksService {
         //    the webhook still fires with both fields absent.
         let credited_ids = self
             .links_repo
-            .credited_links_for_user(tenant_id, user_id, mongodb::bson::DateTime::now())
+            .credited_links_for_user(tenant_oid, user_id, mongodb::bson::DateTime::now())
             .await
             .unwrap_or_else(|e| {
                 tracing::warn!(
@@ -238,7 +240,7 @@ impl LinksService {
     /// path to `LinksRepository::record_click`.
     pub async fn record_click(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         link_id: &str,
         user_agent: Option<String>,
         referer: Option<String>,
@@ -258,7 +260,7 @@ impl LinksService {
         if let Err(e) = self
             .links_repo
             .record_click(
-                tenant_id,
+                tenant_id.to_object_id(),
                 link_id,
                 user_agent,
                 referer,
@@ -281,7 +283,7 @@ impl LinksService {
     /// re-querying.
     pub async fn record_attribute_event(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         link_id: &str,
         install_id: &str,
         app_version: &str,
@@ -298,13 +300,15 @@ impl LinksService {
             None => "30d".to_string(),
         };
 
+        let tenant_oid = tenant_id.to_object_id();
+
         // Resolve user_id at write time so the row doesn't need to be
         // backfilled later for already-identified installs. Best-effort —
         // a lookup failure logs and falls back to None (the next identify
         // will backfill).
         let user_id = match &self.app_users_repo {
             Some(app_users) => app_users
-                .find_user_id_for_install(&tenant_id, install_id)
+                .find_user_id_for_install(&tenant_oid, install_id)
                 .await
                 .unwrap_or_else(|e| {
                     tracing::warn!(error = %e, install_id, "app_users user_id lookup failed");
@@ -315,7 +319,7 @@ impl LinksService {
 
         self.links_repo
             .record_attribute_event(
-                tenant_id,
+                tenant_oid,
                 link_id,
                 install_id,
                 app_version,
@@ -333,7 +337,7 @@ impl LinksService {
                 ..InstallContext::default()
             });
             if let Err(e) = install_events
-                .record_attribute_lifecycle(&tenant_id, install_id, &ctx)
+                .record_attribute_lifecycle(&tenant_oid, install_id, &ctx)
                 .await
             {
                 tracing::warn!(
@@ -355,6 +359,7 @@ impl LinksService {
         req: CreateLinkRequest,
     ) -> Result<CreateLinkResponse, LinkError> {
         let tenant_id = ctx.tenant_id;
+        let tenant_oid = tenant_id.to_object_id();
         // Quota enforcement lives here (service layer) so MCP tool invocations
         // and HTTP route handlers both hit the same choke point. CLAUDE.md
         // codifies this rule — see "Quota enforcement" section there.
@@ -387,7 +392,7 @@ impl LinksService {
 
                 if self
                     .links_repo
-                    .find_link_by_tenant_and_id(&tenant_id, custom)
+                    .find_link_by_tenant_and_id(&tenant_oid, custom)
                     .await
                     .ok()
                     .flatten()
@@ -479,6 +484,7 @@ impl LinksService {
         req: BulkCreateLinksRequest,
     ) -> Result<BulkCreateLinksResponse, LinkError> {
         let tenant_id = ctx.tenant_id;
+        let tenant_oid = tenant_id.to_object_id();
         // 1. Mode — exactly one of custom_ids / count.
         let mode_ids = req.custom_ids.as_deref();
         let mode_count = req.count;
@@ -586,7 +592,7 @@ impl LinksService {
                 }
                 if self
                     .links_repo
-                    .find_link_by_tenant_and_id(&tenant_id, id)
+                    .find_link_by_tenant_and_id(&tenant_oid, id)
                     .await
                     .map_err(LinkError::Internal)?
                     .is_some()
@@ -608,7 +614,7 @@ impl LinksService {
 
         // 7. Quota gate for the whole batch.
         if let Some(q) = &self.quota {
-            q.check_n(&tenant_id, Resource::CreateLink, n as u64)
+            q.check_n(&ctx.tenant_id, Resource::CreateLink, n as u64)
                 .await?;
         }
 
@@ -681,7 +687,7 @@ impl LinksService {
     ) -> Result<LinkDetail, LinkError> {
         let link = self
             .links_repo
-            .find_link_by_tenant_and_id(&ctx.tenant_id, link_id)
+            .find_link_by_tenant_and_id(ctx.tenant_id.as_object_id(), link_id)
             .await
             .map_err(LinkError::Internal)?
             .ok_or(LinkError::NotFound)?;
@@ -689,8 +695,8 @@ impl LinksService {
         // Affiliate-scoped credentials can only read their own affiliate's
         // links. Return NotFound (not Forbidden) so the existence of links
         // belonging to other affiliates isn't disclosed.
-        if let ResourceScope::Affiliate { affiliate_id } = ctx.resource_scope {
-            if link.affiliate_id != Some(affiliate_id) {
+        if let ResourceScope::Affiliate { affiliate_id } = &ctx.resource_scope {
+            if link.affiliate_id != Some(*affiliate_id) {
                 return Err(LinkError::NotFound);
             }
         }
@@ -706,14 +712,17 @@ impl LinksService {
         limit: Option<i64>,
         cursor: Option<String>,
     ) -> Result<ListLinksResponse, LinkError> {
-        let tenant_id = &ctx.tenant_id;
         let limit = limit.unwrap_or(50).clamp(1, 100);
-        let cursor_id = cursor.and_then(|c| ObjectId::parse_str(&c).ok());
+        let cursor_id = cursor.and_then(|c| {
+            crate::core::public_id::LinkInternalId::parse(&c)
+                .ok()
+                .map(|id| id.to_object_id())
+        });
 
         // Fetch one extra to determine if there's a next page.
         let links = self
             .links_repo
-            .list_links_by_tenant(tenant_id, limit + 1, cursor_id)
+            .list_links_by_tenant(ctx.tenant_id.as_object_id(), limit + 1, cursor_id)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to list links: {e}");
@@ -724,13 +733,13 @@ impl LinksService {
         let page: Vec<&Link> = links.iter().take(limit as usize).collect();
 
         let next_cursor = if has_more {
-            page.last().map(|l| l.id.to_hex())
+            page.last().map(|l| l.id.to_string())
         } else {
             None
         };
 
         let primary_domain =
-            resolve_verified_primary_domain(self.domains_repo.as_deref(), tenant_id).await;
+            resolve_verified_primary_domain(self.domains_repo.as_deref(), &ctx.tenant_id).await;
         let details: Vec<LinkDetail> = page
             .iter()
             .map(|l| self.link_to_detail_with_domain(l, primary_domain.as_deref()))
@@ -750,7 +759,6 @@ impl LinksService {
         link_id: &str,
         req: UpdateLinkRequest,
     ) -> Result<LinkDetail, LinkError> {
-        let tenant_id = &ctx.tenant_id;
         // Flatten Option<Option<String>> to Option<&str> for validation.
         let ios_dl = req.ios_deep_link.as_ref().and_then(|v| v.as_deref());
         let android_dl = req.android_deep_link.as_ref().and_then(|v| v.as_deref());
@@ -835,7 +843,7 @@ impl LinksService {
 
         let updated = self
             .links_repo
-            .update_link(tenant_id, link_id, update, unset)
+            .update_link(ctx.tenant_id.as_object_id(), link_id, update, unset)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to update link: {e}");
@@ -850,7 +858,7 @@ impl LinksService {
         // the caller's update was already authorized at the macro layer.
         let link = self
             .links_repo
-            .find_link_by_tenant_and_id(tenant_id, link_id)
+            .find_link_by_tenant_and_id(ctx.tenant_id.as_object_id(), link_id)
             .await
             .map_err(LinkError::Internal)?
             .ok_or(LinkError::NotFound)?;
@@ -862,13 +870,13 @@ impl LinksService {
     /// No click recording, no landing page — the alternate domain is a Universal Link trampoline.
     pub async fn resolve_alternate(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_id: &str,
         user_agent: &str,
     ) -> Result<String, LinkError> {
         let link = self
             .links_repo
-            .find_link_by_tenant_and_id(tenant_id, link_id)
+            .find_link_by_tenant_and_id(tenant_id.as_object_id(), link_id)
             .await
             .map_err(LinkError::Internal)?
             .ok_or(LinkError::NotFound)?;
@@ -893,7 +901,7 @@ impl LinksService {
     pub async fn delete_link(&self, ctx: &AuthContext, link_id: &str) -> Result<(), LinkError> {
         let deleted = self
             .links_repo
-            .delete_link(&ctx.tenant_id, link_id)
+            .delete_link(ctx.tenant_id.as_object_id(), link_id)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to delete link: {e}");
@@ -933,11 +941,11 @@ impl LinksService {
         }
     }
 
-    async fn tenant_has_verified_domain(&self, tenant_id: &ObjectId) -> bool {
+    async fn tenant_has_verified_domain(&self, tenant_id: &TenantId) -> bool {
         let Some(ref repo) = self.domains_repo else {
             return false;
         };
-        repo.list_by_tenant(tenant_id)
+        repo.list_by_tenant(tenant_id.as_object_id())
             .await
             .ok()
             .map(|domains| domains.iter().any(|d| d.verified))
@@ -949,10 +957,10 @@ impl LinksService {
     /// `create_link` for the full matrix.
     async fn resolve_affiliate_id(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         resource_scope: &ResourceScope,
-        requested: Option<ObjectId>,
-    ) -> Result<Option<ObjectId>, LinkError> {
+        requested: Option<AffiliateId>,
+    ) -> Result<Option<AffiliateId>, LinkError> {
         match (resource_scope, requested) {
             // Affiliate-scoped credential — server pins to scope; reject mismatch.
             (ResourceScope::Affiliate { affiliate_id }, None) => Ok(Some(*affiliate_id)),
@@ -979,7 +987,7 @@ impl LinksService {
         }
     }
 
-    pub async fn canonical_url(&self, tenant_id: &ObjectId, link_id: &str) -> String {
+    pub async fn canonical_url(&self, tenant_id: &TenantId, link_id: &str) -> String {
         let domain = resolve_verified_primary_domain(self.domains_repo.as_deref(), tenant_id).await;
         build_canonical_link_url(&self.public_url, link_id, domain.as_deref())
     }
@@ -995,15 +1003,15 @@ impl LinksService {
 /// dispatch over a stale cache miss.
 pub async fn enrich_credited_with_metadata(
     links_repo: &dyn LinksRepository,
-    tenant_id: &ObjectId,
+    tenant_id: &TenantId,
     mut credited: CreditedLinks,
 ) -> CreditedLinks {
     async fn fetch_metadata(
         repo: &dyn LinksRepository,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_id: &str,
     ) -> Option<serde_json::Value> {
-        repo.find_link_by_tenant_and_id(tenant_id, link_id)
+        repo.find_link_by_tenant_and_id(tenant_id.as_object_id(), link_id)
             .await
             .unwrap_or_else(|e| {
                 tracing::warn!(error = %e, link_id, "credited link metadata lookup failed");
@@ -1044,10 +1052,10 @@ pub fn build_canonical_link_url(
 
 pub async fn resolve_verified_primary_domain(
     domains_repo: Option<&dyn DomainsRepository>,
-    tenant_id: &ObjectId,
+    tenant_id: &TenantId,
 ) -> Option<String> {
     let repo = domains_repo?;
-    repo.list_by_tenant(tenant_id)
+    repo.list_by_tenant(tenant_id.as_object_id())
         .await
         .ok()?
         .into_iter()

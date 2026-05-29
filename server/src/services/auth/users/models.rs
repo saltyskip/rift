@@ -1,10 +1,11 @@
 //! Data types for `services/auth/users/` — DB document, error enum, service
 //! return types.
 
-use mongodb::bson::{self, oid::ObjectId};
+use mongodb::bson;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::core::public_id::{TenantId, UserId};
 use crate::services::auth::permissions::AuthzError;
 use crate::services::billing::quota::QuotaError;
 
@@ -13,8 +14,8 @@ use crate::services::billing::quota::QuotaError;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserDoc {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
-    pub tenant_id: ObjectId,
+    pub id: Option<UserId>,
+    pub tenant_id: TenantId,
     pub email: String,
     pub verified: bool,
     pub is_owner: bool,
@@ -80,17 +81,17 @@ impl UserError {
 // ── Service return types ──
 
 pub struct VerifyResult {
-    pub tenant_id: ObjectId,
+    pub tenant_id: TenantId,
     pub email: String,
 }
 
 pub struct InviteResult {
-    pub user_id: ObjectId,
+    pub user_id: UserId,
     pub email: String,
 }
 
 pub struct UserDetail {
-    pub id: ObjectId,
+    pub id: UserId,
     pub email: String,
     pub verified: bool,
     pub is_owner: bool,

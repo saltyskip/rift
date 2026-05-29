@@ -2,7 +2,6 @@ use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -51,10 +50,13 @@ pub async fn create_source(
             .into_response();
     }
 
-    match repo.create_source(tenant.0, name, req.source_type).await {
+    match repo
+        .create_source(tenant.to_object_id(), name, req.source_type)
+        .await
+    {
         Ok(source) => {
             let resp = CreateSourceResponse {
-                id: source.id.to_hex(),
+                id: source.id,
                 name: source.name.clone(),
                 source_type: source.source_type.clone(),
                 webhook_url: webhook_url_for(&state, &source.url_token),
@@ -111,7 +113,7 @@ pub async fn list_sources(
             .into_response();
     };
 
-    let mut sources = match repo.list_sources(&tenant.0).await {
+    let mut sources = match repo.list_sources(&tenant.to_object_id()).await {
         Ok(s) => s,
         Err(e) => {
             tracing::error!(error = %e, "Failed to list sources");
@@ -126,7 +128,10 @@ pub async fn list_sources(
     // Auto-provision a default custom source if the tenant has none. This is the
     // zero-ceremony dev flow: first GET returns a usable webhook URL immediately.
     if sources.is_empty() {
-        match repo.get_or_create_default_custom_source(tenant.0).await {
+        match repo
+            .get_or_create_default_custom_source(tenant.to_object_id())
+            .await
+        {
             Ok(source) => sources.push(source),
             Err(e) => {
                 tracing::error!(error = %e, "Failed to auto-provision default source");
@@ -160,7 +165,7 @@ pub async fn list_sources(
 pub async fn get_source(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(id): Path<String>,
+    Path(id): Path<crate::core::public_id::SourceId>,
 ) -> Response {
     let Some(repo) = &state.conversions_repo else {
         return (
@@ -170,15 +175,10 @@ pub async fn get_source(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&id) else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Source not found", "code": "not_found" })),
-        )
-            .into_response();
-    };
-
-    match repo.find_source_by_id(&tenant.0, &oid).await {
+    match repo
+        .find_source_by_id(&tenant.to_object_id(), &id.to_object_id())
+        .await
+    {
         Ok(Some(source)) => Json(to_detail(&state, &source)).into_response(),
         Ok(None) => (
             StatusCode::NOT_FOUND,
@@ -213,7 +213,7 @@ pub async fn get_source(
 pub async fn delete_source(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(id): Path<String>,
+    Path(id): Path<crate::core::public_id::SourceId>,
 ) -> Response {
     let Some(repo) = &state.conversions_repo else {
         return (
@@ -223,15 +223,10 @@ pub async fn delete_source(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&id) else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Source not found", "code": "not_found" })),
-        )
-            .into_response();
-    };
-
-    match repo.delete_source(&tenant.0, &oid).await {
+    match repo
+        .delete_source(&tenant.to_object_id(), &id.to_object_id())
+        .await
+    {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,
@@ -360,7 +355,7 @@ pub async fn sdk_track_conversion(
         occurred_at: None,
     }];
 
-    let result = service.ingest_sdk_event(tenant.0, parsed).await;
+    let result = service.ingest_sdk_event(tenant, parsed).await;
 
     Json(json!({
         "accepted": result.accepted,
@@ -383,7 +378,7 @@ fn webhook_url_for(state: &AppState, url_token: &str) -> String {
 
 fn to_detail(state: &AppState, source: &Source) -> SourceDetail {
     SourceDetail {
-        id: source.id.to_hex(),
+        id: source.id,
         name: source.name.clone(),
         source_type: source.source_type.clone(),
         webhook_url: webhook_url_for(state, &source.url_token),

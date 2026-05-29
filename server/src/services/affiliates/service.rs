@@ -1,4 +1,3 @@
-use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
 use rift_macros::requires;
 use std::sync::Arc;
@@ -8,6 +7,7 @@ use super::models::{
     MAX_CREDENTIALS_PER_AFFILIATE,
 };
 use super::repo::AffiliatesRepository;
+use crate::core::public_id::{AffiliateId, SecretKeyId, UserId};
 use crate::services::auth::permissions::{AuthContext, Permission};
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::auth::secret_keys::service::mint_scoped;
@@ -66,7 +66,7 @@ impl AffiliatesService {
 
         let now = DateTime::now();
         let affiliate = Affiliate {
-            id: ObjectId::new(),
+            id: AffiliateId::new(),
             tenant_id: ctx.tenant_id,
             name,
             partner_key: partner_key.clone(),
@@ -90,7 +90,7 @@ impl AffiliatesService {
     pub async fn get_affiliate(
         &self,
         ctx: &AuthContext,
-        affiliate_id: ObjectId,
+        affiliate_id: AffiliateId,
     ) -> Result<Affiliate, AffiliateError> {
         self.repo
             .get_by_id(&ctx.tenant_id, &affiliate_id)
@@ -114,7 +114,7 @@ impl AffiliatesService {
     pub async fn update_affiliate(
         &self,
         ctx: &AuthContext,
-        affiliate_id: ObjectId,
+        affiliate_id: AffiliateId,
         req: UpdateAffiliateRequest,
     ) -> Result<Affiliate, AffiliateError> {
         if req.name.is_none() && req.status.is_none() {
@@ -156,8 +156,8 @@ impl AffiliatesService {
     pub async fn mint_credential(
         &self,
         ctx: &AuthContext,
-        affiliate_id: ObjectId,
-        created_by: ObjectId,
+        affiliate_id: AffiliateId,
+        created_by: UserId,
     ) -> Result<MintedCredential, AffiliateError> {
         // Affiliate must exist in this tenant.
         self.repo
@@ -168,9 +168,10 @@ impl AffiliatesService {
 
         // Per-affiliate cap. Counted at the repo level via the scope filter
         // so a compromised tenant key can't spam unbounded credentials.
+        let aff_oid = affiliate_id.to_object_id();
         let existing = self
             .secret_keys_repo
-            .list_by_tenant_and_affiliate(&ctx.tenant_id, &affiliate_id)
+            .list_by_tenant_and_affiliate(ctx.tenant_id.as_object_id(), &aff_oid)
             .await
             .map_err(AffiliateError::Internal)?;
         if existing.len() >= MAX_CREDENTIALS_PER_AFFILIATE {
@@ -199,7 +200,7 @@ impl AffiliatesService {
     pub async fn list_credentials(
         &self,
         ctx: &AuthContext,
-        affiliate_id: ObjectId,
+        affiliate_id: AffiliateId,
     ) -> Result<Vec<crate::services::auth::secret_keys::repo::SecretKeyDoc>, AffiliateError> {
         // Affiliate must exist (404 vs empty list — different semantics).
         self.repo
@@ -209,7 +210,10 @@ impl AffiliatesService {
             .ok_or(AffiliateError::NotFound)?;
 
         self.secret_keys_repo
-            .list_by_tenant_and_affiliate(&ctx.tenant_id, &affiliate_id)
+            .list_by_tenant_and_affiliate(
+                ctx.tenant_id.as_object_id(),
+                &affiliate_id.to_object_id(),
+            )
             .await
             .map_err(AffiliateError::Internal)
     }
@@ -220,8 +224,8 @@ impl AffiliatesService {
     pub async fn revoke_credential(
         &self,
         ctx: &AuthContext,
-        affiliate_id: ObjectId,
-        key_id: ObjectId,
+        affiliate_id: AffiliateId,
+        key_id: SecretKeyId,
     ) -> Result<(), AffiliateError> {
         // Surface affiliate-not-found distinctly from credential-not-found.
         self.repo
@@ -232,7 +236,11 @@ impl AffiliatesService {
 
         let deleted = self
             .secret_keys_repo
-            .delete_affiliate_credential(&ctx.tenant_id, &affiliate_id, &key_id)
+            .delete_affiliate_credential(
+                ctx.tenant_id.as_object_id(),
+                &affiliate_id.to_object_id(),
+                &key_id.to_object_id(),
+            )
             .await
             .map_err(AffiliateError::Internal)?;
 
@@ -252,7 +260,7 @@ impl AffiliatesService {
     pub async fn delete_affiliate(
         &self,
         ctx: &AuthContext,
-        affiliate_id: ObjectId,
+        affiliate_id: AffiliateId,
     ) -> Result<(), AffiliateError> {
         let deleted = self
             .repo

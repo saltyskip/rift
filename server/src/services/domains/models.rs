@@ -1,6 +1,8 @@
-use mongodb::bson::{oid::ObjectId, DateTime};
+use mongodb::bson::DateTime;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::core::public_id::{DomainId, TenantId};
 
 // ── Database Document ──
 
@@ -20,8 +22,8 @@ pub enum DomainRole {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Domain {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub tenant_id: ObjectId,
+    pub id: DomainId,
+    pub tenant_id: TenantId,
     /// Fully qualified domain name (e.g. "go.tablefour.com").
     pub domain: String,
     pub verified: bool,

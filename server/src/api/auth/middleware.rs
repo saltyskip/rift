@@ -3,14 +3,13 @@ use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Json, Response};
 use axum_extra::headers::{Cookie, HeaderMapExt};
-use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use x402_axum::paygate::PaygateProtocol;
 use x402_types::proto::v1;
 
-use super::models::{AuthKeyId, SdkDomain, SessionId, TenantId, UserId};
+use super::models::{AuthKeyId, SdkDomain};
 use crate::app::AppState;
 use crate::services::auth::keys;
 use crate::services::auth::permissions::AuthContext;
@@ -64,7 +63,7 @@ pub async fn auth_gate(
         }
 
         // Inject tenant identity, key identity, and scope for downstream handlers.
-        req.extensions_mut().insert(TenantId(tenant_id));
+        req.extensions_mut().insert(tenant_id);
         req.extensions_mut().insert(AuthKeyId(key_id));
         req.extensions_mut().insert(AuthContext::for_secret_key(
             tenant_id,
@@ -214,9 +213,9 @@ pub async fn session_auth_gate(
 
     match svc.lookup(&raw_token).await {
         Ok(Some(resolved)) => {
-            req.extensions_mut().insert(TenantId(resolved.tenant_id));
-            req.extensions_mut().insert(UserId(resolved.user_id));
-            req.extensions_mut().insert(SessionId(resolved.session_id));
+            req.extensions_mut().insert(resolved.tenant_id);
+            req.extensions_mut().insert(resolved.user_id);
+            req.extensions_mut().insert(resolved.session_id);
             req.extensions_mut().insert(AuthContext::for_session(
                 resolved.tenant_id,
                 resolved.user_id,
@@ -271,9 +270,9 @@ pub async fn session_or_key_auth_gate(
     {
         match svc.lookup(&raw_token).await {
             Ok(Some(resolved)) => {
-                req.extensions_mut().insert(TenantId(resolved.tenant_id));
-                req.extensions_mut().insert(UserId(resolved.user_id));
-                req.extensions_mut().insert(SessionId(resolved.session_id));
+                req.extensions_mut().insert(resolved.tenant_id);
+                req.extensions_mut().insert(resolved.user_id);
+                req.extensions_mut().insert(resolved.session_id);
                 req.extensions_mut().insert(AuthContext::for_session(
                     resolved.tenant_id,
                     resolved.user_id,
@@ -325,7 +324,7 @@ pub async fn session_or_key_auth_gate(
             }
         }
 
-        req.extensions_mut().insert(TenantId(tenant_id));
+        req.extensions_mut().insert(tenant_id);
         req.extensions_mut().insert(AuthKeyId(key_id));
         req.extensions_mut().insert(AuthContext::for_secret_key(
             tenant_id,
@@ -444,7 +443,7 @@ pub async fn sdk_auth_gate(
             .into_response();
     }
 
-    req.extensions_mut().insert(TenantId(doc.tenant_id));
+    req.extensions_mut().insert(doc.tenant_id);
     req.extensions_mut().insert(SdkDomain(doc.domain));
 
     next.run(req).await
@@ -495,7 +494,14 @@ fn extract_sdk_query_key(req: &Request) -> Option<String> {
 async fn validate_api_key(
     secret_keys_repo: Option<&dyn SecretKeysRepository>,
     raw_key: &str,
-) -> Result<(ObjectId, ObjectId, Option<KeyScope>), Response> {
+) -> Result<
+    (
+        crate::core::public_id::TenantId,
+        crate::core::public_id::SecretKeyId,
+        Option<KeyScope>,
+    ),
+    Response,
+> {
     let hash = keys::hash_key(raw_key);
 
     let sk_repo = secret_keys_repo.ok_or_else(|| {

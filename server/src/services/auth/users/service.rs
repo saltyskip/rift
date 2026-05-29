@@ -1,4 +1,4 @@
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::doc;
 use rift_macros::requires;
 use std::sync::Arc;
 
@@ -51,7 +51,13 @@ impl UsersService {
     pub async fn create_tenant_with_verified_owner(
         &self,
         email: &str,
-    ) -> Result<(ObjectId, ObjectId), UserError> {
+    ) -> Result<
+        (
+            crate::core::public_id::TenantId,
+            crate::core::public_id::UserId,
+        ),
+        UserError,
+    > {
         let email = validate_email(email).map_err(|_| UserError::InvalidEmail)?;
 
         let tenant_id = self
@@ -60,7 +66,7 @@ impl UsersService {
             .await
             .map_err(UserError::Internal)?;
 
-        let user_id = ObjectId::new();
+        let user_id = crate::core::public_id::UserId::new();
         let user_doc = UserDoc {
             id: Some(user_id),
             tenant_id,
@@ -130,7 +136,7 @@ impl UsersService {
 
         if self
             .users_repo
-            .find_by_tenant_and_email(&ctx.tenant_id, &email)
+            .find_by_tenant_and_email(ctx.tenant_id.as_object_id(), &email)
             .await
             .map_err(UserError::Internal)?
             .is_some()
@@ -143,7 +149,7 @@ impl UsersService {
             q.check(&ctx.tenant_id, Resource::InviteTeamMember).await?;
         }
 
-        let user_id = ObjectId::new();
+        let user_id = crate::core::public_id::UserId::new();
         let user_doc = UserDoc {
             id: Some(user_id),
             tenant_id: ctx.tenant_id,
@@ -200,14 +206,14 @@ impl UsersService {
     pub async fn list(&self, ctx: &AuthContext) -> Result<Vec<UserDetail>, UserError> {
         let docs = self
             .users_repo
-            .list_by_tenant(&ctx.tenant_id)
+            .list_by_tenant(ctx.tenant_id.as_object_id())
             .await
             .map_err(UserError::Internal)?;
 
         Ok(docs
             .into_iter()
             .map(|d| UserDetail {
-                id: d.id.unwrap_or_else(ObjectId::new),
+                id: d.id.unwrap_or_else(crate::core::public_id::UserId::new),
                 email: d.email,
                 verified: d.verified,
                 is_owner: d.is_owner,
@@ -218,10 +224,14 @@ impl UsersService {
 
     /// Delete a user. Guard: can't remove last verified user.
     #[requires(Permission::TenantAdmin)]
-    pub async fn delete(&self, ctx: &AuthContext, user_id: ObjectId) -> Result<(), UserError> {
+    pub async fn delete(
+        &self,
+        ctx: &AuthContext,
+        user_id: crate::core::public_id::UserId,
+    ) -> Result<(), UserError> {
         let count = self
             .users_repo
-            .count_verified_by_tenant(&ctx.tenant_id)
+            .count_verified_by_tenant(ctx.tenant_id.as_object_id())
             .await
             .map_err(UserError::Internal)?;
 
@@ -231,7 +241,7 @@ impl UsersService {
 
         let deleted = self
             .users_repo
-            .delete(&ctx.tenant_id, &user_id)
+            .delete(ctx.tenant_id.as_object_id(), &user_id.to_object_id())
             .await
             .map_err(UserError::Internal)?;
 

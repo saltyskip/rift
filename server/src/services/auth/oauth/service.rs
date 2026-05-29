@@ -15,7 +15,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::doc;
 use rand::Rng;
 use reqwest::Client;
 use sha2::{Digest, Sha256};
@@ -227,7 +227,7 @@ impl OauthService {
             .map_err(OauthError::Internal)?
         {
             Some(user) => {
-                let user_id = user.id.unwrap_or_else(ObjectId::new);
+                let user_id = user.id.unwrap_or_else(crate::core::public_id::UserId::new);
                 if !user.verified {
                     let _ = self.users_repo.mark_verified(&info.email).await;
                 }

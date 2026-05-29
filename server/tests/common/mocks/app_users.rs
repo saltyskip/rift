@@ -23,7 +23,7 @@ impl AppUsersRepository for MockAppUsersRepo {
         let mut rows = self.rows.lock().unwrap();
         if let Some(row) = rows
             .iter_mut()
-            .find(|r| &r.tenant_id == tenant_id && r.user_id == user_id)
+            .find(|r| r.tenant_id.to_object_id() == *tenant_id && r.user_id == user_id)
         {
             if row.install_ids.iter().any(|i| i == install_id) {
                 Ok(AppUserUpsert::AlreadyPresent)
@@ -33,8 +33,8 @@ impl AppUsersRepository for MockAppUsersRepo {
             }
         } else {
             rows.push(AppUserDoc {
-                id: Some(ObjectId::new()),
-                tenant_id: *tenant_id,
+                id: Some(rift::core::public_id::AppUserId::new()),
+                tenant_id: rift::core::public_id::TenantId::from_object_id(*tenant_id),
                 user_id: user_id.to_string(),
                 install_ids: vec![install_id.to_string()],
                 identified_at: mongodb::bson::DateTime::now(),
@@ -60,7 +60,7 @@ impl AppUsersRepository for MockAppUsersRepo {
         let rows = self.rows.lock().unwrap();
         Ok(rows
             .iter()
-            .find(|r| &r.tenant_id == tenant_id && r.user_id == user_id)
+            .find(|r| r.tenant_id.to_object_id() == *tenant_id && r.user_id == user_id)
             .cloned())
     }
 
@@ -72,7 +72,10 @@ impl AppUsersRepository for MockAppUsersRepo {
         let rows = self.rows.lock().unwrap();
         Ok(rows
             .iter()
-            .find(|r| &r.tenant_id == tenant_id && r.install_ids.iter().any(|i| i == install_id))
+            .find(|r| {
+                r.tenant_id.to_object_id() == *tenant_id
+                    && r.install_ids.iter().any(|i| i == install_id)
+            })
             .map(|r| r.user_id.clone()))
     }
 }

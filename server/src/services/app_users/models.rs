@@ -9,14 +9,16 @@
 //! distinct concepts — Rift's customers are tenants, their team members are
 //! `users`, and the end-users of the customer's app are `app_users`.
 
-use mongodb::bson::{oid::ObjectId, DateTime};
+use mongodb::bson::DateTime;
 use serde::{Deserialize, Serialize};
+
+use crate::core::public_id::{AppUserId, TenantId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppUserDoc {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
-    pub tenant_id: ObjectId,
+    pub id: Option<AppUserId>,
+    pub tenant_id: TenantId,
     /// Customer-supplied identifier for the end-user. Unique within tenant.
     pub user_id: String,
     /// Every install_id ever bound to this user. Accumulates over time as

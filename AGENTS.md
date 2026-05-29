@@ -19,9 +19,9 @@ The API layer uses a **vertical slice architecture**:
 
 ## Multi-Tenancy
 
-All link data is scoped by `tenant_id` (the API key's ObjectId). The auth middleware injects
-a `TenantId` extension into the request on successful API key validation. Route handlers
-extract it via `Extension<TenantId>`.
+All link data is scoped by `tenant_id` (a prefixed `tnt_<24hex>` public id; see
+`core::public_id::TenantId`). The auth middleware injects a `TenantId` extension into the
+request on successful API key validation. Route handlers extract it via `Extension<TenantId>`.
 
 Public endpoints (landing page, attribution reporting) resolve the tenant from the link_id itself.
 

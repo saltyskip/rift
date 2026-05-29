@@ -33,7 +33,7 @@ impl SdkKeysRepository for MockSdkKeysRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|k| &k.tenant_id == tenant_id && !k.revoked)
+            .filter(|k| k.tenant_id.to_object_id() == *tenant_id && !k.revoked)
             .cloned()
             .collect())
     }
@@ -42,7 +42,7 @@ impl SdkKeysRepository for MockSdkKeysRepo {
         let mut keys = self.keys.lock().unwrap();
         if let Some(key) = keys
             .iter_mut()
-            .find(|k| &k.id == key_id && &k.tenant_id == tenant_id)
+            .find(|k| k.id.to_object_id() == *key_id && k.tenant_id.to_object_id() == *tenant_id)
         {
             key.revoked = true;
             Ok(true)

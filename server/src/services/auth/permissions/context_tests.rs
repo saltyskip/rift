@@ -1,9 +1,13 @@
 use super::super::models::{AuthContext, AuthzError, Permission, Principal, ResourceScope, Scopes};
+use crate::core::public_id::{TenantId, UserId};
 use crate::services::auth::secret_keys::repo::KeyScope;
-use mongodb::bson::oid::ObjectId;
 
 fn user_ctx() -> AuthContext {
-    AuthContext::for_session(ObjectId::new(), ObjectId::new(), ObjectId::new())
+    AuthContext::for_session(
+        TenantId::new(),
+        UserId::new(),
+        crate::core::public_id::AuthSessionId::new(),
+    )
 }
 
 #[test]
@@ -16,22 +20,30 @@ fn session_has_full_scope() {
 
 #[test]
 fn secret_key_full_has_full_scope() {
-    let ctx = AuthContext::for_secret_key(ObjectId::new(), ObjectId::new(), Some(&KeyScope::Full));
+    let ctx = AuthContext::for_secret_key(
+        TenantId::new(),
+        crate::core::public_id::SecretKeyId::new(),
+        Some(&KeyScope::Full),
+    );
     assert!(ctx.require(Permission::AffiliatesWrite).is_ok());
 }
 
 #[test]
 fn secret_key_missing_scope_grandfathered_to_full() {
-    let ctx = AuthContext::for_secret_key(ObjectId::new(), ObjectId::new(), None);
+    let ctx = AuthContext::for_secret_key(
+        TenantId::new(),
+        crate::core::public_id::SecretKeyId::new(),
+        None,
+    );
     assert!(ctx.require(Permission::WebhooksWrite).is_ok());
 }
 
 #[test]
 fn secret_key_affiliate_has_only_links_scope() {
-    let affiliate_id = ObjectId::new();
+    let affiliate_id = crate::core::public_id::AffiliateId::new();
     let ctx = AuthContext::for_secret_key(
-        ObjectId::new(),
-        ObjectId::new(),
+        TenantId::new(),
+        crate::core::public_id::SecretKeyId::new(),
         Some(&KeyScope::Affiliate { affiliate_id }),
     );
     assert!(ctx.require(Permission::LinksRead).is_ok());
@@ -40,18 +52,19 @@ fn secret_key_affiliate_has_only_links_scope() {
         ctx.require(Permission::AffiliatesWrite).unwrap_err(),
         AuthzError::MissingPermission(Permission::AffiliatesWrite)
     );
-    assert!(
-        matches!(ctx.resource_scope, ResourceScope::Affiliate { affiliate_id: a } if a == affiliate_id)
-    );
+    assert!(matches!(
+        ctx.resource_scope,
+        ResourceScope::Affiliate { affiliate_id: a } if a == affiliate_id
+    ));
 }
 
 #[test]
 fn require_any_succeeds_if_one_matches() {
     let ctx = AuthContext::for_secret_key(
-        ObjectId::new(),
-        ObjectId::new(),
+        TenantId::new(),
+        crate::core::public_id::SecretKeyId::new(),
         Some(&KeyScope::Affiliate {
-            affiliate_id: ObjectId::new(),
+            affiliate_id: crate::core::public_id::AffiliateId::new(),
         }),
     );
     assert!(ctx
@@ -62,10 +75,10 @@ fn require_any_succeeds_if_one_matches() {
 #[test]
 fn require_any_fails_when_none_match() {
     let ctx = AuthContext::for_secret_key(
-        ObjectId::new(),
-        ObjectId::new(),
+        TenantId::new(),
+        crate::core::public_id::SecretKeyId::new(),
         Some(&KeyScope::Affiliate {
-            affiliate_id: ObjectId::new(),
+            affiliate_id: crate::core::public_id::AffiliateId::new(),
         }),
     );
     let err = ctx
@@ -79,7 +92,11 @@ fn principal_carries_correct_kind() {
     let session = user_ctx();
     assert!(matches!(session.principal, Principal::User { .. }));
 
-    let key = AuthContext::for_secret_key(ObjectId::new(), ObjectId::new(), Some(&KeyScope::Full));
+    let key = AuthContext::for_secret_key(
+        TenantId::new(),
+        crate::core::public_id::SecretKeyId::new(),
+        Some(&KeyScope::Full),
+    );
     assert!(matches!(key.principal, Principal::SecretKey { .. }));
 }
 

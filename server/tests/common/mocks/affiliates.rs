@@ -1,8 +1,8 @@
 use async_trait::async_trait;
-use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
 use std::sync::Mutex;
 
+use rift::core::public_id::{AffiliateId, TenantId};
 use rift::services::affiliates::models::{Affiliate, AffiliateStatus};
 use rift::services::affiliates::repo::AffiliatesRepository;
 
@@ -15,7 +15,6 @@ pub struct MockAffiliatesRepo {
 impl AffiliatesRepository for MockAffiliatesRepo {
     async fn create_affiliate(&self, affiliate: &Affiliate) -> Result<(), String> {
         let mut store = self.affiliates.lock().unwrap();
-        // Mirror the unique compound index: (tenant_id, partner_key).
         if store
             .iter()
             .any(|a| a.tenant_id == affiliate.tenant_id && a.partner_key == affiliate.partner_key)
@@ -28,8 +27,8 @@ impl AffiliatesRepository for MockAffiliatesRepo {
 
     async fn get_by_id(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
     ) -> Result<Option<Affiliate>, String> {
         Ok(self
             .affiliates
@@ -42,7 +41,7 @@ impl AffiliatesRepository for MockAffiliatesRepo {
 
     async fn find_by_partner_key(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         partner_key: &str,
     ) -> Result<Option<Affiliate>, String> {
         Ok(self
@@ -54,7 +53,7 @@ impl AffiliatesRepository for MockAffiliatesRepo {
             .cloned())
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Affiliate>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<Affiliate>, String> {
         let mut affiliates: Vec<Affiliate> = self
             .affiliates
             .lock()
@@ -63,12 +62,11 @@ impl AffiliatesRepository for MockAffiliatesRepo {
             .filter(|a| &a.tenant_id == tenant_id)
             .cloned()
             .collect();
-        // Match production sort: created_at desc.
         affiliates.sort_by_key(|a| std::cmp::Reverse(a.created_at));
         Ok(affiliates)
     }
 
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String> {
         Ok(self
             .affiliates
             .lock()
@@ -80,8 +78,8 @@ impl AffiliatesRepository for MockAffiliatesRepo {
 
     async fn update_affiliate(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
         name: Option<&str>,
         status: Option<AffiliateStatus>,
         now: DateTime,
@@ -105,8 +103,8 @@ impl AffiliatesRepository for MockAffiliatesRepo {
 
     async fn delete_affiliate(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
     ) -> Result<bool, String> {
         let mut store = self.affiliates.lock().unwrap();
         let len = store.len();

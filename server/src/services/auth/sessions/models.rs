@@ -1,9 +1,11 @@
 //! Data types for `services/auth/sessions/` — DB document, error enum,
 //! service config + return types.
 
-use mongodb::bson::{self, oid::ObjectId};
+use mongodb::bson;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+use crate::core::public_id::{AuthSessionId, TenantId, UserId};
 
 // ── DB Document ──
 
@@ -12,9 +14,9 @@ use std::fmt;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionDoc {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub user_id: ObjectId,
-    pub tenant_id: ObjectId,
+    pub id: AuthSessionId,
+    pub user_id: UserId,
+    pub tenant_id: TenantId,
     /// SHA-256 of the raw opaque token. The raw token only ever exists in the
     /// `Set-Cookie` header and in the client browser.
     pub token_hash: String,
@@ -44,9 +46,9 @@ pub struct SessionsConfig {
 /// Resolved session lookup — what session middleware injects.
 #[derive(Debug, Clone)]
 pub struct ResolvedSession {
-    pub session_id: ObjectId,
-    pub user_id: ObjectId,
-    pub tenant_id: ObjectId,
+    pub session_id: AuthSessionId,
+    pub user_id: UserId,
+    pub tenant_id: TenantId,
 }
 
 /// Returned from `consume_sign_in` — the raw cookie value to set, the
@@ -55,8 +57,8 @@ pub struct ResolvedSession {
 /// `OriginMatcher` allowlist).
 pub struct SignInOutcome {
     pub raw_token: String,
-    pub user_id: ObjectId,
-    pub tenant_id: ObjectId,
+    pub user_id: UserId,
+    pub tenant_id: TenantId,
     pub origin: Option<String>,
     /// Same-origin path captured at signin time and validated against
     /// the request's `Origin` (or `marketing_url`). The callback prefers

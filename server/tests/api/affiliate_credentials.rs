@@ -43,7 +43,9 @@ async fn mint_credential_with_scoped_caller_is_forbidden() {
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;
     let aff = create_affiliate(&app, &key).await;
-    let aff_oid = mongodb::bson::oid::ObjectId::parse_str(&aff).unwrap();
+    let aff_oid = rift::core::public_id::AffiliateId::parse(&aff)
+        .unwrap()
+        .to_object_id();
 
     let partner_key = common::seed_affiliate_scoped_key(
         &app,
@@ -263,7 +265,9 @@ async fn scoped_key_creates_link_pinned_to_affiliate() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;
     let aff = create_affiliate(&app, &key).await;
-    let aff_oid = mongodb::bson::oid::ObjectId::parse_str(&aff).unwrap();
+    let aff_oid = rift::core::public_id::AffiliateId::parse(&aff)
+        .unwrap()
+        .to_object_id();
 
     let mint = app
         .client
@@ -303,7 +307,10 @@ async fn scoped_key_creates_link_pinned_to_affiliate() {
         .find(|l| l.link_id == link_id)
         .cloned()
         .unwrap();
-    assert_eq!(stored.affiliate_id, Some(aff_oid));
+    assert_eq!(
+        stored.affiliate_id,
+        Some(rift::core::public_id::AffiliateId::from_object_id(aff_oid))
+    );
 }
 
 #[tokio::test]
@@ -325,7 +332,7 @@ async fn scoped_key_with_mismatched_affiliate_id_400s() {
         .to_string();
 
     // Some other (random) ObjectId.
-    let other = mongodb::bson::oid::ObjectId::new().to_hex();
+    let other = rift::core::public_id::AffiliateId::new().to_string();
 
     let resp = app
         .client
@@ -348,7 +355,7 @@ async fn full_scope_with_unknown_affiliate_id_404s() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;
 
-    let bogus = mongodb::bson::oid::ObjectId::new().to_hex();
+    let bogus = rift::core::public_id::AffiliateId::new().to_string();
 
     let resp = app
         .client
@@ -371,7 +378,9 @@ async fn full_scope_with_known_affiliate_id_succeeds() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;
     let aff = create_affiliate(&app, &key).await;
-    let aff_oid = mongodb::bson::oid::ObjectId::parse_str(&aff).unwrap();
+    let aff_oid = rift::core::public_id::AffiliateId::parse(&aff)
+        .unwrap()
+        .to_object_id();
 
     let resp = app
         .client
@@ -397,7 +406,10 @@ async fn full_scope_with_known_affiliate_id_succeeds() {
         .find(|l| l.link_id == link_id)
         .cloned()
         .unwrap();
-    assert_eq!(stored.affiliate_id, Some(aff_oid));
+    assert_eq!(
+        stored.affiliate_id,
+        Some(rift::core::public_id::AffiliateId::from_object_id(aff_oid))
+    );
 }
 
 // ── Middleware allowlist ──

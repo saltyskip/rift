@@ -23,7 +23,7 @@ impl LinksRepository for MockLinksRepo {
             return Err("E11000 duplicate key".to_string());
         }
         let link = Link {
-            id: ObjectId::new(),
+            id: rift::core::public_id::LinkInternalId::new(),
             tenant_id: input.tenant_id,
             link_id: input.link_id,
             ios_deep_link: input.ios_deep_link,
@@ -76,7 +76,7 @@ impl LinksRepository for MockLinksRepo {
         let new_links: Vec<Link> = inputs
             .into_iter()
             .map(|input| Link {
-                id: ObjectId::new(),
+                id: rift::core::public_id::LinkInternalId::new(),
                 tenant_id: input.tenant_id,
                 link_id: input.link_id,
                 ios_deep_link: input.ios_deep_link,
@@ -118,7 +118,7 @@ impl LinksRepository for MockLinksRepo {
             .lock()
             .unwrap()
             .iter()
-            .find(|l| &l.tenant_id == tenant_id && l.link_id == link_id)
+            .find(|l| l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id)
             .cloned())
     }
 
@@ -132,7 +132,7 @@ impl LinksRepository for MockLinksRepo {
         let mut links = self.links.lock().unwrap();
         let Some(link) = links
             .iter_mut()
-            .find(|l| &l.tenant_id == tenant_id && l.link_id == link_id)
+            .find(|l| l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id)
         else {
             return Ok(false);
         };
@@ -175,13 +175,16 @@ impl LinksRepository for MockLinksRepo {
     async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String> {
         let mut links = self.links.lock().unwrap();
         let len_before = links.len();
-        links.retain(|l| !(&l.tenant_id == tenant_id && l.link_id == link_id));
+        links.retain(|l| !(l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id));
         Ok(links.len() < len_before)
     }
 
     async fn count_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
         let links = self.links.lock().unwrap();
-        Ok(links.iter().filter(|l| &l.tenant_id == tenant_id).count() as u64)
+        Ok(links
+            .iter()
+            .filter(|l| l.tenant_id.to_object_id() == *tenant_id)
+            .count() as u64)
     }
 
     async fn list_links_by_tenant(
@@ -193,7 +196,10 @@ impl LinksRepository for MockLinksRepo {
         let links = self.links.lock().unwrap();
         let mut filtered: Vec<Link> = links
             .iter()
-            .filter(|l| &l.tenant_id == tenant_id && cursor.is_none_or(|c| l.id < c))
+            .filter(|l| {
+                l.tenant_id.to_object_id() == *tenant_id
+                    && cursor.is_none_or(|c| l.id.to_object_id() < c)
+            })
             .cloned()
             .collect();
         // Sort by _id descending (ObjectIds are monotonically increasing).
@@ -213,7 +219,7 @@ impl LinksRepository for MockLinksRepo {
     ) -> Result<(), String> {
         self.clicks.lock().unwrap().push(ClickEvent {
             meta: ClickMeta {
-                tenant_id,
+                tenant_id: rift::core::public_id::TenantId::from_object_id(tenant_id),
                 link_id: link_id.to_string(),
                 retention_bucket,
             },

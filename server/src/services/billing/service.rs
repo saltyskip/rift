@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use mongodb::bson;
-use mongodb::bson::oid::ObjectId;
 use rift_macros::requires;
 use std::sync::Arc;
 
 use super::effective_tier::effective_tier;
 use super::limits::limits_for;
 use super::models::{BillingError, BillingStatus};
+use crate::core::public_id::TenantId;
 use crate::services::auth::permissions::{AuthContext, Permission};
 use crate::services::auth::tenants::repo::{PlanTier, TenantsRepository};
 
@@ -22,8 +22,8 @@ use crate::services::auth::tenants::repo::{PlanTier, TenantsRepository};
 /// fake tier data.
 #[async_trait]
 pub trait TierResolver: Send + Sync {
-    async fn effective_tier(&self, tenant_id: &ObjectId) -> Result<PlanTier, BillingError>;
-    async fn retention_bucket_for_tenant(&self, tenant_id: &ObjectId) -> &'static str;
+    async fn effective_tier(&self, tenant_id: &TenantId) -> Result<PlanTier, BillingError>;
+    async fn retention_bucket_for_tenant(&self, tenant_id: &TenantId) -> &'static str;
 }
 
 crate::impl_container!(BillingService);
@@ -44,7 +44,7 @@ impl BillingService {
     pub async fn status(&self, ctx: &AuthContext) -> Result<BillingStatus, BillingError> {
         let tenant = self
             .tenants_repo
-            .find_by_id(&ctx.tenant_id)
+            .find_by_id(ctx.tenant_id.as_object_id())
             .await
             .map_err(BillingError::Internal)?
             .ok_or(BillingError::TenantNotFound)?;
@@ -67,17 +67,17 @@ impl BillingService {
 // stay decoupled from BillingService's subscription-lifecycle surface.
 #[async_trait]
 impl TierResolver for BillingService {
-    async fn effective_tier(&self, tenant_id: &ObjectId) -> Result<PlanTier, BillingError> {
+    async fn effective_tier(&self, tenant_id: &TenantId) -> Result<PlanTier, BillingError> {
         let tenant = self
             .tenants_repo
-            .find_by_id(tenant_id)
+            .find_by_id(tenant_id.as_object_id())
             .await
             .map_err(BillingError::Internal)?
             .ok_or(BillingError::TenantNotFound)?;
         Ok(effective_tier(&tenant, bson::DateTime::now()))
     }
 
-    async fn retention_bucket_for_tenant(&self, tenant_id: &ObjectId) -> &'static str {
+    async fn retention_bucket_for_tenant(&self, tenant_id: &TenantId) -> &'static str {
         match self.effective_tier(tenant_id).await {
             Ok(tier) => limits_for(tier).retention_bucket,
             Err(_) => "30d",

@@ -289,7 +289,7 @@ impl RiftMcp {
         Parameters(input): Parameters<CreateSourceInput>,
         Extension(parts): Extension<Parts>,
     ) -> Result<Json<CreateSourceOutput>, String> {
-        let tenant_id = self.auth_context(&parts).await?.tenant_id;
+        let tenant_id = self.auth_context(&parts).await?.tenant_id.to_object_id();
         let repo = self
             .conversions_repo
             .as_ref()
@@ -312,7 +312,7 @@ impl RiftMcp {
 
         let webhook_url = self.webhook_url_for(&source.url_token);
         Ok(Json(CreateSourceOutput {
-            id: source.id.to_hex(),
+            id: source.id,
             name: source.name,
             source_type: source.source_type,
             webhook_url,
@@ -336,7 +336,7 @@ impl RiftMcp {
         Parameters(_input): Parameters<ListSourcesInput>,
         Extension(parts): Extension<Parts>,
     ) -> Result<Json<ListSourcesOutput>, String> {
-        let tenant_id = self.auth_context(&parts).await?.tenant_id;
+        let tenant_id = self.auth_context(&parts).await?.tenant_id.to_object_id();
         let repo = self
             .conversions_repo
             .as_ref()
@@ -359,7 +359,7 @@ impl RiftMcp {
             .into_iter()
             .map(|s| SourceSummary {
                 webhook_url: self.webhook_url_for(&s.url_token),
-                id: s.id.to_hex(),
+                id: s.id,
                 name: s.name,
                 source_type: s.source_type,
                 created_at: s.created_at.try_to_rfc3339_string().unwrap_or_default(),

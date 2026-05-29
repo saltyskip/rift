@@ -10,7 +10,9 @@
 //! collection is low-volume and identity-shaped — point lookups by
 //! install_id are the hot path, not time-range scans.
 
-use mongodb::bson::{oid::ObjectId, DateTime};
+use mongodb::bson::DateTime;
+
+use crate::core::public_id::{InstallEventId, TenantId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -58,8 +60,8 @@ pub struct InstallContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstallEvent {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
-    pub tenant_id: ObjectId,
+    pub id: Option<InstallEventId>,
+    pub tenant_id: TenantId,
     pub install_id: String,
     pub event_type: InstallEventType,
     pub timestamp: DateTime,

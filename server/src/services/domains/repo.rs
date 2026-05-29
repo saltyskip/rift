@@ -70,8 +70,8 @@ impl DomainsRepository for DomainsRepo {
         role: DomainRole,
     ) -> Result<Domain, String> {
         let doc = Domain {
-            id: ObjectId::new(),
-            tenant_id,
+            id: crate::core::public_id::DomainId::new(),
+            tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
             domain,
             verified: false,
             verification_token,

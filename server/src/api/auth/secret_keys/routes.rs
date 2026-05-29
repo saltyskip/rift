@@ -1,7 +1,6 @@
 use axum::extract::{Form, Path, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
-use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -184,7 +183,7 @@ pub async fn confirm_create_key(
             (
                 StatusCode::CREATED,
                 Json(json!(CreateKeyResponse {
-                    id: created.id.to_hex(),
+                    id: created.id.to_string(),
                     key: created.key,
                     key_prefix: created.key_prefix,
                     created_at: created
@@ -226,9 +225,9 @@ pub async fn list_secret_keys(
             let details: Vec<SecretKeyDetail> = keys
                 .iter()
                 .map(|k| SecretKeyDetail {
-                    id: k.id.to_hex(),
+                    id: k.id.to_string(),
                     key_prefix: k.key_prefix.clone(),
-                    created_by: k.created_by.to_hex(),
+                    created_by: k.created_by.to_string(),
                     created_at: k.created_at.try_to_rfc3339_string().unwrap_or_default(),
                 })
                 .collect();
@@ -254,7 +253,7 @@ pub async fn list_secret_keys(
 pub async fn delete_secret_key(
     State(state): State<Arc<AppState>>,
     axum::Extension(ctx): axum::Extension<AuthContext>,
-    Path(key_id): Path<String>,
+    Path(key_id): Path<crate::core::public_id::SecretKeyId>,
 ) -> Response {
     let Some(svc) = &state.secret_keys_service else {
         return (
@@ -264,18 +263,10 @@ pub async fn delete_secret_key(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&key_id) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid key ID", "code": "bad_request" })),
-        )
-            .into_response();
-    };
-
     // Self-delete guard derives from `ctx.principal` inside the service —
     // `Principal::SecretKey` matches request key_id means self-delete; sessions
     // can't self-delete because their principal is `User`.
-    match svc.delete(&ctx, oid).await {
+    match svc.delete(&ctx, key_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => sk_error_response(&e),
     }
