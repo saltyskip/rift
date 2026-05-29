@@ -146,8 +146,7 @@ impl UsersService {
 
         // Service-layer quota enforcement (applies to every transport).
         if let Some(q) = &self.quota {
-            q.check(ctx.tenant_id.as_object_id(), Resource::InviteTeamMember)
-                .await?;
+            q.check(&ctx.tenant_id, Resource::InviteTeamMember).await?;
         }
 
         let user_id = crate::core::public_id::UserId::new();

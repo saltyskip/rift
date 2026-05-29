@@ -3,10 +3,10 @@
 //! from taking a fan-out of repo dependencies directly.
 
 use async_trait::async_trait;
-use mongodb::bson::oid::ObjectId;
 use std::sync::Arc;
 
 use super::super::quota::{Resource, ResourceCounts};
+use crate::core::public_id::TenantId;
 use crate::services::affiliates::repo::AffiliatesRepository;
 use crate::services::auth::users::repo::UsersRepository;
 use crate::services::domains::repo::DomainsRepository;
@@ -24,23 +24,18 @@ pub struct RepoResourceCounts {
 
 #[async_trait]
 impl ResourceCounts for RepoResourceCounts {
-    async fn count(&self, tenant_id: &ObjectId, resource: Resource) -> Result<u64, String> {
+    async fn count(&self, tenant_id: &TenantId, resource: Resource) -> Result<u64, String> {
+        let oid = tenant_id.as_object_id();
         match resource {
-            Resource::CreateLink => self.links.count_links_by_tenant(tenant_id).await,
-            Resource::CreateDomain => self.domains.count_by_tenant(tenant_id).await,
+            Resource::CreateLink => self.links.count_links_by_tenant(oid).await,
+            Resource::CreateDomain => self.domains.count_by_tenant(oid).await,
             Resource::InviteTeamMember => self
                 .users
-                .count_verified_by_tenant(tenant_id)
+                .count_verified_by_tenant(oid)
                 .await
                 .map(|n| n as u64),
-            Resource::CreateWebhook => self.webhooks.count_by_tenant(tenant_id).await,
-            Resource::CreateAffiliate => {
-                self.affiliates
-                    .count_by_tenant(&crate::core::public_id::TenantId::from_object_id(
-                        *tenant_id,
-                    ))
-                    .await
-            }
+            Resource::CreateWebhook => self.webhooks.count_by_tenant(oid).await,
+            Resource::CreateAffiliate => self.affiliates.count_by_tenant(tenant_id).await,
             // TrackEvent uses the atomic counter path, not ResourceCounts.
             Resource::TrackEvent => Ok(0),
         }

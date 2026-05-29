@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use chrono::{Datelike, Utc};
-use mongodb::bson::oid::ObjectId;
 use std::sync::Arc;
 
 use super::limits::{limits_for, PlanLimits};
 use super::models::BillingError;
 use super::repos::event_counters::EventCountersRepository;
 use super::service::TierResolver;
+use crate::core::public_id::TenantId;
 
 // Re-export quota data types from models.rs so existing callers (which import
 // via `services::billing::quota::{...}`) keep compiling. The data types have
@@ -26,7 +26,7 @@ pub use super::models::{EnforcementMode, QuotaError, Resource};
 /// defined later in this file and gated behind the `test-harness` feature.
 #[async_trait]
 pub trait QuotaChecker: Send + Sync {
-    async fn check(&self, tenant_id: &ObjectId, resource: Resource) -> Result<(), QuotaError>;
+    async fn check(&self, tenant_id: &TenantId, resource: Resource) -> Result<(), QuotaError>;
 
     /// Pre-check whether `n` units of `resource` would fit. Used by bulk
     /// operations (e.g. `POST /v1/links/bulk`) so the whole batch is gated
@@ -35,7 +35,7 @@ pub trait QuotaChecker: Send + Sync {
     /// `QuotaService` overrides with one comparison.
     async fn check_n(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         resource: Resource,
         n: u64,
     ) -> Result<(), QuotaError> {
@@ -51,7 +51,7 @@ pub trait QuotaChecker: Send + Sync {
 /// existing repo already has (or gets) a `count_by_tenant` for exactly this.
 #[async_trait::async_trait]
 pub trait ResourceCounts: Send + Sync {
-    async fn count(&self, tenant_id: &ObjectId, resource: Resource) -> Result<u64, String>;
+    async fn count(&self, tenant_id: &TenantId, resource: Resource) -> Result<u64, String>;
 }
 
 crate::impl_container!(QuotaService);
@@ -87,8 +87,9 @@ impl QuotaChecker for QuotaService {
     /// - `LogOnly`: returns `Ok(())` always, logs would-be rejections.
     /// - `Enforce`: returns `Err(QuotaError::Exceeded { ... })` when over
     ///   limit. Caller renders as `402 Payment Required`.
-    async fn check(&self, tenant_id: &ObjectId, resource: Resource) -> Result<(), QuotaError> {
-        let tier = self.billing.effective_tier(tenant_id).await?;
+    async fn check(&self, tenant_id: &TenantId, resource: Resource) -> Result<(), QuotaError> {
+        let oid = tenant_id.as_object_id();
+        let tier = self.billing.effective_tier(oid).await?;
         let limits = limits_for(tier);
         let max = match limit_for_resource(&limits, resource) {
             Some(m) => m,
@@ -100,7 +101,7 @@ impl QuotaChecker for QuotaService {
                 let period = current_period();
                 let within = self
                     .counters
-                    .increment_if_below(tenant_id, &period, Some(max))
+                    .increment_if_below(oid, &period, Some(max))
                     .await
                     .map_err(|e| QuotaError::Billing(BillingError::Internal(e)))?;
                 if within {
@@ -149,7 +150,7 @@ impl QuotaChecker for QuotaService {
 
     async fn check_n(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         resource: Resource,
         n: u64,
     ) -> Result<(), QuotaError> {
@@ -165,7 +166,10 @@ impl QuotaChecker for QuotaService {
             return Ok(());
         }
 
-        let tier = self.billing.effective_tier(tenant_id).await?;
+        let tier = self
+            .billing
+            .effective_tier(tenant_id.as_object_id())
+            .await?;
         let limits = limits_for(tier);
         let max = match limit_for_resource(&limits, resource) {
             Some(m) => m,
@@ -235,7 +239,7 @@ pub struct NoopQuotaChecker;
 #[cfg(any(test, feature = "test-harness"))]
 #[async_trait]
 impl QuotaChecker for NoopQuotaChecker {
-    async fn check(&self, _tenant_id: &ObjectId, _resource: Resource) -> Result<(), QuotaError> {
+    async fn check(&self, _tenant_id: &TenantId, _resource: Resource) -> Result<(), QuotaError> {
         Ok(())
     }
 }
@@ -249,7 +253,7 @@ pub struct DenyQuotaChecker {
 #[cfg(any(test, feature = "test-harness"))]
 #[async_trait]
 impl QuotaChecker for DenyQuotaChecker {
-    async fn check(&self, _tenant_id: &ObjectId, resource: Resource) -> Result<(), QuotaError> {
+    async fn check(&self, _tenant_id: &TenantId, resource: Resource) -> Result<(), QuotaError> {
         Err(QuotaError::Exceeded {
             resource,
             limit: self.limit,

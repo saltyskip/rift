@@ -1,7 +1,9 @@
 use super::*;
+use crate::core::public_id::TenantId;
 use crate::services::auth::tenants::repo::{PlanTier, TenantDoc, TenantsRepository};
 use crate::services::billing::service::BillingService;
 use async_trait::async_trait;
+use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
 #[derive(Default)]
@@ -55,7 +57,7 @@ impl MockCounts {
 
 #[async_trait]
 impl ResourceCounts for MockCounts {
-    async fn count(&self, _tenant_id: &ObjectId, resource: Resource) -> Result<u64, String> {
+    async fn count(&self, _tenant_id: &TenantId, resource: Resource) -> Result<u64, String> {
         Ok(*self
             .counts
             .lock()
@@ -96,13 +98,12 @@ impl EventCountersRepository for MockCounters {
 async fn setup_with_plan_mode(
     plan: PlanTier,
     mode: EnforcementMode,
-) -> (QuotaService, ObjectId, Arc<MockCounts>, Arc<MockCounters>) {
+) -> (QuotaService, TenantId, Arc<MockCounts>, Arc<MockCounters>) {
     let tenants = Arc::new(MockTenants::default());
-    let id_typed = crate::core::public_id::TenantId::new();
-    let id = id_typed.to_object_id();
+    let id = TenantId::new();
     tenants
         .create(&TenantDoc {
-            id: Some(id_typed),
+            id: Some(id),
             plan_tier: plan,
             ..TenantDoc::default()
         })
@@ -124,7 +125,7 @@ async fn setup_with_plan_mode(
 
 async fn setup_with_plan(
     plan: PlanTier,
-) -> (QuotaService, ObjectId, Arc<MockCounts>, Arc<MockCounters>) {
+) -> (QuotaService, TenantId, Arc<MockCounts>, Arc<MockCounters>) {
     setup_with_plan_mode(plan, EnforcementMode::LogOnly).await
 }
 
@@ -197,14 +198,14 @@ async fn track_event_uses_atomic_counter() {
 #[tokio::test]
 async fn unknown_tenant_propagates_billing_error() {
     let (q, _, _, _) = setup_with_plan(PlanTier::Free).await;
-    let err = q.check(&ObjectId::new(), Resource::CreateLink).await;
+    let err = q.check(&TenantId::new(), Resource::CreateLink).await;
     assert!(matches!(err, Err(QuotaError::Billing(_))));
 }
 
 #[tokio::test]
 async fn noop_checker_always_ok() {
     let c = NoopQuotaChecker;
-    c.check(&ObjectId::new(), Resource::CreateLink)
+    c.check(&TenantId::new(), Resource::CreateLink)
         .await
         .unwrap();
 }
@@ -213,7 +214,7 @@ async fn noop_checker_always_ok() {
 async fn deny_checker_always_errs() {
     let c = DenyQuotaChecker { limit: 42 };
     let err = c
-        .check(&ObjectId::new(), Resource::CreateLink)
+        .check(&TenantId::new(), Resource::CreateLink)
         .await
         .unwrap_err();
     assert!(matches!(

@@ -355,9 +355,7 @@ pub async fn sdk_track_conversion(
         occurred_at: None,
     }];
 
-    let result = service
-        .ingest_sdk_event(tenant.to_object_id(), parsed)
-        .await;
+    let result = service.ingest_sdk_event(tenant, parsed).await;
 
     Json(json!({
         "accepted": result.accepted,

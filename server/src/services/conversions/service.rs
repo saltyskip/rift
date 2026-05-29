@@ -5,6 +5,7 @@ use mongodb::bson::{oid::ObjectId, DateTime};
 use super::models::ParsedConversion;
 use super::models::{ConversionEvent, ConversionMeta, IngestResult, Source};
 use super::repo::ConversionsRepository;
+use crate::core::public_id::{ConversionEventId, SourceId, TenantId};
 use crate::core::webhook_dispatcher::{ConversionEventPayload, WebhookDispatcher};
 use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::billing::quota::{QuotaChecker, Resource};
@@ -55,35 +56,32 @@ impl ConversionsService {
         source: &Source,
         parsed: Vec<ParsedConversion>,
     ) -> IngestResult {
-        self.ingest(
-            source.tenant_id.to_object_id(),
-            source.id.to_object_id(),
-            parsed,
-        )
-        .await
+        self.ingest(source.tenant_id, source.id, parsed).await
     }
 
     /// Ingest events from the SDK endpoint. Tenant comes from the auth middleware,
     /// source_id is synthetic (the SDK is not a source — it's a direct channel).
     pub async fn ingest_sdk_event(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         parsed: Vec<ParsedConversion>,
     ) -> IngestResult {
         // Use a zero ObjectId as a sentinel for "came from SDK, not a source."
         // This is stored in meta.source_id on the conversion event for provenance
         // but is not looked up as a real source document.
-        let sdk_source_id = ObjectId::from_bytes([0u8; 12]);
+        let sdk_source_id = SourceId::from_object_id(ObjectId::from_bytes([0u8; 12]));
         self.ingest(tenant_id, sdk_source_id, parsed).await
     }
 
     /// Core ingestion: dedup, attribute, store, fan out.
     async fn ingest(
         &self,
-        tenant_id: ObjectId,
-        source_id: ObjectId,
+        tenant_id: TenantId,
+        source_id: SourceId,
         parsed: Vec<ParsedConversion>,
     ) -> IngestResult {
+        let tenant_oid = tenant_id.to_object_id();
+        let source_oid = source_id.to_object_id();
         let mut result = IngestResult::default();
 
         for event in parsed {
@@ -91,7 +89,7 @@ impl ConversionsService {
             if let Some(key) = &event.idempotency_key {
                 match self
                     .conversions_repo
-                    .check_and_insert_dedup(&tenant_id, key)
+                    .check_and_insert_dedup(&tenant_oid, key)
                     .await
                 {
                     Ok(false) => {
@@ -101,7 +99,7 @@ impl ConversionsService {
                     Ok(true) => {}
                     Err(e) => {
                         tracing::error!(
-                            source_id = %source_id,
+                            source_id = %source_oid,
                             key = %key,
                             error = %e,
                             "dedup insert failed; dropping event",
@@ -119,7 +117,7 @@ impl ConversionsService {
             // the caller when `app_users_repo` isn't wired).
             let Some(user_id) = event.user_id.as_ref() else {
                 tracing::debug!(
-                    source_id = %source_id,
+                    source_id = %source_oid,
                     "conversion has no user_id; skipping",
                 );
                 result.unattributed += 1;
@@ -127,7 +125,7 @@ impl ConversionsService {
             };
             let user_known = match &self.app_users_repo {
                 Some(repo) => repo
-                    .find_by_user_id(&tenant_id, user_id)
+                    .find_by_user_id(&tenant_oid, user_id)
                     .await
                     .ok()
                     .flatten()
@@ -136,7 +134,7 @@ impl ConversionsService {
             };
             if !user_known {
                 tracing::debug!(
-                    source_id = %source_id,
+                    source_id = %source_oid,
                     user_id = %user_id,
                     "conversion user_id not found in app_users; skipping",
                 );
@@ -152,7 +150,7 @@ impl ConversionsService {
             if let Some(q) = &self.quota {
                 if let Err(e) = q.check(&tenant_id, Resource::TrackEvent).await {
                     tracing::info!(
-                        source_id = %source_id,
+                        source_id = %source_oid,
                         error = %e,
                         "conversion_ingest_quota_rejected"
                     );
@@ -163,18 +161,18 @@ impl ConversionsService {
 
             // 3. Insert event.
             let retention_bucket = match &self.tiers {
-                Some(b) => b.retention_bucket_for_tenant(&tenant_id).await.to_string(),
+                Some(b) => b.retention_bucket_for_tenant(&tenant_oid).await.to_string(),
                 None => "30d".to_string(),
             };
             let record = ConversionEvent {
-                id: Some(crate::core::public_id::ConversionEventId::new()),
+                id: Some(ConversionEventId::new()),
                 meta: ConversionMeta {
-                    tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
+                    tenant_id,
                     // Credit is computed at read time; no link_id frozen
                     // in storage. Legacy field kept on the schema for
                     // back-compat with pre-Phase-6 rows.
                     link_id: None,
-                    source_id: crate::core::public_id::SourceId::from_object_id(source_id),
+                    source_id,
                     conversion_type: event.conversion_type.clone(),
                     retention_bucket,
                 },
@@ -187,7 +185,7 @@ impl ConversionsService {
                 Ok(id) => id,
                 Err(e) => {
                     tracing::error!(
-                        source_id = %source_id,
+                        source_id = %source_oid,
                         error = %e,
                         "conversion event insert failed",
                     );
@@ -213,7 +211,7 @@ impl ConversionsService {
                     Some(repo) => {
                         let ids = repo
                             .credited_links_for_user(
-                                &tenant_id,
+                                &tenant_oid,
                                 user_id,
                                 event.occurred_at.unwrap_or_else(DateTime::now),
                             )
@@ -228,7 +226,7 @@ impl ConversionsService {
                             });
                         crate::services::links::service::enrich_credited_with_metadata(
                             repo.as_ref(),
-                            &tenant_id,
+                            &tenant_oid,
                             ids,
                         )
                         .await
@@ -238,8 +236,8 @@ impl ConversionsService {
 
                 dispatcher.dispatch_conversion(ConversionEventPayload {
                     event_id: event_id.to_hex(),
-                    tenant_id: tenant_id.to_hex(),
-                    source_id: source_id.to_hex(),
+                    tenant_id: tenant_id.to_string(),
+                    source_id: source_id.to_string(),
                     conversion_type: event.conversion_type.clone(),
                     user_id: event.user_id.clone(),
                     first_touch_link_id: credited.first_touch_link_id,

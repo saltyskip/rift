@@ -245,8 +245,9 @@ impl LinksService {
         referer: Option<String>,
         platform: Option<String>,
     ) {
+        let tid = crate::core::public_id::TenantId::from_object_id(tenant_id);
         if let Some(q) = &self.quota {
-            if let Err(e) = q.check(&tenant_id, Resource::TrackEvent).await {
+            if let Err(e) = q.check(&tid, Resource::TrackEvent).await {
                 tracing::info!(error = %e, "click_track_quota_skipped");
             }
         }
@@ -288,8 +289,9 @@ impl LinksService {
         app_version: &str,
         context: Option<InstallContext>,
     ) -> Result<Option<String>, String> {
+        let tid = crate::core::public_id::TenantId::from_object_id(tenant_id);
         if let Some(q) = &self.quota {
-            if let Err(e) = q.check(&tenant_id, Resource::TrackEvent).await {
+            if let Err(e) = q.check(&tid, Resource::TrackEvent).await {
                 tracing::info!(error = %e, "attribute_track_quota_skipped");
             }
         }
@@ -360,7 +362,7 @@ impl LinksService {
         // and HTTP route handlers both hit the same choke point. CLAUDE.md
         // codifies this rule — see "Quota enforcement" section there.
         if let Some(q) = &self.quota {
-            q.check(&tenant_id, Resource::CreateLink).await?;
+            q.check(&ctx.tenant_id, Resource::CreateLink).await?;
         }
 
         // Resolve `affiliate_id` against the caller's resource scope.
@@ -617,7 +619,7 @@ impl LinksService {
 
         // 7. Quota gate for the whole batch.
         if let Some(q) = &self.quota {
-            q.check_n(&tenant_id, Resource::CreateLink, n as u64)
+            q.check_n(&ctx.tenant_id, Resource::CreateLink, n as u64)
                 .await?;
         }
 

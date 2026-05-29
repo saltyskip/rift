@@ -48,8 +48,7 @@ impl AffiliatesService {
         validate_partner_key(&partner_key)?;
 
         if let Some(q) = &self.quota {
-            q.check(ctx.tenant_id.as_object_id(), Resource::CreateAffiliate)
-                .await?;
+            q.check(&ctx.tenant_id, Resource::CreateAffiliate).await?;
         }
 
         // Pre-check uniqueness for a clean error before hitting the DB write.
