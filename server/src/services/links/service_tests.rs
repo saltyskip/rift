@@ -323,7 +323,7 @@ struct MockDomainsRepo {
 impl DomainsRepository for MockDomainsRepo {
     async fn create_domain(
         &self,
-        _tenant_id: ObjectId,
+        _tenant_id: crate::core::public_id::TenantId,
         _domain: String,
         _verification_token: String,
         _role: crate::services::domains::models::DomainRole,
@@ -340,7 +340,7 @@ impl DomainsRepository for MockDomainsRepo {
 
     async fn list_by_tenant(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &crate::core::public_id::TenantId,
     ) -> Result<Vec<crate::services::domains::models::Domain>, String> {
         if self.has_verified {
             Ok(vec![crate::services::domains::models::Domain {
@@ -357,11 +357,18 @@ impl DomainsRepository for MockDomainsRepo {
         }
     }
 
-    async fn count_by_tenant(&self, _tenant_id: &ObjectId) -> Result<u64, String> {
+    async fn count_by_tenant(
+        &self,
+        _tenant_id: &crate::core::public_id::TenantId,
+    ) -> Result<u64, String> {
         Ok(if self.has_verified { 1 } else { 0 })
     }
 
-    async fn delete_domain(&self, _tenant_id: &ObjectId, _domain: &str) -> Result<bool, String> {
+    async fn delete_domain(
+        &self,
+        _tenant_id: &crate::core::public_id::TenantId,
+        _domain: &str,
+    ) -> Result<bool, String> {
         Ok(true)
     }
 
@@ -371,7 +378,7 @@ impl DomainsRepository for MockDomainsRepo {
 
     async fn find_alternate_by_tenant(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &crate::core::public_id::TenantId,
     ) -> Result<Option<crate::services::domains::models::Domain>, String> {
         Ok(None)
     }

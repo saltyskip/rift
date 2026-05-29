@@ -1,8 +1,9 @@
 use async_trait::async_trait;
-use mongodb::bson::{doc, oid::ObjectId, DateTime};
+use mongodb::bson::{doc, DateTime};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database};
 
+use crate::core::public_id::{DomainId, TenantId};
 use crate::ensure_index;
 
 use super::models::{Domain, DomainRole};
@@ -13,7 +14,7 @@ use super::models::{Domain, DomainRole};
 pub trait DomainsRepository: Send + Sync {
     async fn create_domain(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         domain: String,
         verification_token: String,
         role: DomainRole,
@@ -21,18 +22,18 @@ pub trait DomainsRepository: Send + Sync {
 
     async fn find_by_domain(&self, domain: &str) -> Result<Option<Domain>, String>;
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Domain>, String>;
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<Domain>, String>;
 
     /// Total domains attached to this tenant — feeds the CreateDomain quota.
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String>;
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String>;
 
-    async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String>;
+    async fn delete_domain(&self, tenant_id: &TenantId, domain: &str) -> Result<bool, String>;
 
     async fn mark_verified(&self, domain: &str) -> Result<(), String>;
 
     async fn find_alternate_by_tenant(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
     ) -> Result<Option<Domain>, String>;
 }
 
@@ -64,14 +65,14 @@ impl DomainsRepo {
 impl DomainsRepository for DomainsRepo {
     async fn create_domain(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         domain: String,
         verification_token: String,
         role: DomainRole,
     ) -> Result<Domain, String> {
         let doc = Domain {
-            id: crate::core::public_id::DomainId::new(),
-            tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
+            id: DomainId::new(),
+            tenant_id,
             domain,
             verified: false,
             verification_token,
@@ -92,17 +93,17 @@ impl DomainsRepository for DomainsRepo {
             .map_err(|e| e.to_string())
     }
 
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String> {
         self.domains
-            .count_documents(doc! { "tenant_id": tenant_id })
+            .count_documents(doc! { "tenant_id": *tenant_id })
             .await
             .map_err(|e| e.to_string())
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Domain>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<Domain>, String> {
         let mut cursor = self
             .domains
-            .find(doc! { "tenant_id": tenant_id })
+            .find(doc! { "tenant_id": *tenant_id })
             .sort(doc! { "created_at": -1 })
             .await
             .map_err(|e| e.to_string())?;
@@ -114,10 +115,10 @@ impl DomainsRepository for DomainsRepo {
         Ok(domains)
     }
 
-    async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String> {
+    async fn delete_domain(&self, tenant_id: &TenantId, domain: &str) -> Result<bool, String> {
         let result = self
             .domains
-            .delete_one(doc! { "tenant_id": tenant_id, "domain": domain })
+            .delete_one(doc! { "tenant_id": *tenant_id, "domain": domain })
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)
@@ -136,10 +137,10 @@ impl DomainsRepository for DomainsRepo {
 
     async fn find_alternate_by_tenant(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
     ) -> Result<Option<Domain>, String> {
         self.domains
-            .find_one(doc! { "tenant_id": tenant_id, "role": "alternate", "verified": true })
+            .find_one(doc! { "tenant_id": *tenant_id, "role": "alternate", "verified": true })
             .await
             .map_err(|e| e.to_string())
     }

@@ -28,7 +28,7 @@ impl ResourceCounts for RepoResourceCounts {
         let oid = tenant_id.as_object_id();
         match resource {
             Resource::CreateLink => self.links.count_links_by_tenant(oid).await,
-            Resource::CreateDomain => self.domains.count_by_tenant(oid).await,
+            Resource::CreateDomain => self.domains.count_by_tenant(tenant_id).await,
             Resource::InviteTeamMember => self
                 .users
                 .count_verified_by_tenant(oid)

@@ -167,7 +167,7 @@ pub async fn list_domains(
             .into_response();
     };
 
-    match repo.list_by_tenant(&tenant.to_object_id()).await {
+    match repo.list_by_tenant(&tenant).await {
         Ok(domains) => {
             let details: Vec<DomainDetail> = domains
                 .iter()
@@ -221,7 +221,7 @@ pub async fn delete_domain(
             .into_response();
     };
 
-    match repo.delete_domain(&tenant.to_object_id(), &domain).await {
+    match repo.delete_domain(&tenant, &domain).await {
         Ok(true) => {
             // Remove TLS certificate from Fly.io (best-effort).
             // DB is authoritative — orphaned certs are harmless and can be cleaned up later.

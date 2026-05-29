@@ -686,7 +686,7 @@ async fn do_resolve(
         // Look up alternate domain for the "Open in App" button.
         let alternate_domain = if let Some(domains_repo) = &state.domains_repo {
             domains_repo
-                .find_alternate_by_tenant(link.tenant_id.as_object_id())
+                .find_alternate_by_tenant(&link.tenant_id)
                 .await
                 .ok()
                 .flatten()
@@ -884,7 +884,7 @@ async fn lookup_tenant_domain(
         return (None, false);
     };
     let domains = repo
-        .list_by_tenant(tenant_id.as_object_id())
+        .list_by_tenant(tenant_id)
         .await
         .ok()
         .unwrap_or_default();

@@ -945,7 +945,7 @@ impl LinksService {
         let Some(ref repo) = self.domains_repo else {
             return false;
         };
-        repo.list_by_tenant(tenant_id.as_object_id())
+        repo.list_by_tenant(tenant_id)
             .await
             .ok()
             .map(|domains| domains.iter().any(|d| d.verified))
@@ -1055,7 +1055,7 @@ pub async fn resolve_verified_primary_domain(
     tenant_id: &TenantId,
 ) -> Option<String> {
     let repo = domains_repo?;
-    repo.list_by_tenant(tenant_id.as_object_id())
+    repo.list_by_tenant(tenant_id)
         .await
         .ok()?
         .into_iter()

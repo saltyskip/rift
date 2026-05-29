@@ -1,7 +1,8 @@
 use async_trait::async_trait;
-use mongodb::bson::{oid::ObjectId, DateTime};
+use mongodb::bson::DateTime;
 use std::sync::Mutex;
 
+use rift::core::public_id::{DomainId, TenantId};
 use rift::services::domains::models::{Domain, DomainRole};
 use rift::services::domains::repo::DomainsRepository;
 
@@ -14,7 +15,7 @@ pub struct MockDomainsRepo {
 impl DomainsRepository for MockDomainsRepo {
     async fn create_domain(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         domain: String,
         verification_token: String,
         role: DomainRole,
@@ -24,8 +25,8 @@ impl DomainsRepository for MockDomainsRepo {
             return Err("E11000 duplicate key".to_string());
         }
         let doc = Domain {
-            id: rift::core::public_id::DomainId::new(),
-            tenant_id: rift::core::public_id::TenantId::from_object_id(tenant_id),
+            id: DomainId::new(),
+            tenant_id,
             domain,
             verified: false,
             verification_token,
@@ -46,31 +47,31 @@ impl DomainsRepository for MockDomainsRepo {
             .cloned())
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Domain>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<Domain>, String> {
         Ok(self
             .domains
             .lock()
             .unwrap()
             .iter()
-            .filter(|d| d.tenant_id.to_object_id() == *tenant_id)
+            .filter(|d| d.tenant_id == *tenant_id)
             .cloned()
             .collect())
     }
 
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String> {
         Ok(self
             .domains
             .lock()
             .unwrap()
             .iter()
-            .filter(|d| d.tenant_id.to_object_id() == *tenant_id)
+            .filter(|d| d.tenant_id == *tenant_id)
             .count() as u64)
     }
 
-    async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String> {
+    async fn delete_domain(&self, tenant_id: &TenantId, domain: &str) -> Result<bool, String> {
         let mut domains = self.domains.lock().unwrap();
         let len_before = domains.len();
-        domains.retain(|d| !(d.tenant_id.to_object_id() == *tenant_id && d.domain == domain));
+        domains.retain(|d| !(d.tenant_id == *tenant_id && d.domain == domain));
         Ok(domains.len() < len_before)
     }
 
@@ -84,18 +85,14 @@ impl DomainsRepository for MockDomainsRepo {
 
     async fn find_alternate_by_tenant(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
     ) -> Result<Option<Domain>, String> {
         Ok(self
             .domains
             .lock()
             .unwrap()
             .iter()
-            .find(|d| {
-                d.tenant_id.to_object_id() == *tenant_id
-                    && d.role == DomainRole::Alternate
-                    && d.verified
-            })
+            .find(|d| d.tenant_id == *tenant_id && d.role == DomainRole::Alternate && d.verified)
             .cloned())
     }
 }

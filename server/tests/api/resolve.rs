@@ -224,7 +224,7 @@ async fn resolve_custom_domain_unverified_returns_404() {
     // Create an unverified domain (seed without marking verified).
     app.domains_repo
         .create_domain(
-            tenant_id,
+            rift::core::public_id::TenantId::from_object_id(tenant_id),
             "unverified.example.com".to_string(),
             "tok".to_string(),
             rift::services::domains::models::DomainRole::Primary,
