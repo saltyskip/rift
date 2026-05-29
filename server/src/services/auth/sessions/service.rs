@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::doc;
 use rand::Rng;
 use sha2::{Digest, Sha256};
 
@@ -336,9 +336,12 @@ impl SessionsService {
     }
 
     /// Revoke a session by id (called from `POST /v1/auth/signout`). Idempotent.
-    pub async fn revoke(&self, session_id: &ObjectId) -> Result<(), SessionError> {
+    pub async fn revoke(
+        &self,
+        session_id: &crate::core::public_id::AuthSessionId,
+    ) -> Result<(), SessionError> {
         self.sessions_repo
-            .revoke(session_id)
+            .revoke(&session_id.to_object_id())
             .await
             .map(|_| ())
             .map_err(SessionError::Internal)

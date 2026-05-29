@@ -319,7 +319,7 @@ pub async fn sign_out(
             .into_response();
     };
 
-    if let Err(e) = svc.revoke(&session.to_object_id()).await {
+    if let Err(e) = svc.revoke(&session).await {
         tracing::error!(error = %e, "signout_failed");
     }
 
