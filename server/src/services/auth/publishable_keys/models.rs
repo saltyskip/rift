@@ -29,7 +29,7 @@ pub struct CreateSdkKeyRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CreateSdkKeyResponse {
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    #[schema(example = "pkid_665a1b2c3d4e5f6a7b8c9d0e")]
     pub id: String,
     /// The full SDK key. Shown only once at creation time.
     #[schema(example = "pk_live_a1b2c3d4e5f6g7h8i9j0")]
@@ -42,7 +42,7 @@ pub struct CreateSdkKeyResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SdkKeyDetail {
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    #[schema(example = "pkid_665a1b2c3d4e5f6a7b8c9d0e")]
     pub id: String,
     #[schema(example = "pk_live_a1b2")]
     pub key_prefix: String,

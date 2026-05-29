@@ -634,7 +634,7 @@ pub struct ListLinksResponse {
     /// The current page of links, most recent first.
     pub links: Vec<LinkDetail>,
     /// Cursor for the next page. Null if no more results.
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    #[schema(example = "lnk_665a1b2c3d4e5f6a7b8c9d0e")]
     pub next_cursor: Option<String>,
 }
 
