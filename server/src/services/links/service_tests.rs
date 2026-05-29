@@ -15,7 +15,7 @@ use std::sync::Mutex;
 fn ctx(tenant_id: ObjectId) -> AuthContext {
     AuthContext::for_secret_key(
         crate::core::public_id::TenantId::from_object_id(tenant_id),
-        ObjectId::new(),
+        crate::core::public_id::SecretKeyId::new(),
         Some(&KeyScope::Full),
     )
 }

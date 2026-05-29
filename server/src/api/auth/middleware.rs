@@ -71,7 +71,7 @@ pub async fn auth_gate(
         ));
         req.extensions_mut().insert(AuthContext::for_secret_key(
             TenantId::from_object_id(tenant_id),
-            key_id,
+            crate::core::public_id::SecretKeyId::from_object_id(key_id),
             scope.as_ref(),
         ));
 
@@ -335,7 +335,7 @@ pub async fn session_or_key_auth_gate(
         ));
         req.extensions_mut().insert(AuthContext::for_secret_key(
             TenantId::from_object_id(tenant_id),
-            key_id,
+            crate::core::public_id::SecretKeyId::from_object_id(key_id),
             scope.as_ref(),
         ));
 

@@ -63,7 +63,7 @@ impl UsersService {
         let user_id = crate::core::public_id::UserId::new();
         let user_doc = UserDoc {
             id: Some(user_id),
-            tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
+            tenant_id,
             email: email.clone(),
             verified: true,
             is_owner: true,
@@ -75,7 +75,7 @@ impl UsersService {
             .await
             .map_err(UserError::Internal)?;
 
-        Ok((tenant_id, user_id.to_object_id()))
+        Ok((tenant_id.to_object_id(), user_id.to_object_id()))
     }
 
     /// Accept a team-invite verification token: mark the invited user as

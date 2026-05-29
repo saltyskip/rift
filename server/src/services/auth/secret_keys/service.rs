@@ -253,7 +253,7 @@ impl SecretKeysService {
             key_id: auth_key_id,
         } = ctx.principal
         {
-            if key_id == auth_key_id {
+            if key_id == auth_key_id.to_object_id() {
                 return Err(SecretKeyError::SelfDelete);
             }
         }

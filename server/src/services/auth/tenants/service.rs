@@ -1,4 +1,3 @@
-use mongodb::bson::oid::ObjectId;
 use std::sync::Arc;
 
 use super::repo::{TenantDoc, TenantsRepository};
@@ -19,13 +18,13 @@ impl TenantsService {
     /// Create a bare tenant with default limits and return its id. Callers are
     /// responsible for attaching an owner (email user, wallet credential, etc.)
     /// immediately after.
-    pub async fn create_blank(&self) -> Result<ObjectId, String> {
+    pub async fn create_blank(&self) -> Result<crate::core::public_id::TenantId, String> {
         let id = crate::core::public_id::TenantId::new();
         let doc = TenantDoc {
             id: Some(id),
             ..TenantDoc::default()
         };
         self.tenants_repo.create(&doc).await?;
-        Ok(id.to_object_id())
+        Ok(id)
     }
 }
