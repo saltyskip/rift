@@ -294,13 +294,7 @@ pub async fn lifecycle_identify(
                 user_id = %req.user_id,
                 "identify bound; firing webhook"
             );
-            fire_identify_event(
-                &state,
-                &tenant.to_object_id(),
-                &req.install_id,
-                &req.user_id,
-                credited,
-            );
+            fire_identify_event(&state, &tenant, &req.install_id, &req.user_id, credited);
             Json(json!({ "success": true })).into_response()
         }
         Ok(IdentifyOutcome::AlreadyPresent) => {
@@ -346,7 +340,7 @@ pub async fn lifecycle_identify(
 /// acquisition source without querying Rift back.
 fn fire_identify_event(
     state: &Arc<AppState>,
-    tenant_id: &mongodb::bson::oid::ObjectId,
+    tenant_id: &crate::core::public_id::TenantId,
     install_id: &str,
     user_id: &str,
     credited: CreditedLinks,
@@ -355,7 +349,7 @@ fn fire_identify_event(
         return;
     };
     dispatcher.dispatch_identify(IdentifyEventPayload {
-        tenant_id: crate::core::public_id::TenantId::from_object_id(*tenant_id).to_string(),
+        tenant_id: tenant_id.to_string(),
         user_id: user_id.to_string(),
         install_id: install_id.to_string(),
         first_touch_link_id: credited.first_touch_link_id,
