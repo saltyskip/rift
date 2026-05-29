@@ -31,7 +31,7 @@ impl ResourceCounts for RepoResourceCounts {
             Resource::CreateDomain => self.domains.count_by_tenant(tenant_id).await,
             Resource::InviteTeamMember => self
                 .users
-                .count_verified_by_tenant(oid)
+                .count_verified_by_tenant(tenant_id)
                 .await
                 .map(|n| n as u64),
             Resource::CreateWebhook => self.webhooks.count_by_tenant(oid).await,

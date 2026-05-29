@@ -100,7 +100,7 @@ impl SecretKeysService {
         // Permission check: target email must be a verified member of this tenant.
         let user = self
             .users_repo
-            .find_by_tenant_and_email(ctx.tenant_id.as_object_id(), email)
+            .find_by_tenant_and_email(&ctx.tenant_id, email)
             .await
             .map_err(SecretKeyError::Internal)?
             .ok_or(SecretKeyError::UserNotMember)?;

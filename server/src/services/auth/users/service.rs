@@ -136,7 +136,7 @@ impl UsersService {
 
         if self
             .users_repo
-            .find_by_tenant_and_email(ctx.tenant_id.as_object_id(), &email)
+            .find_by_tenant_and_email(&ctx.tenant_id, &email)
             .await
             .map_err(UserError::Internal)?
             .is_some()
@@ -206,7 +206,7 @@ impl UsersService {
     pub async fn list(&self, ctx: &AuthContext) -> Result<Vec<UserDetail>, UserError> {
         let docs = self
             .users_repo
-            .list_by_tenant(ctx.tenant_id.as_object_id())
+            .list_by_tenant(&ctx.tenant_id)
             .await
             .map_err(UserError::Internal)?;
 
@@ -231,7 +231,7 @@ impl UsersService {
     ) -> Result<(), UserError> {
         let count = self
             .users_repo
-            .count_verified_by_tenant(ctx.tenant_id.as_object_id())
+            .count_verified_by_tenant(&ctx.tenant_id)
             .await
             .map_err(UserError::Internal)?;
 
@@ -241,7 +241,7 @@ impl UsersService {
 
         let deleted = self
             .users_repo
-            .delete(ctx.tenant_id.as_object_id(), &user_id.to_object_id())
+            .delete(&ctx.tenant_id, &user_id)
             .await
             .map_err(UserError::Internal)?;
 
