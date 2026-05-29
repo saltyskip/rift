@@ -63,7 +63,7 @@ impl SdkKeysRepository for SdkKeysRepo {
     async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<SdkKeyDoc>, String> {
         let mut cursor = self
             .keys
-            .find(doc! { "tenant_id": *tenant_id, "revoked": false })
+            .find(doc! { "tenant_id": tenant_id, "revoked": false })
             .sort(doc! { "created_at": -1 })
             .await
             .map_err(|e| e.to_string())?;
@@ -83,7 +83,7 @@ impl SdkKeysRepository for SdkKeysRepo {
         let result = self
             .keys
             .update_one(
-                doc! { "_id": *key_id, "tenant_id": *tenant_id },
+                doc! { "_id": key_id, "tenant_id": tenant_id },
                 doc! { "$set": { "revoked": true } },
             )
             .await

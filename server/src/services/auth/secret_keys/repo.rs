@@ -88,7 +88,7 @@ impl SecretKeysRepository for SecretKeysRepo {
     async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<SecretKeyDoc>, String> {
         let mut cursor = self
             .keys
-            .find(doc! { "tenant_id": *tenant_id })
+            .find(doc! { "tenant_id": tenant_id })
             .sort(doc! { "created_at": -1 })
             .await
             .map_err(|e| e.to_string())?;
@@ -102,7 +102,7 @@ impl SecretKeysRepository for SecretKeysRepo {
 
     async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<i64, String> {
         self.keys
-            .count_documents(doc! { "tenant_id": *tenant_id })
+            .count_documents(doc! { "tenant_id": tenant_id })
             .await
             .map(|c| c as i64)
             .map_err(|e| e.to_string())
@@ -111,7 +111,7 @@ impl SecretKeysRepository for SecretKeysRepo {
     async fn delete_key(&self, tenant_id: &TenantId, key_id: &SecretKeyId) -> Result<bool, String> {
         let result = self
             .keys
-            .delete_one(doc! { "_id": *key_id, "tenant_id": *tenant_id })
+            .delete_one(doc! { "_id": key_id, "tenant_id": tenant_id })
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)
@@ -127,9 +127,9 @@ impl SecretKeysRepository for SecretKeysRepo {
         let mut cursor = self
             .keys
             .find(doc! {
-                "tenant_id": *tenant_id,
+                "tenant_id": tenant_id,
                 "scope.type": "affiliate",
-                "scope.affiliate_id": *affiliate_id,
+                "scope.affiliate_id": affiliate_id,
             })
             .sort(doc! { "created_at": -1 })
             .await
@@ -151,10 +151,10 @@ impl SecretKeysRepository for SecretKeysRepo {
         let result = self
             .keys
             .delete_one(doc! {
-                "_id": *key_id,
-                "tenant_id": *tenant_id,
+                "_id": key_id,
+                "tenant_id": tenant_id,
                 "scope.type": "affiliate",
-                "scope.affiliate_id": *affiliate_id,
+                "scope.affiliate_id": affiliate_id,
             })
             .await
             .map_err(|e| e.to_string())?;

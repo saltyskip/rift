@@ -103,7 +103,7 @@ impl InstallEventsRepository for InstallEventsRepo {
         let existing = self
             .events
             .find_one(doc! {
-                "tenant_id": *tenant_id,
+                "tenant_id": tenant_id,
                 "install_id": install_id,
                 "event_type": "created",
             })
@@ -216,7 +216,7 @@ impl InstallEventsRepository for InstallEventsRepo {
         let event = self
             .events
             .find_one(doc! {
-                "tenant_id": *tenant_id,
+                "tenant_id": tenant_id,
                 "install_id": install_id,
                 "event_type": "created",
             })
@@ -249,7 +249,7 @@ impl InstallEventsRepository for InstallEventsRepo {
         };
         self.events
             .count_documents(doc! {
-                "tenant_id": *tenant_id,
+                "tenant_id": tenant_id,
                 "event_type": type_str,
                 "install_id": { "$in": bson_ids },
                 "timestamp": { "$gte": from, "$lte": to },

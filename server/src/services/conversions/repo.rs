@@ -233,7 +233,7 @@ impl ConversionsRepository for ConversionsRepo {
         id: &SourceId,
     ) -> Result<Option<Source>, String> {
         self.sources
-            .find_one(doc! { "_id": *id, "tenant_id": *tenant_id })
+            .find_one(doc! { "_id": id, "tenant_id": tenant_id })
             .await
             .map_err(|e| e.to_string())
     }
@@ -241,7 +241,7 @@ impl ConversionsRepository for ConversionsRepo {
     async fn list_sources(&self, tenant_id: &TenantId) -> Result<Vec<Source>, String> {
         let mut cursor = self
             .sources
-            .find(doc! { "tenant_id": *tenant_id })
+            .find(doc! { "tenant_id": tenant_id })
             .sort(doc! { "created_at": -1 })
             .await
             .map_err(|e| e.to_string())?;
@@ -256,7 +256,7 @@ impl ConversionsRepository for ConversionsRepo {
     async fn delete_source(&self, tenant_id: &TenantId, id: &SourceId) -> Result<bool, String> {
         let result = self
             .sources
-            .delete_one(doc! { "_id": *id, "tenant_id": *tenant_id })
+            .delete_one(doc! { "_id": id, "tenant_id": tenant_id })
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)
@@ -340,7 +340,7 @@ impl ConversionsRepository for ConversionsRepo {
         let pipeline = vec![
             doc! {
                 "$match": {
-                    "meta.tenant_id": *tenant_id,
+                    "meta.tenant_id": tenant_id,
                     "user_id": { "$in": bson_ids },
                     "occurred_at": { "$gte": from, "$lte": to },
                 }
@@ -454,7 +454,7 @@ impl ConversionsRepository for ConversionsRepo {
         let pipeline = vec![
             doc! {
                 "$match": {
-                    "meta.tenant_id": *tenant_id,
+                    "meta.tenant_id": tenant_id,
                     "occurred_at": { "$gte": from, "$lte": to },
                     "user_id": { "$ne": null },
                 }

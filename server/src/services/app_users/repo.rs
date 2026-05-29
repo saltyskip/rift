@@ -86,11 +86,11 @@ impl AppUsersRepository for AppUsersRepo {
         let before = self
             .app_users
             .find_one_and_update(
-                doc! { "tenant_id": *tenant_id, "user_id": user_id },
+                doc! { "tenant_id": tenant_id, "user_id": user_id },
                 doc! {
                     "$setOnInsert": {
                         "_id": ObjectId::new(),
-                        "tenant_id": *tenant_id,
+                        "tenant_id": tenant_id,
                         "user_id": user_id,
                         "identified_at": now,
                     },
@@ -118,7 +118,7 @@ impl AppUsersRepository for AppUsersRepo {
         user_id: &str,
     ) -> Result<Option<AppUserDoc>, String> {
         self.app_users
-            .find_one(doc! { "tenant_id": *tenant_id, "user_id": user_id })
+            .find_one(doc! { "tenant_id": tenant_id, "user_id": user_id })
             .await
             .map_err(|e| e.to_string())
     }
@@ -130,7 +130,7 @@ impl AppUsersRepository for AppUsersRepo {
     ) -> Result<Option<String>, String> {
         let doc = self
             .app_users
-            .find_one(doc! { "tenant_id": *tenant_id, "install_ids": install_id })
+            .find_one(doc! { "tenant_id": tenant_id, "install_ids": install_id })
             .await
             .map_err(|e| e.to_string())?;
         Ok(doc.map(|d| d.user_id))

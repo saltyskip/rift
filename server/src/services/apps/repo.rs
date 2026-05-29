@@ -82,7 +82,7 @@ impl AppsRepository for AppsRepo {
     async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<App>, String> {
         let mut cursor = self
             .apps
-            .find(doc! { "tenant_id": *tenant_id })
+            .find(doc! { "tenant_id": tenant_id })
             .sort(doc! { "created_at": -1 })
             .await
             .map_err(|e| e.to_string())?;
@@ -100,7 +100,7 @@ impl AppsRepository for AppsRepo {
         platform: &str,
     ) -> Result<Option<App>, String> {
         self.apps
-            .find_one(doc! { "tenant_id": *tenant_id, "platform": platform })
+            .find_one(doc! { "tenant_id": tenant_id, "platform": platform })
             .await
             .map_err(|e| e.to_string())
     }
@@ -108,7 +108,7 @@ impl AppsRepository for AppsRepo {
     async fn delete_app(&self, tenant_id: &TenantId, app_id: &AppId) -> Result<bool, String> {
         let result = self
             .apps
-            .delete_one(doc! { "_id": *app_id, "tenant_id": *tenant_id })
+            .delete_one(doc! { "_id": app_id, "tenant_id": tenant_id })
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)

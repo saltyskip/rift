@@ -95,7 +95,7 @@ impl DomainsRepository for DomainsRepo {
 
     async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String> {
         self.domains
-            .count_documents(doc! { "tenant_id": *tenant_id })
+            .count_documents(doc! { "tenant_id": tenant_id })
             .await
             .map_err(|e| e.to_string())
     }
@@ -103,7 +103,7 @@ impl DomainsRepository for DomainsRepo {
     async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<Domain>, String> {
         let mut cursor = self
             .domains
-            .find(doc! { "tenant_id": *tenant_id })
+            .find(doc! { "tenant_id": tenant_id })
             .sort(doc! { "created_at": -1 })
             .await
             .map_err(|e| e.to_string())?;
@@ -118,7 +118,7 @@ impl DomainsRepository for DomainsRepo {
     async fn delete_domain(&self, tenant_id: &TenantId, domain: &str) -> Result<bool, String> {
         let result = self
             .domains
-            .delete_one(doc! { "tenant_id": *tenant_id, "domain": domain })
+            .delete_one(doc! { "tenant_id": tenant_id, "domain": domain })
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)
@@ -140,7 +140,7 @@ impl DomainsRepository for DomainsRepo {
         tenant_id: &TenantId,
     ) -> Result<Option<Domain>, String> {
         self.domains
-            .find_one(doc! { "tenant_id": *tenant_id, "role": "alternate", "verified": true })
+            .find_one(doc! { "tenant_id": tenant_id, "role": "alternate", "verified": true })
             .await
             .map_err(|e| e.to_string())
     }

@@ -92,7 +92,7 @@ impl SessionsRepository for SessionsRepoMongo {
         let result = self
             .col
             .update_one(
-                doc! { "_id": *session_id, "revoked_at": null },
+                doc! { "_id": session_id, "revoked_at": null },
                 doc! { "$set": { "revoked_at": now } },
             )
             .await
@@ -104,7 +104,7 @@ impl SessionsRepository for SessionsRepoMongo {
         let now = bson::DateTime::now();
         self.col
             .update_one(
-                doc! { "_id": *session_id },
+                doc! { "_id": session_id },
                 doc! { "$set": { "last_seen_at": now } },
             )
             .await

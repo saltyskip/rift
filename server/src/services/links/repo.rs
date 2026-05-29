@@ -288,7 +288,7 @@ async fn cached_find_link_by_tenant_and_id(
     link_id: &str,
 ) -> Result<Link, String> {
     links
-        .find_one(doc! { "tenant_id": *tenant_id, "link_id": link_id })
+        .find_one(doc! { "tenant_id": tenant_id, "link_id": link_id })
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| NOT_FOUND.to_string())
@@ -401,7 +401,7 @@ impl LinksRepository for LinksRepo {
         let result = self
             .links
             .update_one(
-                doc! { "tenant_id": *tenant_id, "link_id": link_id },
+                doc! { "tenant_id": tenant_id, "link_id": link_id },
                 update_doc,
             )
             .await
@@ -415,7 +415,7 @@ impl LinksRepository for LinksRepo {
     async fn delete_link(&self, tenant_id: &TenantId, link_id: &str) -> Result<bool, String> {
         let result = self
             .links
-            .delete_one(doc! { "tenant_id": *tenant_id, "link_id": link_id })
+            .delete_one(doc! { "tenant_id": tenant_id, "link_id": link_id })
             .await
             .map_err(|e| e.to_string())?;
         if result.deleted_count > 0 {
@@ -426,7 +426,7 @@ impl LinksRepository for LinksRepo {
 
     async fn count_links_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String> {
         self.links
-            .count_documents(doc! { "tenant_id": *tenant_id })
+            .count_documents(doc! { "tenant_id": tenant_id })
             .await
             .map_err(|e| e.to_string())
     }
@@ -437,7 +437,7 @@ impl LinksRepository for LinksRepo {
         limit: i64,
         cursor: Option<ObjectId>,
     ) -> Result<Vec<Link>, String> {
-        let mut filter = doc! { "tenant_id": *tenant_id };
+        let mut filter = doc! { "tenant_id": tenant_id };
         if let Some(cursor_id) = cursor {
             filter.insert("_id", doc! { "$lt": cursor_id });
         }
@@ -528,7 +528,7 @@ impl LinksRepository for LinksRepo {
             .attribution_events
             .update_many(
                 doc! {
-                    "meta.tenant_id": *tenant_id,
+                    "meta.tenant_id": tenant_id,
                     "meta.install_id": install_id,
                 },
                 doc! { "$set": { "meta.user_id": user_id } },
@@ -569,7 +569,7 @@ impl LinksRepository for LinksRepo {
                     .distinct(
                         "meta.install_id",
                         doc! {
-                            "meta.tenant_id": *tenant_id,
+                            "meta.tenant_id": tenant_id,
                             "link_id": { "$in": bson_ids },
                             "timestamp": { "$gte": from, "$lte": to },
                         },
@@ -594,7 +594,7 @@ impl LinksRepository for LinksRepo {
         let pipeline = vec![
             doc! {
                 "$match": {
-                    "meta.tenant_id": *tenant_id,
+                    "meta.tenant_id": tenant_id,
                     "timestamp": { "$gte": from, "$lte": to },
                 }
             },
@@ -641,7 +641,7 @@ impl LinksRepository for LinksRepo {
             .collect();
         self.click_events
             .count_documents(doc! {
-                "meta.tenant_id": *tenant_id,
+                "meta.tenant_id": tenant_id,
                 "meta.link_id": { "$in": bson_ids },
                 "clicked_at": { "$gte": from, "$lte": to },
             })
@@ -661,7 +661,7 @@ impl LinksRepository for LinksRepo {
         // event in O(1) hops once the planner picks the right walk
         // direction.
         let match_stage = doc! {
-            "meta.tenant_id": *tenant_id,
+            "meta.tenant_id": tenant_id,
             "meta.user_id": user_id,
             "timestamp": { "$lte": at_or_before },
         };

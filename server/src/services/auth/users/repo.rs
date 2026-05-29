@@ -74,7 +74,7 @@ impl UsersRepository for UsersRepo {
         email: &str,
     ) -> Result<Option<UserDoc>, String> {
         self.users
-            .find_one(doc! { "tenant_id": *tenant_id, "email": email })
+            .find_one(doc! { "tenant_id": tenant_id, "email": email })
             .await
             .map_err(|e| e.to_string())
     }
@@ -82,7 +82,7 @@ impl UsersRepository for UsersRepo {
     async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<UserDoc>, String> {
         let mut cursor = self
             .users
-            .find(doc! { "tenant_id": *tenant_id })
+            .find(doc! { "tenant_id": tenant_id })
             .sort(doc! { "created_at": -1 })
             .await
             .map_err(|e| e.to_string())?;
@@ -96,7 +96,7 @@ impl UsersRepository for UsersRepo {
 
     async fn count_verified_by_tenant(&self, tenant_id: &TenantId) -> Result<i64, String> {
         self.users
-            .count_documents(doc! { "tenant_id": *tenant_id, "verified": true })
+            .count_documents(doc! { "tenant_id": tenant_id, "verified": true })
             .await
             .map(|c| c as i64)
             .map_err(|e| e.to_string())
@@ -105,7 +105,7 @@ impl UsersRepository for UsersRepo {
     async fn delete(&self, tenant_id: &TenantId, user_id: &UserId) -> Result<bool, String> {
         let result = self
             .users
-            .delete_one(doc! { "_id": *user_id, "tenant_id": *tenant_id })
+            .delete_one(doc! { "_id": user_id, "tenant_id": tenant_id })
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)

@@ -71,7 +71,7 @@ impl WebhooksRepository for WebhooksRepo {
     async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<Webhook>, String> {
         let mut cursor = self
             .webhooks
-            .find(doc! { "tenant_id": *tenant_id })
+            .find(doc! { "tenant_id": tenant_id })
             .sort(doc! { "created_at": -1 })
             .await
             .map_err(|e| e.to_string())?;
@@ -85,7 +85,7 @@ impl WebhooksRepository for WebhooksRepo {
 
     async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String> {
         self.webhooks
-            .count_documents(doc! { "tenant_id": *tenant_id })
+            .count_documents(doc! { "tenant_id": tenant_id })
             .await
             .map_err(|e| e.to_string())
     }
@@ -97,7 +97,7 @@ impl WebhooksRepository for WebhooksRepo {
     ) -> Result<bool, String> {
         let result = self
             .webhooks
-            .delete_one(doc! { "_id": *webhook_id, "tenant_id": *tenant_id })
+            .delete_one(doc! { "_id": webhook_id, "tenant_id": tenant_id })
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)
@@ -128,7 +128,7 @@ impl WebhooksRepository for WebhooksRepo {
         if set_doc.is_empty() {
             let exists = self
                 .webhooks
-                .find_one(doc! { "_id": *webhook_id, "tenant_id": *tenant_id })
+                .find_one(doc! { "_id": webhook_id, "tenant_id": tenant_id })
                 .await
                 .map_err(|e| e.to_string())?
                 .is_some();
@@ -137,7 +137,7 @@ impl WebhooksRepository for WebhooksRepo {
         let result = self
             .webhooks
             .update_one(
-                doc! { "_id": *webhook_id, "tenant_id": *tenant_id },
+                doc! { "_id": webhook_id, "tenant_id": tenant_id },
                 doc! { "$set": set_doc },
             )
             .await
@@ -159,7 +159,7 @@ impl WebhooksRepository for WebhooksRepo {
         let mut cursor = self
             .webhooks
             .find(doc! {
-                "tenant_id": *tenant_id,
+                "tenant_id": tenant_id,
                 "active": true,
                 "events": &event_str,
             })
