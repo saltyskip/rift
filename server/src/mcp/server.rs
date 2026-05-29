@@ -289,7 +289,7 @@ impl RiftMcp {
         Parameters(input): Parameters<CreateSourceInput>,
         Extension(parts): Extension<Parts>,
     ) -> Result<Json<CreateSourceOutput>, String> {
-        let tenant_id = self.auth_context(&parts).await?.tenant_id.to_object_id();
+        let tenant_id = self.auth_context(&parts).await?.tenant_id;
         let repo = self
             .conversions_repo
             .as_ref()
@@ -336,7 +336,7 @@ impl RiftMcp {
         Parameters(_input): Parameters<ListSourcesInput>,
         Extension(parts): Extension<Parts>,
     ) -> Result<Json<ListSourcesOutput>, String> {
-        let tenant_id = self.auth_context(&parts).await?.tenant_id.to_object_id();
+        let tenant_id = self.auth_context(&parts).await?.tenant_id;
         let repo = self
             .conversions_repo
             .as_ref()

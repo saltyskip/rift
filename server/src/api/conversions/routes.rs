@@ -50,10 +50,7 @@ pub async fn create_source(
             .into_response();
     }
 
-    match repo
-        .create_source(tenant.to_object_id(), name, req.source_type)
-        .await
-    {
+    match repo.create_source(tenant, name, req.source_type).await {
         Ok(source) => {
             let resp = CreateSourceResponse {
                 id: source.id,
@@ -113,7 +110,7 @@ pub async fn list_sources(
             .into_response();
     };
 
-    let mut sources = match repo.list_sources(&tenant.to_object_id()).await {
+    let mut sources = match repo.list_sources(&tenant).await {
         Ok(s) => s,
         Err(e) => {
             tracing::error!(error = %e, "Failed to list sources");
@@ -128,10 +125,7 @@ pub async fn list_sources(
     // Auto-provision a default custom source if the tenant has none. This is the
     // zero-ceremony dev flow: first GET returns a usable webhook URL immediately.
     if sources.is_empty() {
-        match repo
-            .get_or_create_default_custom_source(tenant.to_object_id())
-            .await
-        {
+        match repo.get_or_create_default_custom_source(tenant).await {
             Ok(source) => sources.push(source),
             Err(e) => {
                 tracing::error!(error = %e, "Failed to auto-provision default source");
@@ -175,10 +169,7 @@ pub async fn get_source(
             .into_response();
     };
 
-    match repo
-        .find_source_by_id(&tenant.to_object_id(), &id.to_object_id())
-        .await
-    {
+    match repo.find_source_by_id(&tenant, &id).await {
         Ok(Some(source)) => Json(to_detail(&state, &source)).into_response(),
         Ok(None) => (
             StatusCode::NOT_FOUND,
@@ -223,10 +214,7 @@ pub async fn delete_source(
             .into_response();
     };
 
-    match repo
-        .delete_source(&tenant.to_object_id(), &id.to_object_id())
-        .await
-    {
+    match repo.delete_source(&tenant, &id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,

@@ -89,7 +89,7 @@ impl ConversionsService {
             if let Some(key) = &event.idempotency_key {
                 match self
                     .conversions_repo
-                    .check_and_insert_dedup(&tenant_oid, key)
+                    .check_and_insert_dedup(&tenant_id, key)
                     .await
                 {
                     Ok(false) => {

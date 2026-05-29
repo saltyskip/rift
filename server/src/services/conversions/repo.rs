@@ -7,7 +7,7 @@ use rand::RngCore;
 use crate::ensure_index;
 
 use super::models::{ConversionDedup, ConversionEvent, Source, SourceType};
-use crate::core::public_id::SourceId;
+use crate::core::public_id::{SourceId, TenantId};
 use crate::services::links::models::CreditModel;
 
 /// Sentinel `source_id` for events that came in via the SDK direct endpoint
@@ -26,7 +26,7 @@ pub trait ConversionsRepository: Send + Sync {
 
     async fn create_source(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         name: String,
         source_type: SourceType,
     ) -> Result<Source, String>;
@@ -35,20 +35,20 @@ pub trait ConversionsRepository: Send + Sync {
 
     async fn find_source_by_id(
         &self,
-        tenant_id: &ObjectId,
-        id: &ObjectId,
+        tenant_id: &TenantId,
+        id: &SourceId,
     ) -> Result<Option<Source>, String>;
 
-    async fn list_sources(&self, tenant_id: &ObjectId) -> Result<Vec<Source>, String>;
+    async fn list_sources(&self, tenant_id: &TenantId) -> Result<Vec<Source>, String>;
 
-    async fn delete_source(&self, tenant_id: &ObjectId, id: &ObjectId) -> Result<bool, String>;
+    async fn delete_source(&self, tenant_id: &TenantId, id: &SourceId) -> Result<bool, String>;
 
     /// Returns the tenant's default custom source, creating it (name: "default")
     /// on first access. Enables the zero-ceremony dev flow of `GET /v1/sources`
     /// returning a usable webhook URL immediately.
     async fn get_or_create_default_custom_source(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
     ) -> Result<Source, String>;
 
     // ── Events ──
@@ -64,7 +64,7 @@ pub trait ConversionsRepository: Send + Sync {
     /// - `Err(_)` — other DB error; caller logs and skips
     async fn check_and_insert_dedup(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         idempotency_key: &str,
     ) -> Result<bool, String>;
 
@@ -76,7 +76,7 @@ pub trait ConversionsRepository: Send + Sync {
     #[allow(dead_code)] // kept for reference / future debug; funnel uses the credited variant
     async fn count_by_type_for_users(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         user_ids: &[String],
         from: DateTime,
         to: DateTime,
@@ -100,7 +100,7 @@ pub trait ConversionsRepository: Send + Sync {
     /// Returns an empty vec for empty `link_ids`.
     async fn count_conversions_by_type_credited_to_links(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_ids: &[String],
         from: DateTime,
         to: DateTime,
@@ -199,13 +199,13 @@ fn generate_url_token() -> String {
 impl ConversionsRepository for ConversionsRepo {
     async fn create_source(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         name: String,
         source_type: SourceType,
     ) -> Result<Source, String> {
         let doc = Source {
-            id: crate::core::public_id::SourceId::new(),
-            tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
+            id: SourceId::new(),
+            tenant_id,
             name,
             source_type,
             url_token: generate_url_token(),
@@ -229,19 +229,19 @@ impl ConversionsRepository for ConversionsRepo {
 
     async fn find_source_by_id(
         &self,
-        tenant_id: &ObjectId,
-        id: &ObjectId,
+        tenant_id: &TenantId,
+        id: &SourceId,
     ) -> Result<Option<Source>, String> {
         self.sources
-            .find_one(doc! { "_id": id, "tenant_id": tenant_id })
+            .find_one(doc! { "_id": *id, "tenant_id": *tenant_id })
             .await
             .map_err(|e| e.to_string())
     }
 
-    async fn list_sources(&self, tenant_id: &ObjectId) -> Result<Vec<Source>, String> {
+    async fn list_sources(&self, tenant_id: &TenantId) -> Result<Vec<Source>, String> {
         let mut cursor = self
             .sources
-            .find(doc! { "tenant_id": tenant_id })
+            .find(doc! { "tenant_id": *tenant_id })
             .sort(doc! { "created_at": -1 })
             .await
             .map_err(|e| e.to_string())?;
@@ -253,10 +253,10 @@ impl ConversionsRepository for ConversionsRepo {
         Ok(sources)
     }
 
-    async fn delete_source(&self, tenant_id: &ObjectId, id: &ObjectId) -> Result<bool, String> {
+    async fn delete_source(&self, tenant_id: &TenantId, id: &SourceId) -> Result<bool, String> {
         let result = self
             .sources
-            .delete_one(doc! { "_id": id, "tenant_id": tenant_id })
+            .delete_one(doc! { "_id": *id, "tenant_id": *tenant_id })
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)
@@ -264,11 +264,11 @@ impl ConversionsRepository for ConversionsRepo {
 
     async fn get_or_create_default_custom_source(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
     ) -> Result<Source, String> {
         if let Some(existing) = self
             .sources
-            .find_one(doc! { "tenant_id": &tenant_id, "name": "default" })
+            .find_one(doc! { "tenant_id": tenant_id, "name": "default" })
             .await
             .map_err(|e| e.to_string())?
         {
@@ -284,7 +284,7 @@ impl ConversionsRepository for ConversionsRepo {
             Ok(source) => Ok(source),
             Err(e) if e.contains("E11000") => self
                 .sources
-                .find_one(doc! { "tenant_id": &tenant_id, "name": "default" })
+                .find_one(doc! { "tenant_id": tenant_id, "name": "default" })
                 .await
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| "default source disappeared after conflict".to_string()),
@@ -307,12 +307,12 @@ impl ConversionsRepository for ConversionsRepo {
 
     async fn check_and_insert_dedup(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         idempotency_key: &str,
     ) -> Result<bool, String> {
         let doc = ConversionDedup {
             id: crate::services::conversions::models::ConversionDedupId::new(),
-            tenant_id: crate::core::public_id::TenantId::from_object_id(*tenant_id),
+            tenant_id: *tenant_id,
             idempotency_key: idempotency_key.to_string(),
             created_at: DateTime::now(),
         };
@@ -325,7 +325,7 @@ impl ConversionsRepository for ConversionsRepo {
 
     async fn count_by_type_for_users(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         user_ids: &[String],
         from: DateTime,
         to: DateTime,
@@ -340,7 +340,7 @@ impl ConversionsRepository for ConversionsRepo {
         let pipeline = vec![
             doc! {
                 "$match": {
-                    "meta.tenant_id": tenant_id,
+                    "meta.tenant_id": *tenant_id,
                     "user_id": { "$in": bson_ids },
                     "occurred_at": { "$gte": from, "$lte": to },
                 }
@@ -373,7 +373,7 @@ impl ConversionsRepository for ConversionsRepo {
 
     async fn count_conversions_by_type_credited_to_links(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_ids: &[String],
         from: DateTime,
         to: DateTime,
@@ -406,7 +406,7 @@ impl ConversionsRepository for ConversionsRepo {
                     "$match": {
                         "$expr": {
                             "$and": [
-                                { "$eq": ["$meta.tenant_id", tenant_id] },
+                                { "$eq": ["$meta.tenant_id", *tenant_id] },
                                 { "$eq": ["$meta.user_id", "$$uid"] },
                                 { "$lte": ["$timestamp", "$$convo_t"] },
                                 { "$in": ["$link_id", bson_links.clone()] },
@@ -428,7 +428,7 @@ impl ConversionsRepository for ConversionsRepo {
                         "$match": {
                             "$expr": {
                                 "$and": [
-                                    { "$eq": ["$meta.tenant_id", tenant_id] },
+                                    { "$eq": ["$meta.tenant_id", *tenant_id] },
                                     { "$eq": ["$meta.user_id", "$$uid"] },
                                     { "$lte": ["$timestamp", "$$convo_t"] },
                                 ]
@@ -454,7 +454,7 @@ impl ConversionsRepository for ConversionsRepo {
         let pipeline = vec![
             doc! {
                 "$match": {
-                    "meta.tenant_id": tenant_id,
+                    "meta.tenant_id": *tenant_id,
                     "occurred_at": { "$gte": from, "$lte": to },
                     "user_id": { "$ne": null },
                 }

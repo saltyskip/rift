@@ -136,7 +136,7 @@ impl AnalyticsService {
         let conversions: BTreeMap<String, u64> = match &self.conversions_repo {
             Some(cr) => cr
                 .count_conversions_by_type_credited_to_links(
-                    tenant_id.as_object_id(),
+                    tenant_id,
                     &params.link_ids,
                     params.from,
                     params.to,
