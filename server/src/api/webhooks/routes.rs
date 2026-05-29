@@ -112,7 +112,7 @@ pub async fn list_webhooks(
             .into_response();
     };
 
-    match repo.list_by_tenant(&tenant.to_object_id()).await {
+    match repo.list_by_tenant(&tenant).await {
         Ok(webhooks) => {
             let details: Vec<WebhookDetail> = webhooks
                 .into_iter()
@@ -162,10 +162,7 @@ pub async fn delete_webhook(
             .into_response();
     };
 
-    match repo
-        .delete_webhook(&tenant.to_object_id(), &webhook_id.to_object_id())
-        .await
-    {
+    match repo.delete_webhook(&tenant, &webhook_id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,
@@ -210,8 +207,6 @@ pub async fn patch_webhook(
             .into_response();
     };
 
-    let oid = webhook_id.to_object_id();
-
     if req.active.is_none() && req.events.is_none() && req.url.is_none() {
         return (
             StatusCode::BAD_REQUEST,
@@ -245,22 +240,13 @@ pub async fn patch_webhook(
     }
 
     match repo
-        .update_webhook(
-            &tenant.to_object_id(),
-            &oid,
-            req.active,
-            req.events,
-            req.url,
-        )
+        .update_webhook(&tenant, &webhook_id, req.active, req.events, req.url)
         .await
     {
         Ok(true) => {
             // Fetch updated webhook to return.
-            let webhooks = repo
-                .list_by_tenant(&tenant.to_object_id())
-                .await
-                .unwrap_or_default();
-            match webhooks.iter().find(|w| w.id.to_object_id() == oid) {
+            let webhooks = repo.list_by_tenant(&tenant).await.unwrap_or_default();
+            match webhooks.iter().find(|w| w.id == webhook_id) {
                 Some(w) => Json(json!({
                     "id": w.id,
                     "url": w.url,

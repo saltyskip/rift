@@ -146,7 +146,7 @@ pub async fn list_apps(
             .into_response();
     };
 
-    match repo.list_by_tenant(&tenant.to_object_id()).await {
+    match repo.list_by_tenant(&tenant).await {
         Ok(apps) => {
             let details: Vec<AppDetail> = apps.iter().map(to_detail).collect();
             Json(json!({ "apps": details })).into_response()
@@ -189,10 +189,7 @@ pub async fn delete_app(
             .into_response();
     };
 
-    match repo
-        .delete_app(&tenant.to_object_id(), &app_id.to_object_id())
-        .await
-    {
+    match repo.delete_app(&tenant, &app_id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,
@@ -240,7 +237,7 @@ pub async fn serve_aasa(State(state): State<Arc<AppState>>, headers: HeaderMap) 
     };
 
     let Some(ios_app) = repo
-        .find_by_tenant_platform(tenant_id.as_object_id(), "ios")
+        .find_by_tenant_platform(&tenant_id, "ios")
         .await
         .ok()
         .flatten()
@@ -309,7 +306,7 @@ pub async fn serve_assetlinks(State(state): State<Arc<AppState>>, headers: Heade
     };
 
     let Some(android_app) = repo
-        .find_by_tenant_platform(tenant_id.as_object_id(), "android")
+        .find_by_tenant_platform(&tenant_id, "android")
         .await
         .ok()
         .flatten()

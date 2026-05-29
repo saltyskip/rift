@@ -665,12 +665,12 @@ async fn do_resolve(
                 Platform::Other => "android",
             };
             let app = apps_repo
-                .find_by_tenant_platform(link.tenant_id.as_object_id(), preferred)
+                .find_by_tenant_platform(&link.tenant_id, preferred)
                 .await
                 .ok()
                 .flatten()
                 .or(apps_repo
-                    .find_by_tenant_platform(link.tenant_id.as_object_id(), fallback)
+                    .find_by_tenant_platform(&link.tenant_id, fallback)
                     .await
                     .ok()
                     .flatten());
