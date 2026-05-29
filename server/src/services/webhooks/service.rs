@@ -3,7 +3,6 @@
 //! Same rule as DomainsService: the service layer is the one place both
 //! `api/` and (future) `mcp/` consumers call, so quota lives here.
 
-use mongodb::bson::oid::ObjectId;
 use rift_macros::requires;
 use std::sync::Arc;
 

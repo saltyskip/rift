@@ -321,7 +321,6 @@ const OBJECT_ID_BACKLOG: &[&str] = &[
     "src/api/webhooks/routes.rs",
     "src/services/affiliates/service.rs",
     "src/services/analytics/service.rs",
-    "src/services/auth/oauth/service.rs",
     "src/services/auth/permissions/context.rs",
     "src/services/auth/permissions/models.rs",
     "src/services/auth/publishable_keys/models.rs",
@@ -339,7 +338,6 @@ const OBJECT_ID_BACKLOG: &[&str] = &[
     "src/services/links/models.rs",
     "src/services/links/service.rs",
     "src/services/webhooks/dispatcher.rs",
-    "src/services/webhooks/service.rs",
 ];
 
 /// Whether `path` is on the cleanup backlog (suppress pub-types check only).
