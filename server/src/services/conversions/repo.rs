@@ -7,7 +7,16 @@ use rand::RngCore;
 use crate::ensure_index;
 
 use super::models::{ConversionDedup, ConversionEvent, Source, SourceType};
+use crate::core::public_id::SourceId;
 use crate::services::links::models::CreditModel;
+
+/// Sentinel `source_id` for events that came in via the SDK direct endpoint
+/// rather than a registered `Source`. Stored on `ConversionMeta.source_id` so
+/// the field stays non-optional in the time series schema; downstream readers
+/// treat it as "no upstream source row exists."
+pub fn sdk_sentinel_source_id() -> SourceId {
+    SourceId::from_object_id(ObjectId::from_bytes([0u8; 12]))
+}
 
 // ── Trait ──
 

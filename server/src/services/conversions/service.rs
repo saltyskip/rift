@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use mongodb::bson::{oid::ObjectId, DateTime};
+use mongodb::bson::DateTime;
 
 use super::models::ParsedConversion;
 use super::models::{ConversionEvent, ConversionMeta, IngestResult, Source};
-use super::repo::ConversionsRepository;
+use super::repo::{sdk_sentinel_source_id, ConversionsRepository};
 use crate::core::public_id::{ConversionEventId, SourceId, TenantId};
 use crate::core::webhook_dispatcher::{ConversionEventPayload, WebhookDispatcher};
 use crate::services::app_users::repo::AppUsersRepository;
@@ -66,11 +66,11 @@ impl ConversionsService {
         tenant_id: TenantId,
         parsed: Vec<ParsedConversion>,
     ) -> IngestResult {
-        // Use a zero ObjectId as a sentinel for "came from SDK, not a source."
+        // Use a zero sentinel for "came from SDK, not a source."
         // This is stored in meta.source_id on the conversion event for provenance
         // but is not looked up as a real source document.
-        let sdk_source_id = SourceId::from_object_id(ObjectId::from_bytes([0u8; 12]));
-        self.ingest(tenant_id, sdk_source_id, parsed).await
+        self.ingest(tenant_id, sdk_sentinel_source_id(), parsed)
+            .await
     }
 
     /// Core ingestion: dedup, attribute, store, fan out.
