@@ -311,7 +311,6 @@ const OBJECT_ID_BACKLOG: &[&str] = &[
     "src/api/auth/middleware.rs",
     "src/api/billing/stripe_webhook.rs",
     "src/services/auth/secret_keys/service.rs",
-    "src/services/auth/users/service.rs",
     "src/services/billing/quota.rs",
     "src/services/billing/service.rs",
     "src/services/conversions/service.rs",

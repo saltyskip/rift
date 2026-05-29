@@ -1,4 +1,4 @@
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::doc;
 use rift_macros::requires;
 use std::sync::Arc;
 
@@ -51,7 +51,13 @@ impl UsersService {
     pub async fn create_tenant_with_verified_owner(
         &self,
         email: &str,
-    ) -> Result<(ObjectId, ObjectId), UserError> {
+    ) -> Result<
+        (
+            crate::core::public_id::TenantId,
+            crate::core::public_id::UserId,
+        ),
+        UserError,
+    > {
         let email = validate_email(email).map_err(|_| UserError::InvalidEmail)?;
 
         let tenant_id = self
@@ -75,7 +81,7 @@ impl UsersService {
             .await
             .map_err(UserError::Internal)?;
 
-        Ok((tenant_id.to_object_id(), user_id.to_object_id()))
+        Ok((tenant_id, user_id))
     }
 
     /// Accept a team-invite verification token: mark the invited user as
@@ -219,7 +225,11 @@ impl UsersService {
 
     /// Delete a user. Guard: can't remove last verified user.
     #[requires(Permission::TenantAdmin)]
-    pub async fn delete(&self, ctx: &AuthContext, user_id: ObjectId) -> Result<(), UserError> {
+    pub async fn delete(
+        &self,
+        ctx: &AuthContext,
+        user_id: crate::core::public_id::UserId,
+    ) -> Result<(), UserError> {
         let count = self
             .users_repo
             .count_verified_by_tenant(ctx.tenant_id.as_object_id())
@@ -232,7 +242,7 @@ impl UsersService {
 
         let deleted = self
             .users_repo
-            .delete(ctx.tenant_id.as_object_id(), &user_id)
+            .delete(ctx.tenant_id.as_object_id(), &user_id.to_object_id())
             .await
             .map_err(UserError::Internal)?;
 

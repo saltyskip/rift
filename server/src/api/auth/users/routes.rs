@@ -131,7 +131,7 @@ pub async fn delete_user(
             .into_response();
     };
 
-    match svc.delete(&ctx, user_id.to_object_id()).await {
+    match svc.delete(&ctx, user_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => error_response(e),
     }

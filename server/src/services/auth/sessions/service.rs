@@ -231,12 +231,7 @@ impl SessionsService {
                 .users_service
                 .create_tenant_with_verified_owner(&email)
                 .await
-                .map(|(tenant_id, user_id)| {
-                    (
-                        crate::core::public_id::UserId::from_object_id(user_id),
-                        crate::core::public_id::TenantId::from_object_id(tenant_id),
-                    )
-                })
+                .map(|(tenant_id, user_id)| (user_id, tenant_id))
                 .map_err(|e| SessionError::Internal(e.to_string()))?,
         };
 
