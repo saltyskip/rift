@@ -1,14 +1,16 @@
-use mongodb::bson::{oid::ObjectId, DateTime};
+use mongodb::bson::DateTime;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::core::public_id::{PublishableKeyId, TenantId};
 
 // ── Database Document ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SdkKeyDoc {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub tenant_id: ObjectId,
+    pub id: PublishableKeyId,
+    pub tenant_id: TenantId,
     pub key_hash: String,
     pub key_prefix: String,
     pub domain: String,

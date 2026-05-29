@@ -85,8 +85,8 @@ impl RiftMcp {
         }
 
         Ok(AuthContext::for_secret_key(
-            crate::core::public_id::TenantId::from_object_id(key_doc.tenant_id),
-            key_doc.id,
+            key_doc.tenant_id,
+            key_doc.id.to_object_id(),
             Some(&KeyScope::Full),
         ))
     }

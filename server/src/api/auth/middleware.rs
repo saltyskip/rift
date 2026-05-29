@@ -446,8 +446,7 @@ pub async fn sdk_auth_gate(
             .into_response();
     }
 
-    req.extensions_mut()
-        .insert(TenantId::from_object_id(doc.tenant_id));
+    req.extensions_mut().insert(doc.tenant_id);
     req.extensions_mut().insert(SdkDomain(doc.domain));
 
     next.run(req).await
@@ -540,7 +539,11 @@ async fn validate_api_key(
         );
     }
 
-    Ok((key_doc.tenant_id, key_doc.id, key_doc.scope))
+    Ok((
+        key_doc.tenant_id.to_object_id(),
+        key_doc.id.to_object_id(),
+        key_doc.scope,
+    ))
 }
 
 /// Path allowlist for `KeyScope::Affiliate`.

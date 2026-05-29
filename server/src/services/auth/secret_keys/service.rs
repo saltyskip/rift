@@ -34,13 +34,13 @@ pub async fn mint_scoped(
     scope: KeyScope,
 ) -> Result<CreatedKey, String> {
     let (full_key, key_hash, key_prefix) = keys::generate_api_key();
-    let key_id = ObjectId::new();
+    let key_id = crate::core::public_id::SecretKeyId::new();
     let now = mongodb::bson::DateTime::now();
 
     let key_doc = SecretKeyDoc {
         id: key_id,
-        tenant_id,
-        created_by,
+        tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
+        created_by: crate::core::public_id::UserId::from_object_id(created_by),
         key_hash,
         key_prefix: key_prefix.clone(),
         created_at: now,

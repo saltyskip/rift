@@ -2,6 +2,8 @@ use mongodb::bson::{self, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::core::public_id::{SecretKeyId, TenantId, UserId};
+
 /// Stored secret key (`rl_live_…`).
 ///
 /// `scope` is optional only as a migration-window concession — pre-existing
@@ -12,9 +14,9 @@ use std::fmt;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretKeyDoc {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub tenant_id: ObjectId,
-    pub created_by: ObjectId,
+    pub id: SecretKeyId,
+    pub tenant_id: TenantId,
+    pub created_by: UserId,
     pub key_hash: String,
     pub key_prefix: String,
     pub created_at: bson::DateTime,
@@ -112,15 +114,15 @@ impl SecretKeyError {
 // ── Service return types ──
 
 pub struct CreatedKey {
-    pub id: ObjectId,
+    pub id: SecretKeyId,
     pub key: String,
     pub key_prefix: String,
     pub created_at: bson::DateTime,
 }
 
 pub struct KeyDetail {
-    pub id: ObjectId,
+    pub id: SecretKeyId,
     pub key_prefix: String,
-    pub created_by: ObjectId,
+    pub created_by: UserId,
     pub created_at: bson::DateTime,
 }

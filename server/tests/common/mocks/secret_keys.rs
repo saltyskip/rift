@@ -32,7 +32,7 @@ impl SecretKeysRepository for MockSecretKeysRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|k| k.tenant_id == *tenant_id)
+            .filter(|k| k.tenant_id.to_object_id() == *tenant_id)
             .cloned()
             .collect())
     }
@@ -43,14 +43,16 @@ impl SecretKeysRepository for MockSecretKeysRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|k| k.tenant_id == *tenant_id)
+            .filter(|k| k.tenant_id.to_object_id() == *tenant_id)
             .count() as i64)
     }
 
     async fn delete_key(&self, tenant_id: &ObjectId, key_id: &ObjectId) -> Result<bool, String> {
         let mut keys = self.keys.lock().unwrap();
         let len = keys.len();
-        keys.retain(|k| !(k.id == *key_id && k.tenant_id == *tenant_id));
+        keys.retain(|k| {
+            !(k.id.to_object_id() == *key_id && k.tenant_id.to_object_id() == *tenant_id)
+        });
         Ok(keys.len() < len)
     }
 
@@ -65,7 +67,7 @@ impl SecretKeysRepository for MockSecretKeysRepo {
             .unwrap()
             .iter()
             .filter(|k| {
-                k.tenant_id == *tenant_id
+                k.tenant_id.to_object_id() == *tenant_id
                     && matches!(
                         &k.scope,
                         Some(KeyScope::Affiliate { affiliate_id: a }) if a == affiliate_id
@@ -84,8 +86,8 @@ impl SecretKeysRepository for MockSecretKeysRepo {
         let mut keys = self.keys.lock().unwrap();
         let len = keys.len();
         keys.retain(|k| {
-            !(k.id == *key_id
-                && k.tenant_id == *tenant_id
+            !(k.id.to_object_id() == *key_id
+                && k.tenant_id.to_object_id() == *tenant_id
                 && matches!(
                     &k.scope,
                     Some(KeyScope::Affiliate { affiliate_id: a }) if a == affiliate_id

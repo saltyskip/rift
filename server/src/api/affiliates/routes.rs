@@ -185,7 +185,7 @@ pub async fn create_affiliate_credential(
         Ok(minted) => (
             StatusCode::CREATED,
             Json(CreateAffiliateCredentialResponse {
-                id: minted.created_key.id.to_hex(),
+                id: minted.created_key.id.to_string(),
                 affiliate_id: minted.affiliate_id,
                 api_key: minted.created_key.key,
                 key_prefix: minted.created_key.key_prefix,
@@ -227,7 +227,7 @@ pub async fn list_affiliate_credentials(
             let creds: Vec<AffiliateCredentialDetail> = keys
                 .into_iter()
                 .map(|k| AffiliateCredentialDetail {
-                    id: k.id.to_hex(),
+                    id: k.id.to_string(),
                     key_prefix: k.key_prefix,
                     created_at: k.created_at.try_to_rfc3339_string().unwrap_or_default(),
                 })
@@ -256,16 +256,16 @@ pub async fn list_affiliate_credentials(
 pub async fn revoke_affiliate_credential(
     State(state): State<Arc<AppState>>,
     axum::Extension(ctx): axum::Extension<AuthContext>,
-    Path((affiliate_id, key_id)): Path<(AffiliateId, String)>,
+    Path((affiliate_id, key_id)): Path<(AffiliateId, crate::core::public_id::SecretKeyId)>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
         return no_database();
     };
-    let Ok(key_oid) = ObjectId::parse_str(&key_id) else {
-        return invalid_id();
-    };
 
-    match svc.revoke_credential(&ctx, affiliate_id, key_oid).await {
+    match svc
+        .revoke_credential(&ctx, affiliate_id, key_id.to_object_id())
+        .await
+    {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => affiliate_error_to_response(e),
     }

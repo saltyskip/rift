@@ -372,7 +372,7 @@ pub async fn issue_secret_key(
         Ok(created) => (
             StatusCode::CREATED,
             Json(CreateKeyResponse {
-                id: created.id.to_hex(),
+                id: created.id.to_string(),
                 key: created.key,
                 key_prefix: created.key_prefix,
                 created_at: created
