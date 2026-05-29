@@ -373,7 +373,11 @@ impl LinksService {
         // | Tenant             | Some(B)              | validate B; pin to B        |
         // | Tenant             | None                 | None                        |
         let resolved_affiliate_id = self
-            .resolve_affiliate_id(&tenant_id, &ctx.resource_scope, req.affiliate_id)
+            .resolve_affiliate_id(
+                &tenant_id,
+                &ctx.resource_scope,
+                req.affiliate_id.map(|a| a.to_object_id()),
+            )
             .await?;
 
         let has_verified_domain = self.tenant_has_verified_domain(&tenant_id).await;
@@ -506,7 +510,11 @@ impl LinksService {
 
         // 3. Affiliate resolution — once for the whole batch.
         let resolved_affiliate_id = self
-            .resolve_affiliate_id(&tenant_id, &ctx.resource_scope, req.template.affiliate_id)
+            .resolve_affiliate_id(
+                &tenant_id,
+                &ctx.resource_scope,
+                req.template.affiliate_id.map(|a| a.to_object_id()),
+            )
             .await?;
 
         // 4. Template validation (URL, threat, metadata, agent, social).
@@ -928,7 +936,9 @@ impl LinksService {
             ios_store_url: link.ios_store_url.clone(),
             android_store_url: link.android_store_url.clone(),
             created_at: link.created_at.try_to_rfc3339_string().unwrap_or_default(),
-            affiliate_id: link.affiliate_id,
+            affiliate_id: link
+                .affiliate_id
+                .map(crate::core::public_id::AffiliateId::from_object_id),
             agent_context: link.agent_context.clone(),
             social_preview: link.social_preview.clone(),
         }

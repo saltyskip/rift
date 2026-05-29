@@ -24,8 +24,8 @@ impl DomainsRepository for MockDomainsRepo {
             return Err("E11000 duplicate key".to_string());
         }
         let doc = Domain {
-            id: ObjectId::new(),
-            tenant_id,
+            id: rift::core::public_id::DomainId::new(),
+            tenant_id: rift::core::public_id::TenantId::from_object_id(tenant_id),
             domain,
             verified: false,
             verification_token,
@@ -52,7 +52,7 @@ impl DomainsRepository for MockDomainsRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|d| &d.tenant_id == tenant_id)
+            .filter(|d| d.tenant_id.to_object_id() == *tenant_id)
             .cloned()
             .collect())
     }
@@ -63,14 +63,14 @@ impl DomainsRepository for MockDomainsRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|d| &d.tenant_id == tenant_id)
+            .filter(|d| d.tenant_id.to_object_id() == *tenant_id)
             .count() as u64)
     }
 
     async fn delete_domain(&self, tenant_id: &ObjectId, domain: &str) -> Result<bool, String> {
         let mut domains = self.domains.lock().unwrap();
         let len_before = domains.len();
-        domains.retain(|d| !(&d.tenant_id == tenant_id && d.domain == domain));
+        domains.retain(|d| !(d.tenant_id.to_object_id() == *tenant_id && d.domain == domain));
         Ok(domains.len() < len_before)
     }
 
@@ -91,7 +91,11 @@ impl DomainsRepository for MockDomainsRepo {
             .lock()
             .unwrap()
             .iter()
-            .find(|d| &d.tenant_id == tenant_id && d.role == DomainRole::Alternate && d.verified)
+            .find(|d| {
+                d.tenant_id.to_object_id() == *tenant_id
+                    && d.role == DomainRole::Alternate
+                    && d.verified
+            })
             .cloned())
     }
 }

@@ -289,7 +289,7 @@ pub async fn seed_api_key_with(app: &TestApp, raw_key: &str) -> (String, ObjectI
 
     // Create tenant
     let tenant_doc = TenantDoc {
-        id: Some(tenant_id),
+        id: Some(rift::core::public_id::TenantId::from_object_id(tenant_id)),
         monthly_quota: 1000,
         ..TenantDoc::default()
     };

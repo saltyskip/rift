@@ -24,7 +24,7 @@ impl TenantsRepository for MockTenantsRepo {
             .lock()
             .unwrap()
             .iter()
-            .find(|t| t.id.as_ref() == Some(id))
+            .find(|t| t.id.as_ref().map(|i| i.to_object_id()).as_ref() == Some(id))
             .cloned())
     }
 
@@ -47,7 +47,10 @@ impl TenantsRepository for MockTenantsRepo {
         update: SubscriptionUpdate,
     ) -> Result<bool, String> {
         let mut guard = self.tenants.lock().unwrap();
-        if let Some(t) = guard.iter_mut().find(|t| t.id.as_ref() == Some(tenant_id)) {
+        if let Some(t) = guard
+            .iter_mut()
+            .find(|t| t.id.as_ref().map(|i| i.to_object_id()).as_ref() == Some(tenant_id))
+        {
             if let Some(x) = update.plan_tier {
                 t.plan_tier = x;
             }
@@ -77,7 +80,10 @@ impl TenantsRepository for MockTenantsRepo {
 
     async fn clear_subscription(&self, tenant_id: &ObjectId) -> Result<bool, String> {
         let mut guard = self.tenants.lock().unwrap();
-        if let Some(t) = guard.iter_mut().find(|t| t.id.as_ref() == Some(tenant_id)) {
+        if let Some(t) = guard
+            .iter_mut()
+            .find(|t| t.id.as_ref().map(|i| i.to_object_id()).as_ref() == Some(tenant_id))
+        {
             t.plan_tier = PlanTier::Free;
             t.billing_method = BillingMethod::Free;
             t.status = SubscriptionStatus::Canceled;

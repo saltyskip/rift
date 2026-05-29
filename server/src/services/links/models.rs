@@ -409,9 +409,7 @@ pub struct CreateLinkRequest {
     /// callers — server pins to the credential's affiliate. Mismatched values
     /// from a scoped caller return `affiliate_scope_mismatch`.
     #[serde(default)]
-    #[schema(value_type = String, example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    #[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]
-    pub affiliate_id: Option<ObjectId>,
+    pub affiliate_id: Option<crate::core::public_id::AffiliateId>,
     /// Structured context for AI agents. When set, agents resolving this link receive action, CTA, and description metadata alongside the destinations.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
@@ -539,13 +537,8 @@ pub struct LinkDetail {
     /// clients reading the OpenAPI spec. Hotfix only — see the public-ID
     /// migration tracking issue for the proper fix that stops exposing
     /// raw ObjectIds entirely.
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        serialize_with = "serialize_opt_object_id_as_hex"
-    )]
-    #[schema(value_type = Option<String>, example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    #[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]
-    pub affiliate_id: Option<ObjectId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub affiliate_id: Option<crate::core::public_id::AffiliateId>,
     /// Structured context for AI agents resolving this link.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,
@@ -589,9 +582,7 @@ pub struct BulkLinkTemplate {
     /// Affiliate this whole batch should be attributed to. Optional for full-scope
     /// callers; ignored / overridden for affiliate-scoped callers.
     #[serde(default)]
-    #[schema(value_type = Option<String>, example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    #[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]
-    pub affiliate_id: Option<ObjectId>,
+    pub affiliate_id: Option<crate::core::public_id::AffiliateId>,
     /// Structured context for AI agents applied to every link in the batch.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,

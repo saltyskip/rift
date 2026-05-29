@@ -175,19 +175,13 @@ pub async fn create_affiliate_credential(
     State(state): State<Arc<AppState>>,
     axum::Extension(ctx): axum::Extension<AuthContext>,
     axum::Extension(auth_key): axum::Extension<AuthKeyId>,
-    Path(affiliate_id): Path<String>,
+    Path(affiliate_id): Path<AffiliateId>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
         return no_database();
     };
-    let Ok(oid) = ObjectId::parse_str(&affiliate_id) else {
-        return invalid_id();
-    };
 
-    match svc
-        .mint_credential(&ctx, AffiliateId::from_object_id(oid), auth_key.0)
-        .await
-    {
+    match svc.mint_credential(&ctx, affiliate_id, auth_key.0).await {
         Ok(minted) => (
             StatusCode::CREATED,
             Json(CreateAffiliateCredentialResponse {
@@ -222,19 +216,13 @@ pub async fn create_affiliate_credential(
 pub async fn list_affiliate_credentials(
     State(state): State<Arc<AppState>>,
     axum::Extension(ctx): axum::Extension<AuthContext>,
-    Path(affiliate_id): Path<String>,
+    Path(affiliate_id): Path<AffiliateId>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
         return no_database();
     };
-    let Ok(oid) = ObjectId::parse_str(&affiliate_id) else {
-        return invalid_id();
-    };
 
-    match svc
-        .list_credentials(&ctx, AffiliateId::from_object_id(oid))
-        .await
-    {
+    match svc.list_credentials(&ctx, affiliate_id).await {
         Ok(keys) => {
             let creds: Vec<AffiliateCredentialDetail> = keys
                 .into_iter()
@@ -268,22 +256,16 @@ pub async fn list_affiliate_credentials(
 pub async fn revoke_affiliate_credential(
     State(state): State<Arc<AppState>>,
     axum::Extension(ctx): axum::Extension<AuthContext>,
-    Path((affiliate_id, key_id)): Path<(String, String)>,
+    Path((affiliate_id, key_id)): Path<(AffiliateId, String)>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
         return no_database();
-    };
-    let Ok(aff_oid) = ObjectId::parse_str(&affiliate_id) else {
-        return invalid_id();
     };
     let Ok(key_oid) = ObjectId::parse_str(&key_id) else {
         return invalid_id();
     };
 
-    match svc
-        .revoke_credential(&ctx, AffiliateId::from_object_id(aff_oid), key_oid)
-        .await
-    {
+    match svc.revoke_credential(&ctx, affiliate_id, key_oid).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => affiliate_error_to_response(e),
     }

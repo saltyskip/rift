@@ -152,7 +152,7 @@ pub async fn list_webhooks(
 pub async fn delete_webhook(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(webhook_id): Path<String>,
+    Path(webhook_id): Path<crate::core::public_id::WebhookId>,
 ) -> Response {
     let Some(repo) = &state.webhooks_repo else {
         return (
@@ -162,15 +162,10 @@ pub async fn delete_webhook(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&webhook_id) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid webhook ID", "code": "invalid_id" })),
-        )
-            .into_response();
-    };
-
-    match repo.delete_webhook(&tenant.to_object_id(), &oid).await {
+    match repo
+        .delete_webhook(&tenant.to_object_id(), &webhook_id.to_object_id())
+        .await
+    {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,
@@ -204,7 +199,7 @@ pub async fn delete_webhook(
 pub async fn patch_webhook(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(webhook_id): Path<String>,
+    Path(webhook_id): Path<crate::core::public_id::WebhookId>,
     Json(req): Json<UpdateWebhookRequest>,
 ) -> Response {
     let Some(repo) = &state.webhooks_repo else {
@@ -215,13 +210,7 @@ pub async fn patch_webhook(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&webhook_id) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid webhook ID", "code": "invalid_id" })),
-        )
-            .into_response();
-    };
+    let oid = webhook_id.to_object_id();
 
     if req.active.is_none() && req.events.is_none() && req.url.is_none() {
         return (

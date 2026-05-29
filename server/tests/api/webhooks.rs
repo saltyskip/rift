@@ -177,7 +177,7 @@ async fn delete_nonexistent_webhook_returns_404() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;
 
-    let fake_id = mongodb::bson::oid::ObjectId::new().to_hex();
+    let fake_id = rift::core::public_id::WebhookId::new().to_string();
     let resp = app
         .client
         .delete(app.url(&format!("/v1/webhooks/{fake_id}")))

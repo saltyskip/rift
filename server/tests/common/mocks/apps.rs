@@ -38,7 +38,7 @@ impl AppsRepository for MockAppsRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|a| &a.tenant_id == tenant_id)
+            .filter(|a| a.tenant_id.to_object_id() == *tenant_id)
             .cloned()
             .collect())
     }
@@ -53,14 +53,16 @@ impl AppsRepository for MockAppsRepo {
             .lock()
             .unwrap()
             .iter()
-            .find(|a| &a.tenant_id == tenant_id && a.platform == platform)
+            .find(|a| a.tenant_id.to_object_id() == *tenant_id && a.platform == platform)
             .cloned())
     }
 
     async fn delete_app(&self, tenant_id: &ObjectId, app_id: &ObjectId) -> Result<bool, String> {
         let mut apps = self.apps.lock().unwrap();
         let len_before = apps.len();
-        apps.retain(|a| !(&a.tenant_id == tenant_id && &a.id == app_id));
+        apps.retain(|a| {
+            !(a.tenant_id.to_object_id() == *tenant_id && a.id.to_object_id() == *app_id)
+        });
         Ok(apps.len() < len_before)
     }
 }
