@@ -76,7 +76,7 @@ struct MockCounters {
 impl EventCountersRepository for MockCounters {
     async fn increment_if_below(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &TenantId,
         _period: &str,
         max: Option<u64>,
     ) -> Result<bool, String> {

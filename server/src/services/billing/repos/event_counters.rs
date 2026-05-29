@@ -1,9 +1,10 @@
 use async_trait::async_trait;
-use mongodb::bson::{self, doc, oid::ObjectId};
+use mongodb::bson::{self, doc};
 use mongodb::error::ErrorKind;
 use mongodb::options::{FindOneAndUpdateOptions, IndexOptions, ReturnDocument};
 use mongodb::{Collection, Database};
 
+use crate::core::public_id::TenantId;
 use crate::ensure_index;
 pub use crate::services::billing::models::EventCounterDoc;
 
@@ -20,7 +21,7 @@ pub use crate::services::billing::models::EventCounterDoc;
 pub trait EventCountersRepository: Send + Sync {
     async fn increment_if_below(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         period: &str,
         max: Option<u64>,
     ) -> Result<bool, String>;
@@ -51,8 +52,8 @@ impl EventCountersRepo {
     }
 }
 
-fn counter_id(tenant_id: &ObjectId, period: &str) -> String {
-    format!("{}:{}:events", tenant_id.to_hex(), period)
+fn counter_id(tenant_id: &TenantId, period: &str) -> String {
+    format!("{}:{}:events", tenant_id.as_object_id().to_hex(), period)
 }
 
 fn is_duplicate_key(e: &mongodb::error::Error) -> bool {
@@ -63,7 +64,7 @@ fn is_duplicate_key(e: &mongodb::error::Error) -> bool {
 impl EventCountersRepository for EventCountersRepo {
     async fn increment_if_below(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         period: &str,
         max: Option<u64>,
     ) -> Result<bool, String> {
@@ -76,7 +77,7 @@ impl EventCountersRepository for EventCountersRepo {
         let update = doc! {
             "$inc": { "count": 1i64 },
             "$setOnInsert": {
-                "tenant_id": tenant_id,
+                "tenant_id": *tenant_id,
                 "period": period,
                 "created_at": bson::DateTime::now(),
             },
