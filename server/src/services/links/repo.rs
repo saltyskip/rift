@@ -313,7 +313,7 @@ impl LinksRepository for LinksRepo {
             .insert_one(&link)
             .await
             .map_err(|e| e.to_string())?;
-        invalidate_link_cache(&link.tenant_id, &link.link_id).await;
+        invalidate_link_cache(link.tenant_id.as_object_id(), &link.link_id).await;
         Ok(link)
     }
 
@@ -347,7 +347,7 @@ impl LinksRepository for LinksRepo {
                     .await
                     .map_err(|e| BulkInsertError::Internal(e.to_string()))?;
                 for d in &docs {
-                    invalidate_link_cache(&d.tenant_id, &d.link_id).await;
+                    invalidate_link_cache(d.tenant_id.as_object_id(), &d.link_id).await;
                 }
                 Ok(docs)
             }
@@ -716,8 +716,8 @@ impl LinksRepository for LinksRepo {
 
 fn build_link(input: CreateLinkInput) -> Link {
     Link {
-        id: ObjectId::new(),
-        tenant_id: input.tenant_id,
+        id: crate::core::public_id::LinkInternalId::new(),
+        tenant_id: crate::core::public_id::TenantId::from_object_id(input.tenant_id),
         link_id: input.link_id,
         ios_deep_link: input.ios_deep_link,
         android_deep_link: input.android_deep_link,
@@ -725,7 +725,9 @@ fn build_link(input: CreateLinkInput) -> Link {
         ios_store_url: input.ios_store_url,
         android_store_url: input.android_store_url,
         metadata: input.metadata,
-        affiliate_id: input.affiliate_id,
+        affiliate_id: input
+            .affiliate_id
+            .map(crate::core::public_id::AffiliateId::from_object_id),
         created_at: DateTime::now(),
         status: LinkStatus::Active,
         flag_reason: None,

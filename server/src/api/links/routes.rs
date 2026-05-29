@@ -557,7 +557,7 @@ async fn do_resolve(
     // click can't bypass enforcement.
     if let Some(ref svc) = state.links_service {
         svc.record_click(
-            link.tenant_id,
+            link.tenant_id.to_object_id(),
             link_id,
             user_agent.clone(),
             referer.clone(),
@@ -568,7 +568,7 @@ async fn do_resolve(
 
     if let Some(dispatcher) = &state.webhook_dispatcher {
         dispatcher.dispatch_click(ClickEventPayload {
-            tenant_id: link.tenant_id.to_hex(),
+            tenant_id: link.tenant_id.to_string(),
             link_id: link_id.to_string(),
             user_agent,
             referer,
@@ -591,7 +591,8 @@ async fn do_resolve(
             .and_then(|d| serde_json::to_value(d).ok());
         let status = compute_link_status(&link);
         let (tenant_domain, tenant_verified) =
-            lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
+            lookup_tenant_domain(state.domains_repo.as_deref(), link.tenant_id.as_object_id())
+                .await;
         let rift_meta = build_rift_meta(status, tenant_domain, tenant_verified);
 
         return Json(json!({
@@ -650,7 +651,7 @@ async fn do_resolve(
     // Compute link status and tenant domain for landing page and JSON-LD.
     let link_status = compute_link_status(&link);
     let (tenant_domain, tenant_verified) =
-        lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
+        lookup_tenant_domain(state.domains_repo.as_deref(), link.tenant_id.as_object_id()).await;
 
     if has_platform_destinations {
         // Fetch app branding from apps_repo, preferring the detected platform.
@@ -666,12 +667,12 @@ async fn do_resolve(
                 Platform::Other => "android",
             };
             let app = apps_repo
-                .find_by_tenant_platform(&link.tenant_id, preferred)
+                .find_by_tenant_platform(link.tenant_id.as_object_id(), preferred)
                 .await
                 .ok()
                 .flatten()
                 .or(apps_repo
-                    .find_by_tenant_platform(&link.tenant_id, fallback)
+                    .find_by_tenant_platform(link.tenant_id.as_object_id(), fallback)
                     .await
                     .ok()
                     .flatten());
@@ -687,7 +688,7 @@ async fn do_resolve(
         // Look up alternate domain for the "Open in App" button.
         let alternate_domain = if let Some(domains_repo) = &state.domains_repo {
             domains_repo
-                .find_alternate_by_tenant(&link.tenant_id)
+                .find_alternate_by_tenant(link.tenant_id.as_object_id())
                 .await
                 .ok()
                 .flatten()
@@ -902,7 +903,7 @@ async fn lookup_tenant_domain(
 pub(crate) async fn canonical_link_url(state: &AppState, link: &Link) -> String {
     let domain = crate::services::links::service::resolve_verified_primary_domain(
         state.domains_repo.as_deref(),
-        &link.tenant_id,
+        link.tenant_id.as_object_id(),
     )
     .await;
     crate::services::links::service::build_canonical_link_url(

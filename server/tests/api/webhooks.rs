@@ -219,7 +219,10 @@ async fn click_dispatches_webhook() {
     let clicks = app.webhook_dispatcher.click_payloads.lock().unwrap();
     assert_eq!(clicks.len(), 1);
     assert_eq!(clicks[0].link_id, "webhook-click");
-    assert_eq!(clicks[0].tenant_id, tenant_id.to_hex());
+    assert_eq!(
+        clicks[0].tenant_id,
+        rift::core::public_id::TenantId::from_object_id(tenant_id).to_string()
+    );
 }
 
 #[tokio::test]
@@ -261,7 +264,10 @@ async fn attribute_dispatches_webhook() {
     assert_eq!(attrs.len(), 1);
     assert_eq!(attrs[0].link_id, "webhook-attr");
     assert_eq!(attrs[0].install_id, "install-123");
-    assert_eq!(attrs[0].tenant_id, tenant_id.to_hex());
+    assert_eq!(
+        attrs[0].tenant_id,
+        rift::core::public_id::TenantId::from_object_id(tenant_id).to_string()
+    );
 }
 
 #[tokio::test]
@@ -321,7 +327,10 @@ async fn identify_dispatches_webhook_with_link_metadata() {
     let events = app.webhook_dispatcher.identify_payloads.lock().unwrap();
     assert_eq!(events.len(), 1, "expected exactly one identify event");
     let evt = &events[0];
-    assert_eq!(evt.tenant_id, tenant_id.to_hex());
+    assert_eq!(
+        evt.tenant_id,
+        rift::core::public_id::TenantId::from_object_id(tenant_id).to_string()
+    );
     assert_eq!(evt.user_id, "user-abc");
     assert_eq!(evt.install_id, "install-id-7");
 }

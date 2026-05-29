@@ -1,8 +1,17 @@
-use mongodb::bson::{oid::ObjectId, DateTime, Document};
+use mongodb::bson::{DateTime, Document};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::core::public_id::{ConversionEventId, SourceId, TenantId};
+
+// Internal marker for conversion_dedup row IDs.
+crate::impl_container!(ConversionDedupIdMarker);
+pub struct ConversionDedupIdMarker;
+impl crate::core::public_id::IdPrefix for ConversionDedupIdMarker {
+    const PREFIX: &'static str = "cdedup";
+    const SCHEMA_NAME: &'static str = "ConversionDedupId";
+}
+pub type ConversionDedupId = crate::core::public_id::Id<ConversionDedupIdMarker>;
 
 // ── Source types ──
 
@@ -87,8 +96,8 @@ pub struct ConversionMeta {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversionDedup {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub tenant_id: ObjectId,
+    pub id: ConversionDedupId,
+    pub tenant_id: TenantId,
     pub idempotency_key: String,
     pub created_at: DateTime,
 }

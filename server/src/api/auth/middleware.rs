@@ -89,7 +89,7 @@ pub async fn auth_gate(
             usage_repo
                 .record_usage(usage_repo::UsageDoc {
                     id: None,
-                    api_key_id: Some(key_id),
+                    api_key_id: Some(crate::core::public_id::SecretKeyId::from_object_id(key_id)),
                     ip: ip.clone(),
                     endpoint: endpoint.clone(),
                     ts: usage_repo::now_bson(),
@@ -350,7 +350,9 @@ pub async fn session_or_key_auth_gate(
                 usage_repo
                     .record_usage(usage_repo::UsageDoc {
                         id: None,
-                        api_key_id: Some(key_id),
+                        api_key_id: Some(crate::core::public_id::SecretKeyId::from_object_id(
+                            key_id,
+                        )),
                         ip,
                         endpoint,
                         ts: usage_repo::now_bson(),

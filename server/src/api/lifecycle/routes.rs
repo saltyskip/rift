@@ -98,7 +98,7 @@ pub async fn lifecycle_click(
 
     if let Some(ref svc) = state.links_service {
         svc.record_click(
-            link.tenant_id,
+            link.tenant_id.to_object_id(),
             &req.link_id,
             user_agent.clone(),
             referer.clone(),
@@ -109,7 +109,7 @@ pub async fn lifecycle_click(
 
     if let Some(dispatcher) = &state.webhook_dispatcher {
         dispatcher.dispatch_click(ClickEventPayload {
-            tenant_id: link.tenant_id.to_hex(),
+            tenant_id: link.tenant_id.to_string(),
             link_id: req.link_id.clone(),
             user_agent,
             referer,
@@ -199,7 +199,7 @@ pub async fn lifecycle_attribute(
 
     let user_id = match svc
         .record_attribute_event(
-            link.tenant_id,
+            link.tenant_id.to_object_id(),
             &req.link_id,
             &req.install_id,
             &req.app_version,
@@ -228,7 +228,7 @@ pub async fn lifecycle_attribute(
             .as_ref()
             .and_then(|d| serde_json::to_value(d).ok());
         dispatcher.dispatch_attribute(AttributeEventPayload {
-            tenant_id: link.tenant_id.to_hex(),
+            tenant_id: link.tenant_id.to_string(),
             link_id: req.link_id.clone(),
             install_id: req.install_id.clone(),
             app_version: req.app_version.clone(),
@@ -355,7 +355,7 @@ fn fire_identify_event(
         return;
     };
     dispatcher.dispatch_identify(IdentifyEventPayload {
-        tenant_id: tenant_id.to_hex(),
+        tenant_id: crate::core::public_id::TenantId::from_object_id(*tenant_id).to_string(),
         user_id: user_id.to_string(),
         install_id: install_id.to_string(),
         first_touch_link_id: credited.first_touch_link_id,

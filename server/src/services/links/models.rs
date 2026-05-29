@@ -84,9 +84,9 @@ pub struct SocialPreview {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Link {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    /// Tenant who owns this link (API key ObjectId).
-    pub tenant_id: ObjectId,
+    pub id: crate::core::public_id::LinkInternalId,
+    /// Tenant who owns this link.
+    pub tenant_id: crate::core::public_id::TenantId,
     /// Short alphanumeric ID used in URLs (e.g. "ABCD1234").
     pub link_id: String,
     /// iOS deep link URI (e.g. "myapp://product/123").
@@ -111,7 +111,7 @@ pub struct Link {
     /// Stamped automatically when minted by an affiliate-scoped credential;
     /// can also be set explicitly by an unscoped (Full) caller.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub affiliate_id: Option<ObjectId>,
+    pub affiliate_id: Option<crate::core::public_id::AffiliateId>,
     pub created_at: DateTime,
     /// Link safety status.
     #[serde(default)]

@@ -699,7 +699,7 @@ impl LinksService {
         // links. Return NotFound (not Forbidden) so the existence of links
         // belonging to other affiliates isn't disclosed.
         if let ResourceScope::Affiliate { affiliate_id } = &ctx.resource_scope {
-            if link.affiliate_id != Some(affiliate_id.to_object_id()) {
+            if link.affiliate_id != Some(*affiliate_id) {
                 return Err(LinkError::NotFound);
             }
         }
@@ -717,7 +717,11 @@ impl LinksService {
     ) -> Result<ListLinksResponse, LinkError> {
         let tenant_id = ctx.tenant_id.as_object_id();
         let limit = limit.unwrap_or(50).clamp(1, 100);
-        let cursor_id = cursor.and_then(|c| ObjectId::parse_str(&c).ok());
+        let cursor_id = cursor.and_then(|c| {
+            crate::core::public_id::LinkInternalId::parse(&c)
+                .ok()
+                .map(|id| id.to_object_id())
+        });
 
         // Fetch one extra to determine if there's a next page.
         let links = self
@@ -733,7 +737,7 @@ impl LinksService {
         let page: Vec<&Link> = links.iter().take(limit as usize).collect();
 
         let next_cursor = if has_more {
-            page.last().map(|l| l.id.to_hex())
+            page.last().map(|l| l.id.to_string())
         } else {
             None
         };
@@ -917,8 +921,11 @@ impl LinksService {
     }
 
     async fn link_to_detail(&self, link: &Link) -> LinkDetail {
-        let domain =
-            resolve_verified_primary_domain(self.domains_repo.as_deref(), &link.tenant_id).await;
+        let domain = resolve_verified_primary_domain(
+            self.domains_repo.as_deref(),
+            link.tenant_id.as_object_id(),
+        )
+        .await;
         self.link_to_detail_with_domain(link, domain.as_deref())
     }
 
@@ -936,9 +943,7 @@ impl LinksService {
             ios_store_url: link.ios_store_url.clone(),
             android_store_url: link.android_store_url.clone(),
             created_at: link.created_at.try_to_rfc3339_string().unwrap_or_default(),
-            affiliate_id: link
-                .affiliate_id
-                .map(crate::core::public_id::AffiliateId::from_object_id),
+            affiliate_id: link.affiliate_id,
             agent_context: link.agent_context.clone(),
             social_preview: link.social_preview.clone(),
         }

@@ -307,7 +307,10 @@ async fn scoped_key_creates_link_pinned_to_affiliate() {
         .find(|l| l.link_id == link_id)
         .cloned()
         .unwrap();
-    assert_eq!(stored.affiliate_id, Some(aff_oid));
+    assert_eq!(
+        stored.affiliate_id,
+        Some(rift::core::public_id::AffiliateId::from_object_id(aff_oid))
+    );
 }
 
 #[tokio::test]
@@ -403,7 +406,10 @@ async fn full_scope_with_known_affiliate_id_succeeds() {
         .find(|l| l.link_id == link_id)
         .cloned()
         .unwrap();
-    assert_eq!(stored.affiliate_id, Some(aff_oid));
+    assert_eq!(
+        stored.affiliate_id,
+        Some(rift::core::public_id::AffiliateId::from_object_id(aff_oid))
+    );
 }
 
 // ── Middleware allowlist ──

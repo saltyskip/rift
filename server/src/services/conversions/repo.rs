@@ -302,8 +302,8 @@ impl ConversionsRepository for ConversionsRepo {
         idempotency_key: &str,
     ) -> Result<bool, String> {
         let doc = ConversionDedup {
-            id: ObjectId::new(),
-            tenant_id: *tenant_id,
+            id: crate::services::conversions::models::ConversionDedupId::new(),
+            tenant_id: crate::core::public_id::TenantId::from_object_id(*tenant_id),
             idempotency_key: idempotency_key.to_string(),
             created_at: DateTime::now(),
         };
