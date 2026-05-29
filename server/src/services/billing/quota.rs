@@ -89,7 +89,7 @@ impl QuotaChecker for QuotaService {
     ///   limit. Caller renders as `402 Payment Required`.
     async fn check(&self, tenant_id: &TenantId, resource: Resource) -> Result<(), QuotaError> {
         let oid = tenant_id.as_object_id();
-        let tier = self.billing.effective_tier(oid).await?;
+        let tier = self.billing.effective_tier(tenant_id).await?;
         let limits = limits_for(tier);
         let max = match limit_for_resource(&limits, resource) {
             Some(m) => m,
@@ -166,10 +166,7 @@ impl QuotaChecker for QuotaService {
             return Ok(());
         }
 
-        let tier = self
-            .billing
-            .effective_tier(tenant_id.as_object_id())
-            .await?;
+        let tier = self.billing.effective_tier(tenant_id).await?;
         let limits = limits_for(tier);
         let max = match limit_for_resource(&limits, resource) {
             Some(m) => m,

@@ -1,18 +1,16 @@
 use super::*;
+use crate::core::public_id::{SecretKeyId, TenantId};
 use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::secret_keys::repo::KeyScope;
 use crate::services::auth::tenants::repo::{PlanTier, TenantDoc};
+use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
 
 use async_trait::async_trait;
 use std::sync::Mutex;
 
-fn full_ctx_for(tenant_id: ObjectId) -> AuthContext {
-    AuthContext::for_secret_key(
-        crate::core::public_id::TenantId::from_object_id(tenant_id),
-        crate::core::public_id::SecretKeyId::new(),
-        Some(&KeyScope::Full),
-    )
+fn full_ctx_for(tenant_id: TenantId) -> AuthContext {
+    AuthContext::for_secret_key(tenant_id, SecretKeyId::new(), Some(&KeyScope::Full))
 }
 
 #[derive(Default)]
@@ -57,9 +55,9 @@ impl TenantsRepository for MockRepo {
     }
 }
 
-async fn setup(tenant: TenantDoc) -> (BillingService, ObjectId) {
+async fn setup(tenant: TenantDoc) -> (BillingService, TenantId) {
     let repo = Arc::new(MockRepo::default());
-    let id = tenant.id.expect("test tenant needs an id").to_object_id();
+    let id = tenant.id.expect("test tenant needs an id");
     repo.create(&tenant).await.unwrap();
     let svc = BillingService::new(repo as Arc<dyn TenantsRepository>);
     (svc, id)
@@ -67,7 +65,7 @@ async fn setup(tenant: TenantDoc) -> (BillingService, ObjectId) {
 
 #[tokio::test]
 async fn status_reports_free_default() {
-    let id = crate::core::public_id::TenantId::new();
+    let id = TenantId::new();
     let (svc, id) = setup(TenantDoc {
         id: Some(id),
         ..TenantDoc::default()
@@ -81,7 +79,7 @@ async fn status_reports_free_default() {
 
 #[tokio::test]
 async fn status_reports_active_comp_as_effective_tier() {
-    let id = crate::core::public_id::TenantId::new();
+    let id = TenantId::new();
     let (svc, id) = setup(TenantDoc {
         id: Some(id),
         plan_tier: PlanTier::Free,
@@ -98,7 +96,7 @@ async fn status_reports_active_comp_as_effective_tier() {
 
 #[tokio::test]
 async fn status_treats_expired_comp_as_inactive() {
-    let id = crate::core::public_id::TenantId::new();
+    let id = TenantId::new();
     let (svc, id) = setup(TenantDoc {
         id: Some(id),
         plan_tier: PlanTier::Pro,
@@ -117,7 +115,7 @@ async fn status_missing_tenant_errors() {
     let repo = Arc::new(MockRepo::default());
     let svc = BillingService::new(repo as Arc<dyn TenantsRepository>);
     let err = svc
-        .status(&full_ctx_for(ObjectId::new()))
+        .status(&full_ctx_for(TenantId::new()))
         .await
         .unwrap_err();
     assert!(matches!(err, BillingError::TenantNotFound));

@@ -253,7 +253,7 @@ impl LinksService {
         }
 
         let retention_bucket = match &self.tiers {
-            Some(b) => b.retention_bucket_for_tenant(&tenant_id).await.to_string(),
+            Some(b) => b.retention_bucket_for_tenant(&tid).await.to_string(),
             None => "30d".to_string(),
         };
 
@@ -297,7 +297,7 @@ impl LinksService {
         }
 
         let retention_bucket = match &self.tiers {
-            Some(b) => b.retention_bucket_for_tenant(&tenant_id).await.to_string(),
+            Some(b) => b.retention_bucket_for_tenant(&tid).await.to_string(),
             None => "30d".to_string(),
         };
 
