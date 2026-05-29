@@ -181,8 +181,8 @@ impl AffiliatesService {
 
         let created_key = mint_scoped(
             self.secret_keys_repo.as_ref(),
-            ctx.tenant_id.to_object_id(),
-            created_by.to_object_id(),
+            ctx.tenant_id,
+            created_by,
             KeyScope::Affiliate { affiliate_id },
         )
         .await

@@ -266,7 +266,7 @@ pub async fn delete_secret_key(
     // Self-delete guard derives from `ctx.principal` inside the service —
     // `Principal::SecretKey` matches request key_id means self-delete; sessions
     // can't self-delete because their principal is `User`.
-    match svc.delete(&ctx, key_id.to_object_id()).await {
+    match svc.delete(&ctx, key_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => sk_error_response(&e),
     }

@@ -322,11 +322,3 @@ fn no_database() -> Response {
     )
         .into_response()
 }
-
-fn invalid_id() -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(json!({ "error": "Invalid ID", "code": "invalid_id" })),
-    )
-        .into_response()
-}

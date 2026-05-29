@@ -9,7 +9,7 @@ use std::sync::Arc;
 use x402_axum::paygate::PaygateProtocol;
 use x402_types::proto::v1;
 
-use super::models::{AuthKeyId, SdkDomain, TenantId};
+use super::models::{AuthKeyId, SdkDomain};
 use crate::app::AppState;
 use crate::services::auth::keys;
 use crate::services::auth::permissions::AuthContext;
