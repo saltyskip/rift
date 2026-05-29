@@ -116,8 +116,8 @@ impl InstallEventsRepository for InstallEventsRepo {
         };
 
         let event = InstallEvent {
-            id: Some(ObjectId::new()),
-            tenant_id: *tenant_id,
+            id: Some(crate::core::public_id::InstallEventId::new()),
+            tenant_id: crate::core::public_id::TenantId::from_object_id(*tenant_id),
             install_id: install_id.to_string(),
             event_type,
             timestamp: DateTime::now(),
@@ -151,8 +151,8 @@ impl InstallEventsRepository for InstallEventsRepo {
 
         // Always write install.identified.
         let identified = InstallEvent {
-            id: Some(ObjectId::new()),
-            tenant_id: *tenant_id,
+            id: Some(crate::core::public_id::InstallEventId::new()),
+            tenant_id: crate::core::public_id::TenantId::from_object_id(*tenant_id),
             install_id: install_id.to_string(),
             event_type: InstallEventType::Identified,
             timestamp: now,
@@ -186,8 +186,8 @@ impl InstallEventsRepository for InstallEventsRepo {
             };
 
             let event = InstallEvent {
-                id: Some(ObjectId::new()),
-                tenant_id: *tenant_id,
+                id: Some(crate::core::public_id::InstallEventId::new()),
+                tenant_id: crate::core::public_id::TenantId::from_object_id(*tenant_id),
                 install_id: install_id.to_string(),
                 event_type: classification,
                 timestamp: now,

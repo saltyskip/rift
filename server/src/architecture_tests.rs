@@ -321,7 +321,6 @@ const OBJECT_ID_BACKLOG: &[&str] = &[
     "src/api/webhooks/routes.rs",
     "src/services/affiliates/service.rs",
     "src/services/analytics/service.rs",
-    "src/services/app_users/models.rs",
     "src/services/auth/oauth/models.rs",
     "src/services/auth/oauth/service.rs",
     "src/services/auth/permissions/context.rs",
@@ -343,11 +342,9 @@ const OBJECT_ID_BACKLOG: &[&str] = &[
     "src/services/billing/service.rs",
     "src/services/conversions/models.rs",
     "src/services/conversions/service.rs",
-    "src/services/install_events/models.rs",
     "src/services/links/models.rs",
     "src/services/links/service.rs",
     "src/services/webhooks/dispatcher.rs",
-    "src/services/webhooks/models.rs",
     "src/services/webhooks/service.rs",
 ];
 

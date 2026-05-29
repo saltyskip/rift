@@ -53,7 +53,7 @@ pub async fn create_webhook(
 
     let secret = generate_secret();
     let now = DateTime::now();
-    let id = ObjectId::new();
+    let id = crate::core::public_id::WebhookId::new();
 
     match svc
         .create_webhook(
@@ -69,7 +69,7 @@ pub async fn create_webhook(
         Ok(_) => (
             StatusCode::CREATED,
             Json(CreateWebhookResponse {
-                id: id.to_hex(),
+                id,
                 url: req.url,
                 events: req.events,
                 secret,
@@ -117,7 +117,7 @@ pub async fn list_webhooks(
             let details: Vec<WebhookDetail> = webhooks
                 .into_iter()
                 .map(|w| WebhookDetail {
-                    id: w.id.to_hex(),
+                    id: w.id,
                     url: w.url,
                     events: w.events,
                     active: w.active,
@@ -271,9 +271,9 @@ pub async fn patch_webhook(
                 .list_by_tenant(&tenant.to_object_id())
                 .await
                 .unwrap_or_default();
-            match webhooks.iter().find(|w| w.id == oid) {
+            match webhooks.iter().find(|w| w.id.to_object_id() == oid) {
                 Some(w) => Json(json!({
-                    "id": w.id.to_hex(),
+                    "id": w.id,
                     "url": w.url,
                     "events": w.events,
                     "active": w.active,

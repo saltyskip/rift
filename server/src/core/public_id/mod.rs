@@ -20,8 +20,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod models;
 pub use models::{
-    AffiliateId, AppId, ConversionEventId, DomainId, ParseIdError, PublishableKeyId, SecretKeyId,
-    SourceId, TenantId, UserId, WebhookId,
+    AffiliateId, AppId, AppUserId, ConversionEventId, DomainId, InstallEventId, LinkInternalId,
+    ParseIdError, PublishableKeyId, SecretKeyId, SourceId, TenantId, UserId, WebhookId,
 };
 
 /// Implemented by zero-sized marker types to declare a resource's prefix and schema name.
@@ -278,6 +278,29 @@ pub struct DomainIdMarker;
 impl IdPrefix for DomainIdMarker {
     const PREFIX: &'static str = "dom";
     const SCHEMA_NAME: &'static str = "DomainId";
+}
+
+crate::impl_container!(AppUserIdMarker);
+pub struct AppUserIdMarker;
+impl IdPrefix for AppUserIdMarker {
+    const PREFIX: &'static str = "appusr";
+    const SCHEMA_NAME: &'static str = "AppUserId";
+}
+
+crate::impl_container!(InstallEventIdMarker);
+pub struct InstallEventIdMarker;
+impl IdPrefix for InstallEventIdMarker {
+    const PREFIX: &'static str = "iev";
+    const SCHEMA_NAME: &'static str = "InstallEventId";
+}
+
+crate::impl_container!(LinkInternalIdMarker);
+pub struct LinkInternalIdMarker;
+impl IdPrefix for LinkInternalIdMarker {
+    // Distinct from the public `link_id` vanity slug (which stays as a String).
+    // This is the internal `_id: ObjectId` of stored Link documents.
+    const PREFIX: &'static str = "lnk";
+    const SCHEMA_NAME: &'static str = "LinkInternalId";
 }
 
 crate::impl_container!(PublishableKeyIdMarker);

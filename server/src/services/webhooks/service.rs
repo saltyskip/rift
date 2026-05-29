@@ -29,7 +29,7 @@ impl WebhooksService {
     pub async fn create_webhook(
         &self,
         ctx: &AuthContext,
-        id: ObjectId,
+        id: crate::core::public_id::WebhookId,
         url: String,
         secret: String,
         events: Vec<WebhookEventType>,
@@ -42,7 +42,7 @@ impl WebhooksService {
 
         let webhook = Webhook {
             id,
-            tenant_id: ctx.tenant_id.to_object_id(),
+            tenant_id: ctx.tenant_id,
             url,
             secret,
             events,
