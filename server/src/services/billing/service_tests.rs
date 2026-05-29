@@ -3,7 +3,6 @@ use crate::core::public_id::{SecretKeyId, TenantId};
 use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::secret_keys::repo::KeyScope;
 use crate::services::auth::tenants::repo::{PlanTier, TenantDoc};
-use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
 
 use async_trait::async_trait;

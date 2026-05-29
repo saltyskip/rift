@@ -25,9 +25,8 @@ pub struct RepoResourceCounts {
 #[async_trait]
 impl ResourceCounts for RepoResourceCounts {
     async fn count(&self, tenant_id: &TenantId, resource: Resource) -> Result<u64, String> {
-        let oid = tenant_id.as_object_id();
         match resource {
-            Resource::CreateLink => self.links.count_links_by_tenant(oid).await,
+            Resource::CreateLink => self.links.count_links_by_tenant(tenant_id).await,
             Resource::CreateDomain => self.domains.count_by_tenant(tenant_id).await,
             Resource::InviteTeamMember => self
                 .users

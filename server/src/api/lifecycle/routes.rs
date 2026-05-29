@@ -65,7 +65,7 @@ pub async fn lifecycle_click(
     };
 
     let link = repo
-        .find_link_by_tenant_and_id(&tenant.to_object_id(), &req.link_id)
+        .find_link_by_tenant_and_id(&tenant, &req.link_id)
         .await
         .ok()
         .flatten();
@@ -176,7 +176,7 @@ pub async fn lifecycle_attribute(
     };
 
     let link = repo
-        .find_link_by_tenant_and_id(&tenant.to_object_id(), &req.link_id)
+        .find_link_by_tenant_and_id(&tenant, &req.link_id)
         .await
         .ok()
         .flatten();

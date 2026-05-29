@@ -3,7 +3,6 @@ use crate::core::public_id::TenantId;
 use crate::services::auth::tenants::repo::{PlanTier, TenantDoc, TenantsRepository};
 use crate::services::billing::service::BillingService;
 use async_trait::async_trait;
-use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
 #[derive(Default)]

@@ -50,7 +50,7 @@ pub(crate) async fn render_link_qr(
     };
 
     let Some(link) = repo
-        .find_link_by_tenant_and_id(&tenant.to_object_id(), &link_id)
+        .find_link_by_tenant_and_id(&tenant, &link_id)
         .await
         .ok()
         .flatten()

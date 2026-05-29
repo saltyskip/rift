@@ -59,12 +59,7 @@ impl AnalyticsService {
         // 2. Clicks — credit-independent. Direct count over click_events.
         let clicks = self
             .links_repo
-            .count_clicks_for_links(
-                tenant_id.as_object_id(),
-                &params.link_ids,
-                params.from,
-                params.to,
-            )
+            .count_clicks_for_links(tenant_id, &params.link_ids, params.from, params.to)
             .await
             .map_err(AnalyticsError::Internal)?;
 
@@ -75,7 +70,7 @@ impl AnalyticsService {
         let credited_installs = self
             .links_repo
             .distinct_install_ids_credited_to_links(
-                tenant_id.as_object_id(),
+                tenant_id,
                 &params.link_ids,
                 params.from,
                 params.to,

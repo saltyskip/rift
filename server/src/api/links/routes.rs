@@ -445,7 +445,7 @@ pub async fn resolve_link_custom(
     }
 
     let Some(link) = repo
-        .find_link_by_tenant_and_id(domain.tenant_id.as_object_id(), &link_id)
+        .find_link_by_tenant_and_id(&domain.tenant_id, &link_id)
         .await
         .ok()
         .flatten()

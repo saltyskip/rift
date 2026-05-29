@@ -80,7 +80,6 @@ impl ConversionsService {
         source_id: SourceId,
         parsed: Vec<ParsedConversion>,
     ) -> IngestResult {
-        let tenant_oid = tenant_id.to_object_id();
         let source_oid = source_id.to_object_id();
         let mut result = IngestResult::default();
 
@@ -211,7 +210,7 @@ impl ConversionsService {
                     Some(repo) => {
                         let ids = repo
                             .credited_links_for_user(
-                                &tenant_oid,
+                                &tenant_id,
                                 user_id,
                                 event.occurred_at.unwrap_or_else(DateTime::now),
                             )
