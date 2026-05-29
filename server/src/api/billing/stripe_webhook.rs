@@ -16,7 +16,7 @@ use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
-use mongodb::bson::{self, oid::ObjectId};
+use mongodb::bson;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -265,7 +265,7 @@ async fn handle_subscription_upsert(
     };
 
     tenants
-        .apply_subscription_update(&tenant_id, update)
+        .apply_subscription_update(&tenant_id.to_object_id(), update)
         .await?;
 
     Ok(())
@@ -283,7 +283,9 @@ async fn handle_subscription_deleted(
         tracing::warn!(customer = %sub.customer, "stripe_webhook_deleted_no_tenant");
         return Ok(());
     };
-    tenants.clear_subscription(&tenant_id).await?;
+    tenants
+        .clear_subscription(&tenant_id.to_object_id())
+        .await?;
     Ok(())
 }
 
@@ -335,20 +337,22 @@ async fn try_resolve_tenant(
     tenants: &dyn crate::services::auth::tenants::repo::TenantsRepository,
     metadata: &serde_json::Map<String, Value>,
     customer_id: &str,
-) -> Result<Option<ObjectId>, String> {
+) -> Result<Option<crate::core::public_id::TenantId>, String> {
     if let Some(id) = tenant_id_from_metadata(metadata) {
         return Ok(Some(id));
     }
     let found = tenants.find_by_stripe_customer_id(customer_id).await?;
-    Ok(found.and_then(|t| t.id).map(|id| id.to_object_id()))
+    Ok(found.and_then(|t| t.id))
 }
 
 // ── Helpers ──
 
-fn tenant_id_from_metadata(meta: &serde_json::Map<String, Value>) -> Option<ObjectId> {
+fn tenant_id_from_metadata(
+    meta: &serde_json::Map<String, Value>,
+) -> Option<crate::core::public_id::TenantId> {
     meta.get("tenant_id")
         .and_then(|v| v.as_str())
-        .and_then(|s| ObjectId::parse_str(s).ok())
+        .and_then(|s| crate::core::public_id::TenantId::parse(s).ok())
 }
 
 fn price_id_to_tier(state: &AppState, price_id: &str) -> Option<PlanTier> {

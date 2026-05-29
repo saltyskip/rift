@@ -308,7 +308,6 @@ const AUTH_MIGRATION_BACKLOG: &[&str] = &[];
 ///
 /// New files inherit enforcement — do not add entries here.
 const OBJECT_ID_BACKLOG: &[&str] = &[
-    "src/api/billing/stripe_webhook.rs",
     "src/services/auth/secret_keys/service.rs",
     "src/services/billing/quota.rs",
     "src/services/billing/service.rs",
