@@ -4,6 +4,7 @@ use mongodb::options::{IndexOptions, ReturnDocument};
 use mongodb::{Collection, Database};
 
 use super::models::{AppUserDoc, AppUserUpsert};
+use crate::core::public_id::TenantId;
 use crate::ensure_index;
 
 // ── Trait ──
@@ -18,7 +19,7 @@ pub trait AppUsersRepository: Send + Sync {
     /// - `AlreadyPresent` — user existed with this install already bound.
     async fn upsert_with_install(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         user_id: &str,
         install_id: &str,
     ) -> Result<AppUserUpsert, String>;
@@ -29,7 +30,7 @@ pub trait AppUsersRepository: Send + Sync {
     /// devices.
     async fn find_by_user_id(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         user_id: &str,
     ) -> Result<Option<AppUserDoc>, String>;
 
@@ -39,7 +40,7 @@ pub trait AppUsersRepository: Send + Sync {
     /// read side and removing the need for a separate `installs` collection.
     async fn find_user_id_for_install(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         install_id: &str,
     ) -> Result<Option<String>, String>;
 }
@@ -56,9 +57,6 @@ impl AppUsersRepo {
     pub async fn new(database: &Database) -> Self {
         let app_users = database.collection::<AppUserDoc>("app_users");
 
-        // Primary lookup: tenant + user_id. Unique — one row per
-        // (tenant, customer-supplied user_id). Loser of concurrent inserts
-        // retries via the upsert path.
         ensure_index!(
             app_users,
             doc! { "tenant_id": 1, "user_id": 1 },
@@ -66,9 +64,6 @@ impl AppUsersRepo {
             "app_users_tenant_user_unique"
         );
 
-        // Reverse lookup: tenant + install_id (multikey index over array).
-        // Powers "find the user who owns this install" — the write-time
-        // enrichment path for attribution events.
         ensure_index!(
             app_users,
             doc! { "tenant_id": 1, "install_ids": 1 },
@@ -83,22 +78,19 @@ impl AppUsersRepo {
 impl AppUsersRepository for AppUsersRepo {
     async fn upsert_with_install(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         user_id: &str,
         install_id: &str,
     ) -> Result<AppUserUpsert, String> {
-        // Single-roundtrip upsert with $addToSet for idempotent install
-        // accumulation. ReturnDocument::Before lets us classify the outcome
-        // without a second query.
         let now = DateTime::now();
         let before = self
             .app_users
             .find_one_and_update(
-                doc! { "tenant_id": tenant_id, "user_id": user_id },
+                doc! { "tenant_id": *tenant_id, "user_id": user_id },
                 doc! {
                     "$setOnInsert": {
                         "_id": ObjectId::new(),
-                        "tenant_id": tenant_id,
+                        "tenant_id": *tenant_id,
                         "user_id": user_id,
                         "identified_at": now,
                     },
@@ -122,23 +114,23 @@ impl AppUsersRepository for AppUsersRepo {
 
     async fn find_by_user_id(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         user_id: &str,
     ) -> Result<Option<AppUserDoc>, String> {
         self.app_users
-            .find_one(doc! { "tenant_id": tenant_id, "user_id": user_id })
+            .find_one(doc! { "tenant_id": *tenant_id, "user_id": user_id })
             .await
             .map_err(|e| e.to_string())
     }
 
     async fn find_user_id_for_install(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         install_id: &str,
     ) -> Result<Option<String>, String> {
         let doc = self
             .app_users
-            .find_one(doc! { "tenant_id": tenant_id, "install_ids": install_id })
+            .find_one(doc! { "tenant_id": *tenant_id, "install_ids": install_id })
             .await
             .map_err(|e| e.to_string())?;
         Ok(doc.map(|d| d.user_id))

@@ -95,7 +95,7 @@ impl LinksService {
         //    silently would let a logged-out + re-logged-in flow on a
         //    shared device leak attribution across users.
         if let Some(existing) = app_users
-            .find_user_id_for_install(tenant_oid, install_id)
+            .find_user_id_for_install(tenant_id, install_id)
             .await
             .map_err(LinkError::Internal)?
         {
@@ -110,7 +110,7 @@ impl LinksService {
         //    the current one — this is what feeds the reinstall vs
         //    new_device classification in step 4.
         let prior_install_ids: Vec<String> =
-            match app_users.find_by_user_id(tenant_oid, user_id).await {
+            match app_users.find_by_user_id(tenant_id, user_id).await {
                 Ok(Some(existing)) => existing.install_ids,
                 Ok(None) => Vec::new(),
                 Err(e) => {
@@ -124,7 +124,7 @@ impl LinksService {
             };
 
         let upsert = app_users
-            .upsert_with_install(tenant_oid, user_id, install_id)
+            .upsert_with_install(tenant_id, user_id, install_id)
             .await
             .map_err(LinkError::Internal)?;
 
@@ -167,14 +167,14 @@ impl LinksService {
         //    reinstall vs new_device.
         if let Some(install_events) = &self.install_events_repo {
             let current_device_model = install_events
-                .get_device_model(tenant_oid, install_id)
+                .get_device_model(tenant_id, install_id)
                 .await
                 .ok()
                 .flatten();
 
             let mut prior_device_models = Vec::with_capacity(prior_install_ids.len());
             for prior_id in &prior_install_ids {
-                if let Ok(Some(model)) = install_events.get_device_model(tenant_oid, prior_id).await
+                if let Ok(Some(model)) = install_events.get_device_model(tenant_id, prior_id).await
                 {
                     prior_device_models.push(model);
                 }
@@ -182,7 +182,7 @@ impl LinksService {
 
             if let Err(e) = install_events
                 .record_identify_lifecycle(
-                    tenant_oid,
+                    tenant_id,
                     install_id,
                     user_id,
                     &prior_install_ids,
@@ -308,7 +308,7 @@ impl LinksService {
         // will backfill).
         let user_id = match &self.app_users_repo {
             Some(app_users) => app_users
-                .find_user_id_for_install(&tenant_oid, install_id)
+                .find_user_id_for_install(&tenant_id, install_id)
                 .await
                 .unwrap_or_else(|e| {
                     tracing::warn!(error = %e, install_id, "app_users user_id lookup failed");
@@ -337,7 +337,7 @@ impl LinksService {
                 ..InstallContext::default()
             });
             if let Err(e) = install_events
-                .record_attribute_lifecycle(&tenant_oid, install_id, &ctx)
+                .record_attribute_lifecycle(&tenant_id, install_id, &ctx)
                 .await
             {
                 tracing::warn!(

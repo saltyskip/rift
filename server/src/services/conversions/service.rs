@@ -125,7 +125,7 @@ impl ConversionsService {
             };
             let user_known = match &self.app_users_repo {
                 Some(repo) => repo
-                    .find_by_user_id(&tenant_oid, user_id)
+                    .find_by_user_id(&tenant_id, user_id)
                     .await
                     .ok()
                     .flatten()

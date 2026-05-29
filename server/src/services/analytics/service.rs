@@ -185,7 +185,6 @@ impl AnalyticsService {
         install_ids: &[String],
         params: &FunnelParams,
     ) -> Result<u64, AnalyticsError> {
-        let tenant_id = &tenant_id.to_object_id();
         self.install_events_repo
             .count_events_by_type_for_installs(
                 tenant_id,
