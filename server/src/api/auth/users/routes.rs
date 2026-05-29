@@ -1,7 +1,6 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -122,7 +121,7 @@ pub async fn list_users(
 pub async fn delete_user(
     State(state): State<Arc<AppState>>,
     axum::Extension(ctx): axum::Extension<AuthContext>,
-    Path(user_id): Path<String>,
+    Path(user_id): Path<crate::core::public_id::UserId>,
 ) -> Response {
     let Some(svc) = &state.users_service else {
         return (
@@ -132,15 +131,7 @@ pub async fn delete_user(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&user_id) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid user ID", "code": "bad_request" })),
-        )
-            .into_response();
-    };
-
-    match svc.delete(&ctx, oid).await {
+    match svc.delete(&ctx, user_id.to_object_id()).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => error_response(e),
     }

@@ -1,6 +1,5 @@
 //! Data types for service-layer authorization.
 
-use mongodb::bson::oid::ObjectId;
 use std::collections::BTreeSet;
 use std::fmt;
 

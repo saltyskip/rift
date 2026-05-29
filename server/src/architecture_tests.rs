@@ -310,12 +310,9 @@ const AUTH_MIGRATION_BACKLOG: &[&str] = &[];
 const OBJECT_ID_BACKLOG: &[&str] = &[
     "src/api/affiliates/routes.rs",
     "src/api/auth/middleware.rs",
-    "src/api/auth/users/routes.rs",
     "src/api/billing/stripe_webhook.rs",
     "src/api/conversions/routes.rs",
-    "src/api/links/routes.rs",
     "src/services/affiliates/service.rs",
-    "src/services/auth/permissions/models.rs",
     "src/services/auth/secret_keys/service.rs",
     "src/services/auth/sessions/service.rs",
     "src/services/auth/users/service.rs",

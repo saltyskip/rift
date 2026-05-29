@@ -2,7 +2,6 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect, Response};
 use chrono::Utc;
-use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
 use serde_json::json;
 use std::sync::Arc;
@@ -591,8 +590,7 @@ async fn do_resolve(
             .and_then(|d| serde_json::to_value(d).ok());
         let status = compute_link_status(&link);
         let (tenant_domain, tenant_verified) =
-            lookup_tenant_domain(state.domains_repo.as_deref(), link.tenant_id.as_object_id())
-                .await;
+            lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
         let rift_meta = build_rift_meta(status, tenant_domain, tenant_verified);
 
         return Json(json!({
@@ -651,7 +649,7 @@ async fn do_resolve(
     // Compute link status and tenant domain for landing page and JSON-LD.
     let link_status = compute_link_status(&link);
     let (tenant_domain, tenant_verified) =
-        lookup_tenant_domain(state.domains_repo.as_deref(), link.tenant_id.as_object_id()).await;
+        lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
 
     if has_platform_destinations {
         // Fetch app branding from apps_repo, preferring the detected platform.
@@ -880,13 +878,13 @@ fn compute_link_status(link: &Link) -> &'static str {
 
 async fn lookup_tenant_domain(
     domains_repo: Option<&dyn DomainsRepository>,
-    tenant_id: &ObjectId,
+    tenant_id: &crate::core::public_id::TenantId,
 ) -> (Option<String>, bool) {
     let Some(repo) = domains_repo else {
         return (None, false);
     };
     let domains = repo
-        .list_by_tenant(tenant_id)
+        .list_by_tenant(tenant_id.as_object_id())
         .await
         .ok()
         .unwrap_or_default();
