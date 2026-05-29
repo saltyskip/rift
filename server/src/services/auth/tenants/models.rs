@@ -1,8 +1,10 @@
 //! Data types for `services/auth/tenants/` — DB document, plan/billing enums,
 //! and update payloads.
 
-use mongodb::bson::{self, oid::ObjectId};
+use mongodb::bson;
 use serde::{Deserialize, Serialize};
+
+use crate::core::public_id::TenantId;
 
 // ── Plan / billing enums ──
 
@@ -40,7 +42,7 @@ pub enum SubscriptionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TenantDoc {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
+    pub id: Option<TenantId>,
     pub monthly_quota: i64,
     pub created_at: bson::DateTime,
 

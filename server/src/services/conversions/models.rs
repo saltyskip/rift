@@ -1,6 +1,17 @@
-use mongodb::bson::{oid::ObjectId, DateTime, Document};
+use mongodb::bson::{DateTime, Document};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::core::public_id::{ConversionEventId, SourceId, TenantId};
+
+// Internal marker for conversion_dedup row IDs.
+crate::impl_container!(ConversionDedupIdMarker);
+pub struct ConversionDedupIdMarker;
+impl crate::core::public_id::IdPrefix for ConversionDedupIdMarker {
+    const PREFIX: &'static str = "cdedup";
+    const SCHEMA_NAME: &'static str = "ConversionDedupId";
+}
+pub type ConversionDedupId = crate::core::public_id::Id<ConversionDedupIdMarker>;
 
 // ── Source types ──
 
@@ -23,8 +34,8 @@ pub enum SourceType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub tenant_id: ObjectId,
+    pub id: SourceId,
+    pub tenant_id: TenantId,
     pub name: String,
     pub source_type: SourceType,
     /// 32-byte random hex — forms the public webhook URL path `POST /w/{url_token}`.
@@ -46,7 +57,7 @@ pub struct ConversionEvent {
     /// Document identifier. Auto-generated on insert; round-tripped on
     /// read so `GET /v1/conversions/{id}` can fetch by it.
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
+    pub id: Option<ConversionEventId>,
     pub meta: ConversionMeta,
     /// Time the event occurred. For integration parsers this may be extracted from
     /// the upstream event (e.g. Stripe's `created`); for custom sources it defaults to now.
@@ -66,13 +77,13 @@ pub struct ConversionEvent {
 /// are stored but less efficient to filter on.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversionMeta {
-    pub tenant_id: ObjectId,
+    pub tenant_id: TenantId,
     /// Legacy field — Phase 6 stopped writing it (credit is computed at
     /// read time from the user's journey via `attribution_events`). Old
     /// rows still carry a string; new rows have `None`.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub link_id: Option<String>,
-    pub source_id: ObjectId,
+    pub source_id: SourceId,
     pub conversion_type: String,
     /// Retention bucket frozen at insert time — see ClickMeta for details.
     #[serde(default = "crate::services::links::models::default_retention_bucket")]
@@ -85,8 +96,8 @@ pub struct ConversionMeta {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversionDedup {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub tenant_id: ObjectId,
+    pub id: ConversionDedupId,
+    pub tenant_id: TenantId,
     pub idempotency_key: String,
     pub created_at: DateTime,
 }
@@ -105,8 +116,7 @@ pub struct CreateSourceRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CreateSourceResponse {
-    #[schema(example = "66a1b2c3d4e5f6a7b8c9d0e")]
-    pub id: String,
+    pub id: SourceId,
     #[schema(example = "backend-deposits")]
     pub name: String,
     pub source_type: SourceType,
@@ -121,8 +131,7 @@ pub struct CreateSourceResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SourceDetail {
-    #[schema(example = "66a1b2c3d4e5f6a7b8c9d0e")]
-    pub id: String,
+    pub id: SourceId,
     #[schema(example = "default")]
     pub name: String,
     pub source_type: SourceType,

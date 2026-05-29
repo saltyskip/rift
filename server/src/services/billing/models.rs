@@ -148,7 +148,7 @@ pub struct PlanLimits {
 pub struct EventCounterDoc {
     #[serde(rename = "_id")]
     pub id: String,
-    pub tenant_id: mongodb::bson::oid::ObjectId,
+    pub tenant_id: crate::core::public_id::TenantId,
     pub period: String, // e.g. "2026-04"
     pub count: i64,
     pub created_at: bson::DateTime,

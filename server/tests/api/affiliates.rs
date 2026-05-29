@@ -294,7 +294,9 @@ async fn scoped_key_cannot_create_affiliate() {
         .as_str()
         .unwrap()
         .to_string();
-    let aff_oid = mongodb::bson::oid::ObjectId::parse_str(&id).unwrap();
+    let aff_oid = rift::core::public_id::AffiliateId::parse(&id)
+        .unwrap()
+        .to_object_id();
 
     // Seed a partner-scoped credential and try to create another affiliate.
     let partner_key = common::seed_affiliate_scoped_key(

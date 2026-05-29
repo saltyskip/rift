@@ -7,7 +7,16 @@ use rand::RngCore;
 use crate::ensure_index;
 
 use super::models::{ConversionDedup, ConversionEvent, Source, SourceType};
+use crate::core::public_id::SourceId;
 use crate::services::links::models::CreditModel;
+
+/// Sentinel `source_id` for events that came in via the SDK direct endpoint
+/// rather than a registered `Source`. Stored on `ConversionMeta.source_id` so
+/// the field stays non-optional in the time series schema; downstream readers
+/// treat it as "no upstream source row exists."
+pub fn sdk_sentinel_source_id() -> SourceId {
+    SourceId::from_object_id(ObjectId::from_bytes([0u8; 12]))
+}
 
 // ── Trait ──
 
@@ -195,8 +204,8 @@ impl ConversionsRepository for ConversionsRepo {
         source_type: SourceType,
     ) -> Result<Source, String> {
         let doc = Source {
-            id: ObjectId::new(),
-            tenant_id,
+            id: crate::core::public_id::SourceId::new(),
+            tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
             name,
             source_type,
             url_token: generate_url_token(),
@@ -302,8 +311,8 @@ impl ConversionsRepository for ConversionsRepo {
         idempotency_key: &str,
     ) -> Result<bool, String> {
         let doc = ConversionDedup {
-            id: ObjectId::new(),
-            tenant_id: *tenant_id,
+            id: crate::services::conversions::models::ConversionDedupId::new(),
+            tenant_id: crate::core::public_id::TenantId::from_object_id(*tenant_id),
             idempotency_key: idempotency_key.to_string(),
             created_at: DateTime::now(),
         };

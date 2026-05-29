@@ -1,7 +1,6 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
 use serde_json::json;
 use std::sync::Arc;
@@ -66,7 +65,7 @@ pub async fn create_sdk_key(
         }
     };
 
-    if domain.tenant_id != tenant.to_object_id() {
+    if domain.tenant_id.to_object_id() != tenant.to_object_id() {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "Domain not owned by this tenant", "code": "domain_not_owned" })),
@@ -85,8 +84,8 @@ pub async fn create_sdk_key(
     let (full_key, hash, prefix) = keys::generate_sdk_key();
     let now = DateTime::now();
     let doc = SdkKeyDoc {
-        id: ObjectId::new(),
-        tenant_id: tenant.to_object_id(),
+        id: crate::core::public_id::PublishableKeyId::new(),
+        tenant_id: tenant,
         key_hash: hash,
         key_prefix: prefix,
         domain: req.domain.clone(),
@@ -106,7 +105,7 @@ pub async fn create_sdk_key(
     (
         StatusCode::CREATED,
         Json(json!(CreateSdkKeyResponse {
-            id: doc.id.to_hex(),
+            id: doc.id.to_string(),
             key: full_key,
             domain: req.domain,
             created_at: now.try_to_rfc3339_string().unwrap_or_default(),
@@ -144,7 +143,7 @@ pub async fn list_sdk_keys(
             let keys: Vec<SdkKeyDetail> = docs
                 .iter()
                 .map(|d| SdkKeyDetail {
-                    id: d.id.to_hex(),
+                    id: d.id.to_string(),
                     key_prefix: d.key_prefix.clone(),
                     domain: d.domain.clone(),
                     created_at: d.created_at.try_to_rfc3339_string().unwrap_or_default(),
@@ -180,7 +179,7 @@ pub async fn list_sdk_keys(
 pub async fn revoke_sdk_key(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(key_id): Path<String>,
+    Path(key_id): Path<crate::core::public_id::PublishableKeyId>,
 ) -> Response {
     let Some(sdk_keys_repo) = &state.sdk_keys_repo else {
         return (
@@ -190,15 +189,10 @@ pub async fn revoke_sdk_key(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&key_id) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid key ID", "code": "bad_request" })),
-        )
-            .into_response();
-    };
-
-    match sdk_keys_repo.revoke(&tenant.to_object_id(), &oid).await {
+    match sdk_keys_repo
+        .revoke(&tenant.to_object_id(), &key_id.to_object_id())
+        .await
+    {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,

@@ -307,52 +307,7 @@ const AUTH_MIGRATION_BACKLOG: &[&str] = &[];
 /// done. See issue #156.
 ///
 /// New files inherit enforcement — do not add entries here.
-const OBJECT_ID_BACKLOG: &[&str] = &[
-    "src/api/affiliates/routes.rs",
-    "src/api/apps/routes.rs",
-    "src/api/auth/middleware.rs",
-    "src/api/auth/models.rs",
-    "src/api/auth/publishable_keys/routes.rs",
-    "src/api/auth/secret_keys/routes.rs",
-    "src/api/auth/users/routes.rs",
-    "src/api/billing/stripe_webhook.rs",
-    "src/api/conversions/routes.rs",
-    "src/api/lifecycle/routes.rs",
-    "src/api/links/routes.rs",
-    "src/api/webhooks/routes.rs",
-    "src/services/affiliates/service.rs",
-    "src/services/analytics/service.rs",
-    "src/services/app_users/models.rs",
-    "src/services/apps/models.rs",
-    "src/services/auth/oauth/models.rs",
-    "src/services/auth/oauth/service.rs",
-    "src/services/auth/permissions/context.rs",
-    "src/services/auth/permissions/models.rs",
-    "src/services/auth/publishable_keys/models.rs",
-    "src/services/auth/secret_keys/models.rs",
-    "src/services/auth/secret_keys/service.rs",
-    "src/services/auth/sessions/models.rs",
-    "src/services/auth/sessions/service.rs",
-    "src/services/auth/tenants/models.rs",
-    "src/services/auth/tenants/service.rs",
-    "src/services/auth/usage/models.rs",
-    "src/services/auth/users/models.rs",
-    "src/services/auth/users/service.rs",
-    "src/services/billing/models.rs",
-    "src/services/billing/quota.rs",
-    "src/services/billing/repos/event_counters.rs",
-    "src/services/billing/repos/resource_counts_adapter.rs",
-    "src/services/billing/service.rs",
-    "src/services/conversions/models.rs",
-    "src/services/conversions/service.rs",
-    "src/services/domains/models.rs",
-    "src/services/install_events/models.rs",
-    "src/services/links/models.rs",
-    "src/services/links/service.rs",
-    "src/services/webhooks/dispatcher.rs",
-    "src/services/webhooks/models.rs",
-    "src/services/webhooks/service.rs",
-];
+const OBJECT_ID_BACKLOG: &[&str] = &[];
 
 /// Whether `path` is on the cleanup backlog (suppress pub-types check only).
 fn is_cleanup_backlog(path: &std::path::Path) -> bool {

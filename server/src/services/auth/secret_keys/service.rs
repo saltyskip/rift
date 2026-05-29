@@ -1,10 +1,11 @@
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::doc;
 use rift_macros::requires;
 use std::sync::Arc;
 
 use super::models::{CreatedKey, KeyDetail, KeyScope, SecretKeyDoc, SecretKeyError};
 use super::repo::SecretKeysRepository;
 use crate::core::email;
+use crate::core::public_id::{SecretKeyId, TenantId, UserId};
 use crate::services::auth::keys;
 use crate::services::auth::permissions::{AuthContext, Permission, Principal};
 use crate::services::auth::users::repo::UsersRepository;
@@ -17,8 +18,8 @@ use crate::services::tokens::{ConsumeOutcome, TokenKind, TokenPurpose, TokenServ
 // Mints with `KeyScope::Full`; affiliate-scoped keys go through `mint_scoped` below.
 pub async fn mint_for_tenant(
     sk_repo: &dyn SecretKeysRepository,
-    tenant_id: ObjectId,
-    created_by: ObjectId,
+    tenant_id: TenantId,
+    created_by: UserId,
 ) -> Result<CreatedKey, String> {
     mint_scoped(sk_repo, tenant_id, created_by, KeyScope::Full).await
 }
@@ -29,12 +30,12 @@ pub async fn mint_for_tenant(
 /// for partner credentials provisioned via `POST /v1/affiliates/{id}/credentials`.
 pub async fn mint_scoped(
     sk_repo: &dyn SecretKeysRepository,
-    tenant_id: ObjectId,
-    created_by: ObjectId,
+    tenant_id: TenantId,
+    created_by: UserId,
     scope: KeyScope,
 ) -> Result<CreatedKey, String> {
     let (full_key, key_hash, key_prefix) = keys::generate_api_key();
-    let key_id = ObjectId::new();
+    let key_id = SecretKeyId::new();
     let now = mongodb::bson::DateTime::now();
 
     let key_doc = SecretKeyDoc {
@@ -108,7 +109,7 @@ impl SecretKeysService {
             return Err(SecretKeyError::UserUnverified);
         }
 
-        let user_id = user.id.unwrap_or_else(ObjectId::new);
+        let user_id = user.id.unwrap_or_else(UserId::new);
 
         // Key limit.
         let count = self
@@ -212,9 +213,13 @@ impl SecretKeysService {
                     return Err(SecretKeyError::InvalidCode);
                 }
 
-                mint_for_tenant(&*self.sk_repo, meta_tenant, meta_user)
-                    .await
-                    .map_err(SecretKeyError::Internal)
+                mint_for_tenant(
+                    &*self.sk_repo,
+                    TenantId::from_object_id(meta_tenant),
+                    UserId::from_object_id(meta_user),
+                )
+                .await
+                .map_err(SecretKeyError::Internal)
             }
             ConsumeOutcome::Ok { .. } => Err(SecretKeyError::InvalidCode),
         }
@@ -248,7 +253,11 @@ impl SecretKeysService {
     /// next request would 401. Session-authed callers carry
     /// `Principal::User { .. }` so `SelfDelete` is structurally impossible.
     #[requires(Permission::SecretKeysWrite)]
-    pub async fn delete(&self, ctx: &AuthContext, key_id: ObjectId) -> Result<(), SecretKeyError> {
+    pub async fn delete(
+        &self,
+        ctx: &AuthContext,
+        key_id: SecretKeyId,
+    ) -> Result<(), SecretKeyError> {
         if let Principal::SecretKey {
             key_id: auth_key_id,
         } = ctx.principal
@@ -270,7 +279,7 @@ impl SecretKeysService {
 
         let deleted = self
             .sk_repo
-            .delete_key(ctx.tenant_id.as_object_id(), &key_id)
+            .delete_key(ctx.tenant_id.as_object_id(), key_id.as_object_id())
             .await
             .map_err(SecretKeyError::Internal)?;
 
@@ -305,12 +314,8 @@ impl SecretKeysService {
             return Err(SecretKeyError::KeyLimit);
         }
 
-        mint_for_tenant(
-            &*self.sk_repo,
-            ctx.tenant_id.to_object_id(),
-            user_id.to_object_id(),
-        )
-        .await
-        .map_err(SecretKeyError::Internal)
+        mint_for_tenant(&*self.sk_repo, ctx.tenant_id, user_id)
+            .await
+            .map_err(SecretKeyError::Internal)
     }
 }

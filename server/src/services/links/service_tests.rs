@@ -15,7 +15,7 @@ use std::sync::Mutex;
 fn ctx(tenant_id: ObjectId) -> AuthContext {
     AuthContext::for_secret_key(
         crate::core::public_id::TenantId::from_object_id(tenant_id),
-        ObjectId::new(),
+        crate::core::public_id::SecretKeyId::new(),
         Some(&KeyScope::Full),
     )
 }
@@ -57,8 +57,8 @@ impl MockLinksRepo {
 
 fn make_link(tenant_id: ObjectId, link_id: &str) -> Link {
     Link {
-        id: ObjectId::new(),
-        tenant_id,
+        id: crate::core::public_id::LinkInternalId::new(),
+        tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
         link_id: link_id.to_string(),
         ios_deep_link: None,
         android_deep_link: None,
@@ -84,7 +84,7 @@ impl LinksRepository for MockLinksRepo {
             return Err("E11000 duplicate key".to_string());
         }
         let link = Link {
-            id: ObjectId::new(),
+            id: crate::core::public_id::LinkInternalId::new(),
             tenant_id: input.tenant_id,
             link_id: input.link_id,
             ios_deep_link: input.ios_deep_link,
@@ -139,7 +139,7 @@ impl LinksRepository for MockLinksRepo {
         let new_links: Vec<Link> = inputs
             .into_iter()
             .map(|input| Link {
-                id: ObjectId::new(),
+                id: crate::core::public_id::LinkInternalId::new(),
                 tenant_id: input.tenant_id,
                 link_id: input.link_id,
                 ios_deep_link: input.ios_deep_link,
@@ -174,7 +174,7 @@ impl LinksRepository for MockLinksRepo {
         let links = self.links.lock().unwrap();
         Ok(links
             .iter()
-            .find(|l| l.tenant_id == *tenant_id && l.link_id == link_id)
+            .find(|l| l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id)
             .cloned())
     }
 
@@ -188,7 +188,7 @@ impl LinksRepository for MockLinksRepo {
         let mut links = self.links.lock().unwrap();
         let Some(link) = links
             .iter_mut()
-            .find(|l| l.tenant_id == *tenant_id && l.link_id == link_id)
+            .find(|l| l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id)
         else {
             return Ok(false);
         };
@@ -222,13 +222,16 @@ impl LinksRepository for MockLinksRepo {
     async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String> {
         let mut links = self.links.lock().unwrap();
         let len_before = links.len();
-        links.retain(|l| !(l.tenant_id == *tenant_id && l.link_id == link_id));
+        links.retain(|l| !(l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id));
         Ok(links.len() < len_before)
     }
 
     async fn count_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
         let links = self.links.lock().unwrap();
-        Ok(links.iter().filter(|l| l.tenant_id == *tenant_id).count() as u64)
+        Ok(links
+            .iter()
+            .filter(|l| l.tenant_id.to_object_id() == *tenant_id)
+            .count() as u64)
     }
 
     async fn list_links_by_tenant(
@@ -240,7 +243,7 @@ impl LinksRepository for MockLinksRepo {
         let links = self.links.lock().unwrap();
         Ok(links
             .iter()
-            .filter(|l| l.tenant_id == *tenant_id)
+            .filter(|l| l.tenant_id.to_object_id() == *tenant_id)
             .take(limit as usize)
             .cloned()
             .collect())
@@ -341,8 +344,8 @@ impl DomainsRepository for MockDomainsRepo {
     ) -> Result<Vec<crate::services::domains::models::Domain>, String> {
         if self.has_verified {
             Ok(vec![crate::services::domains::models::Domain {
-                id: ObjectId::new(),
-                tenant_id: ObjectId::new(),
+                id: crate::core::public_id::DomainId::new(),
+                tenant_id: crate::core::public_id::TenantId::new(),
                 domain: "example.com".to_string(),
                 verified: true,
                 verification_token: "token".to_string(),

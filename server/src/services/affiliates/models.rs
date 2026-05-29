@@ -83,7 +83,7 @@ pub struct UpdateAffiliateRequest {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CreateAffiliateCredentialResponse {
     /// Credential id (the secret key id).
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    #[schema(example = "skid_665a1b2c3d4e5f6a7b8c9d0e")]
     pub id: String,
     /// Affiliate this credential is scoped to.
     pub affiliate_id: AffiliateId,
@@ -99,7 +99,7 @@ pub struct CreateAffiliateCredentialResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AffiliateCredentialDetail {
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    #[schema(example = "skid_665a1b2c3d4e5f6a7b8c9d0e")]
     pub id: String,
     #[schema(example = "rl_live_4f2c3a8b9d...")]
     pub key_prefix: String,

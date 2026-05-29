@@ -264,8 +264,8 @@ pub async fn seed_sdk_key(app: &TestApp, tenant_id: &ObjectId, domain: &str) -> 
     let raw_key = format!("pk_live_test_{}", hex::encode(ObjectId::new().bytes()));
     let hash = hex::encode(sha2::Sha256::digest(raw_key.as_bytes()));
     let doc = rift::services::auth::publishable_keys::models::SdkKeyDoc {
-        id: ObjectId::new(),
-        tenant_id: *tenant_id,
+        id: rift::core::public_id::PublishableKeyId::new(),
+        tenant_id: rift::core::public_id::TenantId::from_object_id(*tenant_id),
         key_hash: hash,
         key_prefix: format!("{}...", &raw_key[..20]),
         domain: domain.to_string(),
@@ -289,7 +289,7 @@ pub async fn seed_api_key_with(app: &TestApp, raw_key: &str) -> (String, ObjectI
 
     // Create tenant
     let tenant_doc = TenantDoc {
-        id: Some(tenant_id),
+        id: Some(rift::core::public_id::TenantId::from_object_id(tenant_id)),
         monthly_quota: 1000,
         ..TenantDoc::default()
     };
@@ -299,9 +299,9 @@ pub async fn seed_api_key_with(app: &TestApp, raw_key: &str) -> (String, ObjectI
     // post-migration production semantics (advertiser key, full tenant access).
     // Tests that need affiliate-scoped credentials build the doc inline.
     let key_doc = SecretKeyDoc {
-        id: ObjectId::new(),
-        tenant_id,
-        created_by: user_id,
+        id: rift::core::public_id::SecretKeyId::new(),
+        tenant_id: rift::core::public_id::TenantId::from_object_id(tenant_id),
+        created_by: rift::core::public_id::UserId::from_object_id(user_id),
         key_hash: hash,
         key_prefix: format!("{}...", &raw_key[..18]),
         created_at: mongodb::bson::DateTime::now(),
@@ -322,13 +322,17 @@ pub async fn seed_affiliate_scoped_key(
 ) -> String {
     let hash = hex::encode(Sha256::digest(raw_key.as_bytes()));
     let key_doc = SecretKeyDoc {
-        id: ObjectId::new(),
-        tenant_id,
-        created_by: ObjectId::new(),
+        id: rift::core::public_id::SecretKeyId::new(),
+        tenant_id: rift::core::public_id::TenantId::from_object_id(tenant_id),
+        created_by: rift::core::public_id::UserId::new(),
         key_hash: hash,
         key_prefix: format!("{}...", &raw_key[..18]),
         created_at: mongodb::bson::DateTime::now(),
-        scope: Some(rift::services::auth::secret_keys::repo::KeyScope::Affiliate { affiliate_id }),
+        scope: Some(
+            rift::services::auth::secret_keys::repo::KeyScope::Affiliate {
+                affiliate_id: rift::core::public_id::AffiliateId::from_object_id(affiliate_id),
+            },
+        ),
     };
     app.secret_keys_repo.create_key(&key_doc).await.unwrap();
     raw_key.to_string()

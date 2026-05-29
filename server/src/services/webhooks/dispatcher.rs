@@ -40,8 +40,8 @@ impl RiftWebhookDispatcher {
         let http = self.http.clone();
 
         tokio::spawn(async move {
-            let tenant_oid = match mongodb::bson::oid::ObjectId::parse_str(&tenant_id) {
-                Ok(oid) => oid,
+            let tenant_oid = match crate::core::public_id::TenantId::parse(&tenant_id) {
+                Ok(id) => id,
                 Err(_) => return,
             };
 
@@ -166,15 +166,16 @@ pub(crate) fn compute_hmac(secret: &str, body: &str) -> String {
 #[cached::proc_macro::cached(
     ty = "cached::TimedCache<(String, String), Vec<Webhook>>",
     create = "{ cached::TimedCache::with_lifespan(60) }",
-    convert = r#"{ (tenant_oid.to_hex(), format!("{:?}", event_type)) }"#,
+    convert = r#"{ (tenant_oid.as_hex(), format!("{:?}", event_type)) }"#,
     result = true
 )]
 async fn cached_find_active_for_event(
     repo: Arc<dyn WebhooksRepository>,
-    tenant_oid: mongodb::bson::oid::ObjectId,
+    tenant_oid: crate::core::public_id::TenantId,
     event_type: WebhookEventType,
 ) -> Result<Vec<Webhook>, String> {
-    repo.find_active_for_event(&tenant_oid, &event_type).await
+    repo.find_active_for_event(&tenant_oid.to_object_id(), &event_type)
+        .await
 }
 
 async fn deliver_with_retry(http: &reqwest::Client, url: &str, body: &str, signature: &str) {

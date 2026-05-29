@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::doc;
 use rand::Rng;
 use sha2::{Digest, Sha256};
 
@@ -217,7 +217,7 @@ impl SessionsService {
             .map_err(SessionError::Internal)?
         {
             Some(user) => {
-                let user_id = user.id.unwrap_or_else(ObjectId::new);
+                let user_id = user.id.unwrap_or_else(crate::core::public_id::UserId::new);
                 // Email click is proof of ownership — bump verified if it
                 // wasn't already. We don't surface a failure if mark_verified
                 // returns None here because the find_by_email above just
@@ -264,8 +264,8 @@ impl SessionsService {
     /// upstreams but produce the same session row + cookie shape.
     pub async fn issue_session(
         &self,
-        user_id: ObjectId,
-        tenant_id: ObjectId,
+        user_id: crate::core::public_id::UserId,
+        tenant_id: crate::core::public_id::TenantId,
         client_ip: Option<&str>,
         user_agent: Option<&str>,
     ) -> Result<String, SessionError> {
@@ -277,7 +277,7 @@ impl SessionsService {
         );
 
         let session_doc = SessionDoc {
-            id: ObjectId::new(),
+            id: crate::core::public_id::AuthSessionId::new(),
             user_id,
             tenant_id,
             token_hash,
@@ -317,7 +317,10 @@ impl SessionsService {
         let staleness_secs = mongodb::bson::DateTime::now().timestamp_millis() / 1000
             - session.last_seen_at.timestamp_millis() / 1000;
         if staleness_secs > Self::TOUCH_INTERVAL_SECS {
-            let _ = self.sessions_repo.touch_last_seen(&session.id).await;
+            let _ = self
+                .sessions_repo
+                .touch_last_seen(&session.id.to_object_id())
+                .await;
         }
 
         Ok(Some(ResolvedSession {
@@ -328,9 +331,12 @@ impl SessionsService {
     }
 
     /// Revoke a session by id (called from `POST /v1/auth/signout`). Idempotent.
-    pub async fn revoke(&self, session_id: &ObjectId) -> Result<(), SessionError> {
+    pub async fn revoke(
+        &self,
+        session_id: &crate::core::public_id::AuthSessionId,
+    ) -> Result<(), SessionError> {
         self.sessions_repo
-            .revoke(session_id)
+            .revoke(&session_id.to_object_id())
             .await
             .map(|_| ())
             .map_err(SessionError::Internal)

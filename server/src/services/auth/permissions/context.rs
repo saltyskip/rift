@@ -2,15 +2,14 @@
 //! helpers. Implementation file; `pub` data types live in `models.rs`.
 
 use super::models::{AuthContext, AuthzError, Permission, Principal, ResourceScope, Scopes};
-use crate::core::public_id::{TenantId, UserId};
+use crate::core::public_id::{AuthSessionId, SecretKeyId, TenantId, UserId};
 use crate::services::auth::secret_keys::repo::KeyScope;
-use mongodb::bson::oid::ObjectId;
 use std::collections::BTreeSet;
 
 impl AuthContext {
     /// Build context for a session-authenticated request. Sessions are always
     /// full tenant access — there's no affiliate-scoped human in Phase 1.
-    pub fn for_session(tenant_id: TenantId, user_id: UserId, session_id: ObjectId) -> Self {
+    pub fn for_session(tenant_id: TenantId, user_id: UserId, session_id: AuthSessionId) -> Self {
         Self {
             tenant_id,
             principal: Principal::User {
@@ -27,7 +26,7 @@ impl AuthContext {
     /// rule as `services/auth/scope::require_full`.
     pub fn for_secret_key(
         tenant_id: TenantId,
-        key_id: ObjectId,
+        key_id: SecretKeyId,
         key_scope: Option<&KeyScope>,
     ) -> Self {
         let (permissions, resource_scope) = match key_scope {
@@ -35,9 +34,7 @@ impl AuthContext {
             Some(KeyScope::Affiliate { affiliate_id }) => (
                 Scopes::affiliate_partner(),
                 ResourceScope::Affiliate {
-                    affiliate_id: crate::core::public_id::AffiliateId::from_object_id(
-                        *affiliate_id,
-                    ),
+                    affiliate_id: *affiliate_id,
                 },
             ),
         };

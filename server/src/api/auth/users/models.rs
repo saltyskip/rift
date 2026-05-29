@@ -12,8 +12,7 @@ pub struct InviteUserRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct InviteUserResponse {
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    pub id: String,
+    pub id: crate::core::public_id::UserId,
     #[schema(example = "alice@example.com")]
     pub email: String,
     #[schema(example = "verification_sent")]
@@ -22,8 +21,7 @@ pub struct InviteUserResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct UserDetail {
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    pub id: String,
+    pub id: crate::core::public_id::UserId,
     #[schema(example = "alice@example.com")]
     pub email: String,
     #[schema(example = true)]

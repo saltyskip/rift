@@ -2,7 +2,6 @@ use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -57,7 +56,7 @@ pub async fn create_source(
     {
         Ok(source) => {
             let resp = CreateSourceResponse {
-                id: source.id.to_hex(),
+                id: source.id,
                 name: source.name.clone(),
                 source_type: source.source_type.clone(),
                 webhook_url: webhook_url_for(&state, &source.url_token),
@@ -166,7 +165,7 @@ pub async fn list_sources(
 pub async fn get_source(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(id): Path<String>,
+    Path(id): Path<crate::core::public_id::SourceId>,
 ) -> Response {
     let Some(repo) = &state.conversions_repo else {
         return (
@@ -176,15 +175,10 @@ pub async fn get_source(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&id) else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Source not found", "code": "not_found" })),
-        )
-            .into_response();
-    };
-
-    match repo.find_source_by_id(&tenant.to_object_id(), &oid).await {
+    match repo
+        .find_source_by_id(&tenant.to_object_id(), &id.to_object_id())
+        .await
+    {
         Ok(Some(source)) => Json(to_detail(&state, &source)).into_response(),
         Ok(None) => (
             StatusCode::NOT_FOUND,
@@ -219,7 +213,7 @@ pub async fn get_source(
 pub async fn delete_source(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(id): Path<String>,
+    Path(id): Path<crate::core::public_id::SourceId>,
 ) -> Response {
     let Some(repo) = &state.conversions_repo else {
         return (
@@ -229,15 +223,10 @@ pub async fn delete_source(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&id) else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Source not found", "code": "not_found" })),
-        )
-            .into_response();
-    };
-
-    match repo.delete_source(&tenant.to_object_id(), &oid).await {
+    match repo
+        .delete_source(&tenant.to_object_id(), &id.to_object_id())
+        .await
+    {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,
@@ -366,9 +355,7 @@ pub async fn sdk_track_conversion(
         occurred_at: None,
     }];
 
-    let result = service
-        .ingest_sdk_event(tenant.to_object_id(), parsed)
-        .await;
+    let result = service.ingest_sdk_event(tenant, parsed).await;
 
     Json(json!({
         "accepted": result.accepted,
@@ -391,7 +378,7 @@ fn webhook_url_for(state: &AppState, url_token: &str) -> String {
 
 fn to_detail(state: &AppState, source: &Source) -> SourceDetail {
     SourceDetail {
-        id: source.id.to_hex(),
+        id: source.id,
         name: source.name.clone(),
         source_type: source.source_type.clone(),
         webhook_url: webhook_url_for(state, &source.url_token),

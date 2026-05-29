@@ -1,7 +1,6 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -162,7 +161,7 @@ pub async fn delete_affiliate(
     post,
     path = "/v1/affiliates/{affiliate_id}/credentials",
     tag = "Affiliates",
-    params(("affiliate_id" = String, Path, description = "Affiliate ObjectId")),
+    params(("affiliate_id" = String, Path, description = "Affiliate id")),
     responses(
         (status = 201, description = "Credential minted; api_key shown once", body = CreateAffiliateCredentialResponse),
         (status = 403, description = "Caller scope cannot mint credentials", body = crate::error::ErrorResponse),
@@ -175,23 +174,24 @@ pub async fn create_affiliate_credential(
     State(state): State<Arc<AppState>>,
     axum::Extension(ctx): axum::Extension<AuthContext>,
     axum::Extension(auth_key): axum::Extension<AuthKeyId>,
-    Path(affiliate_id): Path<String>,
+    Path(affiliate_id): Path<AffiliateId>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
         return no_database();
     };
-    let Ok(oid) = ObjectId::parse_str(&affiliate_id) else {
-        return invalid_id();
-    };
 
     match svc
-        .mint_credential(&ctx, AffiliateId::from_object_id(oid), auth_key.0)
+        .mint_credential(
+            &ctx,
+            affiliate_id,
+            crate::core::public_id::UserId::from_object_id(auth_key.0.to_object_id()),
+        )
         .await
     {
         Ok(minted) => (
             StatusCode::CREATED,
             Json(CreateAffiliateCredentialResponse {
-                id: minted.created_key.id.to_hex(),
+                id: minted.created_key.id.to_string(),
                 affiliate_id: minted.affiliate_id,
                 api_key: minted.created_key.key,
                 key_prefix: minted.created_key.key_prefix,
@@ -211,7 +211,7 @@ pub async fn create_affiliate_credential(
     get,
     path = "/v1/affiliates/{affiliate_id}/credentials",
     tag = "Affiliates",
-    params(("affiliate_id" = String, Path, description = "Affiliate ObjectId")),
+    params(("affiliate_id" = String, Path, description = "Affiliate id")),
     responses(
         (status = 200, description = "List of credentials (no raw secrets)", body = ListAffiliateCredentialsResponse),
         (status = 404, description = "Affiliate not found", body = crate::error::ErrorResponse),
@@ -222,24 +222,18 @@ pub async fn create_affiliate_credential(
 pub async fn list_affiliate_credentials(
     State(state): State<Arc<AppState>>,
     axum::Extension(ctx): axum::Extension<AuthContext>,
-    Path(affiliate_id): Path<String>,
+    Path(affiliate_id): Path<AffiliateId>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
         return no_database();
     };
-    let Ok(oid) = ObjectId::parse_str(&affiliate_id) else {
-        return invalid_id();
-    };
 
-    match svc
-        .list_credentials(&ctx, AffiliateId::from_object_id(oid))
-        .await
-    {
+    match svc.list_credentials(&ctx, affiliate_id).await {
         Ok(keys) => {
             let creds: Vec<AffiliateCredentialDetail> = keys
                 .into_iter()
                 .map(|k| AffiliateCredentialDetail {
-                    id: k.id.to_hex(),
+                    id: k.id.to_string(),
                     key_prefix: k.key_prefix,
                     created_at: k.created_at.try_to_rfc3339_string().unwrap_or_default(),
                 })
@@ -255,8 +249,8 @@ pub async fn list_affiliate_credentials(
     path = "/v1/affiliates/{affiliate_id}/credentials/{key_id}",
     tag = "Affiliates",
     params(
-        ("affiliate_id" = String, Path, description = "Affiliate ObjectId"),
-        ("key_id" = String, Path, description = "Credential ObjectId"),
+        ("affiliate_id" = String, Path, description = "Affiliate id"),
+        ("key_id" = String, Path, description = "Credential id"),
     ),
     responses(
         (status = 204, description = "Credential revoked"),
@@ -268,22 +262,13 @@ pub async fn list_affiliate_credentials(
 pub async fn revoke_affiliate_credential(
     State(state): State<Arc<AppState>>,
     axum::Extension(ctx): axum::Extension<AuthContext>,
-    Path((affiliate_id, key_id)): Path<(String, String)>,
+    Path((affiliate_id, key_id)): Path<(AffiliateId, crate::core::public_id::SecretKeyId)>,
 ) -> Response {
     let Some(svc) = &state.affiliates_service else {
         return no_database();
     };
-    let Ok(aff_oid) = ObjectId::parse_str(&affiliate_id) else {
-        return invalid_id();
-    };
-    let Ok(key_oid) = ObjectId::parse_str(&key_id) else {
-        return invalid_id();
-    };
 
-    match svc
-        .revoke_credential(&ctx, AffiliateId::from_object_id(aff_oid), key_oid)
-        .await
-    {
+    match svc.revoke_credential(&ctx, affiliate_id, key_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => affiliate_error_to_response(e),
     }
@@ -334,14 +319,6 @@ fn no_database() -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         Json(json!({ "error": "Database not configured", "code": "no_database" })),
-    )
-        .into_response()
-}
-
-fn invalid_id() -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(json!({ "error": "Invalid ID", "code": "invalid_id" })),
     )
         .into_response()
 }

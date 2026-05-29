@@ -135,7 +135,7 @@ Post-install events (signups, purchases, deposits) flow through a **sources** ab
 - **Attribution lookup** — events carry `user_id`; `ConversionsService::ingest_parsed` resolves `user_id → Attribution → link_id` via `LinksRepository::find_attribution_by_user` before inserting the event. Events with no matching attribution are logged and dropped.
 - **Hard line** — the API answers link-scoped questions only. User-scoped queries (cohorts, funnels, retention) are permanently out of scope. Metadata is stored verbatim but not indexed or queried in v1.
 - **Extensibility** — new integrations (RevenueCat, Stripe, etc.) are drop-in parser additions: implement `ConversionParser`, add a `SourceType` variant, add one line to `parser_for`. No schema migration required — `Source.signing_secret` and `Source.config` already exist for integration parsers to use.
-- **Outbound webhook** — on successful ingestion, the service fires a `Conversion` webhook event with a stable `event_id` (the MongoDB ObjectId of the stored event) for customer-side dedup on retry. The webhook dispatcher's `find_active_for_event` query is wrapped in a 60-second `cached` layer to kill the per-event DB query hot path.
+- **Outbound webhook** — on successful ingestion, the service fires a `Conversion` webhook event with a stable `event_id` (prefixed `cev_<24hex>` — the stored event's public id) for customer-side dedup on retry. The webhook dispatcher's `find_active_for_event` query is wrapped in a 60-second `cached` layer to kill the per-event DB query hot path.
 
 ## Adding a New Domain
 

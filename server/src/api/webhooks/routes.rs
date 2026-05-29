@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use mongodb::bson::{oid::ObjectId, DateTime};
+use mongodb::bson::DateTime;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -53,7 +53,7 @@ pub async fn create_webhook(
 
     let secret = generate_secret();
     let now = DateTime::now();
-    let id = ObjectId::new();
+    let id = crate::core::public_id::WebhookId::new();
 
     match svc
         .create_webhook(
@@ -69,7 +69,7 @@ pub async fn create_webhook(
         Ok(_) => (
             StatusCode::CREATED,
             Json(CreateWebhookResponse {
-                id: id.to_hex(),
+                id,
                 url: req.url,
                 events: req.events,
                 secret,
@@ -117,7 +117,7 @@ pub async fn list_webhooks(
             let details: Vec<WebhookDetail> = webhooks
                 .into_iter()
                 .map(|w| WebhookDetail {
-                    id: w.id.to_hex(),
+                    id: w.id,
                     url: w.url,
                     events: w.events,
                     active: w.active,
@@ -152,7 +152,7 @@ pub async fn list_webhooks(
 pub async fn delete_webhook(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(webhook_id): Path<String>,
+    Path(webhook_id): Path<crate::core::public_id::WebhookId>,
 ) -> Response {
     let Some(repo) = &state.webhooks_repo else {
         return (
@@ -162,15 +162,10 @@ pub async fn delete_webhook(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&webhook_id) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid webhook ID", "code": "invalid_id" })),
-        )
-            .into_response();
-    };
-
-    match repo.delete_webhook(&tenant.to_object_id(), &oid).await {
+    match repo
+        .delete_webhook(&tenant.to_object_id(), &webhook_id.to_object_id())
+        .await
+    {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,
@@ -204,7 +199,7 @@ pub async fn delete_webhook(
 pub async fn patch_webhook(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(webhook_id): Path<String>,
+    Path(webhook_id): Path<crate::core::public_id::WebhookId>,
     Json(req): Json<UpdateWebhookRequest>,
 ) -> Response {
     let Some(repo) = &state.webhooks_repo else {
@@ -215,13 +210,7 @@ pub async fn patch_webhook(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&webhook_id) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid webhook ID", "code": "invalid_id" })),
-        )
-            .into_response();
-    };
+    let oid = webhook_id.to_object_id();
 
     if req.active.is_none() && req.events.is_none() && req.url.is_none() {
         return (
@@ -271,9 +260,9 @@ pub async fn patch_webhook(
                 .list_by_tenant(&tenant.to_object_id())
                 .await
                 .unwrap_or_default();
-            match webhooks.iter().find(|w| w.id == oid) {
+            match webhooks.iter().find(|w| w.id.to_object_id() == oid) {
                 Some(w) => Json(json!({
-                    "id": w.id.to_hex(),
+                    "id": w.id,
                     "url": w.url,
                     "events": w.events,
                     "active": w.active,

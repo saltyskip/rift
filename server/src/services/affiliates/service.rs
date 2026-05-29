@@ -1,4 +1,3 @@
-use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
 use rift_macros::requires;
 use std::sync::Arc;
@@ -8,7 +7,7 @@ use super::models::{
     MAX_CREDENTIALS_PER_AFFILIATE,
 };
 use super::repo::AffiliatesRepository;
-use crate::core::public_id::AffiliateId;
+use crate::core::public_id::{AffiliateId, SecretKeyId, UserId};
 use crate::services::auth::permissions::{AuthContext, Permission};
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::auth::secret_keys::service::mint_scoped;
@@ -49,8 +48,7 @@ impl AffiliatesService {
         validate_partner_key(&partner_key)?;
 
         if let Some(q) = &self.quota {
-            q.check(ctx.tenant_id.as_object_id(), Resource::CreateAffiliate)
-                .await?;
+            q.check(&ctx.tenant_id, Resource::CreateAffiliate).await?;
         }
 
         // Pre-check uniqueness for a clean error before hitting the DB write.
@@ -159,8 +157,7 @@ impl AffiliatesService {
         &self,
         ctx: &AuthContext,
         affiliate_id: AffiliateId,
-        // `created_by` is still ObjectId until users/secret_keys migrate.
-        created_by: ObjectId,
+        created_by: UserId,
     ) -> Result<MintedCredential, AffiliateError> {
         // Affiliate must exist in this tenant.
         self.repo
@@ -183,11 +180,9 @@ impl AffiliatesService {
 
         let created_key = mint_scoped(
             self.secret_keys_repo.as_ref(),
-            ctx.tenant_id.to_object_id(),
+            ctx.tenant_id,
             created_by,
-            KeyScope::Affiliate {
-                affiliate_id: aff_oid,
-            },
+            KeyScope::Affiliate { affiliate_id },
         )
         .await
         .map_err(AffiliateError::Internal)?;
@@ -230,8 +225,7 @@ impl AffiliatesService {
         &self,
         ctx: &AuthContext,
         affiliate_id: AffiliateId,
-        // `key_id` is still ObjectId — secret_keys hasn't migrated yet.
-        key_id: ObjectId,
+        key_id: SecretKeyId,
     ) -> Result<(), AffiliateError> {
         // Surface affiliate-not-found distinctly from credential-not-found.
         self.repo
@@ -245,7 +239,7 @@ impl AffiliatesService {
             .delete_affiliate_credential(
                 ctx.tenant_id.as_object_id(),
                 &affiliate_id.to_object_id(),
-                &key_id,
+                &key_id.to_object_id(),
             )
             .await
             .map_err(AffiliateError::Internal)?;

@@ -1,8 +1,9 @@
-use mongodb::bson::{oid::ObjectId, DateTime, Document};
+use mongodb::bson::{DateTime, Document};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
 
+use crate::core::public_id::{AffiliateId, TenantId};
 use crate::core::threat_feed::ThreatFeed;
 use crate::services::affiliates::repo::AffiliatesRepository;
 use crate::services::app_users::repo::AppUsersRepository;
@@ -84,9 +85,9 @@ pub struct SocialPreview {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Link {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    /// Tenant who owns this link (API key ObjectId).
-    pub tenant_id: ObjectId,
+    pub id: crate::core::public_id::LinkInternalId,
+    /// Tenant who owns this link.
+    pub tenant_id: crate::core::public_id::TenantId,
     /// Short alphanumeric ID used in URLs (e.g. "ABCD1234").
     pub link_id: String,
     /// iOS deep link URI (e.g. "myapp://product/123").
@@ -111,7 +112,7 @@ pub struct Link {
     /// Stamped automatically when minted by an affiliate-scoped credential;
     /// can also be set explicitly by an unscoped (Full) caller.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub affiliate_id: Option<ObjectId>,
+    pub affiliate_id: Option<crate::core::public_id::AffiliateId>,
     pub created_at: DateTime,
     /// Link safety status.
     #[serde(default)]
@@ -133,7 +134,7 @@ pub struct Link {
 /// The `meta` subdocument is the metaField for time series bucketing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClickMeta {
-    pub tenant_id: ObjectId,
+    pub tenant_id: TenantId,
     pub link_id: String,
     /// Retention bucket frozen at insert time. One of: "30d", "1y", "3y",
     /// "5y". Four partial TTL indexes on the time field + this value drop
@@ -180,7 +181,7 @@ pub struct AttributionEvent {
 /// time-series only supports updates on meta-field paths).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttributionEventMeta {
-    pub tenant_id: ObjectId,
+    pub tenant_id: TenantId,
     pub install_id: String,
     /// Retention tier marker — stamped at insert from the tenant's plan,
     /// used by `ensure_retention_ttl_indexes`. Stays with the event for
@@ -279,7 +280,7 @@ pub struct CreditedLinks {
 
 /// Parameters for creating a new link (passed to repository).
 pub struct CreateLinkInput {
-    pub tenant_id: ObjectId,
+    pub tenant_id: TenantId,
     pub link_id: String,
     pub ios_deep_link: Option<String>,
     pub android_deep_link: Option<String>,
@@ -287,7 +288,7 @@ pub struct CreateLinkInput {
     pub ios_store_url: Option<String>,
     pub android_store_url: Option<String>,
     pub metadata: Option<Document>,
-    pub affiliate_id: Option<ObjectId>,
+    pub affiliate_id: Option<AffiliateId>,
     pub expires_at: Option<DateTime>,
     pub agent_context: Option<AgentContext>,
     pub social_preview: Option<SocialPreview>,
@@ -304,7 +305,7 @@ pub struct CreateLinkInput {
 ///     .metadata(metadata_doc)
 /// ```
 impl CreateLinkInput {
-    pub fn new(tenant_id: ObjectId, link_id: String) -> Self {
+    pub fn new(tenant_id: TenantId, link_id: String) -> Self {
         Self {
             tenant_id,
             link_id,
@@ -351,7 +352,7 @@ impl CreateLinkInput {
         self
     }
 
-    pub fn affiliate_id(mut self, v: Option<ObjectId>) -> Self {
+    pub fn affiliate_id(mut self, v: Option<AffiliateId>) -> Self {
         self.affiliate_id = v;
         self
     }
@@ -409,9 +410,7 @@ pub struct CreateLinkRequest {
     /// callers — server pins to the credential's affiliate. Mismatched values
     /// from a scoped caller return `affiliate_scope_mismatch`.
     #[serde(default)]
-    #[schema(value_type = String, example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    #[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]
-    pub affiliate_id: Option<ObjectId>,
+    pub affiliate_id: Option<crate::core::public_id::AffiliateId>,
     /// Structured context for AI agents. When set, agents resolving this link receive action, CTA, and description metadata alongside the destinations.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
@@ -480,24 +479,6 @@ where
     Option::deserialize(deserializer).map(Some)
 }
 
-/// Serializes `Option<ObjectId>` as a plain hex string (`"665a..."`) or
-/// `null`, matching what the schemars / utoipa hints already declare. The
-/// default bson `Serialize` impl emits extended JSON (`{"$oid": "..."}`)
-/// which clients validating against the declared schema reject — most
-/// visibly the MCP `Json<T>` wrapper, which strictly validates outputs.
-fn serialize_opt_object_id_as_hex<S>(
-    value: &Option<ObjectId>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    match value {
-        Some(oid) => serializer.serialize_str(&oid.to_hex()),
-        None => serializer.serialize_none(),
-    }
-}
-
 #[derive(Debug, Serialize, ToSchema)]
 #[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 pub struct LinkDetail {
@@ -531,21 +512,8 @@ pub struct LinkDetail {
     #[schema(example = "2025-06-15T10:30:00Z")]
     pub created_at: String,
     /// Affiliate this link is attributed to. None for unattributed links.
-    ///
-    /// Serialized as a hex string so the output matches the schema hint
-    /// (`Option<String>`) we already advertise to schemars and utoipa. The
-    /// default bson ObjectId `Serialize` impl emits `{"$oid": "..."}`,
-    /// which fails MCP `Json<T>` schema validation and confuses REST
-    /// clients reading the OpenAPI spec. Hotfix only — see the public-ID
-    /// migration tracking issue for the proper fix that stops exposing
-    /// raw ObjectIds entirely.
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        serialize_with = "serialize_opt_object_id_as_hex"
-    )]
-    #[schema(value_type = Option<String>, example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    #[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]
-    pub affiliate_id: Option<ObjectId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub affiliate_id: Option<AffiliateId>,
     /// Structured context for AI agents resolving this link.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,
@@ -589,9 +557,7 @@ pub struct BulkLinkTemplate {
     /// Affiliate this whole batch should be attributed to. Optional for full-scope
     /// callers; ignored / overridden for affiliate-scoped callers.
     #[serde(default)]
-    #[schema(value_type = Option<String>, example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    #[cfg_attr(feature = "mcp", schemars(with = "Option<String>"))]
-    pub affiliate_id: Option<ObjectId>,
+    pub affiliate_id: Option<crate::core::public_id::AffiliateId>,
     /// Structured context for AI agents applied to every link in the batch.
     #[serde(default)]
     pub agent_context: Option<AgentContext>,
@@ -668,7 +634,7 @@ pub struct ListLinksResponse {
     /// The current page of links, most recent first.
     pub links: Vec<LinkDetail>,
     /// Cursor for the next page. Null if no more results.
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
+    #[schema(example = "lnk_665a1b2c3d4e5f6a7b8c9d0e")]
     pub next_cursor: Option<String>,
 }
 

@@ -1,10 +1,9 @@
 //! Data types for service-layer authorization.
 
-use mongodb::bson::oid::ObjectId;
 use std::collections::BTreeSet;
 use std::fmt;
 
-use crate::core::public_id::{AffiliateId, TenantId, UserId};
+use crate::core::public_id::{AffiliateId, AuthSessionId, SecretKeyId, TenantId, UserId};
 
 /// Closed set of operation types a caller can be authorized for. Wire
 /// representation is `<resource>:<action>` (see `to_wire_str`) — used in
@@ -72,11 +71,10 @@ pub enum Principal {
     /// Browser/dashboard session.
     User {
         user_id: UserId,
-        /// Session id — still an ObjectId until the sessions resource migrates.
-        session_id: ObjectId,
+        session_id: AuthSessionId,
     },
-    /// `rl_live_…` secret key. `key_id` stays ObjectId until secret_keys migrates.
-    SecretKey { key_id: ObjectId },
+    /// `rl_live_…` secret key.
+    SecretKey { key_id: SecretKeyId },
 }
 
 /// Which subset of the tenant's resources the caller can act on. Distinct

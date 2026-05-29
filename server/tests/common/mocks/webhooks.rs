@@ -28,7 +28,7 @@ impl WebhooksRepository for MockWebhooksRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|w| &w.tenant_id == tenant_id)
+            .filter(|w| w.tenant_id.to_object_id() == *tenant_id)
             .cloned()
             .collect())
     }
@@ -39,7 +39,7 @@ impl WebhooksRepository for MockWebhooksRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|w| &w.tenant_id == tenant_id)
+            .filter(|w| w.tenant_id.to_object_id() == *tenant_id)
             .count() as u64)
     }
 
@@ -50,7 +50,9 @@ impl WebhooksRepository for MockWebhooksRepo {
     ) -> Result<bool, String> {
         let mut webhooks = self.webhooks.lock().unwrap();
         let len_before = webhooks.len();
-        webhooks.retain(|w| !(&w.tenant_id == tenant_id && &w.id == webhook_id));
+        webhooks.retain(|w| {
+            !(w.tenant_id.to_object_id() == *tenant_id && w.id.to_object_id() == *webhook_id)
+        });
         Ok(webhooks.len() < len_before)
     }
 
@@ -63,10 +65,9 @@ impl WebhooksRepository for MockWebhooksRepo {
         url: Option<String>,
     ) -> Result<bool, String> {
         let mut webhooks = self.webhooks.lock().unwrap();
-        match webhooks
-            .iter_mut()
-            .find(|w| &w.tenant_id == tenant_id && &w.id == webhook_id)
-        {
+        match webhooks.iter_mut().find(|w| {
+            w.tenant_id.to_object_id() == *tenant_id && w.id.to_object_id() == *webhook_id
+        }) {
             Some(w) => {
                 if let Some(a) = active {
                     w.active = a;
@@ -93,7 +94,11 @@ impl WebhooksRepository for MockWebhooksRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|w| &w.tenant_id == tenant_id && w.active && w.events.contains(event_type))
+            .filter(|w| {
+                w.tenant_id.to_object_id() == *tenant_id
+                    && w.active
+                    && w.events.contains(event_type)
+            })
             .cloned()
             .collect())
     }

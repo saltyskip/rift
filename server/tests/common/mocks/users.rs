@@ -37,7 +37,7 @@ impl UsersRepository for MockUsersRepo {
             .lock()
             .unwrap()
             .iter()
-            .find(|u| u.tenant_id == *tenant_id && u.email == email)
+            .find(|u| u.tenant_id.to_object_id() == *tenant_id && u.email == email)
             .cloned())
     }
 
@@ -47,7 +47,7 @@ impl UsersRepository for MockUsersRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|u| u.tenant_id == *tenant_id)
+            .filter(|u| u.tenant_id.to_object_id() == *tenant_id)
             .cloned()
             .collect())
     }
@@ -58,14 +58,17 @@ impl UsersRepository for MockUsersRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|u| u.tenant_id == *tenant_id && u.verified)
+            .filter(|u| u.tenant_id.to_object_id() == *tenant_id && u.verified)
             .count() as i64)
     }
 
     async fn delete(&self, tenant_id: &ObjectId, user_id: &ObjectId) -> Result<bool, String> {
         let mut users = self.users.lock().unwrap();
         let len = users.len();
-        users.retain(|u| !(u.id.as_ref() == Some(user_id) && u.tenant_id == *tenant_id));
+        users.retain(|u| {
+            !(u.id.as_ref().map(|i| i.to_object_id()).as_ref() == Some(user_id)
+                && u.tenant_id.to_object_id() == *tenant_id)
+        });
         Ok(users.len() < len)
     }
 

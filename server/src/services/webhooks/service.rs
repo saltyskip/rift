@@ -3,7 +3,6 @@
 //! Same rule as DomainsService: the service layer is the one place both
 //! `api/` and (future) `mcp/` consumers call, so quota lives here.
 
-use mongodb::bson::oid::ObjectId;
 use rift_macros::requires;
 use std::sync::Arc;
 
@@ -29,20 +28,19 @@ impl WebhooksService {
     pub async fn create_webhook(
         &self,
         ctx: &AuthContext,
-        id: ObjectId,
+        id: crate::core::public_id::WebhookId,
         url: String,
         secret: String,
         events: Vec<WebhookEventType>,
         created_at: mongodb::bson::DateTime,
     ) -> Result<Webhook, WebhookError> {
         if let Some(q) = &self.quota {
-            q.check(ctx.tenant_id.as_object_id(), Resource::CreateWebhook)
-                .await?;
+            q.check(&ctx.tenant_id, Resource::CreateWebhook).await?;
         }
 
         let webhook = Webhook {
             id,
-            tenant_id: ctx.tenant_id.to_object_id(),
+            tenant_id: ctx.tenant_id,
             url,
             secret,
             events,

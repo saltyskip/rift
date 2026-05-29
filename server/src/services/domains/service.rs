@@ -35,8 +35,7 @@ impl DomainsService {
         role: DomainRole,
     ) -> Result<Domain, DomainError> {
         if let Some(q) = &self.quota {
-            q.check(ctx.tenant_id.as_object_id(), Resource::CreateDomain)
-                .await?;
+            q.check(&ctx.tenant_id, Resource::CreateDomain).await?;
         }
 
         if role == DomainRole::Alternate {

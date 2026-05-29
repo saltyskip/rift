@@ -1,10 +1,11 @@
 use super::*;
-use mongodb::bson::{oid::ObjectId, DateTime};
+use crate::core::public_id::{SourceId, TenantId};
+use mongodb::bson::DateTime;
 
 fn test_source() -> Source {
     Source {
-        id: ObjectId::new(),
-        tenant_id: ObjectId::new(),
+        id: SourceId::new(),
+        tenant_id: TenantId::new(),
         name: "test".to_string(),
         source_type: SourceType::Custom,
         url_token: "test_token".to_string(),
