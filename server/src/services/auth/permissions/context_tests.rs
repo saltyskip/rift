@@ -1,7 +1,6 @@
 use super::super::models::{AuthContext, AuthzError, Permission, Principal, ResourceScope, Scopes};
 use crate::core::public_id::{TenantId, UserId};
 use crate::services::auth::secret_keys::repo::KeyScope;
-use mongodb::bson::oid::ObjectId;
 
 fn user_ctx() -> AuthContext {
     AuthContext::for_session(

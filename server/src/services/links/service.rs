@@ -439,14 +439,14 @@ impl LinksService {
         });
         let expires_at = expires_at_dt.map(|dt| dt.try_to_rfc3339_string().unwrap_or_default());
 
-        let input = CreateLinkInput::new(tenant_id, link_id.clone())
+        let input = CreateLinkInput::new(ctx.tenant_id, link_id.clone())
             .ios_deep_link(req.ios_deep_link)
             .android_deep_link(req.android_deep_link)
             .web_url(req.web_url)
             .ios_store_url(req.ios_store_url)
             .android_store_url(req.android_store_url)
             .metadata(metadata)
-            .affiliate_id(resolved_affiliate_id)
+            .affiliate_id(resolved_affiliate_id.map(AffiliateId::from_object_id))
             .expires_at(expires_at_dt)
             .agent_context(req.agent_context)
             .social_preview(req.social_preview);
@@ -632,7 +632,7 @@ impl LinksService {
         let inputs: Vec<CreateLinkInput> = link_ids
             .iter()
             .map(|id| CreateLinkInput {
-                tenant_id,
+                tenant_id: ctx.tenant_id,
                 link_id: id.clone(),
                 ios_deep_link: template.ios_deep_link.clone(),
                 android_deep_link: template.android_deep_link.clone(),
@@ -640,7 +640,7 @@ impl LinksService {
                 ios_store_url: template.ios_store_url.clone(),
                 android_store_url: template.android_store_url.clone(),
                 metadata: metadata_doc.clone(),
-                affiliate_id: resolved_affiliate_id,
+                affiliate_id: resolved_affiliate_id.map(AffiliateId::from_object_id),
                 expires_at: None,
                 agent_context: template.agent_context.clone(),
                 social_preview: template.social_preview.clone(),

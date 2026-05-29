@@ -1,8 +1,9 @@
-use mongodb::bson::{oid::ObjectId, DateTime, Document};
+use mongodb::bson::{DateTime, Document};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
 
+use crate::core::public_id::{AffiliateId, TenantId};
 use crate::core::threat_feed::ThreatFeed;
 use crate::services::affiliates::repo::AffiliatesRepository;
 use crate::services::app_users::repo::AppUsersRepository;
@@ -133,7 +134,7 @@ pub struct Link {
 /// The `meta` subdocument is the metaField for time series bucketing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClickMeta {
-    pub tenant_id: ObjectId,
+    pub tenant_id: TenantId,
     pub link_id: String,
     /// Retention bucket frozen at insert time. One of: "30d", "1y", "3y",
     /// "5y". Four partial TTL indexes on the time field + this value drop
@@ -180,7 +181,7 @@ pub struct AttributionEvent {
 /// time-series only supports updates on meta-field paths).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttributionEventMeta {
-    pub tenant_id: ObjectId,
+    pub tenant_id: TenantId,
     pub install_id: String,
     /// Retention tier marker — stamped at insert from the tenant's plan,
     /// used by `ensure_retention_ttl_indexes`. Stays with the event for
@@ -279,7 +280,7 @@ pub struct CreditedLinks {
 
 /// Parameters for creating a new link (passed to repository).
 pub struct CreateLinkInput {
-    pub tenant_id: ObjectId,
+    pub tenant_id: TenantId,
     pub link_id: String,
     pub ios_deep_link: Option<String>,
     pub android_deep_link: Option<String>,
@@ -287,7 +288,7 @@ pub struct CreateLinkInput {
     pub ios_store_url: Option<String>,
     pub android_store_url: Option<String>,
     pub metadata: Option<Document>,
-    pub affiliate_id: Option<ObjectId>,
+    pub affiliate_id: Option<AffiliateId>,
     pub expires_at: Option<DateTime>,
     pub agent_context: Option<AgentContext>,
     pub social_preview: Option<SocialPreview>,
@@ -304,7 +305,7 @@ pub struct CreateLinkInput {
 ///     .metadata(metadata_doc)
 /// ```
 impl CreateLinkInput {
-    pub fn new(tenant_id: ObjectId, link_id: String) -> Self {
+    pub fn new(tenant_id: TenantId, link_id: String) -> Self {
         Self {
             tenant_id,
             link_id,
@@ -351,7 +352,7 @@ impl CreateLinkInput {
         self
     }
 
-    pub fn affiliate_id(mut self, v: Option<ObjectId>) -> Self {
+    pub fn affiliate_id(mut self, v: Option<AffiliateId>) -> Self {
         self.affiliate_id = v;
         self
     }
@@ -511,16 +512,8 @@ pub struct LinkDetail {
     #[schema(example = "2025-06-15T10:30:00Z")]
     pub created_at: String,
     /// Affiliate this link is attributed to. None for unattributed links.
-    ///
-    /// Serialized as a hex string so the output matches the schema hint
-    /// (`Option<String>`) we already advertise to schemars and utoipa. The
-    /// default bson ObjectId `Serialize` impl emits `{"$oid": "..."}`,
-    /// which fails MCP `Json<T>` schema validation and confuses REST
-    /// clients reading the OpenAPI spec. Hotfix only — see the public-ID
-    /// migration tracking issue for the proper fix that stops exposing
-    /// raw ObjectIds entirely.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub affiliate_id: Option<crate::core::public_id::AffiliateId>,
+    pub affiliate_id: Option<AffiliateId>,
     /// Structured context for AI agents resolving this link.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,

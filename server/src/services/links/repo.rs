@@ -467,7 +467,7 @@ impl LinksRepository for LinksRepo {
     ) -> Result<(), String> {
         let event = ClickEvent {
             meta: ClickMeta {
-                tenant_id,
+                tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
                 link_id: link_id.to_string(),
                 retention_bucket,
             },
@@ -495,7 +495,7 @@ impl LinksRepository for LinksRepo {
         let event = AttributionEvent {
             timestamp: DateTime::now(),
             meta: AttributionEventMeta {
-                tenant_id,
+                tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
                 install_id: install_id.to_string(),
                 retention_bucket,
                 user_id: user_id.map(|s| s.to_string()),
@@ -717,7 +717,7 @@ impl LinksRepository for LinksRepo {
 fn build_link(input: CreateLinkInput) -> Link {
     Link {
         id: crate::core::public_id::LinkInternalId::new(),
-        tenant_id: crate::core::public_id::TenantId::from_object_id(input.tenant_id),
+        tenant_id: input.tenant_id,
         link_id: input.link_id,
         ios_deep_link: input.ios_deep_link,
         android_deep_link: input.android_deep_link,
@@ -725,9 +725,7 @@ fn build_link(input: CreateLinkInput) -> Link {
         ios_store_url: input.ios_store_url,
         android_store_url: input.android_store_url,
         metadata: input.metadata,
-        affiliate_id: input
-            .affiliate_id
-            .map(crate::core::public_id::AffiliateId::from_object_id),
+        affiliate_id: input.affiliate_id,
         created_at: DateTime::now(),
         status: LinkStatus::Active,
         flag_reason: None,

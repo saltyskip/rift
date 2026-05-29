@@ -85,7 +85,7 @@ impl LinksRepository for MockLinksRepo {
         }
         let link = Link {
             id: crate::core::public_id::LinkInternalId::new(),
-            tenant_id: crate::core::public_id::TenantId::from_object_id(input.tenant_id),
+            tenant_id: input.tenant_id,
             link_id: input.link_id,
             ios_deep_link: input.ios_deep_link,
             android_deep_link: input.android_deep_link,
@@ -93,9 +93,7 @@ impl LinksRepository for MockLinksRepo {
             ios_store_url: input.ios_store_url,
             android_store_url: input.android_store_url,
             metadata: input.metadata,
-            affiliate_id: input
-                .affiliate_id
-                .map(crate::core::public_id::AffiliateId::from_object_id),
+            affiliate_id: input.affiliate_id,
             created_at: DateTime::now(),
             status: LinkStatus::Active,
             flag_reason: None,
@@ -114,9 +112,10 @@ impl LinksRepository for MockLinksRepo {
         let mut links = self.links.lock().unwrap();
         let mut dupes: Vec<usize> = Vec::new();
         for (i, input) in inputs.iter().enumerate() {
-            if links.iter().any(|l| {
-                l.tenant_id.to_object_id() == input.tenant_id && l.link_id == input.link_id
-            }) {
+            if links
+                .iter()
+                .any(|l| l.tenant_id == input.tenant_id && l.link_id == input.link_id)
+            {
                 dupes.push(i);
             }
         }
@@ -141,7 +140,7 @@ impl LinksRepository for MockLinksRepo {
             .into_iter()
             .map(|input| Link {
                 id: crate::core::public_id::LinkInternalId::new(),
-                tenant_id: crate::core::public_id::TenantId::from_object_id(input.tenant_id),
+                tenant_id: input.tenant_id,
                 link_id: input.link_id,
                 ios_deep_link: input.ios_deep_link,
                 android_deep_link: input.android_deep_link,
@@ -149,9 +148,7 @@ impl LinksRepository for MockLinksRepo {
                 ios_store_url: input.ios_store_url,
                 android_store_url: input.android_store_url,
                 metadata: input.metadata,
-                affiliate_id: input
-                    .affiliate_id
-                    .map(crate::core::public_id::AffiliateId::from_object_id),
+                affiliate_id: input.affiliate_id,
                 created_at: now,
                 status: LinkStatus::Active,
                 flag_reason: None,
