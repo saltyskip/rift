@@ -318,7 +318,6 @@ const OBJECT_ID_BACKLOG: &[&str] = &[
     "src/services/affiliates/service.rs",
     "src/services/auth/permissions/context.rs",
     "src/services/auth/permissions/models.rs",
-    "src/services/auth/secret_keys/models.rs",
     "src/services/auth/secret_keys/service.rs",
     "src/services/auth/sessions/service.rs",
     "src/services/auth/tenants/service.rs",

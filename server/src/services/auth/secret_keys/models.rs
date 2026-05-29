@@ -1,8 +1,8 @@
-use mongodb::bson::{self, oid::ObjectId};
+use mongodb::bson;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::core::public_id::{SecretKeyId, TenantId, UserId};
+use crate::core::public_id::{AffiliateId, SecretKeyId, TenantId, UserId};
 
 /// Stored secret key (`rl_live_…`).
 ///
@@ -38,7 +38,7 @@ pub enum KeyScope {
     /// Partner-scoped access. Key can only operate on the named affiliate's
     /// links (mint pinned to this id, read its own links). Cannot manage
     /// tenant resources.
-    Affiliate { affiliate_id: ObjectId },
+    Affiliate { affiliate_id: AffiliateId },
 }
 
 // ── Errors ──

@@ -35,9 +35,7 @@ impl AuthContext {
             Some(KeyScope::Affiliate { affiliate_id }) => (
                 Scopes::affiliate_partner(),
                 ResourceScope::Affiliate {
-                    affiliate_id: crate::core::public_id::AffiliateId::from_object_id(
-                        *affiliate_id,
-                    ),
+                    affiliate_id: *affiliate_id,
                 },
             ),
         };

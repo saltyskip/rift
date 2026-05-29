@@ -328,7 +328,11 @@ pub async fn seed_affiliate_scoped_key(
         key_hash: hash,
         key_prefix: format!("{}...", &raw_key[..18]),
         created_at: mongodb::bson::DateTime::now(),
-        scope: Some(rift::services::auth::secret_keys::repo::KeyScope::Affiliate { affiliate_id }),
+        scope: Some(
+            rift::services::auth::secret_keys::repo::KeyScope::Affiliate {
+                affiliate_id: rift::core::public_id::AffiliateId::from_object_id(affiliate_id),
+            },
+        ),
     };
     app.secret_keys_repo.create_key(&key_doc).await.unwrap();
     raw_key.to_string()

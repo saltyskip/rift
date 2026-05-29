@@ -70,7 +70,7 @@ impl SecretKeysRepository for MockSecretKeysRepo {
                 k.tenant_id.to_object_id() == *tenant_id
                     && matches!(
                         &k.scope,
-                        Some(KeyScope::Affiliate { affiliate_id: a }) if a == affiliate_id
+                        Some(KeyScope::Affiliate { affiliate_id: a }) if a.to_object_id() == *affiliate_id
                     )
             })
             .cloned()
@@ -90,7 +90,7 @@ impl SecretKeysRepository for MockSecretKeysRepo {
                 && k.tenant_id.to_object_id() == *tenant_id
                 && matches!(
                     &k.scope,
-                    Some(KeyScope::Affiliate { affiliate_id: a }) if a == affiliate_id
+                    Some(KeyScope::Affiliate { affiliate_id: a }) if a.to_object_id() == *affiliate_id
                 ))
         });
         Ok(keys.len() < len)

@@ -37,7 +37,9 @@ fn secret_key_affiliate_has_only_links_scope() {
     let ctx = AuthContext::for_secret_key(
         TenantId::new(),
         ObjectId::new(),
-        Some(&KeyScope::Affiliate { affiliate_id }),
+        Some(&KeyScope::Affiliate {
+            affiliate_id: crate::core::public_id::AffiliateId::from_object_id(affiliate_id),
+        }),
     );
     assert!(ctx.require(Permission::LinksRead).is_ok());
     assert!(ctx.require(Permission::LinksWrite).is_ok());
@@ -57,7 +59,7 @@ fn require_any_succeeds_if_one_matches() {
         TenantId::new(),
         ObjectId::new(),
         Some(&KeyScope::Affiliate {
-            affiliate_id: ObjectId::new(),
+            affiliate_id: crate::core::public_id::AffiliateId::new(),
         }),
     );
     assert!(ctx
@@ -71,7 +73,7 @@ fn require_any_fails_when_none_match() {
         TenantId::new(),
         ObjectId::new(),
         Some(&KeyScope::Affiliate {
-            affiliate_id: ObjectId::new(),
+            affiliate_id: crate::core::public_id::AffiliateId::new(),
         }),
     );
     let err = ctx

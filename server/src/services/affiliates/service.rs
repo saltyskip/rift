@@ -185,9 +185,7 @@ impl AffiliatesService {
             self.secret_keys_repo.as_ref(),
             ctx.tenant_id.to_object_id(),
             created_by,
-            KeyScope::Affiliate {
-                affiliate_id: aff_oid,
-            },
+            KeyScope::Affiliate { affiliate_id },
         )
         .await
         .map_err(AffiliateError::Internal)?;
