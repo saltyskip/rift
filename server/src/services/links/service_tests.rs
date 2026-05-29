@@ -168,19 +168,19 @@ impl LinksRepository for MockLinksRepo {
 
     async fn find_link_by_tenant_and_id(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &crate::core::public_id::TenantId,
         link_id: &str,
     ) -> Result<Option<Link>, String> {
         let links = self.links.lock().unwrap();
         Ok(links
             .iter()
-            .find(|l| l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id)
+            .find(|l| l.tenant_id == *tenant_id && l.link_id == link_id)
             .cloned())
     }
 
     async fn update_link(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &crate::core::public_id::TenantId,
         link_id: &str,
         update: Document,
         _unset: Document,
@@ -188,7 +188,7 @@ impl LinksRepository for MockLinksRepo {
         let mut links = self.links.lock().unwrap();
         let Some(link) = links
             .iter_mut()
-            .find(|l| l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id)
+            .find(|l| l.tenant_id == *tenant_id && l.link_id == link_id)
         else {
             return Ok(false);
         };
@@ -219,31 +219,35 @@ impl LinksRepository for MockLinksRepo {
         Ok(true)
     }
 
-    async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String> {
+    async fn delete_link(
+        &self,
+        tenant_id: &crate::core::public_id::TenantId,
+        link_id: &str,
+    ) -> Result<bool, String> {
         let mut links = self.links.lock().unwrap();
         let len_before = links.len();
-        links.retain(|l| !(l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id));
+        links.retain(|l| !(l.tenant_id == *tenant_id && l.link_id == link_id));
         Ok(links.len() < len_before)
     }
 
-    async fn count_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+    async fn count_links_by_tenant(
+        &self,
+        tenant_id: &crate::core::public_id::TenantId,
+    ) -> Result<u64, String> {
         let links = self.links.lock().unwrap();
-        Ok(links
-            .iter()
-            .filter(|l| l.tenant_id.to_object_id() == *tenant_id)
-            .count() as u64)
+        Ok(links.iter().filter(|l| l.tenant_id == *tenant_id).count() as u64)
     }
 
     async fn list_links_by_tenant(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &crate::core::public_id::TenantId,
         limit: i64,
         _cursor: Option<ObjectId>,
     ) -> Result<Vec<Link>, String> {
         let links = self.links.lock().unwrap();
         Ok(links
             .iter()
-            .filter(|l| l.tenant_id.to_object_id() == *tenant_id)
+            .filter(|l| l.tenant_id == *tenant_id)
             .take(limit as usize)
             .cloned()
             .collect())
@@ -251,7 +255,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn record_click(
         &self,
-        _tenant_id: ObjectId,
+        _tenant_id: crate::core::public_id::TenantId,
         _link_id: &str,
         _user_agent: Option<String>,
         _referer: Option<String>,
@@ -263,7 +267,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn record_attribute_event(
         &self,
-        _tenant_id: ObjectId,
+        _tenant_id: crate::core::public_id::TenantId,
         _link_id: &str,
         _install_id: &str,
         _app_version: &str,
@@ -275,7 +279,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn backfill_user_id_on_attribution_events(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &crate::core::public_id::TenantId,
         _install_id: &str,
         _user_id: &str,
     ) -> Result<u64, String> {
@@ -284,7 +288,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn distinct_install_ids_credited_to_links(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &crate::core::public_id::TenantId,
         _link_ids: &[String],
         _from: DateTime,
         _to: DateTime,
@@ -295,7 +299,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn count_clicks_for_links(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &crate::core::public_id::TenantId,
         _link_ids: &[String],
         _from: DateTime,
         _to: DateTime,
@@ -305,7 +309,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn credited_links_for_user(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &crate::core::public_id::TenantId,
         _user_id: &str,
         _at_or_before: DateTime,
     ) -> Result<crate::services::links::models::CreditedLinks, String> {
@@ -323,7 +327,7 @@ struct MockDomainsRepo {
 impl DomainsRepository for MockDomainsRepo {
     async fn create_domain(
         &self,
-        _tenant_id: ObjectId,
+        _tenant_id: crate::core::public_id::TenantId,
         _domain: String,
         _verification_token: String,
         _role: crate::services::domains::models::DomainRole,
@@ -340,7 +344,7 @@ impl DomainsRepository for MockDomainsRepo {
 
     async fn list_by_tenant(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &crate::core::public_id::TenantId,
     ) -> Result<Vec<crate::services::domains::models::Domain>, String> {
         if self.has_verified {
             Ok(vec![crate::services::domains::models::Domain {
@@ -357,11 +361,18 @@ impl DomainsRepository for MockDomainsRepo {
         }
     }
 
-    async fn count_by_tenant(&self, _tenant_id: &ObjectId) -> Result<u64, String> {
+    async fn count_by_tenant(
+        &self,
+        _tenant_id: &crate::core::public_id::TenantId,
+    ) -> Result<u64, String> {
         Ok(if self.has_verified { 1 } else { 0 })
     }
 
-    async fn delete_domain(&self, _tenant_id: &ObjectId, _domain: &str) -> Result<bool, String> {
+    async fn delete_domain(
+        &self,
+        _tenant_id: &crate::core::public_id::TenantId,
+        _domain: &str,
+    ) -> Result<bool, String> {
         Ok(true)
     }
 
@@ -371,7 +382,7 @@ impl DomainsRepository for MockDomainsRepo {
 
     async fn find_alternate_by_tenant(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &crate::core::public_id::TenantId,
     ) -> Result<Option<crate::services::domains::models::Domain>, String> {
         Ok(None)
     }

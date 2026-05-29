@@ -100,7 +100,7 @@ impl SecretKeysService {
         // Permission check: target email must be a verified member of this tenant.
         let user = self
             .users_repo
-            .find_by_tenant_and_email(ctx.tenant_id.as_object_id(), email)
+            .find_by_tenant_and_email(&ctx.tenant_id, email)
             .await
             .map_err(SecretKeyError::Internal)?
             .ok_or(SecretKeyError::UserNotMember)?;
@@ -114,7 +114,7 @@ impl SecretKeysService {
         // Key limit.
         let count = self
             .sk_repo
-            .count_by_tenant(ctx.tenant_id.as_object_id())
+            .count_by_tenant(&ctx.tenant_id)
             .await
             .map_err(SecretKeyError::Internal)?;
         if count >= 5 {
@@ -230,7 +230,7 @@ impl SecretKeysService {
     pub async fn list(&self, ctx: &AuthContext) -> Result<Vec<KeyDetail>, SecretKeyError> {
         let docs = self
             .sk_repo
-            .list_by_tenant(ctx.tenant_id.as_object_id())
+            .list_by_tenant(&ctx.tenant_id)
             .await
             .map_err(SecretKeyError::Internal)?;
 
@@ -269,7 +269,7 @@ impl SecretKeysService {
 
         let count = self
             .sk_repo
-            .count_by_tenant(ctx.tenant_id.as_object_id())
+            .count_by_tenant(&ctx.tenant_id)
             .await
             .map_err(SecretKeyError::Internal)?;
 
@@ -279,7 +279,7 @@ impl SecretKeysService {
 
         let deleted = self
             .sk_repo
-            .delete_key(ctx.tenant_id.as_object_id(), key_id.as_object_id())
+            .delete_key(&ctx.tenant_id, &key_id)
             .await
             .map_err(SecretKeyError::Internal)?;
 
@@ -307,7 +307,7 @@ impl SecretKeysService {
 
         let count = self
             .sk_repo
-            .count_by_tenant(ctx.tenant_id.as_object_id())
+            .count_by_tenant(&ctx.tenant_id)
             .await
             .map_err(SecretKeyError::Internal)?;
         if count >= 5 {

@@ -174,8 +174,7 @@ async fn cached_find_active_for_event(
     tenant_oid: crate::core::public_id::TenantId,
     event_type: WebhookEventType,
 ) -> Result<Vec<Webhook>, String> {
-    repo.find_active_for_event(&tenant_oid.to_object_id(), &event_type)
-        .await
+    repo.find_active_for_event(&tenant_oid, &event_type).await
 }
 
 async fn deliver_with_retry(http: &reqwest::Client, url: &str, body: &str, signature: &str) {

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
+use rift::core::public_id::{TenantId, UserId};
 use rift::services::auth::users::models::UserDoc;
 use rift::services::auth::users::repo::UsersRepository;
 
@@ -29,7 +29,7 @@ impl UsersRepository for MockUsersRepo {
 
     async fn find_by_tenant_and_email(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         email: &str,
     ) -> Result<Option<UserDoc>, String> {
         Ok(self
@@ -37,38 +37,35 @@ impl UsersRepository for MockUsersRepo {
             .lock()
             .unwrap()
             .iter()
-            .find(|u| u.tenant_id.to_object_id() == *tenant_id && u.email == email)
+            .find(|u| u.tenant_id == *tenant_id && u.email == email)
             .cloned())
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<UserDoc>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<UserDoc>, String> {
         Ok(self
             .users
             .lock()
             .unwrap()
             .iter()
-            .filter(|u| u.tenant_id.to_object_id() == *tenant_id)
+            .filter(|u| u.tenant_id == *tenant_id)
             .cloned()
             .collect())
     }
 
-    async fn count_verified_by_tenant(&self, tenant_id: &ObjectId) -> Result<i64, String> {
+    async fn count_verified_by_tenant(&self, tenant_id: &TenantId) -> Result<i64, String> {
         Ok(self
             .users
             .lock()
             .unwrap()
             .iter()
-            .filter(|u| u.tenant_id.to_object_id() == *tenant_id && u.verified)
+            .filter(|u| u.tenant_id == *tenant_id && u.verified)
             .count() as i64)
     }
 
-    async fn delete(&self, tenant_id: &ObjectId, user_id: &ObjectId) -> Result<bool, String> {
+    async fn delete(&self, tenant_id: &TenantId, user_id: &UserId) -> Result<bool, String> {
         let mut users = self.users.lock().unwrap();
         let len = users.len();
-        users.retain(|u| {
-            !(u.id.as_ref().map(|i| i.to_object_id()).as_ref() == Some(user_id)
-                && u.tenant_id.to_object_id() == *tenant_id)
-        });
+        users.retain(|u| !(u.id.as_ref() == Some(user_id) && u.tenant_id == *tenant_id));
         Ok(users.len() < len)
     }
 

@@ -170,7 +170,7 @@ pub async fn create_stripe_portal(
             .into_response();
     };
 
-    let tenant_doc = match tenants.find_by_id(&tenant.to_object_id()).await {
+    let tenant_doc = match tenants.find_by_id(&tenant).await {
         Ok(Some(t)) => t,
         Ok(None) => {
             return (
@@ -286,7 +286,7 @@ pub async fn cancel_subscription(
                 )
                     .into_response();
             };
-            let tenant_doc = match tenants.find_by_id(&tenant.to_object_id()).await {
+            let tenant_doc = match tenants.find_by_id(&tenant).await {
                 Ok(Some(t)) => t,
                 Ok(None) => {
                     return (

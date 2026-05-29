@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
+use rift::core::public_id::{AppId, TenantId};
 use rift::services::apps::models::App;
 use rift::services::apps::repo::AppsRepository;
 
@@ -14,7 +14,6 @@ pub struct MockAppsRepo {
 impl AppsRepository for MockAppsRepo {
     async fn create_or_update(&self, app: App) -> Result<App, String> {
         let mut apps = self.apps.lock().unwrap();
-        // Upsert by tenant_id + platform.
         if let Some(existing) = apps
             .iter_mut()
             .find(|a| a.tenant_id == app.tenant_id && a.platform == app.platform)
@@ -32,20 +31,20 @@ impl AppsRepository for MockAppsRepo {
         Ok(app)
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<App>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<App>, String> {
         Ok(self
             .apps
             .lock()
             .unwrap()
             .iter()
-            .filter(|a| a.tenant_id.to_object_id() == *tenant_id)
+            .filter(|a| a.tenant_id == *tenant_id)
             .cloned()
             .collect())
     }
 
     async fn find_by_tenant_platform(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         platform: &str,
     ) -> Result<Option<App>, String> {
         Ok(self
@@ -53,16 +52,14 @@ impl AppsRepository for MockAppsRepo {
             .lock()
             .unwrap()
             .iter()
-            .find(|a| a.tenant_id.to_object_id() == *tenant_id && a.platform == platform)
+            .find(|a| a.tenant_id == *tenant_id && a.platform == platform)
             .cloned())
     }
 
-    async fn delete_app(&self, tenant_id: &ObjectId, app_id: &ObjectId) -> Result<bool, String> {
+    async fn delete_app(&self, tenant_id: &TenantId, app_id: &AppId) -> Result<bool, String> {
         let mut apps = self.apps.lock().unwrap();
         let len_before = apps.len();
-        apps.retain(|a| {
-            !(a.tenant_id.to_object_id() == *tenant_id && a.id.to_object_id() == *app_id)
-        });
+        apps.retain(|a| !(a.tenant_id == *tenant_id && a.id == *app_id));
         Ok(apps.len() < len_before)
     }
 }

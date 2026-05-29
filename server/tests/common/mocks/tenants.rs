@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
+use rift::core::public_id::TenantId;
 use rift::services::auth::tenants::repo::{
     BillingMethod, PlanTier, SubscriptionStatus, SubscriptionUpdate, TenantDoc, TenantsRepository,
 };
@@ -18,13 +18,13 @@ impl TenantsRepository for MockTenantsRepo {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: &ObjectId) -> Result<Option<TenantDoc>, String> {
+    async fn find_by_id(&self, id: &TenantId) -> Result<Option<TenantDoc>, String> {
         Ok(self
             .tenants
             .lock()
             .unwrap()
             .iter()
-            .find(|t| t.id.as_ref().map(|i| i.to_object_id()).as_ref() == Some(id))
+            .find(|t| t.id.as_ref() == Some(id))
             .cloned())
     }
 
@@ -43,14 +43,11 @@ impl TenantsRepository for MockTenantsRepo {
 
     async fn apply_subscription_update(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         update: SubscriptionUpdate,
     ) -> Result<bool, String> {
         let mut guard = self.tenants.lock().unwrap();
-        if let Some(t) = guard
-            .iter_mut()
-            .find(|t| t.id.as_ref().map(|i| i.to_object_id()).as_ref() == Some(tenant_id))
-        {
+        if let Some(t) = guard.iter_mut().find(|t| t.id.as_ref() == Some(tenant_id)) {
             if let Some(x) = update.plan_tier {
                 t.plan_tier = x;
             }
@@ -78,12 +75,9 @@ impl TenantsRepository for MockTenantsRepo {
         }
     }
 
-    async fn clear_subscription(&self, tenant_id: &ObjectId) -> Result<bool, String> {
+    async fn clear_subscription(&self, tenant_id: &TenantId) -> Result<bool, String> {
         let mut guard = self.tenants.lock().unwrap();
-        if let Some(t) = guard
-            .iter_mut()
-            .find(|t| t.id.as_ref().map(|i| i.to_object_id()).as_ref() == Some(tenant_id))
-        {
+        if let Some(t) = guard.iter_mut().find(|t| t.id.as_ref() == Some(tenant_id)) {
             t.plan_tier = PlanTier::Free;
             t.billing_method = BillingMethod::Free;
             t.status = SubscriptionStatus::Canceled;

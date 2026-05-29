@@ -35,7 +35,7 @@ async fn create_sdk_key_rejects_unverified_domain() {
     // Create an unverified domain.
     app.domains_repo
         .create_domain(
-            tenant_id,
+            rift::core::public_id::TenantId::from_object_id(tenant_id),
             "unverified.example.com".to_string(),
             "tok".to_string(),
             rift::services::domains::models::DomainRole::Primary,

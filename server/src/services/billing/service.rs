@@ -44,7 +44,7 @@ impl BillingService {
     pub async fn status(&self, ctx: &AuthContext) -> Result<BillingStatus, BillingError> {
         let tenant = self
             .tenants_repo
-            .find_by_id(ctx.tenant_id.as_object_id())
+            .find_by_id(&ctx.tenant_id)
             .await
             .map_err(BillingError::Internal)?
             .ok_or(BillingError::TenantNotFound)?;
@@ -70,7 +70,7 @@ impl TierResolver for BillingService {
     async fn effective_tier(&self, tenant_id: &TenantId) -> Result<PlanTier, BillingError> {
         let tenant = self
             .tenants_repo
-            .find_by_id(tenant_id.as_object_id())
+            .find_by_id(tenant_id)
             .await
             .map_err(BillingError::Internal)?
             .ok_or(BillingError::TenantNotFound)?;

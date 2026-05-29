@@ -1,7 +1,8 @@
 use async_trait::async_trait;
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::doc;
 use mongodb::{Collection, Database};
 
+use crate::core::public_id::{TenantId, WebhookId};
 use crate::ensure_index;
 
 use super::models::{Webhook, WebhookEventType};
@@ -9,13 +10,13 @@ use super::models::{Webhook, WebhookEventType};
 #[async_trait]
 pub trait WebhooksRepository: Send + Sync {
     async fn create_webhook(&self, webhook: Webhook) -> Result<(), String>;
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Webhook>, String>;
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<Webhook>, String>;
     /// Total webhooks on this tenant — feeds the CreateWebhook quota.
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String>;
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String>;
     async fn delete_webhook(
         &self,
-        tenant_id: &ObjectId,
-        webhook_id: &ObjectId,
+        tenant_id: &TenantId,
+        webhook_id: &WebhookId,
     ) -> Result<bool, String>;
     /// Patch one or more mutable fields. `Some` overwrites; `None` leaves
     /// the field unchanged. Returns `true` when the webhook existed for
@@ -23,15 +24,15 @@ pub trait WebhooksRepository: Send + Sync {
     /// "matched but unchanged" case is success for an idempotent PATCH).
     async fn update_webhook(
         &self,
-        tenant_id: &ObjectId,
-        webhook_id: &ObjectId,
+        tenant_id: &TenantId,
+        webhook_id: &WebhookId,
         active: Option<bool>,
         events: Option<Vec<WebhookEventType>>,
         url: Option<String>,
     ) -> Result<bool, String>;
     async fn find_active_for_event(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         event_type: &WebhookEventType,
     ) -> Result<Vec<Webhook>, String>;
 }
@@ -67,7 +68,7 @@ impl WebhooksRepository for WebhooksRepo {
         Ok(())
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Webhook>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<Webhook>, String> {
         let mut cursor = self
             .webhooks
             .find(doc! { "tenant_id": tenant_id })
@@ -82,7 +83,7 @@ impl WebhooksRepository for WebhooksRepo {
         Ok(webhooks)
     }
 
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String> {
         self.webhooks
             .count_documents(doc! { "tenant_id": tenant_id })
             .await
@@ -91,8 +92,8 @@ impl WebhooksRepository for WebhooksRepo {
 
     async fn delete_webhook(
         &self,
-        tenant_id: &ObjectId,
-        webhook_id: &ObjectId,
+        tenant_id: &TenantId,
+        webhook_id: &WebhookId,
     ) -> Result<bool, String> {
         let result = self
             .webhooks
@@ -104,8 +105,8 @@ impl WebhooksRepository for WebhooksRepo {
 
     async fn update_webhook(
         &self,
-        tenant_id: &ObjectId,
-        webhook_id: &ObjectId,
+        tenant_id: &TenantId,
+        webhook_id: &WebhookId,
         active: Option<bool>,
         events: Option<Vec<WebhookEventType>>,
         url: Option<String>,
@@ -146,7 +147,7 @@ impl WebhooksRepository for WebhooksRepo {
 
     async fn find_active_for_event(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         event_type: &WebhookEventType,
     ) -> Result<Vec<Webhook>, String> {
         let event_str = serde_json::to_value(event_type)

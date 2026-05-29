@@ -3,6 +3,7 @@ use mongodb::bson::oid::ObjectId;
 use std::collections::HashSet;
 use std::sync::Mutex;
 
+use rift::core::public_id::{SourceId, TenantId};
 use rift::services::conversions::models::{ConversionEvent, Source, SourceType};
 use rift::services::conversions::repo::ConversionsRepository;
 
@@ -16,7 +17,7 @@ pub struct MockConversionsRepo {
 impl ConversionsRepository for MockConversionsRepo {
     async fn create_source(
         &self,
-        _tenant_id: ObjectId,
+        _tenant_id: TenantId,
         _name: String,
         _source_type: SourceType,
     ) -> Result<Source, String> {
@@ -29,23 +30,23 @@ impl ConversionsRepository for MockConversionsRepo {
 
     async fn find_source_by_id(
         &self,
-        _tenant_id: &ObjectId,
-        _id: &ObjectId,
+        _tenant_id: &TenantId,
+        _id: &SourceId,
     ) -> Result<Option<Source>, String> {
         Ok(None)
     }
 
-    async fn list_sources(&self, _tenant_id: &ObjectId) -> Result<Vec<Source>, String> {
+    async fn list_sources(&self, _tenant_id: &TenantId) -> Result<Vec<Source>, String> {
         Ok(Vec::new())
     }
 
-    async fn delete_source(&self, _tenant_id: &ObjectId, _id: &ObjectId) -> Result<bool, String> {
+    async fn delete_source(&self, _tenant_id: &TenantId, _id: &SourceId) -> Result<bool, String> {
         Ok(false)
     }
 
     async fn get_or_create_default_custom_source(
         &self,
-        _tenant_id: ObjectId,
+        _tenant_id: TenantId,
     ) -> Result<Source, String> {
         unimplemented!("not needed for conversion tests")
     }
@@ -57,10 +58,10 @@ impl ConversionsRepository for MockConversionsRepo {
 
     async fn check_and_insert_dedup(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         idempotency_key: &str,
     ) -> Result<bool, String> {
-        let key = (tenant_id.to_hex(), idempotency_key.to_string());
+        let key = (tenant_id.to_string(), idempotency_key.to_string());
         let mut keys = self.dedup_keys.lock().unwrap();
         if keys.contains(&key) {
             Ok(false)
@@ -72,7 +73,7 @@ impl ConversionsRepository for MockConversionsRepo {
 
     async fn count_by_type_for_users(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &TenantId,
         _user_ids: &[String],
         _from: mongodb::bson::DateTime,
         _to: mongodb::bson::DateTime,
@@ -82,7 +83,7 @@ impl ConversionsRepository for MockConversionsRepo {
 
     async fn count_conversions_by_type_credited_to_links(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &TenantId,
         _link_ids: &[String],
         _from: mongodb::bson::DateTime,
         _to: mongodb::bson::DateTime,

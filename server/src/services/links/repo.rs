@@ -5,6 +5,7 @@ use mongodb::bson::{self, doc, oid::ObjectId, DateTime};
 use mongodb::options::{IndexOptions, TimeseriesGranularity, TimeseriesOptions};
 use mongodb::{Collection, Database};
 
+use crate::core::public_id::TenantId;
 use crate::ensure_index;
 
 use mongodb::bson::Document;
@@ -34,33 +35,33 @@ pub trait LinksRepository: Send + Sync {
 
     async fn find_link_by_tenant_and_id(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_id: &str,
     ) -> Result<Option<Link>, String>;
 
     async fn update_link(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_id: &str,
         set: Document,
         unset: Document,
     ) -> Result<bool, String>;
 
-    async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String>;
+    async fn delete_link(&self, tenant_id: &TenantId, link_id: &str) -> Result<bool, String>;
 
     /// Total active links owned by this tenant — feeds the CreateLink quota.
-    async fn count_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String>;
+    async fn count_links_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String>;
 
     async fn list_links_by_tenant(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         limit: i64,
         cursor: Option<ObjectId>,
     ) -> Result<Vec<Link>, String>;
 
     async fn record_click(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         link_id: &str,
         user_agent: Option<String>,
         referer: Option<String>,
@@ -75,7 +76,7 @@ pub trait LinksRepository: Send + Sync {
     /// reads can prune buckets.
     async fn record_attribute_event(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         link_id: &str,
         install_id: &str,
         app_version: &str,
@@ -95,7 +96,7 @@ pub trait LinksRepository: Send + Sync {
     /// Returns the number of rows updated.
     async fn backfill_user_id_on_attribution_events(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         install_id: &str,
         user_id: &str,
     ) -> Result<u64, String>;
@@ -110,7 +111,7 @@ pub trait LinksRepository: Send + Sync {
     /// Returns an empty set if `link_ids` is empty.
     async fn distinct_install_ids_credited_to_links(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_ids: &[String],
         from: DateTime,
         to: DateTime,
@@ -120,7 +121,7 @@ pub trait LinksRepository: Send + Sync {
     /// Count click events for a set of links in the time range.
     async fn count_clicks_for_links(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_ids: &[String],
         from: DateTime,
         to: DateTime,
@@ -139,7 +140,7 @@ pub trait LinksRepository: Send + Sync {
     /// hasn't done a `/lifecycle/attribute` yet, for example).
     async fn credited_links_for_user(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         user_id: &str,
         at_or_before: DateTime,
     ) -> Result<CreditedLinks, String>;
@@ -283,7 +284,7 @@ async fn cached_find_link_by_id(links: &Collection<Link>, link_id: &str) -> Resu
 )]
 async fn cached_find_link_by_tenant_and_id(
     links: &Collection<Link>,
-    tenant_id: &ObjectId,
+    tenant_id: &TenantId,
     link_id: &str,
 ) -> Result<Link, String> {
     links
@@ -294,7 +295,7 @@ async fn cached_find_link_by_tenant_and_id(
 }
 
 /// Evict a link from both caches after a write (create/update/delete).
-async fn invalidate_link_cache(tenant_id: &ObjectId, link_id: &str) {
+async fn invalidate_link_cache(tenant_id: &TenantId, link_id: &str) {
     CACHED_FIND_LINK_BY_ID
         .lock()
         .await
@@ -313,7 +314,7 @@ impl LinksRepository for LinksRepo {
             .insert_one(&link)
             .await
             .map_err(|e| e.to_string())?;
-        invalidate_link_cache(link.tenant_id.as_object_id(), &link.link_id).await;
+        invalidate_link_cache(&link.tenant_id, &link.link_id).await;
         Ok(link)
     }
 
@@ -347,7 +348,7 @@ impl LinksRepository for LinksRepo {
                     .await
                     .map_err(|e| BulkInsertError::Internal(e.to_string()))?;
                 for d in &docs {
-                    invalidate_link_cache(d.tenant_id.as_object_id(), &d.link_id).await;
+                    invalidate_link_cache(&d.tenant_id, &d.link_id).await;
                 }
                 Ok(docs)
             }
@@ -373,7 +374,7 @@ impl LinksRepository for LinksRepo {
 
     async fn find_link_by_tenant_and_id(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_id: &str,
     ) -> Result<Option<Link>, String> {
         match cached_find_link_by_tenant_and_id(&self.links, tenant_id, link_id).await {
@@ -385,7 +386,7 @@ impl LinksRepository for LinksRepo {
 
     async fn update_link(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_id: &str,
         set: Document,
         unset: Document,
@@ -411,7 +412,7 @@ impl LinksRepository for LinksRepo {
         Ok(result.matched_count > 0)
     }
 
-    async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String> {
+    async fn delete_link(&self, tenant_id: &TenantId, link_id: &str) -> Result<bool, String> {
         let result = self
             .links
             .delete_one(doc! { "tenant_id": tenant_id, "link_id": link_id })
@@ -423,7 +424,7 @@ impl LinksRepository for LinksRepo {
         Ok(result.deleted_count > 0)
     }
 
-    async fn count_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+    async fn count_links_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String> {
         self.links
             .count_documents(doc! { "tenant_id": tenant_id })
             .await
@@ -432,7 +433,7 @@ impl LinksRepository for LinksRepo {
 
     async fn list_links_by_tenant(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         limit: i64,
         cursor: Option<ObjectId>,
     ) -> Result<Vec<Link>, String> {
@@ -458,7 +459,7 @@ impl LinksRepository for LinksRepo {
 
     async fn record_click(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         link_id: &str,
         user_agent: Option<String>,
         referer: Option<String>,
@@ -467,7 +468,7 @@ impl LinksRepository for LinksRepo {
     ) -> Result<(), String> {
         let event = ClickEvent {
             meta: ClickMeta {
-                tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
+                tenant_id,
                 link_id: link_id.to_string(),
                 retention_bucket,
             },
@@ -485,7 +486,7 @@ impl LinksRepository for LinksRepo {
 
     async fn record_attribute_event(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         link_id: &str,
         install_id: &str,
         app_version: &str,
@@ -495,7 +496,7 @@ impl LinksRepository for LinksRepo {
         let event = AttributionEvent {
             timestamp: DateTime::now(),
             meta: AttributionEventMeta {
-                tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
+                tenant_id,
                 install_id: install_id.to_string(),
                 retention_bucket,
                 user_id: user_id.map(|s| s.to_string()),
@@ -512,7 +513,7 @@ impl LinksRepository for LinksRepo {
 
     async fn backfill_user_id_on_attribution_events(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         install_id: &str,
         user_id: &str,
     ) -> Result<u64, String> {
@@ -539,7 +540,7 @@ impl LinksRepository for LinksRepo {
 
     async fn distinct_install_ids_credited_to_links(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_ids: &[String],
         from: DateTime,
         to: DateTime,
@@ -626,7 +627,7 @@ impl LinksRepository for LinksRepo {
 
     async fn count_clicks_for_links(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_ids: &[String],
         from: DateTime,
         to: DateTime,
@@ -650,7 +651,7 @@ impl LinksRepository for LinksRepo {
 
     async fn credited_links_for_user(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         user_id: &str,
         at_or_before: DateTime,
     ) -> Result<CreditedLinks, String> {
@@ -714,6 +715,7 @@ impl LinksRepository for LinksRepo {
     }
 }
 
+#[allow(dead_code)]
 fn build_link(input: CreateLinkInput) -> Link {
     Link {
         id: crate::core::public_id::LinkInternalId::new(),

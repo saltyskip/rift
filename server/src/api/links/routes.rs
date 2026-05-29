@@ -445,7 +445,7 @@ pub async fn resolve_link_custom(
     }
 
     let Some(link) = repo
-        .find_link_by_tenant_and_id(domain.tenant_id.as_object_id(), &link_id)
+        .find_link_by_tenant_and_id(&domain.tenant_id, &link_id)
         .await
         .ok()
         .flatten()
@@ -665,12 +665,12 @@ async fn do_resolve(
                 Platform::Other => "android",
             };
             let app = apps_repo
-                .find_by_tenant_platform(link.tenant_id.as_object_id(), preferred)
+                .find_by_tenant_platform(&link.tenant_id, preferred)
                 .await
                 .ok()
                 .flatten()
                 .or(apps_repo
-                    .find_by_tenant_platform(link.tenant_id.as_object_id(), fallback)
+                    .find_by_tenant_platform(&link.tenant_id, fallback)
                     .await
                     .ok()
                     .flatten());
@@ -686,7 +686,7 @@ async fn do_resolve(
         // Look up alternate domain for the "Open in App" button.
         let alternate_domain = if let Some(domains_repo) = &state.domains_repo {
             domains_repo
-                .find_alternate_by_tenant(link.tenant_id.as_object_id())
+                .find_alternate_by_tenant(&link.tenant_id)
                 .await
                 .ok()
                 .flatten()
@@ -884,7 +884,7 @@ async fn lookup_tenant_domain(
         return (None, false);
     };
     let domains = repo
-        .list_by_tenant(tenant_id.as_object_id())
+        .list_by_tenant(tenant_id)
         .await
         .ok()
         .unwrap_or_default();

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
+use rift::core::public_id::{TenantId, WebhookId};
 use rift::core::webhook_dispatcher::{
     AttributeEventPayload, ClickEventPayload, ConversionEventPayload, IdentifyEventPayload,
     WebhookDispatcher,
@@ -22,52 +22,51 @@ impl WebhooksRepository for MockWebhooksRepo {
         Ok(())
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<Webhook>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<Webhook>, String> {
         Ok(self
             .webhooks
             .lock()
             .unwrap()
             .iter()
-            .filter(|w| w.tenant_id.to_object_id() == *tenant_id)
+            .filter(|w| w.tenant_id == *tenant_id)
             .cloned()
             .collect())
     }
 
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String> {
         Ok(self
             .webhooks
             .lock()
             .unwrap()
             .iter()
-            .filter(|w| w.tenant_id.to_object_id() == *tenant_id)
+            .filter(|w| w.tenant_id == *tenant_id)
             .count() as u64)
     }
 
     async fn delete_webhook(
         &self,
-        tenant_id: &ObjectId,
-        webhook_id: &ObjectId,
+        tenant_id: &TenantId,
+        webhook_id: &WebhookId,
     ) -> Result<bool, String> {
         let mut webhooks = self.webhooks.lock().unwrap();
         let len_before = webhooks.len();
-        webhooks.retain(|w| {
-            !(w.tenant_id.to_object_id() == *tenant_id && w.id.to_object_id() == *webhook_id)
-        });
+        webhooks.retain(|w| !(w.tenant_id == *tenant_id && w.id == *webhook_id));
         Ok(webhooks.len() < len_before)
     }
 
     async fn update_webhook(
         &self,
-        tenant_id: &ObjectId,
-        webhook_id: &ObjectId,
+        tenant_id: &TenantId,
+        webhook_id: &WebhookId,
         active: Option<bool>,
         events: Option<Vec<WebhookEventType>>,
         url: Option<String>,
     ) -> Result<bool, String> {
         let mut webhooks = self.webhooks.lock().unwrap();
-        match webhooks.iter_mut().find(|w| {
-            w.tenant_id.to_object_id() == *tenant_id && w.id.to_object_id() == *webhook_id
-        }) {
+        match webhooks
+            .iter_mut()
+            .find(|w| w.tenant_id == *tenant_id && w.id == *webhook_id)
+        {
             Some(w) => {
                 if let Some(a) = active {
                     w.active = a;
@@ -86,7 +85,7 @@ impl WebhooksRepository for MockWebhooksRepo {
 
     async fn find_active_for_event(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         event_type: &WebhookEventType,
     ) -> Result<Vec<Webhook>, String> {
         Ok(self
@@ -94,11 +93,7 @@ impl WebhooksRepository for MockWebhooksRepo {
             .lock()
             .unwrap()
             .iter()
-            .filter(|w| {
-                w.tenant_id.to_object_id() == *tenant_id
-                    && w.active
-                    && w.events.contains(event_type)
-            })
+            .filter(|w| w.tenant_id == *tenant_id && w.active && w.events.contains(event_type))
             .cloned()
             .collect())
     }

@@ -249,7 +249,7 @@ pub async fn spawn_app() -> TestApp {
 pub async fn seed_verified_domain(app: &TestApp, tenant_id: &ObjectId, domain: &str) {
     app.domains_repo
         .create_domain(
-            *tenant_id,
+            rift::core::public_id::TenantId::from_object_id(*tenant_id),
             domain.to_string(),
             "tok".to_string(),
             rift::services::domains::models::DomainRole::Primary,

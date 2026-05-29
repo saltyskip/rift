@@ -1,8 +1,9 @@
 use async_trait::async_trait;
-use mongodb::bson::{doc, oid::ObjectId, DateTime};
+use mongodb::bson::{doc, DateTime};
 use mongodb::{Collection, Database};
 
 use super::models::{InstallContext, InstallEvent, InstallEventType};
+use crate::core::public_id::{InstallEventId, TenantId};
 use crate::ensure_index;
 
 // ── Trait ──
@@ -14,7 +15,7 @@ pub trait InstallEventsRepository: Send + Sync {
     /// (e.g. webhook dispatcher) can decide whether to fire downstream.
     async fn record_attribute_lifecycle(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         install_id: &str,
         context: &InstallContext,
     ) -> Result<InstallEventType, String>;
@@ -30,7 +31,7 @@ pub trait InstallEventsRepository: Send + Sync {
     /// device_model data is missing.
     async fn record_identify_lifecycle(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         install_id: &str,
         user_id: &str,
         prior_install_ids: &[String],
@@ -43,7 +44,7 @@ pub trait InstallEventsRepository: Send + Sync {
     /// reinstall-vs-new-device input.
     async fn get_device_model(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         install_id: &str,
     ) -> Result<Option<String>, String>;
 
@@ -52,7 +53,7 @@ pub trait InstallEventsRepository: Send + Sync {
     /// Returns 0 immediately if `install_ids` is empty.
     async fn count_events_by_type_for_installs(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         event_type: InstallEventType,
         install_ids: &[String],
         from: DateTime,
@@ -93,7 +94,7 @@ impl InstallEventsRepo {
 impl InstallEventsRepository for InstallEventsRepo {
     async fn record_attribute_lifecycle(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         install_id: &str,
         context: &InstallContext,
     ) -> Result<InstallEventType, String> {
@@ -116,8 +117,8 @@ impl InstallEventsRepository for InstallEventsRepo {
         };
 
         let event = InstallEvent {
-            id: Some(crate::core::public_id::InstallEventId::new()),
-            tenant_id: crate::core::public_id::TenantId::from_object_id(*tenant_id),
+            id: Some(InstallEventId::new()),
+            tenant_id: *tenant_id,
             install_id: install_id.to_string(),
             event_type,
             timestamp: DateTime::now(),
@@ -139,7 +140,7 @@ impl InstallEventsRepository for InstallEventsRepo {
 
     async fn record_identify_lifecycle(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         install_id: &str,
         user_id: &str,
         prior_install_ids: &[String],
@@ -151,8 +152,8 @@ impl InstallEventsRepository for InstallEventsRepo {
 
         // Always write install.identified.
         let identified = InstallEvent {
-            id: Some(crate::core::public_id::InstallEventId::new()),
-            tenant_id: crate::core::public_id::TenantId::from_object_id(*tenant_id),
+            id: Some(InstallEventId::new()),
+            tenant_id: *tenant_id,
             install_id: install_id.to_string(),
             event_type: InstallEventType::Identified,
             timestamp: now,
@@ -186,8 +187,8 @@ impl InstallEventsRepository for InstallEventsRepo {
             };
 
             let event = InstallEvent {
-                id: Some(crate::core::public_id::InstallEventId::new()),
-                tenant_id: crate::core::public_id::TenantId::from_object_id(*tenant_id),
+                id: Some(InstallEventId::new()),
+                tenant_id: *tenant_id,
                 install_id: install_id.to_string(),
                 event_type: classification,
                 timestamp: now,
@@ -209,7 +210,7 @@ impl InstallEventsRepository for InstallEventsRepo {
 
     async fn get_device_model(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         install_id: &str,
     ) -> Result<Option<String>, String> {
         let event = self
@@ -226,7 +227,7 @@ impl InstallEventsRepository for InstallEventsRepo {
 
     async fn count_events_by_type_for_installs(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         event_type: InstallEventType,
         install_ids: &[String],
         from: DateTime,

@@ -317,10 +317,7 @@ impl SessionsService {
         let staleness_secs = mongodb::bson::DateTime::now().timestamp_millis() / 1000
             - session.last_seen_at.timestamp_millis() / 1000;
         if staleness_secs > Self::TOUCH_INTERVAL_SECS {
-            let _ = self
-                .sessions_repo
-                .touch_last_seen(&session.id.to_object_id())
-                .await;
+            let _ = self.sessions_repo.touch_last_seen(&session.id).await;
         }
 
         Ok(Some(ResolvedSession {
@@ -336,7 +333,7 @@ impl SessionsService {
         session_id: &crate::core::public_id::AuthSessionId,
     ) -> Result<(), SessionError> {
         self.sessions_repo
-            .revoke(&session_id.to_object_id())
+            .revoke(session_id)
             .await
             .map(|_| ())
             .map_err(SessionError::Internal)

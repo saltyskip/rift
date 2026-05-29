@@ -6,11 +6,12 @@
 //! - TTL on `expires_at` so MongoDB sweeps expired sessions automatically
 
 use async_trait::async_trait;
-use mongodb::bson::{self, doc, oid::ObjectId};
+use mongodb::bson::{self, doc};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database};
 
 use super::models::SessionDoc;
+use crate::core::public_id::AuthSessionId;
 use crate::ensure_index;
 
 #[async_trait]
@@ -24,11 +25,11 @@ pub trait SessionsRepository: Send + Sync {
 
     /// Mark `revoked_at = now` for a single session. Idempotent: revoking an
     /// already-revoked session is a no-op.
-    async fn revoke(&self, session_id: &ObjectId) -> Result<bool, String>;
+    async fn revoke(&self, session_id: &AuthSessionId) -> Result<bool, String>;
 
     /// Bump `last_seen_at = now`. Caller is expected to debounce (the middleware
     /// only calls this when `now - last_seen > 60s`).
-    async fn touch_last_seen(&self, session_id: &ObjectId) -> Result<(), String>;
+    async fn touch_last_seen(&self, session_id: &AuthSessionId) -> Result<(), String>;
 }
 
 // ── Mongo impl ──
@@ -86,7 +87,7 @@ impl SessionsRepository for SessionsRepoMongo {
             .map_err(|e| e.to_string())
     }
 
-    async fn revoke(&self, session_id: &ObjectId) -> Result<bool, String> {
+    async fn revoke(&self, session_id: &AuthSessionId) -> Result<bool, String> {
         let now = bson::DateTime::now();
         let result = self
             .col
@@ -99,7 +100,7 @@ impl SessionsRepository for SessionsRepoMongo {
         Ok(result.modified_count > 0)
     }
 
-    async fn touch_last_seen(&self, session_id: &ObjectId) -> Result<(), String> {
+    async fn touch_last_seen(&self, session_id: &AuthSessionId) -> Result<(), String> {
         let now = bson::DateTime::now();
         self.col
             .update_one(

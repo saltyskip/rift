@@ -1,8 +1,9 @@
 use async_trait::async_trait;
-use mongodb::bson::{doc, oid::ObjectId, DateTime};
+use mongodb::bson::{doc, DateTime};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database};
 
+use crate::core::public_id::{AppId, TenantId};
 use crate::ensure_index;
 
 use super::models::App;
@@ -12,13 +13,13 @@ use super::models::App;
 #[async_trait]
 pub trait AppsRepository: Send + Sync {
     async fn create_or_update(&self, app: App) -> Result<App, String>;
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<App>, String>;
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<App>, String>;
     async fn find_by_tenant_platform(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         platform: &str,
     ) -> Result<Option<App>, String>;
-    async fn delete_app(&self, tenant_id: &ObjectId, app_id: &ObjectId) -> Result<bool, String>;
+    async fn delete_app(&self, tenant_id: &TenantId, app_id: &AppId) -> Result<bool, String>;
 }
 
 // ── Repository ──
@@ -49,7 +50,7 @@ impl AppsRepository for AppsRepo {
     async fn create_or_update(&self, app: App) -> Result<App, String> {
         self.apps
             .update_one(
-                doc! { "tenant_id": &app.tenant_id, "platform": &app.platform },
+                doc! { "tenant_id": app.tenant_id, "platform": &app.platform },
                 doc! {
                     "$set": {
                         "bundle_id": &app.bundle_id,
@@ -61,8 +62,8 @@ impl AppsRepository for AppsRepo {
                         "theme_color": &app.theme_color,
                     },
                     "$setOnInsert": {
-                        "_id": &app.id,
-                        "tenant_id": &app.tenant_id,
+                        "_id": app.id,
+                        "tenant_id": app.tenant_id,
                         "platform": &app.platform,
                         "created_at": DateTime::now(),
                     }
@@ -73,12 +74,12 @@ impl AppsRepository for AppsRepo {
             .map_err(|e| e.to_string())?;
 
         // Re-fetch so we return the actual document (correct _id and created_at).
-        self.find_by_tenant_platform(app.tenant_id.as_object_id(), &app.platform)
+        self.find_by_tenant_platform(&app.tenant_id, &app.platform)
             .await?
             .ok_or_else(|| "App not found after upsert".to_string())
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<App>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<App>, String> {
         let mut cursor = self
             .apps
             .find(doc! { "tenant_id": tenant_id })
@@ -95,7 +96,7 @@ impl AppsRepository for AppsRepo {
 
     async fn find_by_tenant_platform(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         platform: &str,
     ) -> Result<Option<App>, String> {
         self.apps
@@ -104,7 +105,7 @@ impl AppsRepository for AppsRepo {
             .map_err(|e| e.to_string())
     }
 
-    async fn delete_app(&self, tenant_id: &ObjectId, app_id: &ObjectId) -> Result<bool, String> {
+    async fn delete_app(&self, tenant_id: &TenantId, app_id: &AppId) -> Result<bool, String> {
         let result = self
             .apps
             .delete_one(doc! { "_id": app_id, "tenant_id": tenant_id })

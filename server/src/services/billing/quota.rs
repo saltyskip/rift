@@ -88,7 +88,6 @@ impl QuotaChecker for QuotaService {
     /// - `Enforce`: returns `Err(QuotaError::Exceeded { ... })` when over
     ///   limit. Caller renders as `402 Payment Required`.
     async fn check(&self, tenant_id: &TenantId, resource: Resource) -> Result<(), QuotaError> {
-        let oid = tenant_id.as_object_id();
         let tier = self.billing.effective_tier(tenant_id).await?;
         let limits = limits_for(tier);
         let max = match limit_for_resource(&limits, resource) {
@@ -101,7 +100,7 @@ impl QuotaChecker for QuotaService {
                 let period = current_period();
                 let within = self
                     .counters
-                    .increment_if_below(oid, &period, Some(max))
+                    .increment_if_below(tenant_id, &period, Some(max))
                     .await
                     .map_err(|e| QuotaError::Billing(BillingError::Internal(e)))?;
                 if within {

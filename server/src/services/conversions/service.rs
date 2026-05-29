@@ -80,7 +80,6 @@ impl ConversionsService {
         source_id: SourceId,
         parsed: Vec<ParsedConversion>,
     ) -> IngestResult {
-        let tenant_oid = tenant_id.to_object_id();
         let source_oid = source_id.to_object_id();
         let mut result = IngestResult::default();
 
@@ -89,7 +88,7 @@ impl ConversionsService {
             if let Some(key) = &event.idempotency_key {
                 match self
                     .conversions_repo
-                    .check_and_insert_dedup(&tenant_oid, key)
+                    .check_and_insert_dedup(&tenant_id, key)
                     .await
                 {
                     Ok(false) => {
@@ -125,7 +124,7 @@ impl ConversionsService {
             };
             let user_known = match &self.app_users_repo {
                 Some(repo) => repo
-                    .find_by_user_id(&tenant_oid, user_id)
+                    .find_by_user_id(&tenant_id, user_id)
                     .await
                     .ok()
                     .flatten()
@@ -211,7 +210,7 @@ impl ConversionsService {
                     Some(repo) => {
                         let ids = repo
                             .credited_links_for_user(
-                                &tenant_oid,
+                                &tenant_id,
                                 user_id,
                                 event.occurred_at.unwrap_or_else(DateTime::now),
                             )

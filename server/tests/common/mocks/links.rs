@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
+use rift::core::public_id::TenantId;
 use std::sync::Mutex;
 
 use rift::services::links::models::BulkInsertError;
@@ -110,7 +111,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn find_link_by_tenant_and_id(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_id: &str,
     ) -> Result<Option<Link>, String> {
         Ok(self
@@ -118,13 +119,13 @@ impl LinksRepository for MockLinksRepo {
             .lock()
             .unwrap()
             .iter()
-            .find(|l| l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id)
+            .find(|l| l.tenant_id == *tenant_id && l.link_id == link_id)
             .cloned())
     }
 
     async fn update_link(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         link_id: &str,
         set: Document,
         unset: Document,
@@ -132,7 +133,7 @@ impl LinksRepository for MockLinksRepo {
         let mut links = self.links.lock().unwrap();
         let Some(link) = links
             .iter_mut()
-            .find(|l| l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id)
+            .find(|l| l.tenant_id == *tenant_id && l.link_id == link_id)
         else {
             return Ok(false);
         };
@@ -172,34 +173,28 @@ impl LinksRepository for MockLinksRepo {
         Ok(true)
     }
 
-    async fn delete_link(&self, tenant_id: &ObjectId, link_id: &str) -> Result<bool, String> {
+    async fn delete_link(&self, tenant_id: &TenantId, link_id: &str) -> Result<bool, String> {
         let mut links = self.links.lock().unwrap();
         let len_before = links.len();
-        links.retain(|l| !(l.tenant_id.to_object_id() == *tenant_id && l.link_id == link_id));
+        links.retain(|l| !(l.tenant_id == *tenant_id && l.link_id == link_id));
         Ok(links.len() < len_before)
     }
 
-    async fn count_links_by_tenant(&self, tenant_id: &ObjectId) -> Result<u64, String> {
+    async fn count_links_by_tenant(&self, tenant_id: &TenantId) -> Result<u64, String> {
         let links = self.links.lock().unwrap();
-        Ok(links
-            .iter()
-            .filter(|l| l.tenant_id.to_object_id() == *tenant_id)
-            .count() as u64)
+        Ok(links.iter().filter(|l| l.tenant_id == *tenant_id).count() as u64)
     }
 
     async fn list_links_by_tenant(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         limit: i64,
         cursor: Option<ObjectId>,
     ) -> Result<Vec<Link>, String> {
         let links = self.links.lock().unwrap();
         let mut filtered: Vec<Link> = links
             .iter()
-            .filter(|l| {
-                l.tenant_id.to_object_id() == *tenant_id
-                    && cursor.is_none_or(|c| l.id.to_object_id() < c)
-            })
+            .filter(|l| l.tenant_id == *tenant_id && cursor.is_none_or(|c| l.id.to_object_id() < c))
             .cloned()
             .collect();
         // Sort by _id descending (ObjectIds are monotonically increasing).
@@ -210,7 +205,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn record_click(
         &self,
-        tenant_id: ObjectId,
+        tenant_id: TenantId,
         link_id: &str,
         user_agent: Option<String>,
         referer: Option<String>,
@@ -219,7 +214,7 @@ impl LinksRepository for MockLinksRepo {
     ) -> Result<(), String> {
         self.clicks.lock().unwrap().push(ClickEvent {
             meta: ClickMeta {
-                tenant_id: rift::core::public_id::TenantId::from_object_id(tenant_id),
+                tenant_id,
                 link_id: link_id.to_string(),
                 retention_bucket,
             },
@@ -233,7 +228,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn record_attribute_event(
         &self,
-        _tenant_id: ObjectId,
+        _tenant_id: TenantId,
         _link_id: &str,
         _install_id: &str,
         _app_version: &str,
@@ -245,7 +240,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn backfill_user_id_on_attribution_events(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &TenantId,
         _install_id: &str,
         _user_id: &str,
     ) -> Result<u64, String> {
@@ -254,7 +249,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn distinct_install_ids_credited_to_links(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &TenantId,
         _link_ids: &[String],
         _from: DateTime,
         _to: DateTime,
@@ -265,7 +260,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn count_clicks_for_links(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &TenantId,
         _link_ids: &[String],
         _from: DateTime,
         _to: DateTime,
@@ -275,7 +270,7 @@ impl LinksRepository for MockLinksRepo {
 
     async fn credited_links_for_user(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &TenantId,
         _user_id: &str,
         _at_or_before: DateTime,
     ) -> Result<rift::services::links::models::CreditedLinks, String> {
