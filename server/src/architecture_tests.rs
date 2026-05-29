@@ -310,7 +310,6 @@ const AUTH_MIGRATION_BACKLOG: &[&str] = &[];
 const OBJECT_ID_BACKLOG: &[&str] = &[
     "src/api/affiliates/routes.rs",
     "src/api/auth/middleware.rs",
-    "src/api/auth/models.rs",
     "src/api/auth/users/routes.rs",
     "src/api/billing/stripe_webhook.rs",
     "src/api/conversions/routes.rs",
@@ -327,7 +326,6 @@ const OBJECT_ID_BACKLOG: &[&str] = &[
     "src/services/conversions/service.rs",
     "src/services/links/models.rs",
     "src/services/links/service.rs",
-    "src/services/webhooks/dispatcher.rs",
 ];
 
 /// Whether `path` is on the cleanup backlog (suppress pub-types check only).

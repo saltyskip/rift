@@ -66,7 +66,9 @@ pub async fn auth_gate(
         // Inject tenant identity, key identity, and scope for downstream handlers.
         req.extensions_mut()
             .insert(TenantId::from_object_id(tenant_id));
-        req.extensions_mut().insert(AuthKeyId(key_id));
+        req.extensions_mut().insert(AuthKeyId(
+            crate::core::public_id::SecretKeyId::from_object_id(key_id),
+        ));
         req.extensions_mut().insert(AuthContext::for_secret_key(
             TenantId::from_object_id(tenant_id),
             key_id,
@@ -328,7 +330,9 @@ pub async fn session_or_key_auth_gate(
 
         req.extensions_mut()
             .insert(TenantId::from_object_id(tenant_id));
-        req.extensions_mut().insert(AuthKeyId(key_id));
+        req.extensions_mut().insert(AuthKeyId(
+            crate::core::public_id::SecretKeyId::from_object_id(key_id),
+        ));
         req.extensions_mut().insert(AuthContext::for_secret_key(
             TenantId::from_object_id(tenant_id),
             key_id,

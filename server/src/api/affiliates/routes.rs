@@ -181,7 +181,10 @@ pub async fn create_affiliate_credential(
         return no_database();
     };
 
-    match svc.mint_credential(&ctx, affiliate_id, auth_key.0).await {
+    match svc
+        .mint_credential(&ctx, affiliate_id, auth_key.0.to_object_id())
+        .await
+    {
         Ok(minted) => (
             StatusCode::CREATED,
             Json(CreateAffiliateCredentialResponse {
