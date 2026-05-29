@@ -265,7 +265,7 @@ async fn handle_subscription_upsert(
     };
 
     tenants
-        .apply_subscription_update(&tenant_id.to_object_id(), update)
+        .apply_subscription_update(&tenant_id, update)
         .await?;
 
     Ok(())
@@ -283,9 +283,7 @@ async fn handle_subscription_deleted(
         tracing::warn!(customer = %sub.customer, "stripe_webhook_deleted_no_tenant");
         return Ok(());
     };
-    tenants
-        .clear_subscription(&tenant_id.to_object_id())
-        .await?;
+    tenants.clear_subscription(&tenant_id).await?;
     Ok(())
 }
 
@@ -324,7 +322,7 @@ async fn handle_invoice_status(
         ..SubscriptionUpdate::default()
     };
     tenants
-        .apply_subscription_update(&tenant_id.to_object_id(), update)
+        .apply_subscription_update(&tenant_id, update)
         .await?;
     Ok(())
 }

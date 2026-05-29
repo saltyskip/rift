@@ -25,13 +25,13 @@ impl TenantsRepository for MockRepo {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: &ObjectId) -> Result<Option<TenantDoc>, String> {
+    async fn find_by_id(&self, id: &TenantId) -> Result<Option<TenantDoc>, String> {
         Ok(self
             .tenants
             .lock()
             .unwrap()
             .iter()
-            .find(|t| t.id.map(|i| i.to_object_id()).as_ref() == Some(id))
+            .find(|t| t.id.as_ref() == Some(id))
             .cloned())
     }
 
@@ -44,13 +44,13 @@ impl TenantsRepository for MockRepo {
 
     async fn apply_subscription_update(
         &self,
-        _tenant_id: &ObjectId,
+        _tenant_id: &TenantId,
         _update: crate::services::auth::tenants::repo::SubscriptionUpdate,
     ) -> Result<bool, String> {
         Ok(true)
     }
 
-    async fn clear_subscription(&self, _tenant_id: &ObjectId) -> Result<bool, String> {
+    async fn clear_subscription(&self, _tenant_id: &TenantId) -> Result<bool, String> {
         Ok(true)
     }
 }

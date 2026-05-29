@@ -1,6 +1,8 @@
 use async_trait::async_trait;
-use mongodb::bson::{self, doc, oid::ObjectId};
+use mongodb::bson::{self, doc};
 use mongodb::{Collection, Database};
+
+use crate::core::public_id::TenantId;
 
 // Re-export models so existing call sites that import via
 // `tenants::repo::TenantDoc` keep compiling. Data types live in models.rs
@@ -14,7 +16,7 @@ pub use super::models::{
 #[async_trait]
 pub trait TenantsRepository: Send + Sync {
     async fn create(&self, doc: &TenantDoc) -> Result<(), String>;
-    async fn find_by_id(&self, id: &ObjectId) -> Result<Option<TenantDoc>, String>;
+    async fn find_by_id(&self, id: &TenantId) -> Result<Option<TenantDoc>, String>;
 
     /// Resolve a tenant by the Stripe customer id stored on prior subscription
     /// events. Used by webhook handlers that receive `customer.subscription.*`
@@ -28,13 +30,13 @@ pub trait TenantsRepository: Send + Sync {
     /// `None` fields are left untouched.
     async fn apply_subscription_update(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         update: SubscriptionUpdate,
     ) -> Result<bool, String>;
 
     /// End-of-subscription path for `customer.subscription.deleted`. Drops
     /// the tenant back to Free and clears Stripe identifiers.
-    async fn clear_subscription(&self, tenant_id: &ObjectId) -> Result<bool, String>;
+    async fn clear_subscription(&self, tenant_id: &TenantId) -> Result<bool, String>;
 }
 
 // ── Repository ──
@@ -62,9 +64,9 @@ impl TenantsRepository for TenantsRepo {
         Ok(())
     }
 
-    async fn find_by_id(&self, id: &ObjectId) -> Result<Option<TenantDoc>, String> {
+    async fn find_by_id(&self, id: &TenantId) -> Result<Option<TenantDoc>, String> {
         self.tenants
-            .find_one(doc! { "_id": id })
+            .find_one(doc! { "_id": *id })
             .await
             .map_err(|e| e.to_string())
     }
@@ -81,7 +83,7 @@ impl TenantsRepository for TenantsRepo {
 
     async fn apply_subscription_update(
         &self,
-        tenant_id: &ObjectId,
+        tenant_id: &TenantId,
         update: SubscriptionUpdate,
     ) -> Result<bool, String> {
         let mut set_doc = mongodb::bson::Document::new();
@@ -133,13 +135,13 @@ impl TenantsRepository for TenantsRepo {
         }
         let result = self
             .tenants
-            .update_one(doc! { "_id": tenant_id }, doc! { "$set": set_doc })
+            .update_one(doc! { "_id": *tenant_id }, doc! { "$set": set_doc })
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.matched_count == 1)
     }
 
-    async fn clear_subscription(&self, tenant_id: &ObjectId) -> Result<bool, String> {
+    async fn clear_subscription(&self, tenant_id: &TenantId) -> Result<bool, String> {
         let update = doc! {
             "$set": {
                 "plan_tier": bson::to_bson(&PlanTier::Free).map_err(|e| e.to_string())?,
@@ -154,7 +156,7 @@ impl TenantsRepository for TenantsRepo {
         };
         let result = self
             .tenants
-            .update_one(doc! { "_id": tenant_id }, update)
+            .update_one(doc! { "_id": *tenant_id }, update)
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.matched_count == 1)

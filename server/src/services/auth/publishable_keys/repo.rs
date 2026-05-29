@@ -1,8 +1,9 @@
 use async_trait::async_trait;
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::doc;
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database};
 
+use crate::core::public_id::{PublishableKeyId, TenantId};
 use crate::ensure_index;
 
 use super::models::SdkKeyDoc;
@@ -15,9 +16,10 @@ pub trait SdkKeysRepository: Send + Sync {
 
     async fn find_by_hash(&self, key_hash: &str) -> Result<Option<SdkKeyDoc>, String>;
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<SdkKeyDoc>, String>;
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<SdkKeyDoc>, String>;
 
-    async fn revoke(&self, tenant_id: &ObjectId, key_id: &ObjectId) -> Result<bool, String>;
+    async fn revoke(&self, tenant_id: &TenantId, key_id: &PublishableKeyId)
+        -> Result<bool, String>;
 }
 
 // ── Repository ──
@@ -58,10 +60,10 @@ impl SdkKeysRepository for SdkKeysRepo {
             .map_err(|e| e.to_string())
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<SdkKeyDoc>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<SdkKeyDoc>, String> {
         let mut cursor = self
             .keys
-            .find(doc! { "tenant_id": tenant_id, "revoked": false })
+            .find(doc! { "tenant_id": *tenant_id, "revoked": false })
             .sort(doc! { "created_at": -1 })
             .await
             .map_err(|e| e.to_string())?;
@@ -73,11 +75,15 @@ impl SdkKeysRepository for SdkKeysRepo {
         Ok(docs)
     }
 
-    async fn revoke(&self, tenant_id: &ObjectId, key_id: &ObjectId) -> Result<bool, String> {
+    async fn revoke(
+        &self,
+        tenant_id: &TenantId,
+        key_id: &PublishableKeyId,
+    ) -> Result<bool, String> {
         let result = self
             .keys
             .update_one(
-                doc! { "_id": key_id, "tenant_id": tenant_id },
+                doc! { "_id": *key_id, "tenant_id": *tenant_id },
                 doc! { "$set": { "revoked": true } },
             )
             .await

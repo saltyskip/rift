@@ -138,7 +138,7 @@ pub async fn list_sdk_keys(
             .into_response();
     };
 
-    match sdk_keys_repo.list_by_tenant(&tenant.to_object_id()).await {
+    match sdk_keys_repo.list_by_tenant(&tenant).await {
         Ok(docs) => {
             let keys: Vec<SdkKeyDetail> = docs
                 .iter()
@@ -189,10 +189,7 @@ pub async fn revoke_sdk_key(
             .into_response();
     };
 
-    match sdk_keys_repo
-        .revoke(&tenant.to_object_id(), &key_id.to_object_id())
-        .await
-    {
+    match sdk_keys_repo.revoke(&tenant, &key_id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,
