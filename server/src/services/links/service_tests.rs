@@ -341,8 +341,8 @@ impl DomainsRepository for MockDomainsRepo {
     ) -> Result<Vec<crate::services::domains::models::Domain>, String> {
         if self.has_verified {
             Ok(vec![crate::services::domains::models::Domain {
-                id: ObjectId::new(),
-                tenant_id: ObjectId::new(),
+                id: crate::core::public_id::DomainId::new(),
+                tenant_id: crate::core::public_id::TenantId::new(),
                 domain: "example.com".to_string(),
                 verified: true,
                 verification_token: "token".to_string(),

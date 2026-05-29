@@ -1,7 +1,6 @@
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
-use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -90,8 +89,8 @@ pub async fn create_app(
     }
 
     let app = crate::services::apps::models::App {
-        id: ObjectId::new(),
-        tenant_id: tenant.to_object_id(),
+        id: crate::core::public_id::AppId::new(),
+        tenant_id: tenant,
         platform: platform.clone(),
         bundle_id: req.bundle_id,
         team_id: req.team_id,
@@ -180,7 +179,7 @@ pub async fn list_apps(
 pub async fn delete_app(
     State(state): State<Arc<AppState>>,
     axum::Extension(tenant): axum::Extension<TenantId>,
-    Path(app_id): Path<String>,
+    Path(app_id): Path<crate::core::public_id::AppId>,
 ) -> Response {
     let Some(repo) = &state.apps_repo else {
         return (
@@ -190,15 +189,10 @@ pub async fn delete_app(
             .into_response();
     };
 
-    let Ok(oid) = ObjectId::parse_str(&app_id) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Invalid app_id", "code": "invalid_id" })),
-        )
-            .into_response();
-    };
-
-    match repo.delete_app(&tenant.to_object_id(), &oid).await {
+    match repo
+        .delete_app(&tenant.to_object_id(), &app_id.to_object_id())
+        .await
+    {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => (
             StatusCode::NOT_FOUND,
@@ -246,7 +240,7 @@ pub async fn serve_aasa(State(state): State<Arc<AppState>>, headers: HeaderMap) 
     };
 
     let Some(ios_app) = repo
-        .find_by_tenant_platform(&tenant_id, "ios")
+        .find_by_tenant_platform(tenant_id.as_object_id(), "ios")
         .await
         .ok()
         .flatten()
@@ -315,7 +309,7 @@ pub async fn serve_assetlinks(State(state): State<Arc<AppState>>, headers: Heade
     };
 
     let Some(android_app) = repo
-        .find_by_tenant_platform(&tenant_id, "android")
+        .find_by_tenant_platform(tenant_id.as_object_id(), "android")
         .await
         .ok()
         .flatten()
@@ -357,7 +351,7 @@ pub async fn serve_assetlinks(State(state): State<Arc<AppState>>, headers: Heade
 // ── Helpers ──
 
 /// Resolve tenant from X-Rift-Host or Host header for custom domain routing.
-async fn resolve_tenant_from_host(state: &Arc<AppState>, headers: &HeaderMap) -> Option<ObjectId> {
+async fn resolve_tenant_from_host(state: &Arc<AppState>, headers: &HeaderMap) -> Option<TenantId> {
     let host = headers
         .get("x-rift-host")
         .or_else(|| headers.get("host"))
@@ -380,7 +374,7 @@ async fn resolve_tenant_from_host(state: &Arc<AppState>, headers: &HeaderMap) ->
 
 fn to_detail(app: &crate::services::apps::models::App) -> AppDetail {
     AppDetail {
-        id: app.id.to_hex(),
+        id: app.id,
         platform: app.platform.clone(),
         bundle_id: app.bundle_id.clone(),
         team_id: app.team_id.clone(),

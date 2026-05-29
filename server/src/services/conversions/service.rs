@@ -55,7 +55,12 @@ impl ConversionsService {
         source: &Source,
         parsed: Vec<ParsedConversion>,
     ) -> IngestResult {
-        self.ingest(source.tenant_id, source.id, parsed).await
+        self.ingest(
+            source.tenant_id.to_object_id(),
+            source.id.to_object_id(),
+            parsed,
+        )
+        .await
     }
 
     /// Ingest events from the SDK endpoint. Tenant comes from the auth middleware,
@@ -162,14 +167,14 @@ impl ConversionsService {
                 None => "30d".to_string(),
             };
             let record = ConversionEvent {
-                id: Some(ObjectId::new()),
+                id: Some(crate::core::public_id::ConversionEventId::new()),
                 meta: ConversionMeta {
-                    tenant_id,
+                    tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
                     // Credit is computed at read time; no link_id frozen
                     // in storage. Legacy field kept on the schema for
                     // back-compat with pre-Phase-6 rows.
                     link_id: None,
-                    source_id,
+                    source_id: crate::core::public_id::SourceId::from_object_id(source_id),
                     conversion_type: event.conversion_type.clone(),
                     retention_bucket,
                 },

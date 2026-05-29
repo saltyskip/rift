@@ -300,7 +300,7 @@ pub async fn verify_domain(
             .into_response();
     };
 
-    if existing.tenant_id != tenant.to_object_id() {
+    if existing.tenant_id.to_object_id() != tenant.to_object_id() {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Domain not found", "code": "not_found" })),

@@ -1,14 +1,16 @@
-use mongodb::bson::{oid::ObjectId, DateTime};
+use mongodb::bson::DateTime;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::core::public_id::{AppId, TenantId};
 
 // ── Database Document ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct App {
     #[serde(rename = "_id")]
-    pub id: ObjectId,
-    pub tenant_id: ObjectId,
+    pub id: AppId,
+    pub tenant_id: TenantId,
     /// "ios" or "android".
     pub platform: String,
     /// iOS bundle ID (e.g. "com.example.myapp").
@@ -73,8 +75,7 @@ pub struct CreateAppRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AppDetail {
-    #[schema(example = "665a1b2c3d4e5f6a7b8c9d0e")]
-    pub id: String,
+    pub id: AppId,
     #[schema(example = "ios")]
     pub platform: String,
     #[serde(skip_serializing_if = "Option::is_none")]

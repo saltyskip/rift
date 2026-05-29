@@ -195,8 +195,8 @@ impl ConversionsRepository for ConversionsRepo {
         source_type: SourceType,
     ) -> Result<Source, String> {
         let doc = Source {
-            id: ObjectId::new(),
-            tenant_id,
+            id: crate::core::public_id::SourceId::new(),
+            tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
             name,
             source_type,
             url_token: generate_url_token(),

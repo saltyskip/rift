@@ -88,8 +88,7 @@ pub struct DeleteLinkOutput {
 /// Output for the `sources.create` MCP tool.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct CreateSourceOutput {
-    /// The newly-created source's ID (hex-encoded ObjectId).
-    pub id: String,
+    pub id: crate::core::public_id::SourceId,
     /// Human-readable name as supplied by the caller.
     pub name: String,
     /// Source type — currently always `custom`.
@@ -101,8 +100,7 @@ pub struct CreateSourceOutput {
 /// One conversion source with its derived webhook URL.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct SourceSummary {
-    /// Source ID (hex-encoded ObjectId).
-    pub id: String,
+    pub id: crate::core::public_id::SourceId,
     /// Human-readable name.
     pub name: String,
     /// Source type.

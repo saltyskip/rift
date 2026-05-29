@@ -66,7 +66,7 @@ pub async fn create_sdk_key(
         }
     };
 
-    if domain.tenant_id != tenant.to_object_id() {
+    if domain.tenant_id.to_object_id() != tenant.to_object_id() {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": "Domain not owned by this tenant", "code": "domain_not_owned" })),

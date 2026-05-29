@@ -57,7 +57,7 @@ pub async fn create_source(
     {
         Ok(source) => {
             let resp = CreateSourceResponse {
-                id: source.id.to_hex(),
+                id: source.id,
                 name: source.name.clone(),
                 source_type: source.source_type.clone(),
                 webhook_url: webhook_url_for(&state, &source.url_token),
@@ -391,7 +391,7 @@ fn webhook_url_for(state: &AppState, url_token: &str) -> String {
 
 fn to_detail(state: &AppState, source: &Source) -> SourceDetail {
     SourceDetail {
-        id: source.id.to_hex(),
+        id: source.id,
         name: source.name.clone(),
         source_type: source.source_type.clone(),
         webhook_url: webhook_url_for(state, &source.url_token),
