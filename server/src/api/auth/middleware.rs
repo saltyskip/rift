@@ -3,7 +3,6 @@ use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Json, Response};
 use axum_extra::headers::{Cookie, HeaderMapExt};
-use mongodb::bson::oid::ObjectId;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -64,14 +63,11 @@ pub async fn auth_gate(
         }
 
         // Inject tenant identity, key identity, and scope for downstream handlers.
-        req.extensions_mut()
-            .insert(TenantId::from_object_id(tenant_id));
-        req.extensions_mut().insert(AuthKeyId(
-            crate::core::public_id::SecretKeyId::from_object_id(key_id),
-        ));
+        req.extensions_mut().insert(tenant_id);
+        req.extensions_mut().insert(AuthKeyId(key_id));
         req.extensions_mut().insert(AuthContext::for_secret_key(
-            TenantId::from_object_id(tenant_id),
-            crate::core::public_id::SecretKeyId::from_object_id(key_id),
+            tenant_id,
+            key_id,
             scope.as_ref(),
         ));
 
@@ -91,7 +87,7 @@ pub async fn auth_gate(
             usage_repo
                 .record_usage(usage_repo::UsageDoc {
                     id: None,
-                    api_key_id: Some(crate::core::public_id::SecretKeyId::from_object_id(key_id)),
+                    api_key_id: Some(key_id),
                     ip: ip.clone(),
                     endpoint: endpoint.clone(),
                     ts: usage_repo::now_bson(),
@@ -328,14 +324,11 @@ pub async fn session_or_key_auth_gate(
             }
         }
 
-        req.extensions_mut()
-            .insert(TenantId::from_object_id(tenant_id));
-        req.extensions_mut().insert(AuthKeyId(
-            crate::core::public_id::SecretKeyId::from_object_id(key_id),
-        ));
+        req.extensions_mut().insert(tenant_id);
+        req.extensions_mut().insert(AuthKeyId(key_id));
         req.extensions_mut().insert(AuthContext::for_secret_key(
-            TenantId::from_object_id(tenant_id),
-            crate::core::public_id::SecretKeyId::from_object_id(key_id),
+            tenant_id,
+            key_id,
             scope.as_ref(),
         ));
 
@@ -354,9 +347,7 @@ pub async fn session_or_key_auth_gate(
                 usage_repo
                     .record_usage(usage_repo::UsageDoc {
                         id: None,
-                        api_key_id: Some(crate::core::public_id::SecretKeyId::from_object_id(
-                            key_id,
-                        )),
+                        api_key_id: Some(key_id),
                         ip,
                         endpoint,
                         ts: usage_repo::now_bson(),
@@ -503,7 +494,14 @@ fn extract_sdk_query_key(req: &Request) -> Option<String> {
 async fn validate_api_key(
     secret_keys_repo: Option<&dyn SecretKeysRepository>,
     raw_key: &str,
-) -> Result<(ObjectId, ObjectId, Option<KeyScope>), Response> {
+) -> Result<
+    (
+        crate::core::public_id::TenantId,
+        crate::core::public_id::SecretKeyId,
+        Option<KeyScope>,
+    ),
+    Response,
+> {
     let hash = keys::hash_key(raw_key);
 
     let sk_repo = secret_keys_repo.ok_or_else(|| {
@@ -545,11 +543,7 @@ async fn validate_api_key(
         );
     }
 
-    Ok((
-        key_doc.tenant_id.to_object_id(),
-        key_doc.id.to_object_id(),
-        key_doc.scope,
-    ))
+    Ok((key_doc.tenant_id, key_doc.id, key_doc.scope))
 }
 
 /// Path allowlist for `KeyScope::Affiliate`.
