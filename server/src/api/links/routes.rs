@@ -432,7 +432,7 @@ pub async fn resolve_link_custom(
             .unwrap_or("");
 
         return match links_svc
-            .resolve_alternate(domain.tenant_id.as_object_id(), &link_id, user_agent)
+            .resolve_alternate(&domain.tenant_id, &link_id, user_agent)
             .await
         {
             Ok(url) => Redirect::temporary(&url).into_response(),
@@ -556,7 +556,7 @@ async fn do_resolve(
     // click can't bypass enforcement.
     if let Some(ref svc) = state.links_service {
         svc.record_click(
-            link.tenant_id.to_object_id(),
+            link.tenant_id,
             link_id,
             user_agent.clone(),
             referer.clone(),
@@ -901,7 +901,7 @@ async fn lookup_tenant_domain(
 pub(crate) async fn canonical_link_url(state: &AppState, link: &Link) -> String {
     let domain = crate::services::links::service::resolve_verified_primary_domain(
         state.domains_repo.as_deref(),
-        link.tenant_id.as_object_id(),
+        &link.tenant_id,
     )
     .await;
     crate::services::links::service::build_canonical_link_url(

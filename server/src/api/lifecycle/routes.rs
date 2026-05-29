@@ -98,7 +98,7 @@ pub async fn lifecycle_click(
 
     if let Some(ref svc) = state.links_service {
         svc.record_click(
-            link.tenant_id.to_object_id(),
+            link.tenant_id,
             &req.link_id,
             user_agent.clone(),
             referer.clone(),
@@ -199,7 +199,7 @@ pub async fn lifecycle_attribute(
 
     let user_id = match svc
         .record_attribute_event(
-            link.tenant_id.to_object_id(),
+            link.tenant_id,
             &req.link_id,
             &req.install_id,
             &req.app_version,
@@ -283,7 +283,7 @@ pub async fn lifecycle_identify(
     };
 
     match svc
-        .identify_install(&tenant.to_object_id(), &req.install_id, &req.user_id)
+        .identify_install(&tenant, &req.install_id, &req.user_id)
         .await
     {
         Ok(IdentifyOutcome::Created(credited)) | Ok(IdentifyOutcome::InstallAdded(credited)) => {

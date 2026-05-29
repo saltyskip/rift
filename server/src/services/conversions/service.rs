@@ -226,7 +226,7 @@ impl ConversionsService {
                             });
                         crate::services::links::service::enrich_credited_with_metadata(
                             repo.as_ref(),
-                            &tenant_oid,
+                            &tenant_id,
                             ids,
                         )
                         .await

@@ -307,7 +307,7 @@ const AUTH_MIGRATION_BACKLOG: &[&str] = &[];
 /// done. See issue #156.
 ///
 /// New files inherit enforcement — do not add entries here.
-const OBJECT_ID_BACKLOG: &[&str] = &["src/services/links/service.rs"];
+const OBJECT_ID_BACKLOG: &[&str] = &[];
 
 /// Whether `path` is on the cleanup backlog (suppress pub-types check only).
 fn is_cleanup_backlog(path: &std::path::Path) -> bool {
