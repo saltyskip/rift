@@ -1,8 +1,9 @@
 use async_trait::async_trait;
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::doc;
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database};
 
+use crate::core::public_id::{AffiliateId, SecretKeyId, TenantId};
 use crate::ensure_index;
 
 // ── Document ──
@@ -21,17 +22,17 @@ pub use super::models::{KeyScope, SecretKeyDoc};
 pub trait SecretKeysRepository: Send + Sync {
     async fn create_key(&self, doc: &SecretKeyDoc) -> Result<(), String>;
     async fn find_by_hash(&self, key_hash: &str) -> Result<Option<SecretKeyDoc>, String>;
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<SecretKeyDoc>, String>;
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<i64, String>;
-    async fn delete_key(&self, tenant_id: &ObjectId, key_id: &ObjectId) -> Result<bool, String>;
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<SecretKeyDoc>, String>;
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<i64, String>;
+    async fn delete_key(&self, tenant_id: &TenantId, key_id: &SecretKeyId) -> Result<bool, String>;
 
     /// List all keys scoped to a specific affiliate within a tenant.
     /// Used by the affiliate-credentials API for both listing and the
     /// per-affiliate credential cap.
     async fn list_by_tenant_and_affiliate(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
     ) -> Result<Vec<SecretKeyDoc>, String>;
 
     /// Delete a key only if it's scoped to (tenant, affiliate). Returns
@@ -40,9 +41,9 @@ pub trait SecretKeysRepository: Send + Sync {
     /// avoids a TOCTOU between membership check and delete.
     async fn delete_affiliate_credential(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
-        key_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
+        key_id: &SecretKeyId,
     ) -> Result<bool, String>;
 }
 
@@ -84,10 +85,10 @@ impl SecretKeysRepository for SecretKeysRepo {
             .map_err(|e| e.to_string())
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<SecretKeyDoc>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<SecretKeyDoc>, String> {
         let mut cursor = self
             .keys
-            .find(doc! { "tenant_id": tenant_id })
+            .find(doc! { "tenant_id": *tenant_id })
             .sort(doc! { "created_at": -1 })
             .await
             .map_err(|e| e.to_string())?;
@@ -99,18 +100,18 @@ impl SecretKeysRepository for SecretKeysRepo {
         Ok(docs)
     }
 
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<i64, String> {
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<i64, String> {
         self.keys
-            .count_documents(doc! { "tenant_id": tenant_id })
+            .count_documents(doc! { "tenant_id": *tenant_id })
             .await
             .map(|c| c as i64)
             .map_err(|e| e.to_string())
     }
 
-    async fn delete_key(&self, tenant_id: &ObjectId, key_id: &ObjectId) -> Result<bool, String> {
+    async fn delete_key(&self, tenant_id: &TenantId, key_id: &SecretKeyId) -> Result<bool, String> {
         let result = self
             .keys
-            .delete_one(doc! { "_id": key_id, "tenant_id": tenant_id })
+            .delete_one(doc! { "_id": *key_id, "tenant_id": *tenant_id })
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.deleted_count > 0)
@@ -118,17 +119,17 @@ impl SecretKeysRepository for SecretKeysRepo {
 
     async fn list_by_tenant_and_affiliate(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
     ) -> Result<Vec<SecretKeyDoc>, String> {
         // KeyScope serializes as { type: "affiliate", affiliate_id: <oid> }
         // — match on the nested fields rather than the enum directly.
         let mut cursor = self
             .keys
             .find(doc! {
-                "tenant_id": tenant_id,
+                "tenant_id": *tenant_id,
                 "scope.type": "affiliate",
-                "scope.affiliate_id": affiliate_id,
+                "scope.affiliate_id": *affiliate_id,
             })
             .sort(doc! { "created_at": -1 })
             .await
@@ -143,17 +144,17 @@ impl SecretKeysRepository for SecretKeysRepo {
 
     async fn delete_affiliate_credential(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
-        key_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
+        key_id: &SecretKeyId,
     ) -> Result<bool, String> {
         let result = self
             .keys
             .delete_one(doc! {
-                "_id": key_id,
-                "tenant_id": tenant_id,
+                "_id": *key_id,
+                "tenant_id": *tenant_id,
                 "scope.type": "affiliate",
-                "scope.affiliate_id": affiliate_id,
+                "scope.affiliate_id": *affiliate_id,
             })
             .await
             .map_err(|e| e.to_string())?;

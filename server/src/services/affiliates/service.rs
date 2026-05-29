@@ -168,10 +168,9 @@ impl AffiliatesService {
 
         // Per-affiliate cap. Counted at the repo level via the scope filter
         // so a compromised tenant key can't spam unbounded credentials.
-        let aff_oid = affiliate_id.to_object_id();
         let existing = self
             .secret_keys_repo
-            .list_by_tenant_and_affiliate(ctx.tenant_id.as_object_id(), &aff_oid)
+            .list_by_tenant_and_affiliate(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)?;
         if existing.len() >= MAX_CREDENTIALS_PER_AFFILIATE {
@@ -210,10 +209,7 @@ impl AffiliatesService {
             .ok_or(AffiliateError::NotFound)?;
 
         self.secret_keys_repo
-            .list_by_tenant_and_affiliate(
-                ctx.tenant_id.as_object_id(),
-                &affiliate_id.to_object_id(),
-            )
+            .list_by_tenant_and_affiliate(&ctx.tenant_id, &affiliate_id)
             .await
             .map_err(AffiliateError::Internal)
     }
@@ -236,11 +232,7 @@ impl AffiliatesService {
 
         let deleted = self
             .secret_keys_repo
-            .delete_affiliate_credential(
-                ctx.tenant_id.as_object_id(),
-                &affiliate_id.to_object_id(),
-                &key_id.to_object_id(),
-            )
+            .delete_affiliate_credential(&ctx.tenant_id, &affiliate_id, &key_id)
             .await
             .map_err(AffiliateError::Internal)?;
 

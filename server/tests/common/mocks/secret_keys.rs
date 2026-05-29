@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use mongodb::bson::oid::ObjectId;
 use std::sync::Mutex;
 
+use rift::core::public_id::{AffiliateId, SecretKeyId, TenantId};
 use rift::services::auth::secret_keys::repo::{KeyScope, SecretKeyDoc, SecretKeysRepository};
 
 #[derive(Default)]
@@ -26,40 +26,38 @@ impl SecretKeysRepository for MockSecretKeysRepo {
             .cloned())
     }
 
-    async fn list_by_tenant(&self, tenant_id: &ObjectId) -> Result<Vec<SecretKeyDoc>, String> {
+    async fn list_by_tenant(&self, tenant_id: &TenantId) -> Result<Vec<SecretKeyDoc>, String> {
         Ok(self
             .keys
             .lock()
             .unwrap()
             .iter()
-            .filter(|k| k.tenant_id.to_object_id() == *tenant_id)
+            .filter(|k| k.tenant_id == *tenant_id)
             .cloned()
             .collect())
     }
 
-    async fn count_by_tenant(&self, tenant_id: &ObjectId) -> Result<i64, String> {
+    async fn count_by_tenant(&self, tenant_id: &TenantId) -> Result<i64, String> {
         Ok(self
             .keys
             .lock()
             .unwrap()
             .iter()
-            .filter(|k| k.tenant_id.to_object_id() == *tenant_id)
+            .filter(|k| k.tenant_id == *tenant_id)
             .count() as i64)
     }
 
-    async fn delete_key(&self, tenant_id: &ObjectId, key_id: &ObjectId) -> Result<bool, String> {
+    async fn delete_key(&self, tenant_id: &TenantId, key_id: &SecretKeyId) -> Result<bool, String> {
         let mut keys = self.keys.lock().unwrap();
         let len = keys.len();
-        keys.retain(|k| {
-            !(k.id.to_object_id() == *key_id && k.tenant_id.to_object_id() == *tenant_id)
-        });
+        keys.retain(|k| !(k.id == *key_id && k.tenant_id == *tenant_id));
         Ok(keys.len() < len)
     }
 
     async fn list_by_tenant_and_affiliate(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
     ) -> Result<Vec<SecretKeyDoc>, String> {
         Ok(self
             .keys
@@ -67,10 +65,10 @@ impl SecretKeysRepository for MockSecretKeysRepo {
             .unwrap()
             .iter()
             .filter(|k| {
-                k.tenant_id.to_object_id() == *tenant_id
+                k.tenant_id == *tenant_id
                     && matches!(
                         &k.scope,
-                        Some(KeyScope::Affiliate { affiliate_id: a }) if a.to_object_id() == *affiliate_id
+                        Some(KeyScope::Affiliate { affiliate_id: a }) if a == affiliate_id
                     )
             })
             .cloned()
@@ -79,18 +77,18 @@ impl SecretKeysRepository for MockSecretKeysRepo {
 
     async fn delete_affiliate_credential(
         &self,
-        tenant_id: &ObjectId,
-        affiliate_id: &ObjectId,
-        key_id: &ObjectId,
+        tenant_id: &TenantId,
+        affiliate_id: &AffiliateId,
+        key_id: &SecretKeyId,
     ) -> Result<bool, String> {
         let mut keys = self.keys.lock().unwrap();
         let len = keys.len();
         keys.retain(|k| {
-            !(k.id.to_object_id() == *key_id
-                && k.tenant_id.to_object_id() == *tenant_id
+            !(k.id == *key_id
+                && k.tenant_id == *tenant_id
                 && matches!(
                     &k.scope,
-                    Some(KeyScope::Affiliate { affiliate_id: a }) if a.to_object_id() == *affiliate_id
+                    Some(KeyScope::Affiliate { affiliate_id: a }) if a == affiliate_id
                 ))
         });
         Ok(keys.len() < len)
