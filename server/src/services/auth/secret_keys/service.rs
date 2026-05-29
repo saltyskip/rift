@@ -108,7 +108,7 @@ impl SecretKeysService {
             return Err(SecretKeyError::UserUnverified);
         }
 
-        let user_id = user.id.unwrap_or_else(ObjectId::new);
+        let user_id = user.id.unwrap_or_else(crate::core::public_id::UserId::new);
 
         // Key limit.
         let count = self

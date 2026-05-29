@@ -55,7 +55,7 @@ pub async fn invite_user(
             (
                 StatusCode::CREATED,
                 Json(json!(InviteUserResponse {
-                    id: result.user_id.to_hex(),
+                    id: result.user_id,
                     email: result.email,
                     status: "verification_sent".to_string(),
                 })),
@@ -93,7 +93,7 @@ pub async fn list_users(
             let details: Vec<UserDetail> = users
                 .iter()
                 .map(|u| UserDetail {
-                    id: u.id.to_hex(),
+                    id: u.id,
                     email: u.email.clone(),
                     verified: u.verified,
                     is_owner: u.is_owner,

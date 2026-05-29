@@ -1,7 +1,7 @@
 //! Data types for `services/auth/oauth/` — provider enum, errors, config
 //! holder, and service return shapes.
 
-use mongodb::bson::oid::ObjectId;
+use crate::core::public_id::{TenantId, UserId};
 use std::fmt;
 
 // ── Provider ──
@@ -93,8 +93,8 @@ pub struct OauthStartOutcome {
 /// the session cookie, exactly like the magic-link callback.
 #[derive(Debug, Clone)]
 pub struct OauthCallbackOutcome {
-    pub user_id: ObjectId,
-    pub tenant_id: ObjectId,
+    pub user_id: UserId,
+    pub tenant_id: TenantId,
     /// Sanitized same-origin path on `origin` (e.g. `/account` or
     /// `/account?from=oauth`). Already passed `sanitize_next` at start time.
     pub next: String,

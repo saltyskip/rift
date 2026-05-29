@@ -215,14 +215,12 @@ pub async fn session_auth_gate(
 
     match svc.lookup(&raw_token).await {
         Ok(Some(resolved)) => {
-            req.extensions_mut()
-                .insert(TenantId::from_object_id(resolved.tenant_id));
-            req.extensions_mut()
-                .insert(UserId::from_object_id(resolved.user_id));
-            req.extensions_mut().insert(SessionId(resolved.session_id));
+            req.extensions_mut().insert(resolved.tenant_id);
+            req.extensions_mut().insert(resolved.user_id);
+            req.extensions_mut().insert(resolved.session_id);
             req.extensions_mut().insert(AuthContext::for_session(
-                TenantId::from_object_id(resolved.tenant_id),
-                UserId::from_object_id(resolved.user_id),
+                resolved.tenant_id,
+                resolved.user_id,
                 resolved.session_id,
             ));
 
@@ -274,14 +272,12 @@ pub async fn session_or_key_auth_gate(
     {
         match svc.lookup(&raw_token).await {
             Ok(Some(resolved)) => {
-                req.extensions_mut()
-                    .insert(TenantId::from_object_id(resolved.tenant_id));
-                req.extensions_mut()
-                    .insert(UserId::from_object_id(resolved.user_id));
-                req.extensions_mut().insert(SessionId(resolved.session_id));
+                req.extensions_mut().insert(resolved.tenant_id);
+                req.extensions_mut().insert(resolved.user_id);
+                req.extensions_mut().insert(resolved.session_id);
                 req.extensions_mut().insert(AuthContext::for_session(
-                    TenantId::from_object_id(resolved.tenant_id),
-                    UserId::from_object_id(resolved.user_id),
+                    resolved.tenant_id,
+                    resolved.user_id,
                     resolved.session_id,
                 ));
 

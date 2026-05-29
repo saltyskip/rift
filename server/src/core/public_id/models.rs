@@ -3,9 +3,10 @@
 //! hosts every trait impl in this module.
 
 use super::{
-    AffiliateIdMarker, AppIdMarker, AppUserIdMarker, ConversionEventIdMarker, DomainIdMarker, Id,
-    InstallEventIdMarker, LinkInternalIdMarker, PublishableKeyIdMarker, SecretKeyIdMarker,
-    SourceIdMarker, TenantIdMarker, UserIdMarker, WebhookIdMarker,
+    AffiliateIdMarker, AppIdMarker, AppUserIdMarker, AuthSessionIdMarker, ConversionEventIdMarker,
+    DomainIdMarker, Id, InstallEventIdMarker, LinkInternalIdMarker, OAuthSessionIdMarker,
+    PublishableKeyIdMarker, SecretKeyIdMarker, SourceIdMarker, TenantIdMarker, UserIdMarker,
+    WebhookIdMarker,
 };
 
 /// Errors returned by [`Id::parse`] and [`Id::to_object_id`].
@@ -24,10 +25,12 @@ pub enum ParseIdError {
 pub type AffiliateId = Id<AffiliateIdMarker>;
 pub type AppId = Id<AppIdMarker>;
 pub type AppUserId = Id<AppUserIdMarker>;
+pub type AuthSessionId = Id<AuthSessionIdMarker>;
 pub type ConversionEventId = Id<ConversionEventIdMarker>;
 pub type DomainId = Id<DomainIdMarker>;
 pub type InstallEventId = Id<InstallEventIdMarker>;
 pub type LinkInternalId = Id<LinkInternalIdMarker>;
+pub type OAuthSessionId = Id<OAuthSessionIdMarker>;
 pub type PublishableKeyId = Id<PublishableKeyIdMarker>;
 pub type SecretKeyId = Id<SecretKeyIdMarker>;
 pub type SourceId = Id<SourceIdMarker>;

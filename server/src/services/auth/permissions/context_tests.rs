@@ -4,7 +4,11 @@ use crate::services::auth::secret_keys::repo::KeyScope;
 use mongodb::bson::oid::ObjectId;
 
 fn user_ctx() -> AuthContext {
-    AuthContext::for_session(TenantId::new(), UserId::new(), ObjectId::new())
+    AuthContext::for_session(
+        TenantId::new(),
+        UserId::new(),
+        crate::core::public_id::AuthSessionId::new(),
+    )
 }
 
 #[test]

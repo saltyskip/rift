@@ -217,7 +217,7 @@ impl SessionsService {
             .map_err(SessionError::Internal)?
         {
             Some(user) => {
-                let user_id = user.id.unwrap_or_else(ObjectId::new);
+                let user_id = user.id.unwrap_or_else(crate::core::public_id::UserId::new);
                 // Email click is proof of ownership — bump verified if it
                 // wasn't already. We don't surface a failure if mark_verified
                 // returns None here because the find_by_email above just
@@ -231,7 +231,12 @@ impl SessionsService {
                 .users_service
                 .create_tenant_with_verified_owner(&email)
                 .await
-                .map(|(tenant_id, user_id)| (user_id, tenant_id))
+                .map(|(tenant_id, user_id)| {
+                    (
+                        crate::core::public_id::UserId::from_object_id(user_id),
+                        crate::core::public_id::TenantId::from_object_id(tenant_id),
+                    )
+                })
                 .map_err(|e| SessionError::Internal(e.to_string()))?,
         };
 
@@ -264,8 +269,8 @@ impl SessionsService {
     /// upstreams but produce the same session row + cookie shape.
     pub async fn issue_session(
         &self,
-        user_id: ObjectId,
-        tenant_id: ObjectId,
+        user_id: crate::core::public_id::UserId,
+        tenant_id: crate::core::public_id::TenantId,
         client_ip: Option<&str>,
         user_agent: Option<&str>,
     ) -> Result<String, SessionError> {
@@ -277,7 +282,7 @@ impl SessionsService {
         );
 
         let session_doc = SessionDoc {
-            id: ObjectId::new(),
+            id: crate::core::public_id::AuthSessionId::new(),
             user_id,
             tenant_id,
             token_hash,
@@ -317,7 +322,10 @@ impl SessionsService {
         let staleness_secs = mongodb::bson::DateTime::now().timestamp_millis() / 1000
             - session.last_seen_at.timestamp_millis() / 1000;
         if staleness_secs > Self::TOUCH_INTERVAL_SECS {
-            let _ = self.sessions_repo.touch_last_seen(&session.id).await;
+            let _ = self
+                .sessions_repo
+                .touch_last_seen(&session.id.to_object_id())
+                .await;
         }
 
         Ok(Some(ResolvedSession {

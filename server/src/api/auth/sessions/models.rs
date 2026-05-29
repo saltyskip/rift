@@ -50,7 +50,7 @@ pub struct MeResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct UserSummary {
-    pub id: String,
+    pub id: crate::core::public_id::UserId,
     pub email: String,
     pub verified: bool,
     pub is_owner: bool,
@@ -58,7 +58,7 @@ pub struct UserSummary {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TenantSummary {
-    pub id: String,
+    pub id: crate::core::public_id::TenantId,
 }
 
 /// `POST /v1/auth/secret-keys/issue` request body.

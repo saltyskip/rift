@@ -60,10 +60,10 @@ impl UsersService {
             .await
             .map_err(UserError::Internal)?;
 
-        let user_id = ObjectId::new();
+        let user_id = crate::core::public_id::UserId::new();
         let user_doc = UserDoc {
             id: Some(user_id),
-            tenant_id,
+            tenant_id: crate::core::public_id::TenantId::from_object_id(tenant_id),
             email: email.clone(),
             verified: true,
             is_owner: true,
@@ -75,7 +75,7 @@ impl UsersService {
             .await
             .map_err(UserError::Internal)?;
 
-        Ok((tenant_id, user_id))
+        Ok((tenant_id, user_id.to_object_id()))
     }
 
     /// Accept a team-invite verification token: mark the invited user as
@@ -144,10 +144,10 @@ impl UsersService {
                 .await?;
         }
 
-        let user_id = ObjectId::new();
+        let user_id = crate::core::public_id::UserId::new();
         let user_doc = UserDoc {
             id: Some(user_id),
-            tenant_id: ctx.tenant_id.to_object_id(),
+            tenant_id: ctx.tenant_id,
             email: email.clone(),
             verified: false,
             is_owner: false,
@@ -208,7 +208,7 @@ impl UsersService {
         Ok(docs
             .into_iter()
             .map(|d| UserDetail {
-                id: d.id.unwrap_or_else(ObjectId::new),
+                id: d.id.unwrap_or_else(crate::core::public_id::UserId::new),
                 email: d.email,
                 verified: d.verified,
                 is_owner: d.is_owner,

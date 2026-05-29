@@ -20,8 +20,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod models;
 pub use models::{
-    AffiliateId, AppId, AppUserId, ConversionEventId, DomainId, InstallEventId, LinkInternalId,
-    ParseIdError, PublishableKeyId, SecretKeyId, SourceId, TenantId, UserId, WebhookId,
+    AffiliateId, AppId, AppUserId, AuthSessionId, ConversionEventId, DomainId, InstallEventId,
+    LinkInternalId, OAuthSessionId, ParseIdError, PublishableKeyId, SecretKeyId, SourceId,
+    TenantId, UserId, WebhookId,
 };
 
 /// Implemented by zero-sized marker types to declare a resource's prefix and schema name.
@@ -301,6 +302,22 @@ impl IdPrefix for LinkInternalIdMarker {
     // This is the internal `_id: ObjectId` of stored Link documents.
     const PREFIX: &'static str = "lnk";
     const SCHEMA_NAME: &'static str = "LinkInternalId";
+}
+
+crate::impl_container!(AuthSessionIdMarker);
+pub struct AuthSessionIdMarker;
+impl IdPrefix for AuthSessionIdMarker {
+    // User auth session id (browser login).
+    const PREFIX: &'static str = "sess";
+    const SCHEMA_NAME: &'static str = "AuthSessionId";
+}
+
+crate::impl_container!(OAuthSessionIdMarker);
+pub struct OAuthSessionIdMarker;
+impl IdPrefix for OAuthSessionIdMarker {
+    // Pending OAuth flow session id (state during the round-trip with Google/etc.).
+    const PREFIX: &'static str = "osess";
+    const SCHEMA_NAME: &'static str = "OAuthSessionId";
 }
 
 crate::impl_container!(PublishableKeyIdMarker);

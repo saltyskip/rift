@@ -227,7 +227,7 @@ impl OauthService {
             .map_err(OauthError::Internal)?
         {
             Some(user) => {
-                let user_id = user.id.unwrap_or_else(ObjectId::new);
+                let user_id = user.id.unwrap_or_else(crate::core::public_id::UserId::new);
                 if !user.verified {
                     let _ = self.users_repo.mark_verified(&info.email).await;
                 }
@@ -237,7 +237,12 @@ impl OauthService {
                 .users_service
                 .create_tenant_with_verified_owner(&info.email)
                 .await
-                .map(|(tenant_id, user_id)| (user_id, tenant_id))
+                .map(|(tenant_id, user_id)| {
+                    (
+                        crate::core::public_id::UserId::from_object_id(user_id),
+                        crate::core::public_id::TenantId::from_object_id(tenant_id),
+                    )
+                })
                 .map_err(|e| OauthError::Internal(e.to_string()))?,
         };
 

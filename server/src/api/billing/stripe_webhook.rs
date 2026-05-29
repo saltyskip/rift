@@ -322,7 +322,7 @@ async fn handle_invoice_status(
         ..SubscriptionUpdate::default()
     };
     tenants
-        .apply_subscription_update(&tenant_id, update)
+        .apply_subscription_update(&tenant_id.to_object_id(), update)
         .await?;
     Ok(())
 }
@@ -340,7 +340,7 @@ async fn try_resolve_tenant(
         return Ok(Some(id));
     }
     let found = tenants.find_by_stripe_customer_id(customer_id).await?;
-    Ok(found.and_then(|t| t.id))
+    Ok(found.and_then(|t| t.id).map(|id| id.to_object_id()))
 }
 
 // ── Helpers ──

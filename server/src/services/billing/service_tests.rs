@@ -33,7 +33,7 @@ impl TenantsRepository for MockRepo {
             .lock()
             .unwrap()
             .iter()
-            .find(|t| t.id.as_ref() == Some(id))
+            .find(|t| t.id.map(|i| i.to_object_id()).as_ref() == Some(id))
             .cloned())
     }
 
@@ -59,7 +59,7 @@ impl TenantsRepository for MockRepo {
 
 async fn setup(tenant: TenantDoc) -> (BillingService, ObjectId) {
     let repo = Arc::new(MockRepo::default());
-    let id = tenant.id.expect("test tenant needs an id");
+    let id = tenant.id.expect("test tenant needs an id").to_object_id();
     repo.create(&tenant).await.unwrap();
     let svc = BillingService::new(repo as Arc<dyn TenantsRepository>);
     (svc, id)
@@ -67,7 +67,7 @@ async fn setup(tenant: TenantDoc) -> (BillingService, ObjectId) {
 
 #[tokio::test]
 async fn status_reports_free_default() {
-    let id = ObjectId::new();
+    let id = crate::core::public_id::TenantId::new();
     let (svc, id) = setup(TenantDoc {
         id: Some(id),
         ..TenantDoc::default()
@@ -81,7 +81,7 @@ async fn status_reports_free_default() {
 
 #[tokio::test]
 async fn status_reports_active_comp_as_effective_tier() {
-    let id = ObjectId::new();
+    let id = crate::core::public_id::TenantId::new();
     let (svc, id) = setup(TenantDoc {
         id: Some(id),
         plan_tier: PlanTier::Free,
@@ -98,7 +98,7 @@ async fn status_reports_active_comp_as_effective_tier() {
 
 #[tokio::test]
 async fn status_treats_expired_comp_as_inactive() {
-    let id = ObjectId::new();
+    let id = crate::core::public_id::TenantId::new();
     let (svc, id) = setup(TenantDoc {
         id: Some(id),
         plan_tier: PlanTier::Pro,

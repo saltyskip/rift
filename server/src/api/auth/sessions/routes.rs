@@ -272,7 +272,7 @@ pub async fn me(
         }
     };
 
-    let Some(user_detail) = users.into_iter().find(|u| u.id == user.to_object_id()) else {
+    let Some(user_detail) = users.into_iter().find(|u| u.id == user) else {
         // Session points at a user that no longer exists. Treat as a stale
         // session — caller should re-sign-in.
         return (
@@ -284,14 +284,12 @@ pub async fn me(
 
     Json(MeResponse {
         user: UserSummary {
-            id: user_detail.id.to_hex(),
+            id: user_detail.id,
             email: user_detail.email,
             verified: user_detail.verified,
             is_owner: user_detail.is_owner,
         },
-        tenant: TenantSummary {
-            id: ctx.tenant_id.as_hex(),
-        },
+        tenant: TenantSummary { id: ctx.tenant_id },
     })
     .into_response()
 }
@@ -321,7 +319,7 @@ pub async fn sign_out(
             .into_response();
     };
 
-    if let Err(e) = svc.revoke(&session.0).await {
+    if let Err(e) = svc.revoke(&session.to_object_id()).await {
         tracing::error!(error = %e, "signout_failed");
     }
 

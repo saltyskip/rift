@@ -20,12 +20,12 @@ impl TenantsService {
     /// responsible for attaching an owner (email user, wallet credential, etc.)
     /// immediately after.
     pub async fn create_blank(&self) -> Result<ObjectId, String> {
-        let id = ObjectId::new();
+        let id = crate::core::public_id::TenantId::new();
         let doc = TenantDoc {
             id: Some(id),
             ..TenantDoc::default()
         };
         self.tenants_repo.create(&doc).await?;
-        Ok(id)
+        Ok(id.to_object_id())
     }
 }

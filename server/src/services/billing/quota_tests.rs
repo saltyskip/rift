@@ -21,7 +21,7 @@ impl TenantsRepository for MockTenants {
             .lock()
             .unwrap()
             .iter()
-            .find(|t| t.id.as_ref() == Some(id))
+            .find(|t| t.id.map(|i| i.to_object_id()).as_ref() == Some(id))
             .cloned())
     }
     async fn find_by_stripe_customer_id(
@@ -98,10 +98,11 @@ async fn setup_with_plan_mode(
     mode: EnforcementMode,
 ) -> (QuotaService, ObjectId, Arc<MockCounts>, Arc<MockCounters>) {
     let tenants = Arc::new(MockTenants::default());
-    let id = ObjectId::new();
+    let id_typed = crate::core::public_id::TenantId::new();
+    let id = id_typed.to_object_id();
     tenants
         .create(&TenantDoc {
-            id: Some(id),
+            id: Some(id_typed),
             plan_tier: plan,
             ..TenantDoc::default()
         })
