@@ -78,7 +78,7 @@ fun checkDeferredDeepLink() {
                 val linkId = parseReferrerLink(referrer)
                 if (linkId != null) {
                     lifecycleScope.launch {
-                        rift.reportAttributionForLink(linkId = linkId)
+                        rift.attributeLink(linkId = linkId)
                         val link = rift.getLink(linkId = linkId)
                         link.androidDeepLink?.let { handleDeepLink(it) }
                     }
