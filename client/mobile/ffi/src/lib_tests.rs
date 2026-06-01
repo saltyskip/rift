@@ -253,12 +253,23 @@ async fn retry_pending_binding_noop_when_already_synced() {
         .mount(&server)
         .await;
 
+    // Synced under the *same* install_id that's stored now → genuinely
+    // nothing to do.
     let storage: Arc<InMemoryStorage> = Arc::new(InMemoryStorage::default());
+    storage
+        .set(STORAGE_KEY_INSTALL_ID.to_string(), "inst-ok".to_string())
+        .unwrap();
     storage
         .set(STORAGE_KEY_USER_ID.to_string(), "usr_ok".to_string())
         .unwrap();
     storage
         .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
+        .unwrap();
+    storage
+        .set(
+            STORAGE_KEY_USER_ID_SYNCED_INSTALL.to_string(),
+            "inst-ok".to_string(),
+        )
         .unwrap();
 
     let storage_for_sdk: Arc<dyn RiftStorage> = storage.clone();
@@ -273,6 +284,112 @@ async fn retry_pending_binding_noop_when_already_synced() {
     );
 
     sdk.retry_pending_binding().await.unwrap();
+}
+
+#[tokio::test]
+async fn set_user_id_reidentifies_when_install_id_changed() {
+    // The crux of the install-aware fix: same user, but the install_id
+    // changed since it was last synced (reinstall / storage migration) →
+    // we must re-identify so the new install binds server-side.
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/lifecycle/identify"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
+        )
+        .expect(2) // once for the original install, once after it changes
+        .mount(&server)
+        .await;
+
+    let (sdk, storage) = make_sdk(server.uri());
+
+    // First bind — synced under whatever install_id the SDK generated.
+    sdk.set_user_id("usr_x".to_string()).await.unwrap();
+    let original_install = storage.get(STORAGE_KEY_INSTALL_ID.to_string()).unwrap();
+    assert_eq!(
+        storage
+            .get(STORAGE_KEY_USER_ID_SYNCED_INSTALL.to_string())
+            .unwrap(),
+        original_install
+    );
+
+    // Simulate the install_id changing out from under us.
+    storage
+        .set(
+            STORAGE_KEY_INSTALL_ID.to_string(),
+            "changed-install".to_string(),
+        )
+        .unwrap();
+
+    // Same user_id — must NOT no-op; must re-identify the new install.
+    sdk.set_user_id("usr_x".to_string()).await.unwrap();
+    assert_eq!(
+        storage
+            .get(STORAGE_KEY_USER_ID_SYNCED_INSTALL.to_string())
+            .unwrap(),
+        Some("changed-install".to_string()),
+        "synced install should track the new install_id"
+    );
+    // wiremock's `.expect(2)` verifies the second identify actually fired.
+}
+
+#[tokio::test]
+async fn constructor_reidentifies_when_install_id_changed_since_sync() {
+    // Self-heal on launch even if the host app never calls set_user_id:
+    // synced=true but under a *different* install_id than is stored now.
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/v1/lifecycle/identify"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "success": true })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let storage: Arc<InMemoryStorage> = Arc::new(InMemoryStorage::default());
+    storage
+        .set(
+            STORAGE_KEY_INSTALL_ID.to_string(),
+            "new-install".to_string(),
+        )
+        .unwrap();
+    storage
+        .set(STORAGE_KEY_USER_ID.to_string(), "usr_heal".to_string())
+        .unwrap();
+    storage
+        .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
+        .unwrap();
+    storage
+        .set(
+            STORAGE_KEY_USER_ID_SYNCED_INSTALL.to_string(),
+            "old-install".to_string(),
+        )
+        .unwrap();
+
+    let storage_for_sdk: Arc<dyn RiftStorage> = storage.clone();
+    let _sdk = RiftSdk::new(
+        RiftConfig {
+            publishable_key: "pk_live_test".to_string(),
+            base_url: Some(server.uri()),
+            log_level: Some("error".to_string()),
+            app_version: Some("1.0.0-test".to_string()),
+        },
+        storage_for_sdk,
+    );
+
+    // Background retry should re-bind the new install and update the marker.
+    for _ in 0..50 {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        if storage
+            .get(STORAGE_KEY_USER_ID_SYNCED_INSTALL.to_string())
+            .unwrap()
+            == Some("new-install".to_string())
+        {
+            return;
+        }
+    }
+    panic!("constructor did not re-identify the changed install_id within 500ms");
 }
 
 #[tokio::test]
