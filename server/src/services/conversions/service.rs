@@ -233,6 +233,26 @@ impl ConversionsService {
                     None => Default::default(),
                 };
 
+                // Attribution-decision log: high-signal, no trade payload.
+                // Answers the recurring debugging question — "did we resolve
+                // a link for this user?" — from logs alone, without dumping
+                // PII / financial metadata. `attributed=false` means the
+                // user_id is known but has no link touches in the chain
+                // (distinct from the unknown-user "skipping" logs above).
+                let attributed =
+                    credited.first_touch_link_id.is_some() || credited.last_touch_link_id.is_some();
+                tracing::info!(
+                    event_id = %event_id.to_hex(),
+                    user_id = %user_id,
+                    conversion_type = %event.conversion_type,
+                    attributed,
+                    first_touch_link_id = ?credited.first_touch_link_id,
+                    last_touch_link_id = ?credited.last_touch_link_id,
+                    first_touch_affiliate_id = ?credited.first_touch_affiliate_id,
+                    last_touch_affiliate_id = ?credited.last_touch_affiliate_id,
+                    "conversion attribution resolved",
+                );
+
                 dispatcher.dispatch_conversion(ConversionEventPayload {
                     event_id: event_id.to_hex(),
                     tenant_id: tenant_id.to_string(),
