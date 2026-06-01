@@ -13,6 +13,16 @@ jobs:
   test:
     name: Build & Test
     runs-on: ubuntu-latest
+    env:
+      # CI never needs incremental artifacts (clean-ish builds) — disabling
+      # it speeds compilation and shrinks the rust-cache.
+      CARGO_INCREMENTAL: 0
+      # No debuginfo in CI: codegen + linking is a large chunk of build time
+      # and we don't need stack-trace line numbers here. Only affects the
+      # dev/test profiles in this job — the deployed release binary is built
+      # separately by the Dockerfile and is unchanged.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
     defaults:
       run:
         working-directory: server
@@ -26,17 +36,17 @@ jobs:
         with:
           workspaces: server
 
-      - name: Build
-        run: cargo build --all-targets
-
-      - name: Test
-        run: cargo test
+      # No standalone `cargo build --all-targets` — `clippy --all-targets`
+      # type-checks every target and `cargo test` codegens + runs the rest,
+      # so a dedicated build pass is redundant (a whole extra codegen pass).
+      - name: Format check
+        run: cargo fmt -- --check
 
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Format check
-        run: cargo fmt -- --check
+      - name: Test
+        run: cargo test
 
   deploy-sandbox:
     name: Deploy to Sandbox
