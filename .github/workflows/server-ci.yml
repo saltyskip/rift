@@ -10,37 +10,59 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Build & Test
+  # `lint` and `test` run concurrently on separate runners. clippy (a
+  # check pass) and cargo test (a codegen pass) don't share compiled
+  # artifacts anyway, so splitting them costs no extra compile work — it
+  # just turns clippy+test wall-clock from a sum into a max.
+  #
+  # Shared CI env across both jobs:
+  #   CARGO_INCREMENTAL=0   — incremental is pure overhead in CI, bloats cache.
+  #   CARGO_PROFILE_*_DEBUG=0 — no debuginfo: cuts codegen + link time. Only
+  #     touches dev/test profiles here; the deployed release binary is built
+  #     separately by the Dockerfile and is unchanged.
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
     defaults:
       run:
         working-directory: server
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server
-
-      - name: Build
-        run: cargo build --all-targets
-
-      - name: Test
-        run: cargo test
-
+      - name: Format check
+        run: cargo fmt -- --check
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Format check
-        run: cargo fmt -- --check
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Test
+        run: cargo test
 
   deploy-sandbox:
     name: Deploy to Sandbox
-    needs: test
+    needs: [lint, test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
