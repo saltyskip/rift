@@ -67,6 +67,17 @@ impl RiftWebhookDispatcher {
                 .into_iter()
                 .filter(|w| w.filters.matches(&match_ctx))
                 .collect();
+
+            // One line per dispatch so "did Rift even try to deliver?" is
+            // answerable from logs alone. count = 0 means nothing was
+            // subscribed for this event (or every match was filtered out by
+            // affiliate scope).
+            tracing::info!(
+                event = event_name,
+                tenant = %tenant_oid.as_hex(),
+                count = webhooks.len(),
+                "Dispatching webhooks"
+            );
             if webhooks.is_empty() {
                 return;
             }
@@ -95,7 +106,7 @@ impl RiftWebhookDispatcher {
                     let body = body.clone();
                     let http = http.clone();
                     async move {
-                        deliver_with_retry(&http, &url, &body, &signature).await;
+                        deliver_with_retry(&http, &url, &body, &signature, event_name).await;
                     }
                 })
                 .collect();
@@ -201,7 +212,13 @@ async fn cached_find_active_for_event(
     repo.find_active_for_event(&tenant_oid, &event_type).await
 }
 
-async fn deliver_with_retry(http: &reqwest::Client, url: &str, body: &str, signature: &str) {
+async fn deliver_with_retry(
+    http: &reqwest::Client,
+    url: &str,
+    body: &str,
+    signature: &str,
+    event: &str,
+) {
     let delays = [0, 1, 5, 25];
     for (attempt, delay_secs) in delays.iter().enumerate() {
         if *delay_secs > 0 {
@@ -217,17 +234,38 @@ async fn deliver_with_retry(http: &reqwest::Client, url: &str, body: &str, signa
             .await;
 
         match result {
-            Ok(resp) if resp.status().is_success() => return,
-            Ok(resp) => {
-                tracing::warn!(
-                    attempt = attempt + 1,
+            Ok(resp) if resp.status().is_success() => {
+                // Success was previously silent — log it so a delivery can
+                // be confirmed from our own logs without the receiver.
+                tracing::info!(
+                    event = event,
                     status = %resp.status(),
+                    attempt = attempt + 1,
                     url = url,
+                    "Webhook delivered"
+                );
+                return;
+            }
+            Ok(resp) => {
+                // Capture the receiver's response body — for a 4xx this is
+                // usually *why* (bad signature, unknown field, etc.), the
+                // single most useful thing when debugging an integration.
+                // Truncated so a chatty error page can't flood logs.
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                let body: String = body.chars().take(500).collect();
+                tracing::warn!(
+                    event = event,
+                    attempt = attempt + 1,
+                    status = %status,
+                    url = url,
+                    response = %body,
                     "Webhook delivery failed"
                 );
             }
             Err(e) => {
                 tracing::warn!(
+                    event = event,
                     attempt = attempt + 1,
                     error = %e,
                     url = url,
@@ -236,5 +274,9 @@ async fn deliver_with_retry(http: &reqwest::Client, url: &str, body: &str, signa
             }
         }
     }
-    tracing::error!(url = url, "Webhook delivery failed after all retries");
+    tracing::error!(
+        event = event,
+        url = url,
+        "Webhook delivery failed after all retries"
+    );
 }
