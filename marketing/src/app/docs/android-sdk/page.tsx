@@ -115,7 +115,7 @@ fun checkDeferredDeepLink() {
                 val linkId = parseReferrerLink(referrer)
                 if (linkId != null) {
                     lifecycleScope.launch {
-                        rift.reportAttributionForLink(linkId = linkId)
+                        rift.attributeLink(linkId = linkId)
                         val link = rift.getLink(linkId = linkId)
                         link.androidDeepLink?.let { handleDeepLink(it) }
                     }
@@ -220,7 +220,7 @@ Log.d("Rift", "Deep link: \${result.androidDeepLink}")`}</CodeBlock>
                     <td className="px-4 py-2.5">Persistent install UUID. Generates on first call.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
-                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">reportAttributionForLink(linkId)</td>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">attributeLink(linkId)</td>
                     <td className="px-4 py-2.5 font-mono">Boolean (suspend @Throws)</td>
                     <td className="px-4 py-2.5">Simplified attribution — uses internal install_id + app version.</td>
                   </tr>
