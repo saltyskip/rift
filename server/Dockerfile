@@ -3,8 +3,12 @@ FROM rust:1.94-slim AS builder
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev perl make && rm -rf /var/lib/apt/lists/*
 
-ARG GIT_SHA=unknown
-ENV GIT_SHA=$GIT_SHA
+# DO NOT add `ARG/ENV GIT_SHA` to this builder stage. GIT_SHA changes on
+# every commit, so any layer below it is invalidated every deploy — that
+# would bust the dependency-cache layer below and force a full ~2.5min
+# `cargo build --release` of all deps on every single deploy. The binary
+# reads GIT_SHA at *runtime* (core/config.rs: std::env::var("GIT_SHA")), so
+# it only needs to exist in the runtime stage (below). Keep it there.
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
