@@ -1,6 +1,90 @@
 use crate::common;
 
 #[tokio::test]
+async fn create_webhook_with_unknown_affiliate_filter_returns_400() {
+    let app = common::spawn_app().await;
+    let (key, _tenant) = common::seed_api_key(&app).await;
+
+    // Well-formed but non-existent affiliate id → fail fast, don't create
+    // a webhook that would silently never match.
+    let resp = app
+        .client
+        .post(app.url("/v1/webhooks"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "url": "https://example.com/webhook",
+            "events": ["conversion"],
+            "filters": { "affiliate_id": "aff_0123456789abcdef01234567" }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "affiliate_not_found");
+}
+
+#[tokio::test]
+async fn create_webhook_with_valid_affiliate_filter_persists_and_echoes() {
+    let app = common::spawn_app().await;
+    let (key, tenant) = common::seed_api_key(&app).await;
+    let affiliate_id = common::seed_affiliate(&app, tenant).await;
+    let aff_str = affiliate_id.to_string();
+
+    let resp = app
+        .client
+        .post(app.url("/v1/webhooks"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "url": "https://example.com/webhook",
+            "events": ["conversion"],
+            "filters": { "affiliate_id": aff_str }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 201);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["filters"]["affiliate_id"], aff_str);
+
+    // The filter survives a round-trip through list.
+    let list = app
+        .client
+        .get(app.url("/v1/webhooks"))
+        .header("Authorization", format!("Bearer {key}"))
+        .send()
+        .await
+        .unwrap();
+    let lbody: serde_json::Value = list.json().await.unwrap();
+    assert_eq!(lbody["webhooks"][0]["filters"]["affiliate_id"], aff_str);
+}
+
+#[tokio::test]
+async fn create_webhook_without_filters_omits_them() {
+    let app = common::spawn_app().await;
+    let (key, _tenant) = common::seed_api_key(&app).await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/webhooks"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "url": "https://example.com/webhook",
+            "events": ["conversion"]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 201);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    // Empty filters are omitted from the response entirely.
+    assert!(body.get("filters").is_none());
+}
+
+#[tokio::test]
 async fn create_webhook_returns_201() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;

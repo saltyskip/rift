@@ -4,7 +4,7 @@ use hmac::{Hmac, Mac};
 use serde::Serialize;
 use sha2::Sha256;
 
-use super::models::{Webhook, WebhookEventType};
+use super::models::{EventMatchContext, Webhook, WebhookEventType};
 use super::repo::WebhooksRepository;
 use crate::core::webhook_dispatcher::{
     AttributeEventPayload, ClickEventPayload, ConversionEventPayload, IdentifyEventPayload,
@@ -35,6 +35,7 @@ impl RiftWebhookDispatcher {
         tenant_id: String,
         timestamp: String,
         payload: T,
+        match_ctx: EventMatchContext,
     ) {
         let repo = self.repo.clone();
         let http = self.http.clone();
@@ -57,6 +58,18 @@ impl RiftWebhookDispatcher {
                         return;
                     }
                 };
+
+            // Apply per-webhook delivery filters (e.g. affiliate scoping).
+            // The event-type subscription is already enforced by the
+            // query; this narrows by the event's match context. Unfiltered
+            // webhooks (empty filters) always pass.
+            let webhooks: Vec<Webhook> = webhooks
+                .into_iter()
+                .filter(|w| w.filters.matches(&match_ctx))
+                .collect();
+            if webhooks.is_empty() {
+                return;
+            }
 
             let data = match serde_json::to_value(&payload) {
                 Ok(v) => v,
@@ -96,12 +109,15 @@ impl WebhookDispatcher for RiftWebhookDispatcher {
     fn dispatch_click(&self, payload: ClickEventPayload) {
         let tenant_id = payload.tenant_id.clone();
         let timestamp = payload.timestamp.clone();
+        // No affiliate context on clicks today → affiliate-filtered
+        // webhooks won't match (they only want conversions).
         self.dispatch_event(
             WebhookEventType::Click,
             "click",
             tenant_id,
             timestamp,
             payload,
+            EventMatchContext::default(),
         );
     }
 
@@ -114,18 +130,25 @@ impl WebhookDispatcher for RiftWebhookDispatcher {
             tenant_id,
             timestamp,
             payload,
+            EventMatchContext::default(),
         );
     }
 
     fn dispatch_conversion(&self, payload: ConversionEventPayload) {
         let tenant_id = payload.tenant_id.clone();
         let timestamp = payload.timestamp.clone();
+        // Affiliate-scoped webhooks route by last-touch credit — the same
+        // link whose id is forwarded in the payload.
+        let match_ctx = EventMatchContext {
+            affiliate_id: payload.last_touch_affiliate_id,
+        };
         self.dispatch_event(
             WebhookEventType::Conversion,
             "conversion",
             tenant_id,
             timestamp,
             payload,
+            match_ctx,
         );
     }
 
@@ -138,6 +161,7 @@ impl WebhookDispatcher for RiftWebhookDispatcher {
             tenant_id,
             timestamp,
             payload,
+            EventMatchContext::default(),
         );
     }
 }

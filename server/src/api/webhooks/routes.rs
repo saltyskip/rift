@@ -1,7 +1,6 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use mongodb::bson::DateTime;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -51,34 +50,35 @@ pub async fn create_webhook(
             .into_response();
     }
 
-    let secret = generate_secret();
-    let now = DateTime::now();
-    let id = crate::core::public_id::WebhookId::new();
-
     match svc
-        .create_webhook(
-            &ctx,
-            id,
-            req.url.clone(),
-            secret.clone(),
-            req.events.clone(),
-            now,
-        )
+        .create_webhook(&ctx, req.url, req.events, req.filters)
         .await
     {
-        Ok(_) => (
+        Ok(webhook) => (
             StatusCode::CREATED,
             Json(CreateWebhookResponse {
-                id,
-                url: req.url,
-                events: req.events,
-                secret,
-                created_at: now.try_to_rfc3339_string().unwrap_or_default(),
+                id: webhook.id,
+                url: webhook.url,
+                events: webhook.events,
+                secret: webhook.secret,
+                filters: webhook.filters,
+                created_at: webhook
+                    .created_at
+                    .try_to_rfc3339_string()
+                    .unwrap_or_default(),
             }),
         )
             .into_response(),
         Err(WebhookError::QuotaExceeded(q)) => crate::api::billing::quota_response::to_response(q),
         Err(WebhookError::Forbidden(e)) => crate::api::auth::forbidden_response::to_response(e),
+        Err(WebhookError::AffiliateNotFound) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "filters.affiliate_id does not match any affiliate in this tenant",
+                "code": "affiliate_not_found"
+            })),
+        )
+            .into_response(),
         Err(WebhookError::Internal(e)) => {
             tracing::error!("Failed to create webhook: {e}");
             (
@@ -120,6 +120,7 @@ pub async fn list_webhooks(
                     id: w.id,
                     url: w.url,
                     events: w.events,
+                    filters: w.filters,
                     active: w.active,
                     created_at: w.created_at.try_to_rfc3339_string().unwrap_or_default(),
                 })
@@ -246,14 +247,15 @@ pub async fn patch_webhook(
         Ok(true) => {
             // Fetch updated webhook to return.
             let webhooks = repo.list_by_tenant(&tenant).await.unwrap_or_default();
-            match webhooks.iter().find(|w| w.id == webhook_id) {
-                Some(w) => Json(json!({
-                    "id": w.id,
-                    "url": w.url,
-                    "events": w.events,
-                    "active": w.active,
-                    "created_at": w.created_at.try_to_rfc3339_string().unwrap_or_default(),
-                }))
+            match webhooks.into_iter().find(|w| w.id == webhook_id) {
+                Some(w) => Json(WebhookDetail {
+                    id: w.id,
+                    url: w.url,
+                    events: w.events,
+                    filters: w.filters,
+                    active: w.active,
+                    created_at: w.created_at.try_to_rfc3339_string().unwrap_or_default(),
+                })
                 .into_response(),
                 None => (
                     StatusCode::NOT_FOUND,
@@ -287,11 +289,4 @@ fn validate_webhook_url(raw: &str) -> Result<(), String> {
         return Err("Webhook URL must have a host".to_string());
     }
     Ok(())
-}
-
-fn generate_secret() -> String {
-    use rand::Rng;
-    let mut bytes = [0u8; 32];
-    rand::rng().fill(&mut bytes);
-    hex::encode(bytes)
 }

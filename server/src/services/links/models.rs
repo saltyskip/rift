@@ -265,15 +265,22 @@ impl CreditModel {
 /// credit model get the canonical metadata in one delivery — no
 /// follow-up query to Rift required.
 ///
-/// All four fields are `None` when the user has no attribution events
+/// All fields are `None` when the user has no attribution events
 /// at or before the cutoff timestamp (e.g. a backend-fired conversion
 /// for a user whose SDK has never called `/lifecycle/attribute`).
+///
+/// `*_affiliate_id` is the affiliate the credited link is pinned to
+/// (`Link.affiliate_id`), resolved alongside the metadata so downstream
+/// fire-sites (conversion webhooks) can route by affiliate without a
+/// second lookup. `None` when the credited link has no affiliate.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CreditedLinks {
     pub first_touch_link_id: Option<String>,
     pub first_touch_link_metadata: Option<serde_json::Value>,
+    pub first_touch_affiliate_id: Option<crate::core::public_id::AffiliateId>,
     pub last_touch_link_id: Option<String>,
     pub last_touch_link_metadata: Option<serde_json::Value>,
+    pub last_touch_affiliate_id: Option<crate::core::public_id::AffiliateId>,
 }
 
 // ── Internal Types ──

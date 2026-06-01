@@ -707,10 +707,12 @@ impl LinksRepository for LinksRepo {
         Ok(CreditedLinks {
             first_touch_link_id: extract("first"),
             last_touch_link_id: extract("last"),
-            // Metadata is enriched in the service layer (cached
-            // `find_link_by_tenant_and_id`) — the repo returns IDs only.
+            // Metadata and affiliate are enriched in the service layer
+            // (cached `find_link_by_tenant_and_id`) — repo returns IDs only.
             first_touch_link_metadata: None,
+            first_touch_affiliate_id: None,
             last_touch_link_metadata: None,
+            last_touch_affiliate_id: None,
         })
     }
 }

@@ -178,6 +178,8 @@ pub async fn spawn_app() -> TestApp {
             rift::services::webhooks::service::WebhooksService::new(
                 webhooks_repo.clone()
                     as Arc<dyn rift::services::webhooks::repo::WebhooksRepository>,
+                Some(affiliates_repo.clone()
+                    as Arc<dyn rift::services::affiliates::repo::AffiliatesRepository>),
                 None,
             ),
         )),
@@ -336,4 +338,29 @@ pub async fn seed_affiliate_scoped_key(
     };
     app.secret_keys_repo.create_key(&key_doc).await.unwrap();
     raw_key.to_string()
+}
+
+/// Insert an active affiliate for `tenant_id` and return its id, so tests
+/// can reference it in webhook `filters.affiliate_id`.
+pub async fn seed_affiliate(
+    app: &TestApp,
+    tenant_id: ObjectId,
+) -> rift::core::public_id::AffiliateId {
+    use rift::services::affiliates::repo::AffiliatesRepository;
+    let id = rift::core::public_id::AffiliateId::new();
+    let now = mongodb::bson::DateTime::now();
+    let affiliate = rift::services::affiliates::models::Affiliate {
+        id,
+        tenant_id: rift::core::public_id::TenantId::from_object_id(tenant_id),
+        name: "Test Affiliate".to_string(),
+        partner_key: format!("partner-{id}"),
+        status: rift::services::affiliates::models::AffiliateStatus::Active,
+        created_at: now,
+        updated_at: now,
+    };
+    app.affiliates_repo
+        .create_affiliate(&affiliate)
+        .await
+        .unwrap();
+    id
 }

@@ -241,8 +241,10 @@ impl ConversionsService {
                     user_id: event.user_id.clone(),
                     first_touch_link_id: credited.first_touch_link_id,
                     first_touch_link_metadata: credited.first_touch_link_metadata,
+                    first_touch_affiliate_id: credited.first_touch_affiliate_id,
                     last_touch_link_id: credited.last_touch_link_id,
                     last_touch_link_metadata: credited.last_touch_link_metadata,
+                    last_touch_affiliate_id: credited.last_touch_affiliate_id,
                     metadata: metadata_json,
                     timestamp: DateTime::now().try_to_rfc3339_string().unwrap_or_default(),
                 });

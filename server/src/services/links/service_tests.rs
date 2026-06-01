@@ -891,3 +891,43 @@ async fn bulk_custom_ids_mode_happy_path() {
     assert_eq!(resp.links[0].link_id, ids[0]);
     assert_eq!(resp.links[1].link_id, ids[1]);
 }
+
+#[tokio::test]
+async fn enrich_credited_pulls_affiliate_id_from_credited_link() {
+    let tenant = ObjectId::new();
+    let tenant_id = crate::core::public_id::TenantId::from_object_id(tenant);
+    let affiliate_id = crate::core::public_id::AffiliateId::new();
+
+    let mut link = make_link(tenant, "AFF1LINK");
+    link.affiliate_id = Some(affiliate_id);
+    let repo = MockLinksRepo::with_links(vec![link]);
+
+    // Single-touch user: first == last → one lookup, both sides credited.
+    let credited = CreditedLinks {
+        first_touch_link_id: Some("AFF1LINK".to_string()),
+        last_touch_link_id: Some("AFF1LINK".to_string()),
+        ..Default::default()
+    };
+
+    let out = enrich_credited_with_metadata(&repo, &tenant_id, credited).await;
+    assert_eq!(out.first_touch_affiliate_id, Some(affiliate_id));
+    assert_eq!(out.last_touch_affiliate_id, Some(affiliate_id));
+}
+
+#[tokio::test]
+async fn enrich_credited_leaves_affiliate_none_for_unaffiliated_link() {
+    let tenant = ObjectId::new();
+    let tenant_id = crate::core::public_id::TenantId::from_object_id(tenant);
+
+    // make_link defaults affiliate_id to None.
+    let link = make_link(tenant, "ORGANIC1");
+    let repo = MockLinksRepo::with_links(vec![link]);
+
+    let credited = CreditedLinks {
+        last_touch_link_id: Some("ORGANIC1".to_string()),
+        ..Default::default()
+    };
+
+    let out = enrich_credited_with_metadata(&repo, &tenant_id, credited).await;
+    assert_eq!(out.last_touch_affiliate_id, None);
+}

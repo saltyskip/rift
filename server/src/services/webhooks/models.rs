@@ -2,7 +2,7 @@ use mongodb::bson::DateTime;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::core::public_id::{TenantId, WebhookId};
+use crate::core::public_id::{AffiliateId, TenantId, WebhookId};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -25,6 +25,53 @@ pub enum WebhookEventType {
     Identify,
 }
 
+/// Optional delivery filters narrowing *which* events reach a webhook,
+/// on top of the `events` type subscription. Empty (all fields `None`)
+/// means "no narrowing" — the webhook receives every subscribed event,
+/// preserving pre-filter behaviour.
+///
+/// Semantics are AND across present dimensions; an absent dimension is
+/// not a constraint. New dimensions (e.g. `conversion_types`) are added
+/// here as further optional fields — additive, no migration, and the
+/// match logic in [`WebhookFilters::matches`] extends in lock-step.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct WebhookFilters {
+    /// Deliver only conversions whose last-touch credited link is pinned
+    /// to this affiliate. Omit to receive conversions regardless of
+    /// affiliate. Validated to exist in the tenant at create time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub affiliate_id: Option<AffiliateId>,
+}
+
+impl WebhookFilters {
+    /// True when no dimension is set — the webhook receives everything.
+    pub fn is_empty(&self) -> bool {
+        self.affiliate_id.is_none()
+    }
+
+    /// Whether an event with the given match context should be delivered
+    /// to a webhook carrying these filters. AND across present
+    /// dimensions; an absent dimension imposes no constraint.
+    pub(crate) fn matches(&self, ctx: &EventMatchContext) -> bool {
+        match self.affiliate_id {
+            None => true,
+            Some(a) => ctx.affiliate_id == Some(a),
+        }
+    }
+}
+
+/// The event-side values a webhook's [`WebhookFilters`] are matched
+/// against. One field per supported filter dimension; defaults to "no
+/// context" (all `None`), which only matches an unfiltered webhook.
+/// Built per-event by the dispatcher — conversions populate
+/// `affiliate_id` from the last-touch credited link; other event types
+/// carry none today (so an affiliate-filtered webhook only ever matches
+/// conversions).
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct EventMatchContext {
+    pub affiliate_id: Option<AffiliateId>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Webhook {
     #[serde(rename = "_id")]
@@ -33,6 +80,10 @@ pub struct Webhook {
     pub url: String,
     pub secret: String,
     pub events: Vec<WebhookEventType>,
+    /// Optional delivery narrowing on top of `events`. Defaults to empty
+    /// (receive all) for rows created before filters existed.
+    #[serde(default, skip_serializing_if = "WebhookFilters::is_empty")]
+    pub filters: WebhookFilters,
     pub active: bool,
     pub created_at: DateTime,
 }
@@ -46,6 +97,11 @@ pub struct CreateWebhookRequest {
     #[schema(example = "https://api.tablefour.com/webhooks/relay")]
     pub url: String,
     pub events: Vec<WebhookEventType>,
+    /// Optional delivery filters. Omit (or send `{}`) to receive every
+    /// subscribed event. Currently supports `affiliate_id` to restrict
+    /// conversions to one affiliate's links.
+    #[serde(default)]
+    pub filters: WebhookFilters,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -57,6 +113,9 @@ pub struct CreateWebhookResponse {
     /// HMAC-SHA256 signing secret. Use this to verify webhook payloads. Shown only once at creation time.
     #[schema(example = "whsec_k7J2mN9pQ4rT1vX8yB3cF6gH0")]
     pub secret: String,
+    /// Delivery filters applied to this webhook. Omitted when empty.
+    #[serde(skip_serializing_if = "WebhookFilters::is_empty")]
+    pub filters: WebhookFilters,
     #[schema(example = "2025-06-15T10:30:00Z")]
     pub created_at: String,
 }
@@ -67,6 +126,9 @@ pub struct WebhookDetail {
     #[schema(example = "https://api.tablefour.com/webhooks/relay")]
     pub url: String,
     pub events: Vec<WebhookEventType>,
+    /// Delivery filters applied to this webhook. Omitted when empty.
+    #[serde(skip_serializing_if = "WebhookFilters::is_empty")]
+    pub filters: WebhookFilters,
     #[schema(example = true)]
     pub active: bool,
     #[schema(example = "2025-06-15T10:30:00Z")]
@@ -106,6 +168,10 @@ use crate::services::billing::quota::QuotaError;
 pub enum WebhookError {
     QuotaExceeded(QuotaError),
     Forbidden(AuthzError),
+    /// `filters.affiliate_id` referenced an affiliate that doesn't exist
+    /// for this tenant (or affiliates aren't configured). Surfaced as a
+    /// 400 so a typo'd filter fails fast instead of silently never firing.
+    AffiliateNotFound,
     Internal(String),
 }
 
@@ -126,7 +192,12 @@ impl std::fmt::Display for WebhookError {
         match self {
             Self::QuotaExceeded(e) => write!(f, "{e}"),
             Self::Forbidden(e) => write!(f, "{e}"),
+            Self::AffiliateNotFound => write!(f, "Affiliate not found"),
             Self::Internal(e) => write!(f, "Internal error: {e}"),
         }
     }
 }
+
+#[cfg(test)]
+#[path = "models_tests.rs"]
+mod tests;
