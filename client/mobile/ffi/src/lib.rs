@@ -97,6 +97,14 @@ fn storage_err_to_rift(e: StorageError) -> RiftError {
 const STORAGE_KEY_INSTALL_ID: &str = "rift.install_id";
 const STORAGE_KEY_USER_ID: &str = "rift.user_id";
 const STORAGE_KEY_USER_ID_SYNCED: &str = "rift.user_id_synced";
+/// The install_id that the bound user was last successfully `identify`-ed
+/// under. The "synced" state is per *(install_id, user_id)*, not per user
+/// alone: if the install_id later changes (reinstall, storage migration),
+/// the binding must be re-sent so the new install is added to the user
+/// server-side and its anonymous touches get backfilled. Without this,
+/// `set_user_id` would no-op on the unchanged user and the new install
+/// would never bind — silently breaking attribution.
+const STORAGE_KEY_USER_ID_SYNCED_INSTALL: &str = "rift.user_id_synced_install_id";
 
 // ── Config ──
 
@@ -204,16 +212,42 @@ impl RiftSdk {
         // so that a fresh tenant (no stored user_id) doesn't race with a
         // subsequent `set_user_id` call. Only spawn the retry when we actually
         // find a stored user_id with `synced != "true"`.
-        let needs_retry = matches!(
-            (
-                sdk.storage.get(STORAGE_KEY_USER_ID.to_string()).ok().flatten(),
-                sdk.storage
+        // Spawn the retry when there's a stored user_id that is either not yet
+        // synced, OR was synced under a *different* install_id than the one
+        // stored now (reinstall / storage migration). The latter re-binds the
+        // new install so a changed install_id self-heals on launch even if the
+        // host app never calls `set_user_id`. Read install_id directly (not
+        // get-or-create) so construction doesn't mint one for a fresh tenant.
+        let needs_retry = match sdk
+            .storage
+            .get(STORAGE_KEY_USER_ID.to_string())
+            .ok()
+            .flatten()
+        {
+            None => false,
+            Some(_) => {
+                let synced = sdk
+                    .storage
                     .get(STORAGE_KEY_USER_ID_SYNCED.to_string())
                     .ok()
-                    .flatten(),
-            ),
-            (Some(_), synced) if synced.as_deref() != Some("true")
-        );
+                    .flatten();
+                if synced.as_deref() != Some("true") {
+                    true
+                } else {
+                    let synced_install = sdk
+                        .storage
+                        .get(STORAGE_KEY_USER_ID_SYNCED_INSTALL.to_string())
+                        .ok()
+                        .flatten();
+                    let current = sdk
+                        .storage
+                        .get(STORAGE_KEY_INSTALL_ID.to_string())
+                        .ok()
+                        .flatten();
+                    synced_install != current
+                }
+            }
+        };
 
         if needs_retry && tokio::runtime::Handle::try_current().is_ok() {
             let sdk_bg = sdk.clone();
@@ -245,6 +279,47 @@ impl RiftSdk {
         Ok(id)
     }
 
+    /// Whether `user_id` is already bound AND synced **for the current
+    /// install_id**. Returns the resolved current install_id alongside so
+    /// callers don't read it twice. A changed install_id yields `false` so
+    /// the caller re-`identify`s — binding the new install server-side and
+    /// backfilling its anonymous touches.
+    fn binding_state(&self, user_id: &str) -> Result<(bool, String), RiftError> {
+        let install_id = self.get_or_create_install_id()?;
+        let existing = self
+            .storage
+            .get(STORAGE_KEY_USER_ID.to_string())
+            .map_err(storage_err_to_rift)?;
+        let synced = self
+            .storage
+            .get(STORAGE_KEY_USER_ID_SYNCED.to_string())
+            .map_err(storage_err_to_rift)?;
+        let synced_install = self
+            .storage
+            .get(STORAGE_KEY_USER_ID_SYNCED_INSTALL.to_string())
+            .map_err(storage_err_to_rift)?;
+        let is_synced = existing.as_deref() == Some(user_id)
+            && synced.as_deref() == Some("true")
+            && synced_install.as_deref() == Some(install_id.as_str());
+        Ok((is_synced, install_id))
+    }
+
+    /// Record a successful `identify`: mark synced AND remember which
+    /// install_id it was synced under, so a later install_id change is
+    /// detected and re-bound.
+    fn mark_synced(&self, install_id: &str) -> Result<(), RiftError> {
+        self.storage
+            .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
+            .map_err(storage_err_to_rift)?;
+        self.storage
+            .set(
+                STORAGE_KEY_USER_ID_SYNCED_INSTALL.to_string(),
+                install_id.to_string(),
+            )
+            .map_err(storage_err_to_rift)?;
+        Ok(())
+    }
+
     /// Internal: if there's a stored user_id that hasn't been synced to the
     /// server, attempt the binding. Called on SDK construction.
     ///
@@ -256,20 +331,22 @@ impl RiftSdk {
             .storage
             .get(STORAGE_KEY_USER_ID.to_string())
             .map_err(storage_err_to_rift)?;
-        let synced = self
-            .storage
-            .get(STORAGE_KEY_USER_ID_SYNCED.to_string())
-            .map_err(storage_err_to_rift)?;
 
         let Some(user_id) = user_id else {
             return Ok(());
         };
-        if synced.as_deref() == Some("true") {
+
+        // Already synced for the *current* install → nothing to do. A
+        // changed install_id (synced under a previous one) falls through and
+        // re-identifies so the new install binds + its touches backfill.
+        let (synced_for_install, install_id) = self.binding_state(&user_id)?;
+        if synced_for_install {
             return Ok(());
         }
 
-        let install_id = self.get_or_create_install_id()?;
-        self.client.identify(install_id, user_id.clone()).await?;
+        self.client
+            .identify(install_id.clone(), user_id.clone())
+            .await?;
 
         // Re-read user_id to guard against a race where set_user_id("usr_new")
         // overwrote storage while this background retry for "usr_old" was
@@ -280,9 +357,7 @@ impl RiftSdk {
             .get(STORAGE_KEY_USER_ID.to_string())
             .map_err(storage_err_to_rift)?;
         if current.as_deref() == Some(user_id.as_str()) {
-            self.storage
-                .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
-                .map_err(storage_err_to_rift)?;
+            self.mark_synced(&install_id)?;
         }
         Ok(())
     }
@@ -305,6 +380,9 @@ impl RiftSdk {
             .map_err(storage_err_to_rift)?;
         self.storage
             .remove(STORAGE_KEY_USER_ID_SYNCED.to_string())
+            .map_err(storage_err_to_rift)?;
+        self.storage
+            .remove(STORAGE_KEY_USER_ID_SYNCED_INSTALL.to_string())
             .map_err(storage_err_to_rift)?;
         Ok(())
     }
@@ -374,16 +452,12 @@ impl RiftSdk {
             });
         }
 
-        // If this user_id is already stored AND already synced, no-op.
-        let existing = self
-            .storage
-            .get(STORAGE_KEY_USER_ID.to_string())
-            .map_err(storage_err_to_rift)?;
-        let synced = self
-            .storage
-            .get(STORAGE_KEY_USER_ID_SYNCED.to_string())
-            .map_err(storage_err_to_rift)?;
-        if existing.as_deref() == Some(user_id.as_str()) && synced.as_deref() == Some("true") {
+        // No-op only if this user is already synced *for the current
+        // install_id*. A changed install_id (reinstall / storage migration)
+        // falls through and re-identifies, so the new install binds and its
+        // anonymous touches backfill — instead of silently never binding.
+        let (synced_for_install, install_id) = self.binding_state(&user_id)?;
+        if synced_for_install {
             return Ok(());
         }
 
@@ -396,18 +470,13 @@ impl RiftSdk {
             .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "false".to_string())
             .map_err(storage_err_to_rift)?;
 
-        // Resolve install_id (generate on first call).
-        let install_id = self.get_or_create_install_id()?;
-
-        // Fire the server call. On success, mark synced. On transient failure
-        // (network), leave unsynced so the next launch retries. On permanent
-        // failure (404 = re-bind protection, 400 = bad request), clear the
-        // unsynced state to prevent infinite retry loops.
-        match self.client.identify(install_id, user_id).await {
+        // Fire the server call. On success, mark synced (for this install). On
+        // transient failure (network), leave unsynced so the next launch
+        // retries. On permanent failure (404 = re-bind protection, 400 = bad
+        // request), clear the pending state to prevent infinite retry loops.
+        match self.client.identify(install_id.clone(), user_id).await {
             Ok(_) => {
-                self.storage
-                    .set(STORAGE_KEY_USER_ID_SYNCED.to_string(), "true".to_string())
-                    .map_err(storage_err_to_rift)?;
+                self.mark_synced(&install_id)?;
                 Ok(())
             }
             Err(CoreError::Api { status, .. }) if status == 400 || status == 404 => {
@@ -423,6 +492,9 @@ impl RiftSdk {
                     .map_err(storage_err_to_rift)?;
                 self.storage
                     .remove(STORAGE_KEY_USER_ID_SYNCED.to_string())
+                    .map_err(storage_err_to_rift)?;
+                self.storage
+                    .remove(STORAGE_KEY_USER_ID_SYNCED_INSTALL.to_string())
                     .map_err(storage_err_to_rift)?;
                 Err(RiftError::Api {
                     status,
