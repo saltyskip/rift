@@ -1000,34 +1000,47 @@ pub async fn enrich_credited_with_metadata(
     tenant_id: &TenantId,
     mut credited: CreditedLinks,
 ) -> CreditedLinks {
-    async fn fetch_metadata(
+    // One lookup yields both the metadata snapshot and the link's
+    // affiliate pin — fire-sites need both and the link is already in
+    // hand via the 1-hour cache.
+    async fn fetch_credit(
         repo: &dyn LinksRepository,
         tenant_id: &TenantId,
         link_id: &str,
-    ) -> Option<serde_json::Value> {
-        repo.find_link_by_tenant_and_id(tenant_id, link_id)
+    ) -> (Option<serde_json::Value>, Option<AffiliateId>) {
+        let link = repo
+            .find_link_by_tenant_and_id(tenant_id, link_id)
             .await
             .unwrap_or_else(|e| {
-                tracing::warn!(error = %e, link_id, "credited link metadata lookup failed");
+                tracing::warn!(error = %e, link_id, "credited link lookup failed");
                 None
-            })
-            .and_then(|l| {
+            });
+        match link {
+            Some(l) => (
                 l.metadata
                     .as_ref()
-                    .and_then(|d| serde_json::to_value(d).ok())
-            })
+                    .and_then(|d| serde_json::to_value(d).ok()),
+                l.affiliate_id,
+            ),
+            None => (None, None),
+        }
     }
 
     if let Some(id) = credited.first_touch_link_id.as_deref() {
-        credited.first_touch_link_metadata = fetch_metadata(links_repo, tenant_id, id).await;
+        let (metadata, affiliate_id) = fetch_credit(links_repo, tenant_id, id).await;
+        credited.first_touch_link_metadata = metadata;
+        credited.first_touch_affiliate_id = affiliate_id;
     }
     if let Some(id) = credited.last_touch_link_id.as_deref() {
         // Skip the second lookup when first == last (single-touch
-        // user): same link, same cached metadata.
+        // user): same link, same cached metadata + affiliate.
         if credited.first_touch_link_id.as_deref() == Some(id) {
             credited.last_touch_link_metadata = credited.first_touch_link_metadata.clone();
+            credited.last_touch_affiliate_id = credited.first_touch_affiliate_id;
         } else {
-            credited.last_touch_link_metadata = fetch_metadata(links_repo, tenant_id, id).await;
+            let (metadata, affiliate_id) = fetch_credit(links_repo, tenant_id, id).await;
+            credited.last_touch_link_metadata = metadata;
+            credited.last_touch_affiliate_id = affiliate_id;
         }
     }
     credited

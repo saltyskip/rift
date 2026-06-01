@@ -165,6 +165,7 @@ use crate::app::AppState;
         crate::services::webhooks::models::ListWebhooksResponse,
         crate::services::webhooks::models::UpdateWebhookRequest,
         crate::services::webhooks::models::WebhookEventType,
+        crate::services::webhooks::models::WebhookFilters,
         crate::services::affiliates::models::CreateAffiliateRequest,
         crate::services::affiliates::models::AffiliateDetail,
         crate::services::affiliates::models::ListAffiliatesResponse,

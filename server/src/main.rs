@@ -450,6 +450,7 @@ async fn run_server(cfg: Config) {
     let webhooks_service = webhooks_repo.as_ref().map(|r| {
         Arc::new(crate::services::webhooks::service::WebhooksService::new(
             r.clone(),
+            affiliates_repo.clone(),
             quota_service.clone(),
         ))
     });

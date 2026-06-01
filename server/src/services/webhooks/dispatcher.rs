@@ -4,7 +4,7 @@ use hmac::{Hmac, Mac};
 use serde::Serialize;
 use sha2::Sha256;
 
-use super::models::{Webhook, WebhookEventType};
+use super::models::{EventMatchContext, Webhook, WebhookEventType};
 use super::repo::WebhooksRepository;
 use crate::core::webhook_dispatcher::{
     AttributeEventPayload, ClickEventPayload, ConversionEventPayload, IdentifyEventPayload,
@@ -35,6 +35,7 @@ impl RiftWebhookDispatcher {
         tenant_id: String,
         timestamp: String,
         payload: T,
+        match_ctx: EventMatchContext,
     ) {
         let repo = self.repo.clone();
         let http = self.http.clone();
@@ -57,6 +58,29 @@ impl RiftWebhookDispatcher {
                         return;
                     }
                 };
+
+            // Apply per-webhook delivery filters (e.g. affiliate scoping).
+            // The event-type subscription is already enforced by the
+            // query; this narrows by the event's match context. Unfiltered
+            // webhooks (empty filters) always pass.
+            let webhooks: Vec<Webhook> = webhooks
+                .into_iter()
+                .filter(|w| w.filters.matches(&match_ctx))
+                .collect();
+
+            // One line per dispatch so "did Rift even try to deliver?" is
+            // answerable from logs alone. count = 0 means nothing was
+            // subscribed for this event (or every match was filtered out by
+            // affiliate scope).
+            tracing::info!(
+                event = event_name,
+                tenant = %tenant_oid.as_hex(),
+                count = webhooks.len(),
+                "Dispatching webhooks"
+            );
+            if webhooks.is_empty() {
+                return;
+            }
 
             let data = match serde_json::to_value(&payload) {
                 Ok(v) => v,
@@ -82,7 +106,7 @@ impl RiftWebhookDispatcher {
                     let body = body.clone();
                     let http = http.clone();
                     async move {
-                        deliver_with_retry(&http, &url, &body, &signature).await;
+                        deliver_with_retry(&http, &url, &body, &signature, event_name).await;
                     }
                 })
                 .collect();
@@ -96,12 +120,15 @@ impl WebhookDispatcher for RiftWebhookDispatcher {
     fn dispatch_click(&self, payload: ClickEventPayload) {
         let tenant_id = payload.tenant_id.clone();
         let timestamp = payload.timestamp.clone();
+        // No affiliate context on clicks today → affiliate-filtered
+        // webhooks won't match (they only want conversions).
         self.dispatch_event(
             WebhookEventType::Click,
             "click",
             tenant_id,
             timestamp,
             payload,
+            EventMatchContext::default(),
         );
     }
 
@@ -114,18 +141,25 @@ impl WebhookDispatcher for RiftWebhookDispatcher {
             tenant_id,
             timestamp,
             payload,
+            EventMatchContext::default(),
         );
     }
 
     fn dispatch_conversion(&self, payload: ConversionEventPayload) {
         let tenant_id = payload.tenant_id.clone();
         let timestamp = payload.timestamp.clone();
+        // Affiliate-scoped webhooks route by last-touch credit — the same
+        // link whose id is forwarded in the payload.
+        let match_ctx = EventMatchContext {
+            affiliate_id: payload.last_touch_affiliate_id,
+        };
         self.dispatch_event(
             WebhookEventType::Conversion,
             "conversion",
             tenant_id,
             timestamp,
             payload,
+            match_ctx,
         );
     }
 
@@ -138,6 +172,7 @@ impl WebhookDispatcher for RiftWebhookDispatcher {
             tenant_id,
             timestamp,
             payload,
+            EventMatchContext::default(),
         );
     }
 }
@@ -177,7 +212,13 @@ async fn cached_find_active_for_event(
     repo.find_active_for_event(&tenant_oid, &event_type).await
 }
 
-async fn deliver_with_retry(http: &reqwest::Client, url: &str, body: &str, signature: &str) {
+async fn deliver_with_retry(
+    http: &reqwest::Client,
+    url: &str,
+    body: &str,
+    signature: &str,
+    event: &str,
+) {
     let delays = [0, 1, 5, 25];
     for (attempt, delay_secs) in delays.iter().enumerate() {
         if *delay_secs > 0 {
@@ -193,17 +234,38 @@ async fn deliver_with_retry(http: &reqwest::Client, url: &str, body: &str, signa
             .await;
 
         match result {
-            Ok(resp) if resp.status().is_success() => return,
-            Ok(resp) => {
-                tracing::warn!(
-                    attempt = attempt + 1,
+            Ok(resp) if resp.status().is_success() => {
+                // Success was previously silent — log it so a delivery can
+                // be confirmed from our own logs without the receiver.
+                tracing::info!(
+                    event = event,
                     status = %resp.status(),
+                    attempt = attempt + 1,
                     url = url,
+                    "Webhook delivered"
+                );
+                return;
+            }
+            Ok(resp) => {
+                // Capture the receiver's response body — for a 4xx this is
+                // usually *why* (bad signature, unknown field, etc.), the
+                // single most useful thing when debugging an integration.
+                // Truncated so a chatty error page can't flood logs.
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                let body: String = body.chars().take(500).collect();
+                tracing::warn!(
+                    event = event,
+                    attempt = attempt + 1,
+                    status = %status,
+                    url = url,
+                    response = %body,
                     "Webhook delivery failed"
                 );
             }
             Err(e) => {
                 tracing::warn!(
+                    event = event,
                     attempt = attempt + 1,
                     error = %e,
                     url = url,
@@ -212,5 +274,9 @@ async fn deliver_with_retry(http: &reqwest::Client, url: &str, body: &str, signa
             }
         }
     }
-    tracing::error!(url = url, "Webhook delivery failed after all retries");
+    tracing::error!(
+        event = event,
+        url = url,
+        "Webhook delivery failed after all retries"
+    );
 }

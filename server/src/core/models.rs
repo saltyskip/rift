@@ -57,6 +57,10 @@ pub struct ConversionEventPayload {
     /// `first_touch_link_id` is absent or the link has no metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub first_touch_link_metadata: Option<serde_json::Value>,
+    /// Affiliate the first-touch link is pinned to (`Link.affiliate_id`),
+    /// if any. Lets receivers attribute the conversion to a partner.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_touch_affiliate_id: Option<crate::core::public_id::AffiliateId>,
     /// Last-touch link credit (the conversion-closer in marketer
     /// terms). Same provenance and absence rules as `first_touch_link_id`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -65,6 +69,10 @@ pub struct ConversionEventPayload {
     /// time. Receivers using last-touch credit read this directly.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_touch_link_metadata: Option<serde_json::Value>,
+    /// Affiliate the last-touch link is pinned to. This is the dimension
+    /// affiliate-scoped webhook filters match against (last-touch credit).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_touch_affiliate_id: Option<crate::core::public_id::AffiliateId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
     pub timestamp: String,
