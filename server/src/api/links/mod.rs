@@ -8,12 +8,12 @@ use axum::routing::{get, post, put};
 use axum::Router;
 use std::sync::Arc;
 
-use super::auth::middleware::auth_gate;
+use super::auth::middleware::{require_auth, ANONYMOUS, SECRET, X402};
 use crate::app::AppState;
 use crate::core::rate_limit::{rate_limit_middleware, RateLimiter};
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
-    // Authenticated routes (link management) — rl_live_ auth_gate injects TenantId.
+    // Authenticated routes (link management) — secret key, x402, or anon tier.
     let authenticated = Router::new()
         .route("/v1/links", post(routes::create_link))
         .route("/v1/links/bulk", post(routes::create_links_bulk))
@@ -24,7 +24,10 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/v1/links/{link_id}",
             put(routes::update_link).delete(routes::delete_link),
         )
-        .layer(middleware::from_fn_with_state(state, auth_gate));
+        .layer(middleware::from_fn_with_state(
+            state,
+            require_auth(SECRET | X402 | ANONYMOUS),
+        ));
 
     // Rate limiter for public endpoints: 120 req/min sustained, burst of 30.
     let limiter = Arc::new(RateLimiter::new(120, 30));

@@ -4,7 +4,9 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Json, Response};
 use axum_extra::headers::{Cookie, HeaderMapExt};
 use serde_json::json;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use x402_axum::paygate::PaygateProtocol;
 use x402_types::proto::v1;
@@ -16,193 +18,236 @@ use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::secret_keys::repo::{KeyScope, SecretKeysRepository};
 use crate::services::auth::usage::repo::{self as usage_repo};
 
-/// Auth + rate-limit middleware for protected endpoints.
-///
-/// Priority:
-/// 1. API key present -> validate, inject TenantId, proceed
-/// 2. x402 payment header -> verify with facilitator, proceed, settle after
-/// 3. No key, within IP daily limit -> proceed (anonymous free tier)
-/// 4. No key, IP limit exceeded -> 429
-pub async fn auth_gate(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+/// The set of credentials an endpoint accepts, composed with `|`. A router
+/// states its policy directly — e.g. `require_auth(SECRET | PUBLISHABLE)` — and
+/// a single engine ([`run_auth`]) walks the accepted credentials in a fixed
+/// priority order: session → secret key → publishable key → x402 → anonymous.
+/// The first credential *present* on the request decides it; a credential that
+/// is present but invalid rejects immediately (no fall-through to a weaker one).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Credentials(u8);
+
+/// Browser / CLI **session** (cookie or non-`rl_`/`pk_` bearer).
+pub(crate) const SESSION: Credentials = Credentials(1 << 0);
+/// Secret API key (`rl_live_`).
+pub(crate) const SECRET: Credentials = Credentials(1 << 1);
+/// SDK publishable key (`pk_live_`).
+pub(crate) const PUBLISHABLE: Credentials = Credentials(1 << 2);
+/// x402 payment header (verify + settle).
+pub(crate) const X402: Credentials = Credentials(1 << 3);
+/// Anonymous free tier (per-IP daily limit). Always tried last; also the
+/// auth-disabled passthrough when no database is configured.
+pub(crate) const ANONYMOUS: Credentials = Credentials(1 << 4);
+
+impl Credentials {
+    const fn contains(self, other: Credentials) -> bool {
+        self.0 & other.0 == other.0
+    }
+}
+
+impl std::ops::BitOr for Credentials {
+    type Output = Credentials;
+    fn bitor(self, rhs: Credentials) -> Credentials {
+        Credentials(self.0 | rhs.0)
+    }
+}
+
+/// The boxed future returned by the [`require_auth`] middleware closure.
+pub(crate) type AuthFuture = Pin<Box<dyn Future<Output = Response> + Send>>;
+
+/// Build an auth middleware accepting the given `credentials`. Use it with
+/// `from_fn_with_state`, e.g.
+/// `.layer(from_fn_with_state(state, require_auth(SECRET | PUBLISHABLE)))`.
+pub(crate) fn require_auth(
+    credentials: Credentials,
+) -> impl Fn(axum::extract::State<Arc<AppState>>, Request, Next) -> AuthFuture + Clone {
+    move |axum::extract::State(state), req, next| Box::pin(run_auth(credentials, state, req, next))
+}
+
+/// The single auth engine. Tries each accepted credential in priority order;
+/// the first one present on the request decides it.
+async fn run_auth(
+    credentials: Credentials,
+    state: Arc<AppState>,
     mut req: Request,
     next: Next,
 ) -> Response {
-    let usage_repo = match &state.usage_repo {
-        Some(r) => r.as_ref(),
-        None => return next.run(req).await,
-    };
+    // Public endpoints run open when no database is configured (dev/bootstrap)
+    // — preserves the original `auth_gate` "no Mongo => auth disabled" behavior,
+    // scoped to the anonymous-bearing (public) policy.
+    if credentials.contains(ANONYMOUS) && state.usage_repo.is_none() {
+        return next.run(req).await;
+    }
 
     let ip = client_ip(&req);
     let endpoint = req.uri().path().to_string();
 
-    // ── Path 1: API key ──
-    match try_secret_key_auth(&state, &mut req).await {
-        Some(Ok(key_id)) => {
-            let response = next.run(req).await;
-            if response.status().is_success() {
-                record_billable_usage(usage_repo, Some(key_id), &ip, &endpoint).await;
-            }
-            return response;
-        }
-        Some(Err(resp)) => return resp,
-        None => {}
-    }
-
-    // ── Path 2: x402 payment header ──
-    let payment_header = state
-        .config
-        .x402_enabled
-        .then(|| req.headers().get("x-payment").cloned())
-        .flatten();
-
-    if let Some(header_val) = payment_header {
-        let facilitator = match &state.facilitator {
-            Some(f) => f,
-            None => {
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(json!({ "error": "Payments not configured", "code": "x402_disabled" })),
-                )
-                    .into_response();
-            }
-        };
-
-        let verify_request = match decode_payment_header(
-            header_val.as_bytes(),
-            &state.x402_price_tags,
-            &state.config.public_url,
-            &endpoint,
-            &state.config.x402_description,
-        ) {
-            Ok(vr) => vr,
-            Err(resp) => return resp,
-        };
-
-        let verify_response = match facilitator.verify(&verify_request).await {
-            Ok(resp) => resp,
-            Err(e) => {
-                tracing::error!("Facilitator verify error: {e:?}");
-                return (
-                    StatusCode::BAD_GATEWAY,
-                    Json(json!({ "error": format!("Payment facilitator error: {e}"), "code": "facilitator_error" })),
-                )
-                    .into_response();
-            }
-        };
-
-        if let Err(e) = v1::PriceTag::validate_verify_response(verify_response) {
+    // ── Session ──
+    if credentials.contains(SESSION) {
+        let session_only = credentials == SESSION;
+        // Distinguish "sessions not configured" (503) from "no token" (401),
+        // but only when session is the sole accepted credential.
+        if session_only && state.sessions_service.is_none() {
             return (
-                StatusCode::PAYMENT_REQUIRED,
-                Json(json!({ "error": e.to_string(), "code": "payment_invalid" })),
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "error": "Sessions not configured", "code": "no_database" })),
             )
                 .into_response();
         }
-
-        let response = next.run(req).await;
-        if response.status().is_success() {
-            if let Err(e) = facilitator.settle(&verify_request).await {
-                tracing::error!("x402 settlement failed: {e}");
+        match try_session_auth(&state, &mut req).await {
+            SessionOutcome::Authenticated => return next.run(req).await,
+            SessionOutcome::Error(resp) => return resp,
+            SessionOutcome::Absent => {
+                if session_only {
+                    return (
+                        StatusCode::UNAUTHORIZED,
+                        Json(json!({ "error": "Missing session", "code": "unauthorized" })),
+                    )
+                        .into_response();
+                }
             }
-            record_billable_usage(usage_repo, None, &ip, &endpoint).await;
+            SessionOutcome::Stale => {
+                if session_only {
+                    return (
+                        StatusCode::UNAUTHORIZED,
+                        Json(json!({
+                            "error": "Session expired or revoked",
+                            "code": "unauthorized"
+                        })),
+                    )
+                        .into_response();
+                }
+            }
         }
-        return response;
     }
 
-    // ── Path 3: Anonymous / IP rate limit ──
-    if let Err(resp) = check_anonymous_limit(&state, usage_repo, &ip).await {
-        return resp;
+    // ── Secret key (rl_live_) ──
+    if credentials.contains(SECRET) {
+        match try_secret_key_auth(&state, &mut req).await {
+            Some(Ok(key_id)) => {
+                let response = next.run(req).await;
+                if response.status().is_success() {
+                    if let Some(usage) = state.usage_repo.as_deref() {
+                        record_billable_usage(usage, Some(key_id), &ip, &endpoint).await;
+                    }
+                }
+                return response;
+            }
+            Some(Err(resp)) => return resp,
+            None => {}
+        }
     }
 
-    let response = next.run(req).await;
-    if response.status().is_success() {
-        record_billable_usage(usage_repo, None, &ip, &endpoint).await;
+    // ── Publishable key (pk_live_) ──
+    if credentials.contains(PUBLISHABLE) {
+        match try_publishable_key_auth(&state, &mut req).await {
+            Some(Ok(())) => return next.run(req).await,
+            Some(Err(resp)) => return resp,
+            None => {}
+        }
     }
-    response
+
+    // ── x402 payment ──
+    if credentials.contains(X402) {
+        let payment_header = state
+            .config
+            .x402_enabled
+            .then(|| req.headers().get("x-payment").cloned())
+            .flatten();
+        if let Some(header_val) = payment_header {
+            return run_x402(&state, header_val, req, next, &ip, &endpoint).await;
+        }
+    }
+
+    // ── Anonymous free tier ──
+    if credentials.contains(ANONYMOUS) {
+        // `usage_repo.is_none()` was handled by the open passthrough above.
+        if let Some(usage) = state.usage_repo.as_deref() {
+            if let Err(resp) = check_anonymous_limit(&state, usage, &ip).await {
+                return resp;
+            }
+            let response = next.run(req).await;
+            if response.status().is_success() {
+                record_billable_usage(usage, None, &ip, &endpoint).await;
+            }
+            return response;
+        }
+    }
+
+    // No accepted credential was present on the request.
+    let message = if credentials.contains(SESSION) {
+        "Session or API key required"
+    } else if credentials.contains(PUBLISHABLE) && !credentials.contains(SECRET) {
+        "Missing or invalid SDK key"
+    } else {
+        "Missing or invalid API key"
+    };
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({ "error": message, "code": "unauthorized" })),
+    )
+        .into_response()
 }
 
-/// Session auth middleware. Resolves the cookie `session_token` (or a non-`rl_`
-/// `Authorization: Bearer` token for forward-compat) to an active session,
-/// injects `TenantId` + `UserId` + `SessionId` + `CallerScope(Full)`, and
-/// passes through. Sessions are always full-tenant scope — there's no
-/// affiliate-scoped human in Phase 1.
-pub async fn session_auth_gate(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    mut req: Request,
+/// Verify (and on success settle) an x402 payment, then run the request.
+/// Split out of [`run_auth`] to keep the engine legible.
+async fn run_x402(
+    state: &Arc<AppState>,
+    header_val: axum::http::HeaderValue,
+    req: Request,
     next: Next,
+    ip: &str,
+    endpoint: &str,
 ) -> Response {
-    // Distinguish "sessions not configured" (503) from "no token" (401);
-    // `try_session_auth` collapses both into `Absent`, so guard service first.
-    if state.sessions_service.is_none() {
+    let Some(facilitator) = &state.facilitator else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "Sessions not configured", "code": "no_database" })),
+            Json(json!({ "error": "Payments not configured", "code": "x402_disabled" })),
+        )
+            .into_response();
+    };
+
+    let verify_request = match decode_payment_header(
+        header_val.as_bytes(),
+        &state.x402_price_tags,
+        &state.config.public_url,
+        endpoint,
+        &state.config.x402_description,
+    ) {
+        Ok(vr) => vr,
+        Err(resp) => return resp,
+    };
+
+    let verify_response = match facilitator.verify(&verify_request).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            tracing::error!("Facilitator verify error: {e:?}");
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": format!("Payment facilitator error: {e}"), "code": "facilitator_error" })),
+            )
+                .into_response();
+        }
+    };
+
+    if let Err(e) = v1::PriceTag::validate_verify_response(verify_response) {
+        return (
+            StatusCode::PAYMENT_REQUIRED,
+            Json(json!({ "error": e.to_string(), "code": "payment_invalid" })),
         )
             .into_response();
     }
 
-    match try_session_auth(&state, &mut req).await {
-        SessionOutcome::Authenticated => next.run(req).await,
-        SessionOutcome::Error(resp) => resp,
-        SessionOutcome::Absent => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Missing session", "code": "unauthorized" })),
-        )
-            .into_response(),
-        SessionOutcome::Stale => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Session expired or revoked", "code": "unauthorized" })),
-        )
-            .into_response(),
-    }
-}
-
-/// Auth middleware that accepts EITHER a session (cookie or non-`rl_` bearer)
-/// OR an `rl_live_` API key. Used by endpoints that are equally meaningful
-/// from the dashboard (session) and from automation (API key) — currently the
-/// `GET`/`DELETE /v1/auth/secret-keys/*` routes.
-///
-/// Session wins if both are present. API-key path preserves existing affiliate
-/// scope enforcement.
-pub async fn session_or_key_auth_gate(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    mut req: Request,
-    next: Next,
-) -> Response {
-    // Captured up front because `next.run(req).await` moves the request.
-    // Needed for the API-key path's usage-recording, which mirrors
-    // `auth_gate`'s billable-call accounting (without this, key-authed calls to
-    // /v1/auth/secret-keys/* would bypass the quota meter).
-    let ip = client_ip(&req);
-    let endpoint = req.uri().path().to_string();
-
-    // ── Path A: session (wins if present; a stale cookie falls through to a key) ──
-    match try_session_auth(&state, &mut req).await {
-        SessionOutcome::Authenticated => return next.run(req).await,
-        SessionOutcome::Error(resp) => return resp,
-        SessionOutcome::Absent | SessionOutcome::Stale => {}
-    }
-
-    // ── Path B: secret key (mirrors auth_gate's key path, incl. usage recording) ──
-    match try_secret_key_auth(&state, &mut req).await {
-        Some(Ok(key_id)) => {
-            let response = next.run(req).await;
-            if response.status().is_success() {
-                if let Some(usage) = state.usage_repo.as_deref() {
-                    record_billable_usage(usage, Some(key_id), &ip, &endpoint).await;
-                }
-            }
-            return response;
+    let response = next.run(req).await;
+    if response.status().is_success() {
+        if let Err(e) = facilitator.settle(&verify_request).await {
+            tracing::error!("x402 settlement failed: {e}");
         }
-        Some(Err(resp)) => return resp,
-        None => {}
+        if let Some(usage) = state.usage_repo.as_deref() {
+            record_billable_usage(usage, None, ip, endpoint).await;
+        }
     }
-
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(json!({ "error": "Session or API key required", "code": "unauthorized" })),
-    )
-        .into_response()
+    response
 }
 
 /// Extract a session token from the `Cookie: session_token=…` header or from a
@@ -227,62 +272,8 @@ fn extract_session_token(req: &Request) -> Option<String> {
         .then(|| token.to_string())
 }
 
-/// SDK auth middleware for pk_live_ keys.
-///
-/// Extracts the SDK bearer token, validates it against the SDK keys repository,
-/// and injects TenantId and SdkDomain extensions.
-pub async fn sdk_auth_gate(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    mut req: Request,
-    next: Next,
-) -> Response {
-    match try_publishable_key_auth(&state, &mut req).await {
-        Some(Ok(())) => next.run(req).await,
-        Some(Err(resp)) => resp,
-        None => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Missing or invalid SDK key", "code": "unauthorized" })),
-        )
-            .into_response(),
-    }
-}
-
-/// Auth gate for tenant-scoped **read** endpoints reachable by both the
-/// dashboard/CLI (secret key `rl_live_`) and the mobile SDK (publishable key
-/// `pk_live_`). Validates whichever credential is present and injects
-/// `TenantId` so the handler is auth-source-agnostic.
-///
-/// Unlike [`auth_gate`] there is no anonymous/x402 path — a tenant-scoped read
-/// requires a real key (anonymous access could not resolve a tenant anyway).
-/// Affiliate-scoped secret keys remain gated by the same path allowlist.
-pub async fn auth_gate_dual_read(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    mut req: Request,
-    next: Next,
-) -> Response {
-    // Secret key (dashboard / CLI).
-    match try_secret_key_auth(&state, &mut req).await {
-        Some(Ok(_key_id)) => return next.run(req).await,
-        Some(Err(resp)) => return resp,
-        None => {}
-    }
-
-    // Publishable key (mobile SDK).
-    match try_publishable_key_auth(&state, &mut req).await {
-        Some(Ok(())) => return next.run(req).await,
-        Some(Err(resp)) => return resp,
-        None => {}
-    }
-
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(json!({ "error": "Missing or invalid API key", "code": "unauthorized" })),
-    )
-        .into_response()
-}
-
 /// Validate a `pk_live_` key and resolve its tenant + associated domain.
-/// Shared by [`sdk_auth_gate`] and [`auth_gate_dual_read`].
+/// Used by [`try_publishable_key_auth`].
 async fn resolve_sdk_key(
     state: &Arc<AppState>,
     raw_key: &str,

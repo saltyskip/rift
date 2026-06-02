@@ -6,7 +6,7 @@ use axum::routing::{delete, get, post};
 use axum::Router;
 use std::sync::Arc;
 
-use super::middleware::auth_gate;
+use super::middleware::{require_auth, ANONYMOUS, SECRET, X402};
 use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
@@ -14,5 +14,8 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/v1/auth/users", post(routes::invite_user))
         .route("/v1/auth/users", get(routes::list_users))
         .route("/v1/auth/users/{user_id}", delete(routes::delete_user))
-        .layer(middleware::from_fn_with_state(state, auth_gate))
+        .layer(middleware::from_fn_with_state(
+            state,
+            require_auth(SECRET | X402 | ANONYMOUS),
+        ))
 }

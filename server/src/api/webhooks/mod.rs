@@ -5,7 +5,7 @@ use axum::routing::{delete, get, post};
 use axum::Router;
 use std::sync::Arc;
 
-use super::auth::middleware::auth_gate;
+use super::auth::middleware::{require_auth, ANONYMOUS, SECRET, X402};
 use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
@@ -16,5 +16,8 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/v1/webhooks/{webhook_id}",
             delete(routes::delete_webhook).patch(routes::patch_webhook),
         )
-        .layer(middleware::from_fn_with_state(state, auth_gate))
+        .layer(middleware::from_fn_with_state(
+            state,
+            require_auth(SECRET | X402 | ANONYMOUS),
+        ))
 }

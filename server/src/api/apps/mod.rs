@@ -5,7 +5,7 @@ use axum::routing::{delete, get, post};
 use axum::Router;
 use std::sync::Arc;
 
-use super::auth::middleware::auth_gate;
+use super::auth::middleware::{require_auth, ANONYMOUS, SECRET, X402};
 use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
@@ -14,7 +14,10 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/v1/apps", post(routes::create_app))
         .route("/v1/apps", get(routes::list_apps))
         .route("/v1/apps/{app_id}", delete(routes::delete_app))
-        .layer(middleware::from_fn_with_state(state, auth_gate));
+        .layer(middleware::from_fn_with_state(
+            state,
+            require_auth(SECRET | X402 | ANONYMOUS),
+        ));
 
     // Public routes (association files served via custom domain).
     let public = Router::new()

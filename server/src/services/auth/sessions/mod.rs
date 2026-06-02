@@ -3,7 +3,7 @@
 //! Sits alongside `secret_keys` (machine credentials) and `users` (identity).
 //! A session represents "a human is signed into a browser as a particular user
 //! in a particular tenant." Sessions are minted by the magic-link signin flow
-//! and consumed by `session_auth_gate` middleware on session-protected routes.
+//! and consumed by the session auth path on session-protected routes.
 //!
 //! - Token: opaque random 32-byte hex, hashed in storage.
 //! - Lifetime: 30 days, revocable, indexed by `token_hash` and `(user_id, expires_at)`.

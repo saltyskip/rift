@@ -8,7 +8,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use std::sync::Arc;
 
-use super::auth::middleware::session_or_key_auth_gate;
+use super::auth::middleware::{require_auth, SECRET, SESSION};
 use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
@@ -28,12 +28,12 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/v1/billing/cancel", post(routes::cancel_subscription))
         .layer(middleware::from_fn_with_state(
             state,
-            session_or_key_auth_gate,
+            require_auth(SESSION | SECRET),
         ));
 
     // Stripe webhook is public — auth comes from the HMAC signature over the
-    // raw body, not a Bearer key. Must NOT go through auth_gate so the handler
-    // receives the unmodified bytes for signature verification.
+    // raw body, not a Bearer key. Must NOT go through an auth gate so the
+    // handler receives the unmodified bytes for signature verification.
     let webhook = Router::new().route(
         "/v1/billing/webhooks/stripe",
         post(stripe_webhook::receive_stripe_webhook),
