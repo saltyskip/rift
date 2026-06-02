@@ -16,6 +16,6 @@ pub use crate::core::public_id::{AuthSessionId as SessionId, SecretKeyId, Tenant
 #[derive(Debug, Clone)]
 pub struct AuthKeyId(pub SecretKeyId);
 
-/// Domain associated with an SDK key, injected by `sdk_auth_gate`.
+/// Domain associated with an SDK key, injected when a publishable key authenticates.
 #[derive(Debug, Clone)]
 pub struct SdkDomain(pub String);

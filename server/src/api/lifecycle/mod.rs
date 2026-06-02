@@ -5,11 +5,11 @@ use axum::routing::{post, put};
 use axum::Router;
 use std::sync::Arc;
 
-use super::auth::middleware::sdk_auth_gate;
+use super::auth::middleware::{require_auth, PUBLISHABLE};
 use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
-    // SDK-authenticated lifecycle endpoints — pk_live_ sdk_auth_gate.
+    // SDK-authenticated lifecycle endpoints — pk_live_ publishable key.
     //
     // The three SDK calls in user-funnel order: `click` (server-side via the
     // Web SDK), `attribute` (link touched in app), `identify` (install bound
@@ -19,5 +19,8 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/v1/lifecycle/click", post(routes::lifecycle_click))
         .route("/v1/lifecycle/attribute", post(routes::lifecycle_attribute))
         .route("/v1/lifecycle/identify", put(routes::lifecycle_identify))
-        .layer(middleware::from_fn_with_state(state, sdk_auth_gate))
+        .layer(middleware::from_fn_with_state(
+            state,
+            require_auth(PUBLISHABLE),
+        ))
 }

@@ -6,7 +6,7 @@ use axum::routing::{delete, get, post};
 use axum::Router;
 use std::sync::Arc;
 
-use super::middleware::{auth_gate, session_or_key_auth_gate};
+use super::middleware::{require_auth, ANONYMOUS, SECRET, SESSION, X402};
 use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
@@ -27,12 +27,14 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             "/v1/auth/secret-keys/confirm",
             post(routes::confirm_create_key),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth_gate));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_auth(SECRET | X402 | ANONYMOUS),
+        ));
 
     // Either auth method works — these are listing/revocation primitives
     // useful from both the dashboard (session cookie) and from automation
-    // (API key). Affiliate-scope checks still run on the API-key path
-    // inside `session_or_key_auth_gate`.
+    // (API key). Affiliate-scope checks still run on the secret-key path.
     let either_auth = Router::new()
         .route("/v1/auth/secret-keys", get(routes::list_secret_keys))
         .route(
@@ -41,7 +43,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         )
         .layer(middleware::from_fn_with_state(
             state,
-            session_or_key_auth_gate,
+            require_auth(SESSION | SECRET),
         ));
 
     public.merge(key_only).merge(either_auth)

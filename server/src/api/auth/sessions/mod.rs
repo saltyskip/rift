@@ -6,7 +6,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use std::sync::Arc;
 
-use super::middleware::session_auth_gate;
+use super::middleware::{require_auth, SESSION};
 use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
@@ -25,7 +25,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/v1/auth/me", get(routes::me))
         .route("/v1/auth/signout", post(routes::sign_out))
         .route("/v1/auth/secret-keys/issue", post(routes::issue_secret_key))
-        .layer(middleware::from_fn_with_state(state, session_auth_gate));
+        .layer(middleware::from_fn_with_state(state, require_auth(SESSION)));
 
     public.merge(session_protected)
 }
