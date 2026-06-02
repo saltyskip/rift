@@ -48,7 +48,7 @@ public extension RiftSdk {
         // Gate the read. `detectPatterns(for:)` neither exposes the contents
         // nor triggers the paste disclosure; it just reports which patterns are
         // present. If detection fails, skip rather than read blindly.
-        let detected: Set<UIPasteboard.DetectedPatterns>
+        let detected: Set<UIPasteboard.DetectedPattern>
         do {
             detected = try await pasteboard.detectPatterns(for: [.probableWebURL])
         } catch {
