@@ -284,14 +284,12 @@ Rift.click("summer-sale");`}</CodeBlock>
                   <div className="space-y-3 text-[15px] leading-relaxed text-[#a1a1aa]">
                     <p>
                       The simplest path is{" "}
-                      <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">checkDeferredDeepLink</code> —
-                      it parses the clipboard, reports attribution, and returns the link data in one call:
+                      <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">checkDeferredDeepLinkFromPasteboard</code> —
+                      it detects a URL on the pasteboard (without reading it unless one is
+                      present), reports attribution, and returns the link data in one call:
                     </p>
                     <CodeBlock lang="swift">{`// On first app launch
-if let result = try await rift.checkDeferredDeepLink(
-    clipboardText: UIPasteboard.general.string
-) {
-    UIPasteboard.general.string = ""
+if let result = try await rift.checkDeferredDeepLinkFromPasteboard() {
     if let deepLink = result.iosDeepLink {
         handleDeepLink(deepLink)
     }

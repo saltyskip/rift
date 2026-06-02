@@ -91,22 +91,23 @@ try await rift.trackConversion(
 
           <Step n={5} title="One-call deferred deep link (3 lines)">
             <p>
-              On first launch, check the clipboard for a Rift link. The SDK parses it,
-              reports attribution, and returns the link data for navigation — all in one call.
+              On first launch, check the pasteboard for a Rift link. The SDK detects whether
+              a URL is present, parses it, reports attribution, and returns the link data for
+              navigation — all in one call.
             </p>
             <CodeBlock lang="swift">{`// On first launch:
-if let result = try await rift.checkDeferredDeepLink(
-    clipboardText: UIPasteboard.general.string
-) {
-    UIPasteboard.general.string = ""  // clear after reading
+if let result = try await rift.checkDeferredDeepLinkFromPasteboard() {
     if let deepLink = result.iosDeepLink {
         handleDeepLink(deepLink)
     }
 }`}</CodeBlock>
             <Callout type="info">
-              The caller reads the clipboard explicitly because iOS 16+ shows a paste
-              permission dialog. The SDK does NOT read the clipboard itself — your app
-              controls when that dialog appears.
+              It uses <code>UIPasteboard.detectPatterns(for:)</code> to check for a URL
+              without reading the contents, so it only touches the pasteboard — and only
+              triggers the iOS 16+ paste banner — when a URL is actually present. On a
+              match it clears the pasteboard so a re-launch doesn&apos;t re-attribute. Pass
+              your own text via <code>checkDeferredDeepLink(clipboardText:)</code> if you
+              need custom gating.
             </Callout>
           </Step>
         </section>
