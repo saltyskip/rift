@@ -494,6 +494,11 @@ public protocol RiftSdkProtocol: AnyObject, Sendable {
     /**
      * One-argument attribute call — uses the SDK's internal install_id
      * and the `app_version` from config. The preferred Swift-facing API.
+     *
+     * Persists the link_id as a pending attribution before the network call
+     * and clears it on success, so a failed first-open attribution is retried
+     * on the next launch. A permanent (400/404) rejection also clears it to
+     * avoid retrying a dead link forever; transient errors leave it pending.
      */
     func attributeLink(linkId: String) async throws  -> Bool
     
@@ -635,6 +640,11 @@ open func attribute(linkId: String, installId: String, appVersion: String)async 
     /**
      * One-argument attribute call — uses the SDK's internal install_id
      * and the `app_version` from config. The preferred Swift-facing API.
+     *
+     * Persists the link_id as a pending attribution before the network call
+     * and clears it on success, so a failed first-open attribution is retried
+     * on the next launch. A permanent (400/404) rejection also clears it to
+     * avoid retrying a dead link forever; transient errors leave it pending.
      */
 open func attributeLink(linkId: String)async throws  -> Bool  {
     return
@@ -1813,6 +1823,31 @@ fileprivate struct FfiConverterOptionDictionaryStringString: FfiConverterRustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]
+
+    public static func write(_ value: [String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterString.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [String]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
     public static func write(_ value: [String: String], into buf: inout [UInt8]) {
         let len = Int32(value.count)
@@ -1881,10 +1916,17 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
         print("uniffiFutureContinuationCallback invalid handle")
     }
 }
-public func parseClipboardLink(text: String) -> String?  {
+/**
+ * Extract a Rift link_id from clipboard `text`, accepting only URLs whose
+ * host is in `allowed_hosts` (the tenant's verified domains plus the API
+ * host). Most callers should use [`RiftSdk::check_deferred_deep_link`], which
+ * supplies the host list automatically.
+ */
+public func parseClipboardLink(text: String, allowedHosts: [String]) -> String?  {
     return try!  FfiConverterOptionString.lift(try! rustCall() {
     uniffi_rift_ffi_fn_func_parse_clipboard_link(
-        FfiConverterString.lower(text),$0
+        FfiConverterString.lower(text),
+        FfiConverterSequenceString.lower(allowedHosts),$0
     )
 })
 }
@@ -1911,7 +1953,7 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_rift_ffi_checksum_func_parse_clipboard_link() != 11711) {
+    if (uniffi_rift_ffi_checksum_func_parse_clipboard_link() != 45063) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_rift_ffi_checksum_func_parse_referrer_link() != 54616) {
@@ -1920,7 +1962,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_rift_ffi_checksum_method_riftsdk_attribute() != 2882) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rift_ffi_checksum_method_riftsdk_attribute_link() != 59039) {
+    if (uniffi_rift_ffi_checksum_method_riftsdk_attribute_link() != 19960) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_rift_ffi_checksum_method_riftsdk_check_deferred_deep_link() != 6149) {
