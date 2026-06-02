@@ -1,37 +1,55 @@
-/// Extracts link_id from a clipboard URL.
-/// The landing page copies the full URL to clipboard (e.g. "https://go.example.com/my-link"
-/// or "https://api.riftl.ink/r/ABC123"). This extracts the link_id from the path.
-/// Also supports the legacy "rift:<link_id>" format for backwards compatibility.
-pub fn parse_clipboard_link(text: &str) -> Option<String> {
+/// Extracts a Rift link_id from a clipboard URL, validating that the URL's
+/// host is one the SDK trusts (`allowed_hosts` — the tenant's verified domains
+/// plus the API host). Host validation prevents an unrelated URL left on the
+/// clipboard (e.g. `https://othersite.com/promo`) from being mis-attributed as
+/// a Rift deep link.
+///
+/// The landing page / Web SDK copies the full resolver URL to the clipboard
+/// (e.g. `https://go.example.com/my-link` or `https://api.riftl.ink/r/ABC123`);
+/// this returns the trailing path segment as the link_id. Host comparison is
+/// case-insensitive and ignores any port.
+pub fn parse_clipboard_link(text: &str, allowed_hosts: &[String]) -> Option<String> {
     let text = text.trim();
-
-    // Legacy format: "rift:<link_id>"
-    if let Some(id) = text.strip_prefix("rift:") {
-        let id = id.trim().to_string();
-        return if id.is_empty() { None } else { Some(id) };
+    if !(text.starts_with("https://") || text.starts_with("http://")) {
+        return None;
     }
 
-    // URL format: extract the last path segment.
-    // Handles both "https://go.example.com/my-link" and "https://api.riftl.ink/r/ABC123"
-    if text.starts_with("https://") || text.starts_with("http://") {
-        let path = text
-            .split("//")
-            .nth(1)?
-            .split('?')
-            .next()?
-            .split('#')
-            .next()?;
-        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-        // For /r/ABC123, take the last segment. For /my-link, also the last segment.
-        let link_id = segments.last()?.trim().to_string();
-        return if link_id.is_empty() {
-            None
-        } else {
-            Some(link_id)
-        };
+    let after_scheme = text.split("//").nth(1)?;
+    // Split host from the rest at the first '/'. A bare domain is not a link.
+    let (host_part, path_part) = after_scheme.split_once('/')?;
+    // Strip optional userinfo ("user@") and port (":443").
+    let host = host_part
+        .rsplit('@')
+        .next()
+        .unwrap_or(host_part)
+        .split(':')
+        .next()
+        .unwrap_or(host_part);
+    if !host_is_allowed(host, allowed_hosts) {
+        return None;
     }
 
-    None
+    let path = path_part.split(['?', '#']).next().unwrap_or("");
+    let link_id = path.split('/').rfind(|s| !s.is_empty())?;
+    validate_link_id(link_id)
+}
+
+fn host_is_allowed(host: &str, allowed_hosts: &[String]) -> bool {
+    let host = host.to_ascii_lowercase();
+    allowed_hosts
+        .iter()
+        .any(|allowed| allowed.trim().to_ascii_lowercase() == host)
+}
+
+/// Validate an extracted segment looks like a Rift link_id — mirrors the
+/// server's `is_valid_link_id`: non-empty, <= 64 chars, alphanumeric or `-`.
+fn validate_link_id(id: &str) -> Option<String> {
+    let id = id.trim();
+    if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return None;
+    }
+    Some(id.to_string())
 }
 
 /// Extracts link_id from Android install referrer string.

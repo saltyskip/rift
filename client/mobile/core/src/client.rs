@@ -64,6 +64,19 @@ impl RiftClient {
         Ok(result.success)
     }
 
+    /// Fetch the tenant's verified domains (authenticated by publishable key).
+    /// Used to validate which clipboard hosts are legitimate Rift links during
+    /// deferred deep linking. Returns bare hostnames.
+    pub async fn get_domains(&self) -> Result<Vec<String>, RiftError> {
+        let resp = self.inner.list_domains().await.map_err(map_error)?;
+        Ok(resp
+            .domains
+            .into_iter()
+            .filter(|d| d.verified)
+            .map(|d| d.domain)
+            .collect())
+    }
+
     pub async fn get_link(&self, link_id: String) -> Result<GetLinkResponse, RiftError> {
         let link: ResolvedLink = self.inner.resolve_link(&link_id).await.map_err(map_error)?;
         Ok(GetLinkResponse {

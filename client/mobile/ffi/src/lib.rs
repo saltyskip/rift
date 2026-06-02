@@ -105,6 +105,13 @@ const STORAGE_KEY_USER_ID_SYNCED: &str = "rift.user_id_synced";
 /// `set_user_id` would no-op on the unchanged user and the new install
 /// would never bind — silently breaking attribution.
 const STORAGE_KEY_USER_ID_SYNCED_INSTALL: &str = "rift.user_id_synced_install_id";
+/// Newline-separated cache of the tenant's verified resolver hosts, used to
+/// validate deferred-deep-link clipboard URLs. Refreshed best-effort on launch.
+const STORAGE_KEY_ALLOWED_DOMAINS: &str = "rift.allowed_domains";
+/// A deferred-attribution link_id whose `attribute` call has not yet succeeded.
+/// Set before the network call and cleared on success; retried on next launch
+/// so a flaky first-open network doesn't lose the attribution.
+const STORAGE_KEY_PENDING_ATTRIBUTION: &str = "rift.pending_attribution";
 
 // ── Config ──
 
@@ -249,13 +256,42 @@ impl RiftSdk {
             }
         };
 
-        if needs_retry && tokio::runtime::Handle::try_current().is_ok() {
+        if tokio::runtime::Handle::try_current().is_ok() {
+            if needs_retry {
+                let sdk_bg = sdk.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = sdk_bg.retry_pending_binding().await {
+                        tracing::debug!(error = ?e, "pending binding retry failed");
+                    }
+                });
+            }
+
+            // Refresh the cached allow-list of resolver hosts used to validate
+            // deferred-deep-link clipboard URLs. Best-effort; picks up domains
+            // a customer added since the last launch.
             let sdk_bg = sdk.clone();
             tokio::spawn(async move {
-                if let Err(e) = sdk_bg.retry_pending_binding().await {
-                    tracing::debug!(error = ?e, "pending binding retry failed");
+                if let Err(e) = sdk_bg.refresh_allowed_domains().await {
+                    tracing::debug!(error = ?e, "allowed-domains refresh failed");
                 }
             });
+
+            // Retry a deferred attribution left pending from a previous session
+            // (first-open network failure). Storage-backed, like user binding.
+            if sdk
+                .storage
+                .get(STORAGE_KEY_PENDING_ATTRIBUTION.to_string())
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                let sdk_bg = sdk.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = sdk_bg.retry_pending_attribution().await {
+                        tracing::debug!(error = ?e, "pending attribution retry failed");
+                    }
+                });
+            }
         }
 
         sdk
@@ -359,6 +395,69 @@ impl RiftSdk {
         if current.as_deref() == Some(user_id.as_str()) {
             self.mark_synced(&install_id)?;
         }
+        Ok(())
+    }
+
+    /// Internal: fetch the tenant's verified domains and cache them for
+    /// clipboard host validation. Stored newline-separated.
+    async fn refresh_allowed_domains(&self) -> Result<(), RiftError> {
+        let domains = self.client.get_domains().await?;
+        if !domains.is_empty() {
+            self.storage
+                .set(STORAGE_KEY_ALLOWED_DOMAINS.to_string(), domains.join("\n"))
+                .map_err(storage_err_to_rift)?;
+        }
+        Ok(())
+    }
+
+    /// Internal: the hosts a legitimate Rift clipboard URL may use — the
+    /// tenant's cached verified domains plus the API host. Fetches and caches
+    /// the domains inline if the cache is cold so the first-ever deferred
+    /// check still validates.
+    async fn allowed_hosts(&self) -> Vec<String> {
+        let mut hosts: Vec<String> = self
+            .storage
+            .get(STORAGE_KEY_ALLOWED_DOMAINS.to_string())
+            .ok()
+            .flatten()
+            .map(|s| {
+                s.lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if hosts.is_empty() {
+            if let Ok(domains) = self.client.get_domains().await {
+                if !domains.is_empty() {
+                    let _ = self
+                        .storage
+                        .set(STORAGE_KEY_ALLOWED_DOMAINS.to_string(), domains.join("\n"));
+                    hosts = domains;
+                }
+            }
+        }
+
+        if let Some(host) = host_from_url(&self.api_base_url) {
+            hosts.push(host);
+        }
+        hosts
+    }
+
+    /// Internal: retry a deferred attribution persisted from a previous launch.
+    async fn retry_pending_attribution(&self) -> Result<(), RiftError> {
+        let Some(link_id) = self
+            .storage
+            .get(STORAGE_KEY_PENDING_ATTRIBUTION.to_string())
+            .map_err(storage_err_to_rift)?
+        else {
+            return Ok(());
+        };
+        // `attribute_link` clears the pending marker on success and on
+        // permanent (4xx) rejection; a transient failure leaves it for the
+        // next launch.
+        self.attribute_link(link_id).await?;
         Ok(())
     }
 }
@@ -557,12 +656,52 @@ impl RiftSdk {
 
     /// One-argument attribute call — uses the SDK's internal install_id
     /// and the `app_version` from config. The preferred Swift-facing API.
+    ///
+    /// Persists the link_id as a pending attribution before the network call
+    /// and clears it on success, so a failed first-open attribution is retried
+    /// on the next launch. A permanent (400/404) rejection also clears it to
+    /// avoid retrying a dead link forever; transient errors leave it pending.
     pub async fn attribute_link(&self, link_id: String) -> Result<bool, RiftError> {
         let install_id = self.get_or_create_install_id()?;
-        Ok(self
+
+        if let Err(e) = self
+            .storage
+            .set(STORAGE_KEY_PENDING_ATTRIBUTION.to_string(), link_id.clone())
+        {
+            tracing::debug!(error = ?e, "could not persist pending attribution");
+        }
+
+        match self
             .client
             .attribute(link_id, install_id, self.app_version.clone())
-            .await?)
+            .await
+        {
+            Ok(success) => {
+                if let Err(e) = self
+                    .storage
+                    .remove(STORAGE_KEY_PENDING_ATTRIBUTION.to_string())
+                {
+                    tracing::debug!(error = ?e, "could not clear pending attribution");
+                }
+                Ok(success)
+            }
+            Err(e) => {
+                // Permanent (400/404) rejection — unknown or invalid link.
+                // Clear the pending marker so we don't retry a dead link
+                // forever; transient errors leave it pending for next launch.
+                let permanent = matches!(
+                    &e,
+                    rift_sdk_core::error::RiftError::Api { status, .. }
+                        if *status == 400 || *status == 404
+                );
+                if permanent {
+                    let _ = self
+                        .storage
+                        .remove(STORAGE_KEY_PENDING_ATTRIBUTION.to_string());
+                }
+                Err(e.into())
+            }
+        }
     }
 
     /// One-call deferred deep linking. Parses the clipboard text for a Rift
@@ -581,13 +720,20 @@ impl RiftSdk {
             return Ok(None);
         };
 
-        let Some(link_id) = rift_sdk_core::parser::parse_clipboard_link(&text) else {
+        // Validate the clipboard URL's host against the tenant's resolver hosts
+        // so an unrelated URL on the clipboard isn't mis-attributed.
+        let allowed_hosts = self.allowed_hosts().await;
+        let Some(link_id) = rift_sdk_core::parser::parse_clipboard_link(&text, &allowed_hosts)
+        else {
             return Ok(None);
         };
 
-        // Report attribution (fire-and-forget on failure — don't block navigation).
+        // Report attribution. `attribute_link` persists a pending marker and
+        // retries on the next launch if this fails, so a flaky first-open
+        // network doesn't lose the attribution. Fire-and-forget here so
+        // navigation isn't blocked.
         if let Err(e) = self.attribute_link(link_id.clone()).await {
-            tracing::warn!(error = ?e, "deferred deep link attribution failed");
+            tracing::warn!(error = ?e, "deferred deep link attribution failed; will retry on next launch");
         }
 
         // Fetch link data for navigation.
@@ -609,14 +755,25 @@ impl RiftSdk {
 
 // ── Free functions ──
 
+/// Extract a Rift link_id from clipboard `text`, accepting only URLs whose
+/// host is in `allowed_hosts` (the tenant's verified domains plus the API
+/// host). Most callers should use [`RiftSdk::check_deferred_deep_link`], which
+/// supplies the host list automatically.
 #[uniffi::export]
-pub fn parse_clipboard_link(text: String) -> Option<String> {
-    rift_sdk_core::parser::parse_clipboard_link(&text)
+pub fn parse_clipboard_link(text: String, allowed_hosts: Vec<String>) -> Option<String> {
+    rift_sdk_core::parser::parse_clipboard_link(&text, &allowed_hosts)
 }
 
 #[uniffi::export]
 pub fn parse_referrer_link(referrer: String) -> Option<String> {
     rift_sdk_core::parser::parse_referrer_link(&referrer)
+}
+
+/// Extract the lowercased host from a base URL like `https://api.riftl.ink`.
+fn host_from_url(url: &str) -> Option<String> {
+    let after = url.split("//").nth(1).unwrap_or(url);
+    let host = after.split('/').next()?.split(':').next()?;
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
 #[cfg(test)]
