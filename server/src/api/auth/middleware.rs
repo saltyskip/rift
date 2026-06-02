@@ -396,14 +396,6 @@ pub async fn sdk_auth_gate(
     mut req: Request,
     next: Next,
 ) -> Response {
-    let Some(sdk_keys_repo) = &state.sdk_keys_repo else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "error": "SDK keys not configured", "code": "no_database" })),
-        )
-            .into_response();
-    };
-
     // Accept pk_live_ key from Authorization header or ?key= query param.
     // Query param fallback enables sendBeacon (which can't set headers).
     let raw_key = extract_sdk_bearer(&req).or_else(|| extract_sdk_query_key(&req));
@@ -415,38 +407,122 @@ pub async fn sdk_auth_gate(
             .into_response();
     };
 
-    let hash = keys::hash_key(&raw_key);
+    let (tenant_id, sdk_domain) = match resolve_sdk_key(&state, &raw_key).await {
+        Ok(pair) => pair,
+        Err(resp) => return resp,
+    };
+
+    req.extensions_mut().insert(tenant_id);
+    req.extensions_mut().insert(sdk_domain);
+
+    next.run(req).await
+}
+
+/// Auth gate for tenant-scoped **read** endpoints reachable by both the
+/// dashboard/CLI (secret key `rl_live_`) and the mobile SDK (publishable key
+/// `pk_live_`). Validates whichever credential is present and injects
+/// `TenantId` so the handler is auth-source-agnostic.
+///
+/// Unlike [`auth_gate`] there is no anonymous/x402 path — a tenant-scoped read
+/// requires a real key (anonymous access could not resolve a tenant anyway).
+/// Affiliate-scoped secret keys remain gated by the same path allowlist.
+pub async fn auth_gate_dual_read(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    // Secret key (dashboard / CLI).
+    if let Some(raw_key) = extract_bearer(&req) {
+        let (tenant_id, key_id, scope) =
+            match validate_api_key(state.secret_keys_repo.as_deref(), &raw_key).await {
+                Ok(ids) => ids,
+                Err(resp) => return resp,
+            };
+
+        if let Some(KeyScope::Affiliate { .. }) = scope {
+            if !is_path_allowed_for_affiliate(req.method(), req.uri().path()) {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(json!({
+                        "error": "This key's scope does not permit this operation",
+                        "code": "forbidden_scope"
+                    })),
+                )
+                    .into_response();
+            }
+        }
+
+        req.extensions_mut().insert(tenant_id);
+        req.extensions_mut().insert(AuthKeyId(key_id));
+        req.extensions_mut().insert(AuthContext::for_secret_key(
+            tenant_id,
+            key_id,
+            scope.as_ref(),
+        ));
+        return next.run(req).await;
+    }
+
+    // Publishable key (mobile SDK).
+    if let Some(raw_key) = extract_sdk_bearer(&req).or_else(|| extract_sdk_query_key(&req)) {
+        let (tenant_id, sdk_domain) = match resolve_sdk_key(&state, &raw_key).await {
+            Ok(pair) => pair,
+            Err(resp) => return resp,
+        };
+        req.extensions_mut().insert(tenant_id);
+        req.extensions_mut().insert(sdk_domain);
+        return next.run(req).await;
+    }
+
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({ "error": "Missing or invalid API key", "code": "unauthorized" })),
+    )
+        .into_response()
+}
+
+/// Validate a `pk_live_` key and resolve its tenant + associated domain.
+/// Shared by [`sdk_auth_gate`] and [`auth_gate_dual_read`].
+async fn resolve_sdk_key(
+    state: &Arc<AppState>,
+    raw_key: &str,
+) -> Result<(crate::core::public_id::TenantId, SdkDomain), Response> {
+    let Some(sdk_keys_repo) = &state.sdk_keys_repo else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "SDK keys not configured", "code": "no_database" })),
+        )
+            .into_response());
+    };
+
+    let hash = keys::hash_key(raw_key);
     let doc = match sdk_keys_repo.find_by_hash(&hash).await {
         Ok(Some(doc)) => doc,
         Ok(None) => {
-            return (
+            return Err((
                 StatusCode::UNAUTHORIZED,
                 Json(json!({ "error": "Invalid SDK key", "code": "invalid_key" })),
             )
-                .into_response();
+                .into_response());
         }
         Err(e) => {
             tracing::error!("SDK key lookup failed: {e}");
-            return (
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "error": "Internal error", "code": "db_error" })),
             )
-                .into_response();
+                .into_response());
         }
     };
 
     if doc.revoked {
-        return (
+        return Err((
             StatusCode::UNAUTHORIZED,
             Json(json!({ "error": "SDK key has been revoked", "code": "key_revoked" })),
         )
-            .into_response();
+            .into_response());
     }
 
-    req.extensions_mut().insert(doc.tenant_id);
-    req.extensions_mut().insert(SdkDomain(doc.domain));
-
-    next.run(req).await
+    Ok((doc.tenant_id, SdkDomain(doc.domain)))
 }
 
 // ── Helpers ──

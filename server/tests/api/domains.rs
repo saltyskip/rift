@@ -88,6 +88,51 @@ async fn list_domains_returns_created() {
 }
 
 #[tokio::test]
+async fn list_domains_accepts_publishable_key() {
+    // The mobile SDK reads the tenant's domains with a pk_live_ key to validate
+    // deferred-deep-link clipboard hosts.
+    let app = common::spawn_app().await;
+    let (_key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+    let pk = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    let resp = app
+        .client
+        .get(app.url("/v1/domains"))
+        .header("Authorization", format!("Bearer {pk}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let domains = body["domains"].as_array().unwrap();
+    assert!(domains.iter().any(|d| d["domain"] == "go.example.com"));
+}
+
+#[tokio::test]
+async fn create_domain_rejects_publishable_key() {
+    // Mutating routes stay secret-key only — a pk_live_ key must not create.
+    let app = common::spawn_app().await;
+    let (_key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+    let pk = common::seed_sdk_key(&app, &tenant_id, "go.example.com").await;
+
+    let resp = app
+        .client
+        .post(app.url("/v1/domains"))
+        .header("Authorization", format!("Bearer {pk}"))
+        .json(&serde_json::json!({ "domain": "links.foo.com" }))
+        .send()
+        .await
+        .unwrap();
+
+    // A pk_live_ key is not a valid secret credential for `auth_gate`, so the
+    // create must not succeed (the mutating routes never reach the dual gate).
+    assert!(!resp.status().is_success());
+}
+
+#[tokio::test]
 async fn delete_domain_returns_204() {
     let app = common::spawn_app().await;
     let (key, _) = common::seed_api_key(&app).await;

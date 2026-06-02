@@ -44,23 +44,33 @@ export default function DeferredPage() {
 
           <Step n={2} title="iOS — SDK (recommended)">
             <p>
-              The SDK does everything in one call: parses the clipboard, reports attribution,
-              and returns the link data for navigation.
+              The SDK does everything in one call: it checks the pasteboard for a URL,
+              reports attribution, and returns the link data for navigation.
             </p>
             <CodeBlock lang="swift">{`// On first launch
-if let result = try await rift.checkDeferredDeepLink(
-    clipboardText: UIPasteboard.general.string
-) {
-    UIPasteboard.general.string = ""  // clear after reading
+if let result = try await rift.checkDeferredDeepLinkFromPasteboard() {
     if let deepLink = result.iosDeepLink {
         handleDeepLink(deepLink)
     }
 }`}</CodeBlock>
             <Callout type="info">
-              The caller reads the clipboard explicitly because iOS 16+ shows a paste
-              permission dialog. The SDK does NOT read the clipboard itself — your app
-              controls when that dialog appears.
+              <code>checkDeferredDeepLinkFromPasteboard()</code> uses{" "}
+              <code>UIPasteboard.detectPatterns(for:&nbsp;[.probableWebURL])</code> to check
+              for a URL <em>without</em> reading the contents — so it only reads the
+              pasteboard (and only triggers the iOS 16+ paste banner) when a URL is actually
+              present. On launches with nothing to defer, it&apos;s a silent no-op.
             </Callout>
+            <p className="mt-4">
+              If you need to supply the clipboard text yourself (custom gating, testing),
+              the lower-level call is still available:
+            </p>
+            <CodeBlock lang="swift">{`if let result = try await rift.checkDeferredDeepLink(
+    clipboardText: UIPasteboard.general.string
+) {
+    if let deepLink = result.iosDeepLink {
+        handleDeepLink(deepLink)
+    }
+}`}</CodeBlock>
           </Step>
 
           <Step n={3} title="Android — SDK (recommended)">

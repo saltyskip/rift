@@ -1,9 +1,13 @@
 use super::*;
 
+fn hosts() -> Vec<String> {
+    vec!["go.example.com".into(), "api.riftl.ink".into()]
+}
+
 #[test]
 fn clipboard_url_custom_domain() {
     assert_eq!(
-        parse_clipboard_link("https://go.example.com/my-link"),
+        parse_clipboard_link("https://go.example.com/my-link", &hosts()),
         Some("my-link".into())
     );
 }
@@ -11,7 +15,7 @@ fn clipboard_url_custom_domain() {
 #[test]
 fn clipboard_url_primary_domain() {
     assert_eq!(
-        parse_clipboard_link("https://api.riftl.ink/r/ABC123"),
+        parse_clipboard_link("https://api.riftl.ink/r/ABC123", &hosts()),
         Some("ABC123".into())
     );
 }
@@ -19,26 +23,56 @@ fn clipboard_url_primary_domain() {
 #[test]
 fn clipboard_url_with_query() {
     assert_eq!(
-        parse_clipboard_link("https://go.example.com/summer-sale?ref=twitter"),
+        parse_clipboard_link("https://go.example.com/summer-sale?ref=twitter", &hosts()),
         Some("summer-sale".into())
     );
 }
 
 #[test]
-fn clipboard_legacy_format() {
-    assert_eq!(parse_clipboard_link("rift:ABC123"), Some("ABC123".into()));
+fn clipboard_rejects_untrusted_host() {
+    // An unrelated URL left on the clipboard must not be mis-attributed.
     assert_eq!(
-        parse_clipboard_link("rift:my-vanity-slug"),
-        Some("my-vanity-slug".into())
+        parse_clipboard_link("https://othersite.com/promo", &hosts()),
+        None
+    );
+    assert_eq!(
+        parse_clipboard_link("https://nytimes.com/login", &hosts()),
+        None
+    );
+}
+
+#[test]
+fn clipboard_host_case_insensitive_and_ignores_port() {
+    assert_eq!(
+        parse_clipboard_link("https://GO.EXAMPLE.COM/My-Link", &hosts()),
+        Some("My-Link".into())
+    );
+    assert_eq!(
+        parse_clipboard_link("http://go.example.com:8080/abc", &hosts()),
+        Some("abc".into())
+    );
+}
+
+#[test]
+fn clipboard_empty_allowed_hosts_rejects_all() {
+    assert_eq!(
+        parse_clipboard_link("https://go.example.com/my-link", &[]),
+        None
     );
 }
 
 #[test]
 fn clipboard_invalid() {
-    assert_eq!(parse_clipboard_link("rift:"), None);
-    assert_eq!(parse_clipboard_link(""), None);
-    assert_eq!(parse_clipboard_link("just-some-text"), None);
-    assert_eq!(parse_clipboard_link("https://"), None);
+    assert_eq!(parse_clipboard_link("", &hosts()), None);
+    assert_eq!(parse_clipboard_link("just-some-text", &hosts()), None);
+    assert_eq!(parse_clipboard_link("https://", &hosts()), None);
+    // Bare domain with no path segment is not a link.
+    assert_eq!(
+        parse_clipboard_link("https://go.example.com", &hosts()),
+        None
+    );
+    // The legacy `rift:` scheme is no longer recognized.
+    assert_eq!(parse_clipboard_link("rift:ABC123", &hosts()), None);
 }
 
 #[test]
