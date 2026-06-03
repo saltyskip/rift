@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - 'client/mobile/**'
+      - '.github/workflows/mobile-sdk-ci.yml'
   push:
     branches: [main]
     paths:
       - 'client/mobile/**'
+      - '.github/workflows/mobile-sdk-ci.yml'
 
 env:
   CARGO_TERM_COLOR: always
@@ -38,3 +40,59 @@ jobs:
 
       - name: Test
         run: cargo test
+
+  ios-build:
+    # Compiles the Swift package FOR iOS. `cargo test` (the job above) never
+    # touches the hand-written Swift wrappers, and a plain `swift build` on
+    # macOS skips them too — they live under `#if canImport(UIKit)`, which is
+    # only true when building for an iOS destination. So a Swift API misuse in
+    # a wrapper (e.g. a wrong UIKit type) was previously invisible until a
+    # consumer built in Xcode. This job builds the XCFramework (regenerating
+    # the UniFFI bindings) and compiles the whole package for iOS, catching
+    # those errors on the PR.
+    name: iOS Swift Compile
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Apple build targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/mobile
+
+      - name: Build XCFramework (also regenerates UniFFI bindings)
+        working-directory: client/mobile
+        run: ./build_xcframework.sh
+
+      - name: Point Package.swift at the freshly built XCFramework
+        run: |
+          python3 - <<'PY'
+          import pathlib, re
+          p = pathlib.Path("Package.swift")
+          s = p.read_text()
+          s = re.sub(
+              r'\.binaryTarget\(\s*name:\s*"rift_ffiFFI".*?\)',
+              '.binaryTarget(name: "rift_ffiFFI", '
+              'path: "client/mobile/dist/ios/rift_ffiFFI.xcframework")',
+              s,
+              flags=re.S,
+          )
+          p.write_text(s)
+          print(s)
+          PY
+
+      - name: Compile RiftSDK for iOS
+        # No pipe to `tail` — xcodebuild prints diagnostics inline, and
+        # truncating the tail hides the actual `error:` lines on failure.
+        run: |
+          xcodebuild build \
+            -scheme RiftSDK \
+            -destination 'generic/platform=iOS' \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO

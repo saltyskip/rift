@@ -45,17 +45,21 @@ public extension RiftSdk {
     ) async throws -> DeferredDeepLinkResult? {
         let pasteboard = UIPasteboard.general
 
-        // Gate the read. `detectPatterns(for:)` neither exposes the contents
-        // nor triggers the paste disclosure; it just reports which patterns are
-        // present. If detection fails, skip rather than read blindly.
-        let detected: Set<UIPasteboard.DetectedPatterns>
+        // Gate the read. `detectPatterns(for:)` reports *which* patterns are
+        // present without exposing the contents, so iOS does NOT surface the
+        // paste disclosure (unlike `detectValues`, which returns the values and
+        // does). Only the completion-handler form exists, so bridge it to
+        // async. If detection fails, skip rather than read blindly.
+        let detected: Set<PartialKeyPath<UIPasteboard.DetectedValues>>
         do {
-            detected = try await pasteboard.detectPatterns(for: [.probableWebURL])
+            detected = try await withCheckedThrowingContinuation { continuation in
+                pasteboard.detectPatterns(for: [\.probableWebURL]) { continuation.resume(with: $0) }
+            }
         } catch {
             return nil
         }
 
-        guard detected.contains(.probableWebURL) else {
+        guard detected.contains(\UIPasteboard.DetectedValues.probableWebURL) else {
             return nil
         }
 

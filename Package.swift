@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "RiftSDK",
     platforms: [
-        .iOS(.v14), .macOS(.v11)
+        .iOS(.v15), .macOS(.v11)
     ],
     products: [
         .library(name: "RiftSDK", targets: ["RiftSDK"]),
