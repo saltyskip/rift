@@ -115,7 +115,7 @@ fun checkDeferredDeepLink() {
                 val linkId = parseReferrerLink(referrer)
                 if (linkId != null) {
                     lifecycleScope.launch {
-                        rift.reportAttributionForLink(linkId = linkId)
+                        rift.attributeLink(linkId = linkId)
                         val link = rift.getLink(linkId = linkId)
                         link.androidDeepLink?.let { handleDeepLink(it) }
                     }
@@ -132,9 +132,41 @@ fun checkDeferredDeepLink() {
         <div className="gradient-line" />
 
         <section className="space-y-6">
+          <h2 className="text-2xl font-bold text-[#fafafa]">Handle an incoming link</h2>
+
+          <Step n={6} title="Resolve a link that opened the app">
+            <p>
+              When the app is already installed, an App Link (or your custom scheme) delivers
+              the link URL to your activity directly — no install referrer involved. Record the
+              attribution and route to the destination:
+            </p>
+            <CodeBlock lang="kotlin">{`// In the activity that handles your link intent-filter:
+override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    val data = intent.data ?: return
+    // Your link id is the last path segment, e.g.
+    // https://go.yourcompany.com/summer-sale
+    val linkId = data.lastPathSegment ?: return
+    lifecycleScope.launch {
+        runCatching { rift.attributeLink(linkId = linkId) }   // record attribution
+        val link = runCatching { rift.getLink(linkId = linkId) }.getOrNull()
+        link?.androidDeepLink?.let { handleDeepLink(it) }      // resolve destination
+    }
+}`}</CodeBlock>
+            <Callout type="info">
+              The install referrer (above) covers the <em>not-installed</em> case. This covers
+              the <em>installed</em> case, where Android delivers the link URL to your activity
+              on tap.
+            </Callout>
+          </Step>
+        </section>
+
+        <div className="gradient-line" />
+
+        <section className="space-y-6">
           <h2 className="text-2xl font-bold text-[#fafafa]">Click Tracking</h2>
 
-          <Step n={6} title="Record a click">
+          <Step n={7} title="Record a click">
             <p>If your app opens Rift links internally, record the click:</p>
             <CodeBlock lang="kotlin">{`val result = rift.click(linkId = "summer-sale")
 Log.d("Rift", "Platform: \${result.platform}")
@@ -220,9 +252,9 @@ Log.d("Rift", "Deep link: \${result.androidDeepLink}")`}</CodeBlock>
                     <td className="px-4 py-2.5">Persistent install UUID. Generates on first call.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
-                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">reportAttributionForLink(linkId)</td>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">attributeLink(linkId)</td>
                     <td className="px-4 py-2.5 font-mono">Boolean (suspend @Throws)</td>
-                    <td className="px-4 py-2.5">Simplified attribution — uses internal install_id + app version.</td>
+                    <td className="px-4 py-2.5">Report a deferred attribution using the SDK&apos;s internal install_id + app version. Persists and retries on next launch if the network call fails.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">click(linkId)</td>
