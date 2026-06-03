@@ -88,10 +88,11 @@ jobs:
           PY
 
       - name: Compile RiftSDK for iOS
+        # No pipe to `tail` — xcodebuild prints diagnostics inline, and
+        # truncating the tail hides the actual `error:` lines on failure.
         run: |
           xcodebuild build \
             -scheme RiftSDK \
             -destination 'generic/platform=iOS' \
             -skipMacroValidation \
-            CODE_SIGNING_ALLOWED=NO | tail -40
-          exit "${PIPESTATUS[0]}"
+            CODE_SIGNING_ALLOWED=NO
