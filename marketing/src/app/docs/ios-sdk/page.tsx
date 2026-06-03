@@ -28,13 +28,21 @@ export default function IosSdkPage() {
 
           <Step n={1} title="Add the Swift Package">
             <p>
-              Download the latest <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-1.5 py-0.5 rounded text-[13px]">rift-ios-sdk-*.tar.gz</code> from{" "}
-              <a href="https://github.com/saltyskip/rift/releases" target="_blank" rel="noopener noreferrer" className="text-[#2dd4bf] hover:underline">GitHub Releases</a>.
-              Extract it and add as a local Swift package in Xcode:
+              In Xcode, <strong className="text-[#fafafa]">File &rarr; Add Package Dependencies</strong> and enter the repository URL:
             </p>
+            <CodeBlock lang="text">{`https://github.com/saltyskip/rift`}</CodeBlock>
             <p>
-              <strong className="text-[#fafafa]">File &rarr; Add Package Dependencies &rarr; Add Local</strong> and select the extracted <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">ios/</code> directory.
+              Choose <strong className="text-[#fafafa]">Up to Next Major Version</strong> from{" "}
+              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">0.2.3</code>{" "}
+              and add the <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">RiftSDK</code> library to your app target.
+              Requires <strong className="text-[#fafafa]">iOS 15+</strong>.
             </p>
+            <Callout type="info">
+              Prefer a vendored copy? Download <code>rift-ios-sdk-*.tar.gz</code> from{" "}
+              <a href="https://github.com/saltyskip/rift/releases" target="_blank" rel="noopener noreferrer" className="text-[#2dd4bf] hover:underline">GitHub Releases</a>,
+              extract it, and use <strong className="text-[#fafafa]">Add Local</strong> on the{" "}
+              <code>ios/</code> directory instead.
+            </Callout>
           </Step>
 
           <Step n={2} title="Initialize (one line)">
@@ -115,9 +123,43 @@ if let result = try await rift.checkDeferredDeepLinkFromPasteboard() {
         <div className="gradient-line" />
 
         <section className="space-y-6">
+          <h2 className="text-2xl font-bold text-[#fafafa]">Handle an incoming link</h2>
+
+          <Step n={6} title="Resolve a link that opened the app">
+            <p>
+              When the app is already installed, the OS hands you the link URL directly via a
+              Universal Link (or your custom scheme) — no clipboard involved. Record the
+              attribution and route to the destination:
+            </p>
+            <CodeBlock lang="swift">{`import RiftSDK
+
+// SwiftUI — on your App or root view:
+.onOpenURL { url in
+    // Your link id is the last path component, e.g.
+    // https://go.yourcompany.com/summer-sale
+    guard let linkId = url.pathComponents.last, !linkId.isEmpty else { return }
+    Task {
+        try? await rift.attributeLink(linkId: linkId)          // record attribution
+        if let link = try? await rift.getLink(linkId: linkId), // resolve destination
+           let deepLink = link.iosDeepLink {
+            handleDeepLink(deepLink)
+        }
+    }
+}`}</CodeBlock>
+            <Callout type="info">
+              Deferred deep linking (above) covers the <em>not-installed</em> case via the
+              pasteboard. This covers the <em>installed</em> case, where iOS delivers the link
+              URL straight to your app on tap.
+            </Callout>
+          </Step>
+        </section>
+
+        <div className="gradient-line" />
+
+        <section className="space-y-6">
           <h2 className="text-2xl font-bold text-[#fafafa]">Click Tracking</h2>
 
-          <Step n={6} title="Record a click">
+          <Step n={7} title="Record a click">
             <p>If your app opens Rift links internally (e.g., share sheets), record the click:</p>
             <CodeBlock lang="swift">{`let result = try await rift.click(linkId: "summer-sale")
 print("Platform: \\(result.platform)")
@@ -188,9 +230,14 @@ print("Deep link: \\(result.iosDeepLink ?? "none")")`}</CodeBlock>
                     <td className="px-4 py-2.5">Fire a conversion event. POSTs to the Rift API via publishable key.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">checkDeferredDeepLinkFromPasteboard(clearOnMatch:)</td>
+                    <td className="px-4 py-2.5 font-mono">DeferredDeepLinkResult? (async throws)</td>
+                    <td className="px-4 py-2.5">Recommended. Detects a URL on the pasteboard without reading it (no paste banner), then resolves + attributes. Clears the pasteboard on a match.</td>
+                  </tr>
+                  <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">checkDeferredDeepLink(clipboardText:)</td>
                     <td className="px-4 py-2.5 font-mono">DeferredDeepLinkResult? (async throws)</td>
-                    <td className="px-4 py-2.5">One-call deferred deep link: parse, attribute, fetch link data.</td>
+                    <td className="px-4 py-2.5">Lower-level: you supply the clipboard text. Parses, attributes, and fetches link data.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">clearUserId()</td>
@@ -203,9 +250,9 @@ print("Deep link: \\(result.iosDeepLink ?? "none")")`}</CodeBlock>
                     <td className="px-4 py-2.5">Persistent install UUID. Generates on first call.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
-                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">reportAttributionForLink(linkId:)</td>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">attributeLink(linkId:)</td>
                     <td className="px-4 py-2.5 font-mono">Bool (async throws)</td>
-                    <td className="px-4 py-2.5">Simplified attribution — uses internal install_id + app version.</td>
+                    <td className="px-4 py-2.5">Report a deferred attribution using the SDK&apos;s internal install_id + app version. Persists and retries on next launch if the network call fails.</td>
                   </tr>
                   <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">click(linkId:)</td>
@@ -234,8 +281,8 @@ print("Deep link: \\(result.iosDeepLink ?? "none")")`}</CodeBlock>
                 </thead>
                 <tbody className="text-[#a1a1aa]">
                   <tr>
-                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">parseClipboardLink(text:)</td>
-                    <td className="px-4 py-2.5">Low-level: extracts link ID from a URL. Used internally by <code>checkDeferredDeepLink</code>.</td>
+                    <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">parseClipboardLink(text:, allowedHosts:)</td>
+                    <td className="px-4 py-2.5">Low-level: extracts a link ID from a URL whose host is in <code>allowedHosts</code>. Most apps use <code>checkDeferredDeepLinkFromPasteboard()</code> instead.</td>
                   </tr>
                 </tbody>
               </table>
