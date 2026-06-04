@@ -23,7 +23,8 @@ fn save_creates_parent_directories() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("nested").join("deep").join("config.json");
 
-    let config = StoredConfig::from_secret_key("rl_live_abc".into(), "https://localhost:3000".into());
+    let config =
+        StoredConfig::from_secret_key("rl_live_abc".into(), "https://localhost:3000".into());
 
     config.save_to(&path).unwrap();
     assert!(path.exists());
