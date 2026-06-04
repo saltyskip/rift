@@ -87,10 +87,7 @@ pub async fn run(
         .with_confirmation("Confirm API key", "Keys did not match")
         .interact()?;
 
-    let stored = StoredConfig {
-        secret_key: secret_key.clone(),
-        base_url: base_url.clone(),
-    };
+    let stored = StoredConfig::from_secret_key(secret_key.clone(), base_url.clone());
     stored.save().map_err(CliError::General)?;
     let config_path = StoredConfig::path().map_err(CliError::General)?;
 

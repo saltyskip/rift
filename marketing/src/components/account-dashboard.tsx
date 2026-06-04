@@ -250,7 +250,7 @@ export function AccountDashboard() {
             Quick start
           </p>
           <pre className="text-[12px] font-mono text-[#a1a1aa] overflow-x-auto">
-            <code>{`# Install the CLI\ncurl -fsSL https://raw.githubusercontent.com/saltyskip/rift/main/client/cli/install.sh | sh\n\n# Paste the key above\nrift login\n\n# Create your first link\nrift links create --web-url https://yourapp.com`}</code>
+            <code>{`# Install the CLI\ncurl -fsSL https://raw.githubusercontent.com/saltyskip/rift/main/client/cli/install.sh | sh\n\n# Sign in (opens your browser)\nrift login\n\n# Create your first link\nrift links create --web-url https://yourapp.com`}</code>
           </pre>
         </section>
       </div>

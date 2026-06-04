@@ -9,7 +9,7 @@ use axum::routing::get;
 use axum::Router;
 use std::sync::Arc;
 
-use super::auth::middleware::{require_auth, ANONYMOUS, SECRET, X402};
+use super::auth::middleware::{require_auth, ANONYMOUS, SECRET, SESSION, X402};
 use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
@@ -17,6 +17,6 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/v1/analytics/stats", get(routes::get_stats))
         .layer(middleware::from_fn_with_state(
             state,
-            require_auth(SECRET | X402 | ANONYMOUS),
+            require_auth(SESSION | SECRET | X402 | ANONYMOUS),
         ))
 }

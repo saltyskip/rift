@@ -51,6 +51,17 @@ impl RiftClient {
         )
     }
 
+    pub fn with_session_token(session_token: String, base_url: Option<String>) -> Self {
+        Self::new(
+            ClientConfig {
+                base_url: base_url
+                    .unwrap_or_default()
+                    .if_empty("https://api.riftl.ink"),
+            },
+            Some(ClientCredentials::SessionToken(session_token)),
+        )
+    }
+
     pub fn anonymous(base_url: Option<String>) -> Self {
         Self::new(
             ClientConfig {
@@ -114,6 +125,13 @@ impl RiftClient {
         self.send_empty(request).await
     }
 
+    /// POST with no request body and a no-content (204) response — used by
+    /// `/v1/auth/signout`.
+    pub(crate) async fn post_empty(&self, path: &str) -> Result<(), RiftClientError> {
+        let request = self.apply_auth(self.http.post(self.url(path)), false);
+        self.send_empty(request).await
+    }
+
     pub(crate) async fn post<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -157,6 +175,9 @@ impl RiftClient {
             }
             Some(ClientCredentials::PublishableKey(key)) => {
                 builder.header("Authorization", format!("Bearer {key}"))
+            }
+            Some(ClientCredentials::SessionToken(token)) => {
+                builder.header("Authorization", format!("Bearer {token}"))
             }
             None => builder,
         }

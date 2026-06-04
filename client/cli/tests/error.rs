@@ -87,7 +87,8 @@ fn not_logged_in_message_suggests_init_and_login() {
 fn auth_failed_message_suggests_login() {
     let msg = CliError::AuthFailed.to_string();
     assert!(msg.contains("rift login"));
-    assert!(msg.contains("rl_live_"));
+    // Credential-agnostic now that sessions and keys both 401 here.
+    assert!(msg.contains("session") || msg.contains("API key"));
 }
 
 #[test]

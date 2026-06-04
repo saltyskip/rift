@@ -35,11 +35,15 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Connect this machine with an existing API key
+    /// Sign in with your browser (or `--api-key` to paste a key)
     #[command(display_order = 11)]
     Login {
         #[arg(long)]
         base_url: Option<String>,
+        /// Paste an existing `rl_live_...` key instead of the browser flow
+        /// (for headless boxes / CI, or long-lived automation credentials)
+        #[arg(long)]
+        api_key: bool,
         #[arg(long)]
         json: bool,
     },
@@ -309,8 +313,12 @@ pub async fn run() -> Result<(), CliError> {
             base_url,
             json,
         } => commands::init::run(email, base_url, json).await,
-        Command::Login { base_url, json } => commands::login::run(base_url, json).await,
-        Command::Logout { json } => commands::logout::run(json),
+        Command::Login {
+            base_url,
+            api_key,
+            json,
+        } => commands::login::run(base_url, api_key, json).await,
+        Command::Logout { json } => commands::logout::run(json).await,
         Command::Whoami { json } => commands::whoami::run(json).await,
         Command::Doctor { json } => commands::doctor::run(json).await,
         Command::Links(cmd) => match cmd {

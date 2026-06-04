@@ -53,8 +53,10 @@ export default async function SignInPage({
             <code className="text-[#a1a1aa]">
               cargo install --git https://github.com/saltyskip/rift rift-cli
             </code>
-            . After installing, run <code className="text-[#a1a1aa]">rift login</code>{" "}
-            with the API key you mint from <code className="text-[#a1a1aa]">/account</code>.
+. After installing, run <code className="text-[#a1a1aa]">rift login</code>{" "}
+            to sign in with your browser (or{" "}
+            <code className="text-[#a1a1aa]">rift login --api-key</code> to paste a
+            key you mint from <code className="text-[#a1a1aa]">/account</code>).
           </p>
         </section>
       </div>

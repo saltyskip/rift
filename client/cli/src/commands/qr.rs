@@ -1,6 +1,5 @@
 use std::fs;
 
-use crate::config::StoredConfig;
 use crate::error::CliError;
 use crate::ui;
 
@@ -26,9 +25,7 @@ pub async fn run(args: Args) -> Result<(), CliError> {
             "target must be a link ID or URL".to_string(),
         ));
     }
-    let config = StoredConfig::load().map_err(|_| CliError::AuthFailed)?;
-    let client =
-        rift_client_core::RiftClient::with_secret_key(config.secret_key, Some(config.base_url));
+    let client = crate::context::authenticated_client()?;
     let options = rift_client_core::links::QrCodeOptions {
         logo: args.logo,
         size: args.size,

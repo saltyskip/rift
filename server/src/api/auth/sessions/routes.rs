@@ -12,8 +12,8 @@ use serde_json::json;
 use std::sync::Arc;
 
 use super::models::{
-    CallbackForm, CallbackQuery, IssueKeyRequest, MeResponse, SignInRequest, SignInResponse,
-    TenantSummary, UserSummary,
+    CallbackForm, CallbackQuery, CliAuthorizeRequest, CliAuthorizeResponse, CliStartQuery,
+    IssueKeyRequest, MeResponse, SignInRequest, SignInResponse, TenantSummary, UserSummary,
 };
 use crate::api::auth::email_interstitial::{self, InterstitialContent};
 use crate::api::auth::models::{SessionId, UserId};
@@ -400,6 +400,115 @@ pub async fn issue_secret_key(
     }
 }
 
+// ── GET /v1/auth/cli/start ──
+//
+// The CLI opens this with its loopback `redirect_uri` + `state`. The CLI only
+// knows the API base URL; the server (which knows `marketing_url`) bounces the
+// browser to the dashboard's `/cli/authorize` page, which owns the sign-in UI
+// (magic-link + OAuth) and the approval click.
+
+#[utoipa::path(
+    get,
+    path = "/v1/auth/cli/start",
+    tag = "Sessions",
+    params(
+        ("redirect_uri" = String, Query, description = "CLI loopback listener (http://127.0.0.1:<port>/…)"),
+        ("state" = Option<String>, Query, description = "Opaque CLI nonce echoed back into the loopback redirect"),
+    ),
+    responses(
+        (status = 303, description = "Redirects the browser to the dashboard `/cli/authorize` page"),
+        (status = 400, description = "redirect_uri is not a loopback address", body = crate::error::ErrorResponse),
+    )
+)]
+#[tracing::instrument(skip(state))]
+pub async fn cli_start(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<CliStartQuery>,
+) -> Response {
+    if !is_loopback_redirect(&q.redirect_uri) {
+        return invalid_redirect_response();
+    }
+
+    let mut params: Vec<(&str, &str)> = vec![("redirect_uri", q.redirect_uri.as_str())];
+    if let Some(s) = q.state.as_deref() {
+        params.push(("state", s));
+    }
+    let dashboard = format!("{}/cli/authorize", state.config.marketing_url);
+    let Ok(url) = url::Url::parse_with_params(&dashboard, &params) else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Could not build authorize URL", "code": "internal" })),
+        )
+            .into_response();
+    };
+    redirect_to(url.as_str(), None)
+}
+
+// ── POST /v1/auth/cli/authorize ──
+//
+// Posted by the dashboard `/cli/authorize` page (with the session cookie) once
+// the user approves. Mints a fresh, `rift-cli`-tagged session and returns the
+// raw token; the dashboard JS then navigates the browser to the loopback
+// `redirect_uri` carrying it. CORS restricts who can read this response, so a
+// hostile origin can't mint-and-exfiltrate with the user's cookie.
+
+#[utoipa::path(
+    post,
+    path = "/v1/auth/cli/authorize",
+    tag = "Sessions",
+    request_body = CliAuthorizeRequest,
+    responses(
+        (status = 200, description = "Fresh CLI session minted", body = CliAuthorizeResponse),
+        (status = 400, description = "redirect_uri is not a loopback address", body = crate::error::ErrorResponse),
+        (status = 401, description = "No active session", body = crate::error::ErrorResponse),
+        (status = 503, description = "Sessions not configured", body = crate::error::ErrorResponse),
+    ),
+    security(("session_cookie" = []))
+)]
+#[tracing::instrument(skip(state, ctx, headers, body))]
+pub async fn cli_authorize(
+    State(state): State<Arc<AppState>>,
+    axum::Extension(ctx): axum::Extension<AuthContext>,
+    axum::Extension(user): axum::Extension<UserId>,
+    headers: HeaderMap,
+    Json(body): Json<CliAuthorizeRequest>,
+) -> Response {
+    if !is_loopback_redirect(&body.redirect_uri) {
+        return invalid_redirect_response();
+    }
+
+    let Some(svc) = state.sessions_service.as_ref() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "Sessions not configured", "code": "no_database" })),
+        )
+            .into_response();
+    };
+
+    let ip = client_ip_from_headers(&headers);
+    match svc
+        .issue_session(user, ctx.tenant_id, Some(ip.as_str()), Some("rift-cli"))
+        .await
+    {
+        Ok(token) => {
+            tracing::info!(
+                user_id = %user,
+                tenant_id = %ctx.tenant_id,
+                "cli_session_issued"
+            );
+            (StatusCode::OK, Json(CliAuthorizeResponse { token })).into_response()
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "cli_session_issue_failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "Internal error", "code": "db_error" })),
+            )
+                .into_response()
+        }
+    }
+}
+
 // ── Helpers ──
 
 pub(crate) fn redirect_to(url: &str, cookie: Option<String>) -> Response {
@@ -487,6 +596,36 @@ pub(crate) fn sanitize_next(base_url: &str, next: &str) -> Option<String> {
         out.push_str(q);
     }
     Some(out)
+}
+
+/// Validate that `redirect_uri` is a loopback HTTP listener — the only
+/// destination we'll ever hand a freshly minted CLI session token to. Guards
+/// both the `GET /cli/start` bounce and the `POST /cli/authorize` mint, so a
+/// caller can't redirect the token to an attacker-controlled host.
+fn is_loopback_redirect(redirect_uri: &str) -> bool {
+    let Ok(url) = url::Url::parse(redirect_uri) else {
+        return false;
+    };
+    if url.scheme() != "http" {
+        return false;
+    }
+    // `Url::host_str` returns the IPv6 host bracketed (`[::1]`); accept both
+    // spellings plus the IPv4 loopback and `localhost`.
+    matches!(
+        url.host_str(),
+        Some("127.0.0.1") | Some("localhost") | Some("[::1]") | Some("::1")
+    )
+}
+
+fn invalid_redirect_response() -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({
+            "error": "redirect_uri must be a loopback address (http://127.0.0.1:<port>/…)",
+            "code": "invalid_redirect"
+        })),
+    )
+        .into_response()
 }
 
 #[cfg(test)]

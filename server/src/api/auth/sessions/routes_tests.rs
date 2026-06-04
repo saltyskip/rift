@@ -2,7 +2,7 @@
 //! input listed here either redirects somewhere the browser ultimately
 //! resolves off-origin (rejected) or stays on the marketing site (accepted).
 
-use super::{build_cookie, sanitize_next};
+use super::{build_cookie, is_loopback_redirect, sanitize_next};
 use crate::core::config::CookieSameSite;
 
 const BASE: &str = "https://riftl.ink";
@@ -157,4 +157,39 @@ fn clearing_cookie_matches_issuing_attrs() {
             .replace("Max-Age=0", "Max-Age=N")
     };
     assert_eq!(strip(&issued), strip(&cleared));
+}
+
+// ── is_loopback_redirect — the CLI-login token-exfiltration guard ──
+
+#[test]
+fn loopback_accepts_ipv4_and_localhost_and_ipv6() {
+    assert!(is_loopback_redirect("http://127.0.0.1:53127/"));
+    assert!(is_loopback_redirect("http://localhost:8080/cb"));
+    assert!(is_loopback_redirect("http://[::1]:9000/"));
+    // Any ephemeral port + path is fine.
+    assert!(is_loopback_redirect("http://127.0.0.1:1/x?y=z"));
+}
+
+#[test]
+fn loopback_rejects_non_loopback_hosts() {
+    assert!(!is_loopback_redirect("http://evil.com/"));
+    assert!(!is_loopback_redirect("http://169.254.169.254/")); // link-local metadata
+    assert!(!is_loopback_redirect("http://10.0.0.5:53127/"));
+    assert!(!is_loopback_redirect("http://127.0.0.1.evil.com/"));
+}
+
+#[test]
+fn loopback_rejects_non_http_schemes() {
+    // HTTPS to loopback isn't what the CLI listener serves, and other schemes
+    // (file/javascript) must never be a token destination.
+    assert!(!is_loopback_redirect("https://127.0.0.1:53127/"));
+    assert!(!is_loopback_redirect("file:///etc/passwd"));
+    assert!(!is_loopback_redirect("javascript:alert(1)"));
+}
+
+#[test]
+fn loopback_rejects_garbage() {
+    assert!(!is_loopback_redirect(""));
+    assert!(!is_loopback_redirect("127.0.0.1:53127"));
+    assert!(!is_loopback_redirect("not a url"));
 }

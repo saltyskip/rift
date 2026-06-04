@@ -1,16 +1,12 @@
-use crate::config::StoredConfig;
 use crate::error::CliError;
 use crate::ui;
 
 pub async fn run(target: String, json: bool) -> Result<(), CliError> {
     let link_id = target.rsplit('/').next().unwrap_or(&target).to_string();
-    let config = StoredConfig::load().ok();
-    let client = match config {
-        Some(config) => {
-            rift_client_core::RiftClient::with_secret_key(config.secret_key, Some(config.base_url))
-        }
-        None => rift_client_core::RiftClient::anonymous(None),
-    };
+    // Authenticated when logged in (session or key); falls back to anonymous so
+    // `rift links test` works against public link resolution without login.
+    let client = crate::context::authenticated_client()
+        .unwrap_or_else(|_| rift_client_core::RiftClient::anonymous(None));
 
     let link = client.resolve_link(&link_id).await?;
 
