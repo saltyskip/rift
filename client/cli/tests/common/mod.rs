@@ -18,10 +18,8 @@ impl TestHarness {
         let server = MockServer::start().await;
         let home = tempfile::tempdir().unwrap();
 
-        let config = StoredConfig {
-            secret_key: "rl_live_test_key_1234567890".into(),
-            base_url: server.uri(),
-        };
+        let config =
+            StoredConfig::from_secret_key("rl_live_test_key_1234567890".to_string(), server.uri());
 
         let config_path = config_path_for_home(home.path());
         config.save_to(&config_path).unwrap();

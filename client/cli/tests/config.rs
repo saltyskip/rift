@@ -8,10 +8,10 @@ fn save_and_load_round_trip() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("config.json");
 
-    let config = StoredConfig {
-        secret_key: "rl_live_test1234567890".into(),
-        base_url: "https://api.riftl.ink".into(),
-    };
+    let config = StoredConfig::from_secret_key(
+        "rl_live_test1234567890".into(),
+        "https://api.riftl.ink".into(),
+    );
 
     config.save_to(&path).unwrap();
     let loaded = StoredConfig::load_from(&path).unwrap();
@@ -23,10 +23,7 @@ fn save_creates_parent_directories() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("nested").join("deep").join("config.json");
 
-    let config = StoredConfig {
-        secret_key: "rl_live_abc".into(),
-        base_url: "https://localhost:3000".into(),
-    };
+    let config = StoredConfig::from_secret_key("rl_live_abc".into(), "https://localhost:3000".into());
 
     config.save_to(&path).unwrap();
     assert!(path.exists());
@@ -65,14 +62,48 @@ fn load_missing_field_returns_error() {
 }
 
 #[test]
+fn session_token_round_trip_omits_secret_key() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("config.json");
+
+    let config =
+        StoredConfig::from_session_token("sess_abc123".into(), "https://api.riftl.ink".into());
+    config.save_to(&path).unwrap();
+
+    let text = fs::read_to_string(&path).unwrap();
+    // `skip_serializing_if` keeps the unused field out of the file entirely.
+    assert!(text.contains("session_token"));
+    assert!(!text.contains("secret_key"));
+
+    let loaded = StoredConfig::load_from(&path).unwrap();
+    assert_eq!(config, loaded);
+    assert_eq!(loaded.session_token.as_deref(), Some("sess_abc123"));
+    assert!(loaded.secret_key.is_none());
+}
+
+#[test]
+fn legacy_secret_key_only_config_still_loads() {
+    // Configs written before session support had no `session_token` key.
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    fs::write(
+        &path,
+        r#"{"secret_key": "rl_live_legacy", "base_url": "https://api.riftl.ink"}"#,
+    )
+    .unwrap();
+
+    let loaded = StoredConfig::load_from(&path).unwrap();
+    assert_eq!(loaded.secret_key.as_deref(), Some("rl_live_legacy"));
+    assert!(loaded.session_token.is_none());
+}
+
+#[test]
 fn saved_file_is_pretty_json() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("config.json");
 
-    let config = StoredConfig {
-        secret_key: "rl_live_xyz".into(),
-        base_url: "https://api.riftl.ink".into(),
-    };
+    let config =
+        StoredConfig::from_secret_key("rl_live_xyz".into(), "https://api.riftl.ink".into());
 
     config.save_to(&path).unwrap();
     let text = fs::read_to_string(&path).unwrap();

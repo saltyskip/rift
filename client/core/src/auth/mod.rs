@@ -51,6 +51,27 @@ pub struct InviteUserRequest {
     pub email: String,
 }
 
+/// `GET /v1/auth/me` response — the resolved user + tenant for the active
+/// session. Used after a browser login to confirm and display who you are.
+#[derive(Debug, Deserialize)]
+pub struct MeResponse {
+    pub user: MeUser,
+    pub tenant: MeTenant,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MeUser {
+    pub id: String,
+    pub email: String,
+    pub verified: bool,
+    pub is_owner: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MeTenant {
+    pub id: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct InviteUserResponse {
     pub id: String,
@@ -100,5 +121,17 @@ impl RiftClient {
     pub async fn remove_user(&self, user_id: &str) -> Result<(), RiftClientError> {
         self.delete_empty(&format!("/v1/auth/users/{user_id}"))
             .await
+    }
+
+    /// Resolve the active session to its user + tenant. Confirms a session
+    /// token works (used after browser login and by `rift whoami`).
+    pub async fn me(&self) -> Result<MeResponse, RiftClientError> {
+        self.get("/v1/auth/me").await
+    }
+
+    /// Revoke the active session server-side (called on `rift logout` when
+    /// logged in via a session).
+    pub async fn signout(&self) -> Result<(), RiftClientError> {
+        self.post_empty("/v1/auth/signout").await
     }
 }

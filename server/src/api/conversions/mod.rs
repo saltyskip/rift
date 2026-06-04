@@ -6,11 +6,11 @@ use axum::routing::{delete, get, post};
 use axum::Router;
 use std::sync::Arc;
 
-use super::auth::middleware::{require_auth, ANONYMOUS, PUBLISHABLE, SECRET, X402};
+use super::auth::middleware::{require_auth, ANONYMOUS, PUBLISHABLE, SECRET, SESSION, X402};
 use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
-    // Authenticated CRUD endpoints (require rl_live_ API key).
+    // Authenticated CRUD endpoints (session cookie or rl_live_ API key).
     let authenticated = Router::new()
         .route("/v1/sources", post(routes::create_source))
         .route("/v1/sources", get(routes::list_sources))
@@ -18,7 +18,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/v1/sources/{id}", delete(routes::delete_source))
         .layer(middleware::from_fn_with_state(
             state.clone(),
-            require_auth(SECRET | X402 | ANONYMOUS),
+            require_auth(SESSION | SECRET | X402 | ANONYMOUS),
         ));
 
     // SDK-authenticated conversion tracking (pk_live_ bearer).

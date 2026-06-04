@@ -68,3 +68,36 @@ pub struct TenantSummary {
 /// keeping the body a struct (vs. `()`) makes that addition non-breaking.
 #[derive(Debug, Default, Deserialize, ToSchema)]
 pub struct IssueKeyRequest {}
+
+/// Query for `GET /v1/auth/cli/start`. The CLI (which only knows the API base
+/// URL) opens this; the server validates the loopback `redirect_uri` and
+/// bounces the browser to the dashboard's `/cli/authorize` page, which owns the
+/// sign-in UI (magic-link + OAuth) and the approval click.
+#[derive(Debug, Deserialize)]
+pub struct CliStartQuery {
+    /// The CLI's loopback listener, e.g. `http://127.0.0.1:53127/`. Must be a
+    /// loopback HTTP address — the only place we'll deliver a session token.
+    pub redirect_uri: String,
+    /// Opaque CLI-generated nonce, passed through to the dashboard and echoed
+    /// back into the loopback redirect so the CLI can bind the response to its
+    /// request. Not interpreted server-side.
+    #[serde(default)]
+    pub state: Option<String>,
+}
+
+/// Body for `POST /v1/auth/cli/authorize`. The dashboard `/cli/authorize` page
+/// posts this (with the session cookie) after the user approves. The server
+/// mints a fresh CLI session for the resolved identity.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CliAuthorizeRequest {
+    #[schema(example = "http://127.0.0.1:53127/")]
+    pub redirect_uri: String,
+}
+
+/// Response for `POST /v1/auth/cli/authorize` — the freshly minted raw session
+/// token. The dashboard JS navigates the browser to the loopback `redirect_uri`
+/// carrying this token, where the CLI's listener captures it.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CliAuthorizeResponse {
+    pub token: String,
+}

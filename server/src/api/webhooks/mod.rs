@@ -5,7 +5,7 @@ use axum::routing::{delete, get, post};
 use axum::Router;
 use std::sync::Arc;
 
-use super::auth::middleware::{require_auth, ANONYMOUS, SECRET, X402};
+use super::auth::middleware::{require_auth, ANONYMOUS, SECRET, SESSION, X402};
 use crate::app::AppState;
 
 pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
@@ -18,6 +18,6 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         )
         .layer(middleware::from_fn_with_state(
             state,
-            require_auth(SECRET | X402 | ANONYMOUS),
+            require_auth(SESSION | SECRET | X402 | ANONYMOUS),
         ))
 }

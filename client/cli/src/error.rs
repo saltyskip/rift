@@ -16,7 +16,7 @@ pub mod exit {
 pub enum CliError {
     /// User hasn't run `rift init` or `rift login` yet.
     NotLoggedIn,
-    /// API key is invalid or revoked (401).
+    /// Credentials are invalid, revoked, or (for sessions) expired (401).
     AuthFailed,
     /// API returned a non-auth error.
     Api { status: u16, message: String },
@@ -38,7 +38,7 @@ impl fmt::Display for CliError {
             Self::AuthFailed => {
                 write!(
                     f,
-                    "API key is invalid or revoked. Run `rift login` with a valid `rl_live_...` key."
+                    "Authentication failed — your session or API key is invalid, revoked, or expired. Run `rift login` to reconnect."
                 )
             }
             Self::Api { status, message } => write!(f, "API error ({status}): {message}"),
