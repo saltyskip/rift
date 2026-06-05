@@ -1,0 +1,18 @@
+[package]
+name = "riftl-mcp"
+version = "0.1.0"
+edition = "2021"
+description = "Drop-in observability + attribution for rmcp-based MCP servers. Wrap your ServerHandler once; every tool call is captured to Rift."
+license = "MIT"
+repository = "https://github.com/saltyskip/rift"
+
+[dependencies]
+rmcp = { version = "1.2", features = ["server"] }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt"] }
+tracing = "0.1"
+
+[dev-dependencies]
+serde_json = "1"
