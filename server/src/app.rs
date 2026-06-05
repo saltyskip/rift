@@ -5,6 +5,7 @@ use crate::core::config::Config;
 use crate::core::origin::OriginMatcher;
 use crate::core::webhook_dispatcher::WebhookDispatcher;
 use crate::services::affiliates::service::AffiliatesService;
+use crate::services::agents::service::AgentsService;
 use crate::services::analytics::service::AnalyticsService;
 use crate::services::apps::repo::AppsRepository;
 use crate::services::auth::oauth::OauthService;
@@ -61,6 +62,8 @@ pub struct AppState {
     /// the service even when the field is `Some`.
     pub oauth_service: Option<Arc<OauthService>>,
     pub conversions_service: Option<Arc<ConversionsService>>,
+    /// Agent Layer — records instrumented MCP tool calls (`POST /v1/agents/actions`).
+    pub agents_service: Option<Arc<AgentsService>>,
     pub billing_service: Option<Arc<BillingService>>,
     /// Held on AppState primarily so integration tests can inspect issued
     /// tokens. Domain services capture their own Arc at construction time.

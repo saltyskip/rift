@@ -210,6 +210,7 @@ pub async fn spawn_app() -> TestApp {
         oauth_service: None,
         conversions_repo: Some(conversions_repo),
         conversions_service,
+        agents_service: None,
         billing_service: Some(Arc::new(
             rift::services::billing::service::BillingService::new(
                 tenants_repo.clone() as Arc<dyn TenantsRepository>
