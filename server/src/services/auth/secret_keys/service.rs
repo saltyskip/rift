@@ -150,16 +150,16 @@ impl SecretKeysService {
             .await
             .map_err(SecretKeyError::Internal)?;
 
-        let html = format!(
-            r#"<div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
-                <h2 style="margin-bottom: 24px;">Key creation confirmation</h2>
-                <p>Use this code to confirm your new API key:</p>
-                <code style="display: block; padding: 16px; background: #f4f4f5; border-radius: 6px; font-size: 24px; letter-spacing: 4px; text-align: center; margin: 20px 0;">{code}</code>
-                <p style="color: #71717a; font-size: 13px; margin-top: 24px;">This code expires in 15 minutes. If you didn't request this, you can safely ignore this email.</p>
-                <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 32px 0;" />
-                <p style="color: #a1a1aa; font-size: 12px;">Rift — Deep links for humans and agents</p>
-            </div>"#
-        );
+        // The `<code>` block is unique to this email, so it stays inline; the
+        // surrounding chrome comes from the shared helpers.
+        let html = email::branded_html(&format!(
+            r#"{}<p>Use this code to confirm your new API key:</p>
+                <code style="display: block; padding: 16px; background: #f4f4f5; border-radius: 6px; font-size: 24px; letter-spacing: 4px; text-align: center; margin: 20px 0;">{code}</code>{}"#,
+            email::heading("Key creation confirmation"),
+            email::fine_print(
+                "This code expires in 15 minutes. If you didn't request this, you can safely ignore this email."
+            ),
+        ));
 
         email::send_email(
             resend_api_key,

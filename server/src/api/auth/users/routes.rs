@@ -50,13 +50,19 @@ pub async fn invite_user(
         .await
     {
         Ok(result) => {
-            tracing::info!(email = %result.email, tenant_id = %tenant_id, "User invited");
+            let status = if result.resent {
+                "verification_resent"
+            } else {
+                "verification_sent"
+            };
+            tracing::info!(email = %result.email, tenant_id = %tenant_id, resent = result.resent, "User invited");
             (
                 StatusCode::CREATED,
                 Json(json!(InviteUserResponse {
                     id: result.user_id,
                     email: result.email,
-                    status: "verification_sent".to_string(),
+                    status: status.to_string(),
+                    resent: result.resent,
                 })),
             )
                 .into_response()
@@ -95,6 +101,7 @@ pub async fn list_users(
                     id: u.id,
                     email: u.email.clone(),
                     verified: u.verified,
+                    status: u.status.as_str().to_string(),
                     is_owner: u.is_owner,
                     created_at: u.created_at.try_to_rfc3339_string().unwrap_or_default(),
                 })

@@ -78,4 +78,22 @@ impl UsersRepository for MockUsersRepo {
             Ok(None)
         }
     }
+
+    async fn set_invite_expiry(
+        &self,
+        tenant_id: &TenantId,
+        email: &str,
+        expires_at: mongodb::bson::DateTime,
+    ) -> Result<bool, String> {
+        let mut users = self.users.lock().unwrap();
+        if let Some(user) = users
+            .iter_mut()
+            .find(|u| u.tenant_id == *tenant_id && u.email == email)
+        {
+            user.invite_expires_at = Some(expires_at);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
 }
