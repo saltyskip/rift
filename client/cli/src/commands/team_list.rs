@@ -20,6 +20,7 @@ pub async fn run(json: bool) -> Result<(), CliError> {
                     "id": u.id,
                     "email": u.email,
                     "verified": u.verified,
+                    "status": u.status,
                     "is_owner": u.is_owner,
                     "created_at": u.created_at,
                 })).collect::<Vec<_>>(),
@@ -29,7 +30,17 @@ pub async fn run(json: bool) -> Result<(), CliError> {
         ui::section("Team Members");
         for user in &resp.users {
             let role = if user.is_owner { "owner" } else { "member" };
-            let status = if user.verified { "verified" } else { "pending" };
+            // Prefer the server's lifecycle status (active/pending/expired);
+            // fall back to verified for older servers that don't send it.
+            let status = if user.status.is_empty() {
+                if user.verified {
+                    "active"
+                } else {
+                    "pending"
+                }
+            } else {
+                user.status.as_str()
+            };
             ui::bullet(format!("{} ({}, {})", user.email, role, status));
             ui::kv("  id", &user.id);
         }

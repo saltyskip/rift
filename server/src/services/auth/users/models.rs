@@ -20,6 +20,46 @@ pub struct UserDoc {
     pub verified: bool,
     pub is_owner: bool,
     pub created_at: bson::DateTime,
+    /// When the outstanding invite token expires, denormalized from the
+    /// `tokens` collection so member status can be computed from the user row
+    /// alone (no per-user token lookup on list). `None` for users who were
+    /// never invited (verified owners) or invited before this field existed —
+    /// the latter render as `Expired`, which a resend fixes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invite_expires_at: Option<bson::DateTime>,
+}
+
+/// Lifecycle of a team member, derived (not stored) from `verified` +
+/// `invite_expires_at`. `verified` always wins — once accepted, expiry is moot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemberStatus {
+    Active,
+    Pending,
+    Expired,
+}
+
+impl MemberStatus {
+    pub fn derive(
+        verified: bool,
+        invite_expires_at: Option<bson::DateTime>,
+        now: bson::DateTime,
+    ) -> Self {
+        if verified {
+            return Self::Active;
+        }
+        match invite_expires_at {
+            Some(exp) if exp > now => Self::Pending,
+            _ => Self::Expired,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Pending => "pending",
+            Self::Expired => "expired",
+        }
+    }
 }
 
 // ── Errors ──
@@ -88,6 +128,10 @@ pub struct VerifyResult {
 pub struct InviteResult {
     pub user_id: UserId,
     pub email: String,
+    /// True when this invite re-sent a link to an existing pending/expired
+    /// member rather than creating a new one. Lets the transport tell the
+    /// caller "resent" vs "sent".
+    pub resent: bool,
 }
 
 pub struct UserDetail {
@@ -95,5 +139,6 @@ pub struct UserDetail {
     pub email: String,
     pub verified: bool,
     pub is_owner: bool,
+    pub status: MemberStatus,
     pub created_at: bson::DateTime,
 }

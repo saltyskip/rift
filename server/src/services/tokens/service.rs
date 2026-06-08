@@ -116,6 +116,14 @@ impl TokenService {
         }
     }
 
+    /// Revoke every unconsumed token for `(purpose, email)`. Used before
+    /// re-issuing a HashKeyed invite so any still-valid prior link dies — the
+    /// resend supersedes it. No-op (returns 0) when nothing is pending, e.g.
+    /// the common case where the old token already TTL-expired.
+    pub async fn revoke_pending(&self, purpose: TokenPurpose, email: &str) -> Result<u64, String> {
+        self.repo.delete_pending_tuple(purpose, email).await
+    }
+
     /// How many tokens of `purpose` were created for `email` in the last
     /// `window_secs`. Used for per-email rate limiting on public endpoints.
     pub async fn count_recent(

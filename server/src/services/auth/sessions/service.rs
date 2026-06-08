@@ -363,14 +363,10 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 fn signin_email_html(link_url: &str) -> String {
-    format!(
-        r#"<div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
-            <h2 style="margin-bottom: 24px;">Sign in to Rift</h2>
-            <p>Click the button below to sign in:</p>
-            <a href="{link_url}" style="display: inline-block; padding: 12px 24px; background: #0d9488; color: white; text-decoration: none; border-radius: 6px; margin: 20px 0;">Sign in to Rift</a>
-            <p style="color: #71717a; font-size: 13px; margin-top: 24px;">This link expires in 15 minutes and can only be used once.</p>
-            <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 32px 0;" />
-            <p style="color: #a1a1aa; font-size: 12px;">Rift — Deep links for humans and agents</p>
-        </div>"#
-    )
+    email::branded_html(&format!(
+        "{}<p>Click the button below to sign in:</p>{}{}",
+        email::heading("Sign in to Rift"),
+        email::cta_button("Sign in to Rift", link_url),
+        email::fine_print("This link expires in 15 minutes and can only be used once."),
+    ))
 }

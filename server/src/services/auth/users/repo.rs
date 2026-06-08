@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use mongodb::bson::doc;
+use mongodb::bson::{self, doc};
 use mongodb::options::IndexOptions;
 use mongodb::{Collection, Database};
 
@@ -25,6 +25,14 @@ pub trait UsersRepository: Send + Sync {
     /// doc on success, `None` if no such user exists. Idempotent — verifying
     /// an already-verified user is a no-op that returns the doc.
     async fn mark_verified(&self, email: &str) -> Result<Option<UserDoc>, String>;
+    /// Refresh the denormalized invite expiry on a pending member when a fresh
+    /// invite link is issued (resend path). Returns `true` if a row matched.
+    async fn set_invite_expiry(
+        &self,
+        tenant_id: &TenantId,
+        email: &str,
+        expires_at: bson::DateTime,
+    ) -> Result<bool, String>;
 }
 
 // ── Repository ──
@@ -124,5 +132,22 @@ impl UsersRepository for UsersRepo {
             )
             .await
             .map_err(|e| e.to_string())
+    }
+
+    async fn set_invite_expiry(
+        &self,
+        tenant_id: &TenantId,
+        email: &str,
+        expires_at: bson::DateTime,
+    ) -> Result<bool, String> {
+        let result = self
+            .users
+            .update_one(
+                doc! { "tenant_id": tenant_id, "email": email },
+                doc! { "$set": { "invite_expires_at": expires_at } },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result.matched_count > 0)
     }
 }

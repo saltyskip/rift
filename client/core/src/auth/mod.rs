@@ -37,6 +37,10 @@ pub struct UserDetail {
     pub id: String,
     pub email: String,
     pub verified: bool,
+    /// `active`, `pending`, or `expired`. Defaulted for older servers that
+    /// only returned `verified`.
+    #[serde(default)]
+    pub status: String,
     pub is_owner: bool,
     pub created_at: String,
 }
@@ -77,6 +81,9 @@ pub struct InviteUserResponse {
     pub id: String,
     pub email: String,
     pub status: String,
+    /// True when a fresh link was re-sent to an existing pending/expired member.
+    #[serde(default)]
+    pub resent: bool,
 }
 
 impl RiftClient {

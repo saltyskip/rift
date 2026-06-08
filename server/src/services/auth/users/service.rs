@@ -2,7 +2,7 @@ use mongodb::bson::doc;
 use rift_macros::requires;
 use std::sync::Arc;
 
-use super::models::{InviteResult, UserDetail, UserDoc, UserError, VerifyResult};
+use super::models::{InviteResult, MemberStatus, UserDetail, UserDoc, UserError, VerifyResult};
 use super::repo::UsersRepository;
 use crate::core::email;
 use crate::core::validation::validate_email;
@@ -74,6 +74,7 @@ impl UsersService {
             verified: true,
             is_owner: true,
             created_at: mongodb::bson::DateTime::now(),
+            invite_expires_at: None,
         };
 
         self.users_repo
@@ -122,7 +123,13 @@ impl UsersService {
         })
     }
 
-    /// Invite a user to a tenant. Sends verification email.
+    /// Invite a user to a tenant, or re-send the invite if they're already a
+    /// pending/expired member. Sends the verification email either way.
+    ///
+    /// A member whose 24h invite link has lapsed is stranded otherwise: the
+    /// link is dead but a fresh `invite` used to 409 with `user_exists`. We
+    /// treat any *unverified* row as a resend target (rotating the token), and
+    /// only reject when the email belongs to an *already-verified* member.
     #[requires(Permission::TenantAdmin)]
     pub async fn invite(
         &self,
@@ -134,71 +141,58 @@ impl UsersService {
     ) -> Result<InviteResult, UserError> {
         let email = validate_email(email).map_err(|_| UserError::InvalidEmail)?;
 
-        if self
+        let existing = self
             .users_repo
             .find_by_tenant_and_email(&ctx.tenant_id, &email)
             .await
-            .map_err(UserError::Internal)?
-            .is_some()
-        {
-            return Err(UserError::UserExists);
-        }
+            .map_err(UserError::Internal)?;
 
-        // Service-layer quota enforcement (applies to every transport).
-        if let Some(q) = &self.quota {
-            q.check(&ctx.tenant_id, Resource::InviteTeamMember).await?;
-        }
-
-        let user_id = crate::core::public_id::UserId::new();
-        let user_doc = UserDoc {
-            id: Some(user_id),
-            tenant_id: ctx.tenant_id,
-            email: email.clone(),
-            verified: false,
-            is_owner: false,
-            created_at: mongodb::bson::DateTime::now(),
+        let (user_id, resent) = match classify_invite(existing) {
+            InviteAction::AlreadyMember => return Err(UserError::UserExists),
+            InviteAction::Resend(user_id) => {
+                // No quota check: the member row already exists, so a resend
+                // doesn't consume a new seat. Supersede the stale link first.
+                self.tokens
+                    .revoke_pending(TokenPurpose::EmailVerify, &email)
+                    .await
+                    .map_err(UserError::Internal)?;
+                self.users_repo
+                    .set_invite_expiry(&ctx.tenant_id, &email, invite_expiry_from_now())
+                    .await
+                    .map_err(UserError::Internal)?;
+                (user_id, true)
+            }
+            InviteAction::CreateNew => {
+                // Service-layer quota enforcement (applies to every transport).
+                if let Some(q) = &self.quota {
+                    q.check(&ctx.tenant_id, Resource::InviteTeamMember).await?;
+                }
+                let user_id = crate::core::public_id::UserId::new();
+                let user_doc = UserDoc {
+                    id: Some(user_id),
+                    tenant_id: ctx.tenant_id,
+                    email: email.clone(),
+                    verified: false,
+                    is_owner: false,
+                    created_at: mongodb::bson::DateTime::now(),
+                    invite_expires_at: Some(invite_expiry_from_now()),
+                };
+                self.users_repo
+                    .create(&user_doc)
+                    .await
+                    .map_err(UserError::Internal)?;
+                (user_id, false)
+            }
         };
 
-        self.users_repo
-            .create(&user_doc)
-            .await
-            .map_err(UserError::Internal)?;
+        self.issue_and_send_invite(&email, public_url, resend_api_key, resend_from_email)
+            .await?;
 
-        let verify_token = self
-            .tokens
-            .issue(TokenSpec {
-                purpose: TokenPurpose::EmailVerify,
-                kind: TokenKind::HashKeyed,
-                ttl_secs: Self::INVITE_EMAIL_TTL_SECS,
-                email: email.clone(),
-                metadata: doc! {},
-            })
-            .await
-            .map_err(UserError::Internal)?;
-
-        let verify_url = format!("{public_url}/v1/auth/verify?token={verify_token}");
-        let html = format!(
-            r#"<div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 40px 20px;">
-                <h2 style="margin-bottom: 24px;">You've been invited</h2>
-                <p>Click the button below to join the team on Rift:</p>
-                <a href="{verify_url}" style="display: inline-block; padding: 12px 24px; background: #0d9488; color: white; text-decoration: none; border-radius: 6px; margin: 20px 0;">Accept Invitation</a>
-                <p style="color: #71717a; font-size: 13px; margin-top: 24px;">This link expires in 24 hours.</p>
-                <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 32px 0;" />
-                <p style="color: #a1a1aa; font-size: 12px;">Rift — Deep links for humans and agents</p>
-            </div>"#
-        );
-
-        email::send_email(
-            resend_api_key,
-            resend_from_email,
-            &email,
-            "You've been invited to a Rift team",
-            &html,
-        )
-        .await
-        .map_err(UserError::EmailFailed)?;
-
-        Ok(InviteResult { user_id, email })
+        Ok(InviteResult {
+            user_id,
+            email,
+            resent,
+        })
     }
 
     /// List all users on a tenant.
@@ -210,10 +204,12 @@ impl UsersService {
             .await
             .map_err(UserError::Internal)?;
 
+        let now = mongodb::bson::DateTime::now();
         Ok(docs
             .into_iter()
             .map(|d| UserDetail {
                 id: d.id.unwrap_or_else(crate::core::public_id::UserId::new),
+                status: MemberStatus::derive(d.verified, d.invite_expires_at, now),
                 email: d.email,
                 verified: d.verified,
                 is_owner: d.is_owner,
@@ -251,4 +247,74 @@ impl UsersService {
 
         Ok(())
     }
+
+    // ── Helpers ──
+
+    /// Mint a fresh single-use invite token and email the accept link. Shared
+    /// by the create-new and resend branches of `invite`.
+    async fn issue_and_send_invite(
+        &self,
+        email: &str,
+        public_url: &str,
+        resend_api_key: &str,
+        resend_from_email: &str,
+    ) -> Result<(), UserError> {
+        let verify_token = self
+            .tokens
+            .issue(TokenSpec {
+                purpose: TokenPurpose::EmailVerify,
+                kind: TokenKind::HashKeyed,
+                ttl_secs: Self::INVITE_EMAIL_TTL_SECS,
+                email: email.to_string(),
+                metadata: doc! {},
+            })
+            .await
+            .map_err(UserError::Internal)?;
+
+        let verify_url = format!("{public_url}/v1/auth/verify?token={verify_token}");
+        let html = email::branded_html(&format!(
+            "{}<p>Click the button below to join the team on Rift:</p>{}{}",
+            email::heading("You've been invited"),
+            email::cta_button("Accept Invitation", &verify_url),
+            email::fine_print("This link expires in 24 hours."),
+        ));
+
+        email::send_email(
+            resend_api_key,
+            resend_from_email,
+            email,
+            "You've been invited to a Rift team",
+            &html,
+        )
+        .await
+        .map_err(UserError::EmailFailed)
+    }
 }
+
+/// What `invite` should do given the existing (or absent) row for the email.
+#[derive(Debug, PartialEq, Eq)]
+enum InviteAction {
+    /// No row — create a fresh pending member (consumes quota).
+    CreateNew,
+    /// Unverified row (pending or expired) — rotate the link, no new seat.
+    Resend(crate::core::public_id::UserId),
+    /// Verified member — reject with `UserExists`.
+    AlreadyMember,
+}
+
+fn classify_invite(existing: Option<UserDoc>) -> InviteAction {
+    match existing {
+        None => InviteAction::CreateNew,
+        Some(u) if u.verified => InviteAction::AlreadyMember,
+        Some(u) => InviteAction::Resend(u.id.unwrap_or_else(crate::core::public_id::UserId::new)),
+    }
+}
+
+fn invite_expiry_from_now() -> mongodb::bson::DateTime {
+    let now_ms = mongodb::bson::DateTime::now().timestamp_millis();
+    mongodb::bson::DateTime::from_millis(now_ms + UsersService::INVITE_EMAIL_TTL_SECS * 1000)
+}
+
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod tests;
