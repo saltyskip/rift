@@ -290,6 +290,11 @@ fn sk_error_response(e: &SecretKeyError) -> Response {
         SecretKeyError::NotFound => StatusCode::NOT_FOUND,
         SecretKeyError::Forbidden(_) => unreachable!("handled above"),
         SecretKeyError::EmailFailed(_) | SecretKeyError::Internal(_) => {
+            // 5xx are unexpected — log at ERROR so they surface in Sentry.
+            // The service layer maps repo/Mongo failures to `Internal` without
+            // logging, so without this a failed key list/issue returns 500 to
+            // the client and produces zero Sentry events.
+            tracing::error!(error = %e, code = e.code(), "secret_key_internal_error");
             StatusCode::INTERNAL_SERVER_ERROR
         }
     };
