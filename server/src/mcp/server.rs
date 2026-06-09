@@ -446,33 +446,74 @@ pub fn mcp_router(
     conversions_repo: Option<Arc<dyn ConversionsRepository>>,
     public_url: String,
 ) -> axum::Router {
-    let service = StreamableHttpService::new(
-        move || {
-            Ok(RiftMcp::new(
-                links_service.clone(),
-                secret_keys_repo.clone(),
-                conversions_repo.clone(),
-                public_url.clone(),
-            ))
-        },
-        // Stateless + JSON: our tools are request-response only, so sessions
-        // are dead weight and break across multi-instance deployments where
-        // initialize and tools/list can hit different machines. `json_response`
-        // returns application/json directly instead of SSE, which simple MCP
-        // clients parse more reliably. If we ever add streaming tools
-        // (progress, subscriptions, sampling), swap NeverSessionManager for a
-        // MongoDB-backed SessionManager and flip both flags back.
-        Arc::new(NeverSessionManager::default()),
-        StreamableHttpServerConfig {
-            stateful_mode: false,
-            json_response: true,
-            ..Default::default()
-        },
-    );
+    // Stateless + JSON: our tools are request-response only, so sessions are
+    // dead weight and break across multi-instance deployments where initialize
+    // and tools/list can hit different machines. `json_response` returns
+    // application/json directly instead of SSE, which simple MCP clients parse
+    // more reliably. If we ever add streaming tools (progress, subscriptions,
+    // sampling), swap NeverSessionManager for a MongoDB-backed SessionManager
+    // and flip both flags back.
+    let http_config = StreamableHttpServerConfig {
+        stateful_mode: false,
+        json_response: true,
+        ..Default::default()
+    };
 
-    axum::Router::new()
-        .nest_service("/mcp", service)
-        .layer(axum::middleware::from_fn(extract_api_key_header))
+    // Opt-in dogfood (Agent Layer, docs/agent-layer-spec.md): when
+    // RIFT_AGENT_INGEST_URL + RIFT_AGENT_KEY are set, wrap our own MCP handler
+    // with riftl-mcp so every tool call is captured to /v1/agents/actions. Off
+    // by default — prod is unaffected unless explicitly configured. NOTE: Rift's
+    // own MCP is multi-tenant, so captured actions attribute to the single
+    // configured RIFT_AGENT_KEY tenant. This validates the SDK end-to-end, not
+    // per-caller attribution (our tools are management tools, no conversion flow).
+    let agent_cfg = match (
+        std::env::var("RIFT_AGENT_INGEST_URL"),
+        std::env::var("RIFT_AGENT_KEY"),
+    ) {
+        (Ok(url), Ok(key)) if !url.is_empty() && !key.is_empty() => Some(riftl_mcp::RiftConfig {
+            ingest_url: url,
+            api_key: key,
+        }),
+        _ => None,
+    };
+
+    let mcp_route = match agent_cfg {
+        Some(cfg) => axum::Router::new().nest_service(
+            "/mcp",
+            StreamableHttpService::new(
+                move || {
+                    Ok(riftl_mcp::InstrumentExt::instrument(
+                        RiftMcp::new(
+                            links_service.clone(),
+                            secret_keys_repo.clone(),
+                            conversions_repo.clone(),
+                            public_url.clone(),
+                        ),
+                        cfg.clone(),
+                    ))
+                },
+                Arc::new(NeverSessionManager::default()),
+                http_config,
+            ),
+        ),
+        None => axum::Router::new().nest_service(
+            "/mcp",
+            StreamableHttpService::new(
+                move || {
+                    Ok(RiftMcp::new(
+                        links_service.clone(),
+                        secret_keys_repo.clone(),
+                        conversions_repo.clone(),
+                        public_url.clone(),
+                    ))
+                },
+                Arc::new(NeverSessionManager::default()),
+                http_config,
+            ),
+        ),
+    };
+
+    mcp_route.layer(axum::middleware::from_fn(extract_api_key_header))
 }
 
 // ── Helpers ──

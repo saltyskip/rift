@@ -57,12 +57,13 @@ hmac = "0.12"
 futures = "0.3"
 rift-macros = { path = "rift-macros" }
 rmcp = { version = "1.2", features = ["server", "transport-streamable-http-server"], optional = true }
+riftl-mcp = { path = "../client/mcp-rust", optional = true }
 schemars = { version = "1.2", optional = true }
 
 [features]
 default = ["api", "mcp"]
 api = []
-mcp = ["dep:rmcp", "dep:schemars"]
+mcp = ["dep:rmcp", "dep:schemars", "dep:riftl-mcp"]
 # Exposes Noop/Deny QuotaChecker implementations for integration tests that
 # want to exercise over-limit paths without wiring a real counter stack.
 # Enabled only by tests (`cargo test` activates it automatically via the

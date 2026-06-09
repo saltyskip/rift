@@ -5110,6 +5110,7 @@ dependencies = [
  "reqwest 0.12.28",
  "resend-rs",
  "rift-macros",
+ "riftl-mcp",
  "rmcp",
  "schemars 1.2.1",
  "sentry",
@@ -5139,6 +5140,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "riftl-mcp"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.12.28",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

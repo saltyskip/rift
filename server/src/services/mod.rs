@@ -1,4 +1,5 @@
 pub mod affiliates;
+pub mod agents;
 pub mod analytics;
 pub mod app_users;
 pub mod apps;
