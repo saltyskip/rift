@@ -247,6 +247,37 @@ fn one_struct_serves_both_bson_and_json() {
 }
 
 #[test]
+fn id_nested_in_internally_tagged_enum_roundtrips_through_raw_bson() {
+    // Regression: serde deserializes internally-tagged (`#[serde(tag)]`),
+    // untagged, and flattened types by buffering into a `Content` value and
+    // replaying through a deserializer that reports `is_human_readable() ==
+    // true` regardless of the source format. An `Id<P>` nested in such a type
+    // therefore hits its human-readable branch even under raw BSON, where the
+    // buffered ObjectId arrives as a native ObjectId / `{"$oid"}` doc, not a
+    // string. This shipped as a 500 on every tenant holding an affiliate-scoped
+    // secret key (`KeyScope::Affiliate { affiliate_id }`).
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+    #[serde(tag = "type", rename_all = "snake_case")]
+    enum Scope {
+        Full,
+        Affiliate { affiliate_id: AffiliateId },
+    }
+
+    let original = Scope::Affiliate {
+        affiliate_id: AffiliateId::new(),
+    };
+    // Driver path: raw, non-human-readable BSON.
+    let bytes = mongodb::bson::to_vec(&original).unwrap();
+    let back: Scope = mongodb::bson::from_slice(&bytes).unwrap();
+    assert_eq!(back, original);
+
+    // The unit variant must keep working too.
+    let bytes = mongodb::bson::to_vec(&Scope::Full).unwrap();
+    let back: Scope = mongodb::bson::from_slice(&bytes).unwrap();
+    assert_eq!(back, Scope::Full);
+}
+
+#[test]
 fn new_generates_distinct_ids() {
     let a = AffiliateId::new();
     let b = AffiliateId::new();

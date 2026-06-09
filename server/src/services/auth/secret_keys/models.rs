@@ -41,6 +41,10 @@ pub enum KeyScope {
     Affiliate { affiliate_id: AffiliateId },
 }
 
+#[cfg(test)]
+#[path = "models_tests.rs"]
+mod tests;
+
 // ── Errors ──
 
 #[derive(Debug)]
