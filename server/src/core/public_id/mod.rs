@@ -192,11 +192,40 @@ impl<P: IdPrefix> Serialize for Id<P> {
 impl<'de, P: IdPrefix> Deserialize<'de> for Id<P> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         if deserializer.is_human_readable() {
-            // JSON / path params / MCP inputs: prefixed string.
-            let s = String::deserialize(deserializer)?;
-            Self::parse(&s).map_err(serde::de::Error::custom)
+            // The human-readable branch covers two distinct callers:
+            //   1. JSON / path params / MCP inputs — a prefixed string.
+            //   2. A BSON `ObjectId` *buffered* through serde's content model.
+            //      This happens whenever an `Id<P>` is nested in an internally-
+            //      tagged / untagged / flattened type (e.g. `KeyScope::Affiliate`):
+            //      serde deserializes the whole value into a `Content` buffer and
+            //      replays it through a deserializer that reports
+            //      `is_human_readable() == true` *regardless of the originating
+            //      format*. The ObjectId then arrives as a native `ObjectId` or
+            //      as an `{"$oid": "<hex>"}` document — never a string. Reading it
+            //      as a plain string (the old code) failed with "invalid type:
+            //      map, expected a string", which surfaced as a 500 on any tenant
+            //      holding an affiliate-scoped key. Accept all three forms via the
+            //      self-describing `Bson` type.
+            match Bson::deserialize(deserializer)? {
+                Bson::String(s) => Self::parse(&s).map_err(serde::de::Error::custom),
+                Bson::ObjectId(oid) => Ok(Self::from_object_id(oid)),
+                Bson::Document(doc) => doc
+                    .get_str("$oid")
+                    .ok()
+                    .and_then(|hex| ObjectId::parse_str(hex).ok())
+                    .map(Self::from_object_id)
+                    .ok_or_else(|| {
+                        serde::de::Error::custom(
+                            "expected a prefixed id string or ObjectId, got a document",
+                        )
+                    }),
+                other => Err(serde::de::Error::custom(format!(
+                    "expected a prefixed id string or ObjectId, got {:?}",
+                    other.element_type()
+                ))),
+            }
         } else {
-            // BSON: native ObjectId.
+            // Native BSON field: an ObjectId.
             let oid = ObjectId::deserialize(deserializer)?;
             Ok(Self::from_object_id(oid))
         }
