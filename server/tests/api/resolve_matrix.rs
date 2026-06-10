@@ -566,6 +566,50 @@ async fn auto_macos_lands_even_with_activation() {
         body.contains("apps.apple.com/app/mac"),
         "Mac App Store button"
     );
+    // iPad-in-desktop-mode correction must be present and carry the iOS store.
+    assert!(
+        body.contains("maxTouchPoints"),
+        "iPad touch-detection correction present"
+    );
+    assert!(
+        body.contains("apps.apple.com/app/id123"),
+        "iOS App Store URL available for iPad correction"
+    );
+}
+
+#[tokio::test]
+async fn auto_macos_with_ios_target_lands_even_without_mac_store() {
+    // An iPad reports as Mac; when the link has an iOS target it must land so
+    // the page can route iPad → iOS App Store (never 307 to web/Mac).
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&json!({
+            "custom_id": "mac-ios",
+            "web_url": "https://example.com",
+            "ios_store_url": "https://apps.apple.com/app/id123",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let client = no_redirect_client();
+    let resp = client
+        .get(app.url("/r/mac-ios"))
+        .header("Sec-CH-UA-Platform", MAC_PLATFORM)
+        .header("Sec-Fetch-User", ACTIVATION)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        200,
+        "Mac request with an iOS target lands (iPad protection), never 307"
+    );
 }
 
 #[tokio::test]
@@ -775,8 +819,9 @@ async fn legacy_link_without_redirect_mode_never_307s() {
 }
 
 #[tokio::test]
-async fn auto_macos_without_store_307s_to_web() {
-    // macOS resolves to web (Tier-1) when no Mac App Store is configured.
+async fn auto_macos_pure_web_link_307s_to_web() {
+    // A pure web link (no Mac store, no iOS target) is the only macOS case that
+    // 307s — there's no iPad-vs-Mac ambiguity to protect (iPad → web is fine).
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;
     seed_verified_domain(&app, &tenant_id, "go.example.com").await;
@@ -784,9 +829,9 @@ async fn auto_macos_without_store_307s_to_web() {
         .post(app.url("/v1/links"))
         .header("Authorization", format!("Bearer {key}"))
         .json(&json!({
-            "custom_id": "mac-noweb",
+            "custom_id": "mac-web",
             "web_url": "https://example.com",
-            "ios_store_url": "https://apps.apple.com/app/id123",
+            "android_store_url": "https://play.google.com/store/apps/details?id=com.example",
         }))
         .send()
         .await
@@ -794,16 +839,20 @@ async fn auto_macos_without_store_307s_to_web() {
 
     let client = no_redirect_client();
     let resp = client
-        .get(app.url("/r/mac-noweb"))
+        .get(app.url("/r/mac-web"))
         .header("Sec-CH-UA-Platform", MAC_PLATFORM)
         .header("Sec-Fetch-User", ACTIVATION)
         .send()
         .await
         .unwrap();
 
-    assert_eq!(resp.status(), 307, "macOS → web (Tier-1) when no Mac store");
+    assert_eq!(
+        resp.status(),
+        307,
+        "macOS → web (Tier-1) for a pure web link"
+    );
     let loc = resp.headers().get("location").unwrap().to_str().unwrap();
-    assert!(loc.starts_with("https://example.com"));
+    assert!(loc.starts_with("https://example.com") && loc.contains("rift_link="));
 }
 
 #[tokio::test]

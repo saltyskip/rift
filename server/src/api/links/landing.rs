@@ -66,6 +66,11 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     let web_url = link.web_url.as_deref().unwrap_or("");
     let web_url_js = js_escape(web_url);
 
+    // Raw iOS App Store URL, passed separately so the client can correct an
+    // iPad masquerading as macOS (iPadOS desktop mode reports a Mac UA/hint) —
+    // see the touch check in the button script.
+    let ios_store_url_js = js_escape(link.ios_store_url.as_deref().unwrap_or(""));
+
     // Alternate domain URL for the "Open in App" button (cross-domain Universal Link trigger).
     let alternate_url = ctx
         .alternate_domain
@@ -302,11 +307,21 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     (function() {{
         var platform = "{platform_js}";
         var storeUrl = "{store_url_js}";
+        var iosStoreUrl = "{ios_store_url_js}";
         var webUrl = "{web_url_js}";
         var alternateUrl = "{alternate_url_js}";
 
         var btn = document.getElementById("open-btn");
         var msg = document.getElementById("fallback-msg");
+
+        // iPadOS desktop mode reports a Mac User-Agent / Sec-CH-UA-Platform, so
+        // the server detects "macos". A real Mac has no touch screen; an iPad
+        // reports touch points. Correct it client-side so iPads route to the
+        // iOS App Store, not the Mac App Store.
+        if (platform === "macos" && /Macintosh/.test(navigator.userAgent)
+            && (navigator.maxTouchPoints || 0) > 1) {{
+            platform = "ios";
+        }}
 
         // Copy link URL to clipboard on button tap (requires user gesture).
         btn.addEventListener("click", function() {{
@@ -315,10 +330,24 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
             }}
         }});
 
-        if (platform === "ios" || platform === "android") {{
+        if (platform === "ios") {{
+            // Universal Link trampoline opens the app if installed; otherwise
+            // the iOS App Store. `iosStoreUrl` (not the OS-selected storeUrl) so
+            // a corrected iPad never falls through to the Mac App Store.
             if (alternateUrl) {{
-                // Cross-domain hop triggers Universal Links / App Links.
-                // If app installed → opens. If not → alternate domain redirects to store.
+                btn.href = alternateUrl;
+                btn.textContent = "Open in {app_name_escaped}";
+            }} else if (iosStoreUrl) {{
+                btn.href = iosStoreUrl;
+                btn.textContent = "Get {app_name_escaped}";
+            }} else if (webUrl) {{
+                btn.href = webUrl;
+                btn.textContent = "Continue";
+            }}
+        }} else if (platform === "android") {{
+            if (alternateUrl) {{
+                // Cross-domain hop triggers App Links. If app installed → opens.
+                // If not → alternate domain redirects to the Play Store.
                 btn.href = alternateUrl;
                 btn.textContent = "Open in {app_name_escaped}";
             }} else if (storeUrl) {{
@@ -364,6 +393,7 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         agent_panel = agent_panel,
         platform_js = platform_js,
         store_url_js = store_url_js,
+        ios_store_url_js = ios_store_url_js,
         web_url_js = web_url_js,
         alternate_url_js = alternate_url_js,
     )

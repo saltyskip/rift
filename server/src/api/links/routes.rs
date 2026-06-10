@@ -604,8 +604,10 @@ async fn do_resolve(
         .into_response();
     }
 
-    // redirect=1 mode: skip landing page, go directly to the platform destination.
-    // Clipboard write happens client-side in Rift.click() (has user gesture).
+    // DEPRECATED (issue #197): `?redirect=1` skips the landing page and goes
+    // straight to the platform destination. Superseded by `redirect_mode = Auto`
+    // (no query param needed; preserves the mobile trampoline + clipboard that
+    // this path skips). Kept working for existing callers during deprecation.
     if redirect {
         if let Some(url) = explicit_redirect_target(&link, os, link_id) {
             return Redirect::temporary(&url).into_response();
@@ -695,7 +697,11 @@ async fn do_resolve(
             tenant_verified,
             alternate_domain: alternate_domain.as_deref(),
         });
-        return (StatusCode::OK, axum::response::Html(html)).into_response();
+        let mut resp = (StatusCode::OK, axum::response::Html(html)).into_response();
+        // The landing HTML bakes in per-OS store buttons — never let a shared
+        // cache cross-serve it across platforms.
+        set_no_store_resolve_headers(&mut resp);
+        return resp;
     }
 
     // Plain web_url redirect or minimal page.
@@ -892,10 +898,15 @@ pub(crate) fn append_query_param(url: &str, key: &str, value: &str) -> String {
     format!("{url}{sep}{key}={}", urlencoding(value))
 }
 
-/// Destination for the explicit `?redirect=1` path (the SDK `Rift.click()` flow,
-/// which carries a real user gesture). Picks the OS-appropriate target and
-/// appends the store's attribution parameter. `None` ⇒ no destination for this
-/// OS ⇒ caller falls through to the landing page.
+/// Destination for the explicit `?redirect=1` path.
+///
+/// **Deprecated** — superseded by `redirect_mode = Auto` (issue #197), which
+/// auto-redirects without a query param and, on mobile, preserves the
+/// Universal/App-Link trampoline + clipboard that `?redirect=1` skips (so it's
+/// better for attribution). Behavior here is intentionally **frozen** to the
+/// historical shape (bare `web_url`, no `rift_link`) so existing callers that
+/// parse the destination aren't broken during the deprecation window — do not
+/// "fix" the divergence from `auto_redirect_target`.
 fn explicit_redirect_target(link: &Link, os: Os, link_id: &str) -> Option<String> {
     match os {
         Os::Ios => link.ios_store_url.clone(),
@@ -942,10 +953,16 @@ fn auto_redirect_target(link: &Link, os: Os, link_id: &str) -> Option<String> {
             .as_deref()
             .map(|u| append_query_param(u, "cid", link_id))
             .or_else(|| web_redirect_target(link, link_id)),
-        // Mac App Store is clipboard-deferred (Tier-2) → must land; only the web
-        // fallback (no Mac App Store configured) is 307-eligible.
+        // macOS always lands when a native or iOS target exists. Mac App Store
+        // is clipboard-deferred (Tier-2), AND an iPad in desktop mode is
+        // indistinguishable from a Mac by headers alone — landing lets the page
+        // correct iPad → iOS App Store by touch detection. Only a pure web link
+        // (no Mac store, no iOS target) is safe to 307.
         Os::Mac => {
-            if link.macos_store_url.is_some() {
+            if link.macos_store_url.is_some()
+                || link.ios_store_url.is_some()
+                || link.ios_deep_link.is_some()
+            {
                 None
             } else {
                 web_redirect_target(link, link_id)
@@ -961,17 +978,22 @@ fn web_redirect_target(link: &Link, link_id: &str) -> Option<String> {
         .map(|u| append_query_param(u, "rift_link", link_id))
 }
 
-/// A 307 that must not be cached or cross-served by a shared cache: the same URL
-/// returns a redirect (with `Sec-Fetch-User`) or the landing page (without), and
-/// the target also varies by detected OS.
-fn auto_redirect_response(url: &str) -> Response {
-    let mut resp = Redirect::temporary(url).into_response();
+/// Mark a resolve response uncacheable and OS/activation-varying. The same URL
+/// returns a 307 (with `Sec-Fetch-User`) or the landing page (without), and the
+/// destination/buttons vary by detected OS — a shared cache must not reuse one
+/// visitor's response for another.
+fn set_no_store_resolve_headers(resp: &mut Response) {
     let h = resp.headers_mut();
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     h.insert(
         header::VARY,
         HeaderValue::from_static("Sec-Fetch-User, Sec-CH-UA-Platform, User-Agent"),
     );
+}
+
+fn auto_redirect_response(url: &str) -> Response {
+    let mut resp = Redirect::temporary(url).into_response();
+    set_no_store_resolve_headers(&mut resp);
     resp
 }
 
