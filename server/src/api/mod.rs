@@ -130,6 +130,7 @@ use crate::app::AppState;
         crate::services::links::models::AgentContext,
         crate::services::links::models::AttributeContext,
         crate::services::links::models::SocialPreview,
+        crate::services::auth::tenants::models::RedirectMode,
         crate::services::analytics::models::FunnelResult,
         crate::services::analytics::models::Funnel,
         crate::services::analytics::models::NewUsers,

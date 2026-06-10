@@ -115,6 +115,7 @@ pub async fn spawn_app() -> TestApp {
                 as Arc<dyn rift::services::affiliates::repo::AffiliatesRepository>),
             app_users_repo: Some(app_users_repo.clone()),
             install_events_repo: None,
+            tenants_repo: Some(tenants_repo.clone() as Arc<dyn TenantsRepository>),
             threat_feed: threat_feed.clone(),
             public_url: config.public_url.clone(),
             quota: None,

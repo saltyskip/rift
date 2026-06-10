@@ -14,8 +14,9 @@ use serde_json::json;
 use std::sync::Arc;
 
 use crate::api::auth::models::{SdkDomain, TenantId};
-use crate::api::links::routes::{check_link_resolvable, detect_platform, Platform};
+use crate::api::links::routes::check_link_resolvable;
 use crate::app::AppState;
+use crate::core::platform::detect_os;
 use crate::core::webhook_dispatcher::{
     AttributeEventPayload, ClickEventPayload, IdentifyEventPayload,
 };
@@ -91,10 +92,7 @@ pub async fn lifecycle_click(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let platform = user_agent
-        .as_deref()
-        .map(detect_platform)
-        .unwrap_or(Platform::Other);
+    let os = detect_os(&headers);
 
     if let Some(ref svc) = state.links_service {
         svc.record_click(
@@ -102,7 +100,7 @@ pub async fn lifecycle_click(
             &req.link_id,
             user_agent.clone(),
             referer.clone(),
-            Some(platform.as_str().to_string()),
+            Some(os.as_str().to_string()),
         )
         .await;
     }
@@ -113,7 +111,7 @@ pub async fn lifecycle_click(
             link_id: req.link_id.clone(),
             user_agent,
             referer,
-            platform: platform.as_str().to_string(),
+            platform: os.as_str().to_string(),
             timestamp: Utc::now().to_rfc3339(),
         });
     }
@@ -125,12 +123,14 @@ pub async fn lifecycle_click(
 
     Json(json!({
         "link_id": req.link_id,
-        "platform": platform.as_str(),
+        "platform": os.as_str(),
         "ios_deep_link": link.ios_deep_link,
         "android_deep_link": link.android_deep_link,
         "web_url": link.web_url,
         "ios_store_url": link.ios_store_url,
         "android_store_url": link.android_store_url,
+        "macos_store_url": link.macos_store_url,
+        "windows_store_url": link.windows_store_url,
         "metadata": metadata,
         "agent_context": link.agent_context,
         "social_preview": link.social_preview,

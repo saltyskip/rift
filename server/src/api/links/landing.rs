@@ -4,13 +4,14 @@
 
 use serde_json::json;
 
-use super::routes::{html_escape, urlencoding, Platform};
+use super::routes::{append_query_param, html_escape};
+use crate::core::platform::Os;
 use crate::services::links::models::{AgentContext, Link, SocialPreview};
 
 // ── Public surface ──
 
 pub(crate) struct LandingPageContext<'a> {
-    pub platform: Platform,
+    pub os: Os,
     pub link: &'a Link,
     pub link_id: &'a str,
     pub app_name: Option<&'a str>,
@@ -27,9 +28,9 @@ pub(crate) struct LandingPageContext<'a> {
 pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     let app_name_display = ctx.app_name.unwrap_or("App");
     let theme = ctx.theme_color.unwrap_or("#0d9488");
-    let platform = ctx.platform;
+    let os = ctx.os;
     let link = ctx.link;
-    let platform_js = js_escape(platform.as_str());
+    let platform_js = js_escape(os.as_str());
 
     let metadata_fallback = if ctx.social_preview.is_none() {
         social_preview_from_metadata(link.metadata.as_ref())
@@ -38,25 +39,29 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     };
     let effective_preview = ctx.social_preview.or(metadata_fallback.as_ref());
 
-    let store_url = match platform {
-        Platform::Ios => link.ios_store_url.as_deref().unwrap_or(""),
-        Platform::Android => link.android_store_url.as_deref().unwrap_or(""),
-        Platform::Other => "",
+    let store_url = match os {
+        Os::Ios => link.ios_store_url.as_deref().unwrap_or(""),
+        Os::Android => link.android_store_url.as_deref().unwrap_or(""),
+        Os::Mac => link.macos_store_url.as_deref().unwrap_or(""),
+        Os::Windows => link.windows_store_url.as_deref().unwrap_or(""),
+        Os::Other => "",
     };
 
-    // For Android, append referrer with link_id to store URL.
-    let store_url_with_referrer = if platform == Platform::Android && !store_url.is_empty() {
-        let sep = if store_url.contains('?') { "&" } else { "?" };
-        format!(
-            "{}{}referrer={}",
-            store_url,
-            sep,
-            urlencoding(&format!("rift_link={}", ctx.link_id))
-        )
+    // Append the store's attribution parameter: Play Store install `referrer`,
+    // Microsoft Store campaign `cid`. (App Store / Mac App Store carry no
+    // referrer — attribution there is deferred via the clipboard on tap.)
+    let store_url_attributed = if store_url.is_empty() {
+        String::new()
     } else {
-        store_url.to_string()
+        match os {
+            Os::Android => {
+                append_query_param(store_url, "referrer", &format!("rift_link={}", ctx.link_id))
+            }
+            Os::Windows => append_query_param(store_url, "cid", ctx.link_id),
+            _ => store_url.to_string(),
+        }
     };
-    let store_url_js = js_escape(&store_url_with_referrer);
+    let store_url_js = js_escape(&store_url_attributed);
 
     let web_url = link.web_url.as_deref().unwrap_or("");
     let web_url_js = js_escape(web_url);
@@ -323,6 +328,15 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
                 btn.href = webUrl;
                 btn.textContent = "Continue";
             }}
+        }} else if (platform === "macos" || platform === "windows") {{
+            // Desktop with a native store: prefer the store, fall back to web.
+            if (storeUrl) {{
+                btn.href = storeUrl;
+                btn.textContent = "Get {app_name_escaped}";
+            }} else if (webUrl) {{
+                btn.href = webUrl;
+                btn.textContent = "Continue";
+            }}
         }} else {{
             if (webUrl) {{
                 btn.href = webUrl;
@@ -490,6 +504,8 @@ fn build_agent_panel(ctx: &LandingPageContext) -> String {
         ("Web", link.web_url.as_deref()),
         ("App Store", link.ios_store_url.as_deref()),
         ("Play Store", link.android_store_url.as_deref()),
+        ("Mac App Store", link.macos_store_url.as_deref()),
+        ("Microsoft Store", link.windows_store_url.as_deref()),
     ]
     .into_iter()
     .filter_map(|(label, opt)| opt.map(|v| (label, v)))

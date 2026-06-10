@@ -1,5 +1,5 @@
 use axum::extract::{Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect, Response};
 use chrono::Utc;
 use mongodb::bson::DateTime;
@@ -11,8 +11,10 @@ use super::models::{QrCodeQuery, ResolveQuery};
 use super::qr::{render_link_qr, QrOutputFormat};
 use crate::api::auth::models::TenantId;
 use crate::app::AppState;
+use crate::core::platform::{detect_os, Os};
 use crate::core::webhook_dispatcher::ClickEventPayload;
 use crate::services::auth::permissions::AuthContext;
+use crate::services::auth::tenants::models::RedirectMode;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::models::LinkError;
@@ -426,13 +428,8 @@ pub async fn resolve_link_custom(
                 .into_response();
         };
 
-        let user_agent = headers
-            .get("user-agent")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-
         return match links_svc
-            .resolve_alternate(&domain.tenant_id, &link_id, user_agent)
+            .resolve_alternate(&domain.tenant_id, &link_id, detect_os(&headers))
             .await
         {
             Ok(url) => Redirect::temporary(&url).into_response(),
@@ -546,10 +543,7 @@ async fn do_resolve(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let platform = user_agent
-        .as_deref()
-        .map(detect_platform)
-        .unwrap_or(Platform::Other);
+    let os = detect_os(headers);
 
     // Quota check + retention bucket + DB write all happen inside the
     // service method so MCP / CLI / any future transport that records a
@@ -560,7 +554,7 @@ async fn do_resolve(
             link_id,
             user_agent.clone(),
             referer.clone(),
-            Some(platform.as_str().to_string()),
+            Some(os.as_str().to_string()),
         )
         .await;
     }
@@ -571,7 +565,7 @@ async fn do_resolve(
             link_id: link_id.to_string(),
             user_agent,
             referer,
-            platform: platform.as_str().to_string(),
+            platform: os.as_str().to_string(),
             timestamp: Utc::now().to_rfc3339(),
         });
     }
@@ -600,6 +594,8 @@ async fn do_resolve(
             "web_url": link.web_url,
             "ios_store_url": link.ios_store_url,
             "android_store_url": link.android_store_url,
+            "macos_store_url": link.macos_store_url,
+            "windows_store_url": link.windows_store_url,
             "metadata": metadata,
             "agent_context": link.agent_context,
             "social_preview": link.social_preview,
@@ -611,32 +607,22 @@ async fn do_resolve(
     // redirect=1 mode: skip landing page, go directly to the platform destination.
     // Clipboard write happens client-side in Rift.click() (has user gesture).
     if redirect {
-        match platform {
-            Platform::Ios => {
-                if let Some(store_url) = &link.ios_store_url {
-                    return Redirect::temporary(store_url).into_response();
-                }
-                // No ios_store_url — fall through to landing page.
-            }
-            Platform::Android => {
-                if let Some(store_url) = &link.android_store_url {
-                    let sep = if store_url.contains('?') { "&" } else { "?" };
-                    let redirect_url = format!(
-                        "{}{}referrer={}",
-                        store_url,
-                        sep,
-                        urlencoding(&format!("rift_link={}", link_id)),
-                    );
-                    return Redirect::temporary(&redirect_url).into_response();
-                }
-                // No android_store_url — fall through to landing page.
-            }
-            Platform::Other => {
-                if let Some(web_url) = &link.web_url {
-                    return Redirect::temporary(web_url).into_response();
-                }
-                // No web_url — fall through to landing page.
-            }
+        if let Some(url) = explicit_redirect_target(&link, os, link_id) {
+            return Redirect::temporary(&url).into_response();
+        }
+        // No destination for this OS — fall through to landing page.
+    }
+
+    // Auto-redirect (redirect_mode = Auto): a zero-flash 307 for desktop Tier-1
+    // targets, but only with a strong human-activation signal (Sec-Fetch-User:
+    // ?1). Crawlers (no signal, no JS), mobile, Tier-2 clipboard stores, and
+    // no-signal humans all fall through to the landing page — which keeps OG
+    // unfurls intact and drives the Universal-Link/clipboard tap.
+    if link.redirect_mode.unwrap_or(RedirectMode::Off) == RedirectMode::Auto
+        && has_user_activation(headers)
+    {
+        if let Some(url) = auto_redirect_target(&link, os, link_id) {
+            return auto_redirect_response(&url);
         }
     }
 
@@ -644,7 +630,9 @@ async fn do_resolve(
     let has_platform_destinations = link.ios_deep_link.is_some()
         || link.android_deep_link.is_some()
         || link.ios_store_url.is_some()
-        || link.android_store_url.is_some();
+        || link.android_store_url.is_some()
+        || link.macos_store_url.is_some()
+        || link.windows_store_url.is_some();
 
     // Compute link status and tenant domain for landing page and JSON-LD.
     let link_status = compute_link_status(&link);
@@ -654,15 +642,13 @@ async fn do_resolve(
     if has_platform_destinations {
         // Fetch app branding from apps_repo, preferring the detected platform.
         let (app_name, icon_url, theme_color) = if let Some(apps_repo) = &state.apps_repo {
-            let preferred = match platform {
-                Platform::Ios => "ios",
-                Platform::Android => "android",
-                Platform::Other => "ios",
+            let preferred = match os {
+                Os::Android => "android",
+                _ => "ios",
             };
-            let fallback = match platform {
-                Platform::Ios => "android",
-                Platform::Android => "ios",
-                Platform::Other => "android",
+            let fallback = match os {
+                Os::Android => "ios",
+                _ => "android",
             };
             let app = apps_repo
                 .find_by_tenant_platform(&link.tenant_id, preferred)
@@ -696,7 +682,7 @@ async fn do_resolve(
         };
 
         let html = render_smart_landing_page(&LandingPageContext {
-            platform,
+            os,
             link: &link,
             link_id,
             app_name: app_name.as_deref(),
@@ -823,34 +809,6 @@ fn link_error_to_response(err: LinkError) -> Response {
     (status, Json(json!({ "error": message, "code": code }))).into_response()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Platform {
-    Ios,
-    Android,
-    Other,
-}
-
-impl Platform {
-    pub(crate) fn as_str(&self) -> &'static str {
-        match self {
-            Platform::Ios => "ios",
-            Platform::Android => "android",
-            Platform::Other => "other",
-        }
-    }
-}
-
-pub(crate) fn detect_platform(user_agent: &str) -> Platform {
-    let ua = user_agent.to_lowercase();
-    if ua.contains("iphone") || ua.contains("ipad") || ua.contains("ipod") {
-        Platform::Ios
-    } else if ua.contains("android") {
-        Platform::Android
-    } else {
-        Platform::Other
-    }
-}
-
 fn is_valid_link_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
@@ -925,6 +883,96 @@ fn build_rift_meta(
         "tenant_domain": tenant_domain,
         "tenant_verified": tenant_verified,
     })
+}
+
+/// Append a query parameter, choosing `?` or `&` based on the existing URL.
+/// The value is percent-encoded.
+pub(crate) fn append_query_param(url: &str, key: &str, value: &str) -> String {
+    let sep = if url.contains('?') { '&' } else { '?' };
+    format!("{url}{sep}{key}={}", urlencoding(value))
+}
+
+/// Destination for the explicit `?redirect=1` path (the SDK `Rift.click()` flow,
+/// which carries a real user gesture). Picks the OS-appropriate target and
+/// appends the store's attribution parameter. `None` ⇒ no destination for this
+/// OS ⇒ caller falls through to the landing page.
+fn explicit_redirect_target(link: &Link, os: Os, link_id: &str) -> Option<String> {
+    match os {
+        Os::Ios => link.ios_store_url.clone(),
+        Os::Android => link
+            .android_store_url
+            .as_deref()
+            .map(|u| append_query_param(u, "referrer", &format!("rift_link={link_id}"))),
+        Os::Mac => link
+            .macos_store_url
+            .clone()
+            .or_else(|| link.web_url.clone()),
+        Os::Windows => link
+            .windows_store_url
+            .as_deref()
+            .map(|u| append_query_param(u, "cid", link_id))
+            .or_else(|| link.web_url.clone()),
+        Os::Other => link.web_url.clone(),
+    }
+}
+
+/// True when the request carries a user-activation signal (`Sec-Fetch-User:
+/// ?1`) — a real human navigation (click / address bar / QR open). Crawlers and
+/// programmatic fetches don't set it, so it gates the zero-flash 307 without any
+/// bot allowlist: anything without it falls through to the OG landing page.
+fn has_user_activation(headers: &HeaderMap) -> bool {
+    headers
+        .get("sec-fetch-user")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim() == "?1")
+        .unwrap_or(false)
+}
+
+/// Destination for the zero-flash auto-redirect (307), or `None` if the request
+/// must fall through to the landing page. Only **desktop Tier-1** targets —
+/// where the identifier rides the URL and no gesture is needed — are eligible:
+/// Microsoft Store (`cid`) and the web fallback (`rift_link`). Mobile always
+/// lands (Universal/App-Link trampoline + clipboard tap); macOS → Mac App Store
+/// is Tier-2 (clipboard) so it lands too.
+fn auto_redirect_target(link: &Link, os: Os, link_id: &str) -> Option<String> {
+    match os {
+        Os::Ios | Os::Android => None,
+        Os::Windows => link
+            .windows_store_url
+            .as_deref()
+            .map(|u| append_query_param(u, "cid", link_id))
+            .or_else(|| web_redirect_target(link, link_id)),
+        // Mac App Store is clipboard-deferred (Tier-2) → must land; only the web
+        // fallback (no Mac App Store configured) is 307-eligible.
+        Os::Mac => {
+            if link.macos_store_url.is_some() {
+                None
+            } else {
+                web_redirect_target(link, link_id)
+            }
+        }
+        Os::Other => web_redirect_target(link, link_id),
+    }
+}
+
+fn web_redirect_target(link: &Link, link_id: &str) -> Option<String> {
+    link.web_url
+        .as_deref()
+        .map(|u| append_query_param(u, "rift_link", link_id))
+}
+
+/// A 307 that must not be cached or cross-served by a shared cache: the same URL
+/// returns a redirect (with `Sec-Fetch-User`) or the landing page (without), and
+/// the target also varies by detected OS.
+fn auto_redirect_response(url: &str) -> Response {
+    let mut resp = Redirect::temporary(url).into_response();
+    let h = resp.headers_mut();
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    h.insert(
+        header::VARY,
+        HeaderValue::from_static("Sec-Fetch-User, Sec-CH-UA-Platform, User-Agent"),
+    );
+    resp
 }
 
 pub(crate) fn urlencoding(s: &str) -> String {

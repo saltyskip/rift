@@ -5,7 +5,12 @@ const MAX_URL_LEN: usize = 2048;
 
 const BLOCKED_SCHEMES: &[&str] = &["javascript", "data", "vbscript", "blob", "file"];
 
-const STORE_HOSTS: &[&str] = &["apps.apple.com", "itunes.apple.com", "play.google.com"];
+const STORE_HOSTS: &[&str] = &[
+    "apps.apple.com",
+    "itunes.apple.com",
+    "play.google.com",
+    "apps.microsoft.com",
+];
 
 /// Validate a web-facing URL (web_url). Must be http or https, no private IPs.
 pub fn validate_web_url(s: &str) -> Result<(), String> {
@@ -44,7 +49,7 @@ pub fn validate_store_url(s: &str) -> Result<(), String> {
         .any(|h| host == *h || host.ends_with(&format!(".{h}")))
     {
         return Err(format!(
-            "Store URL host must be an Apple or Google domain, got '{host}'"
+            "Store URL host must be an Apple, Google, or Microsoft domain, got '{host}'"
         ));
     }
     Ok(())
