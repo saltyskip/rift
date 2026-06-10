@@ -1,5 +1,8 @@
 const DEFAULT_BASE = "https://api.riftl.ink";
 
+// Retained for API compatibility and potential future authenticated calls. The
+// web SDK currently makes no authenticated requests (clipboard is local;
+// getLink hits the public resolve endpoint), so this is stored but unused.
 let _publishableKey: string | null = null;
 let _domain: string | null = null;
 let _baseUrl: string = DEFAULT_BASE;
@@ -44,7 +47,11 @@ export function init(publishableKey: string, opts?: RiftInitOptions): void {
         if (href.indexOf(prefix) === 0) {
           const linkId = href.slice(prefix.length).split("?")[0].split("#")[0];
           if (linkId) {
-            click(linkId, { domain: _domain! });
+            // Stamp the clipboard for deferred attribution (we have the gesture)
+            // and let the browser navigate. The web SDK never records the click
+            // itself — the navigation hits the resolver, which is the single
+            // source of truth for web clicks. (#194)
+            copyLinkToClipboard(linkId, _domain!);
           }
         }
       },
@@ -54,37 +61,30 @@ export function init(publishableKey: string, opts?: RiftInitOptions): void {
 }
 
 /**
- * Record a click event. Fire-and-forget — does not block navigation.
- * Called automatically for links matching the custom domain.
- * Can also be called manually for programmatic use cases.
+ * Stamp the link URL onto the clipboard so a freshly-installed app can read it
+ * for deferred attribution. Must run inside a user gesture. No-op when the
+ * Clipboard API is unavailable.
+ */
+function copyLinkToClipboard(linkId: string, domain?: string | null): void {
+  if (typeof navigator === "undefined" || !navigator.clipboard) return;
+  const d =
+    domain || _domain || (typeof location !== "undefined" ? location.hostname : null);
+  if (d) {
+    navigator.clipboard.writeText("https://" + d + "/" + linkId).catch(() => {});
+  }
+}
+
+/**
+ * Stamp the deferred-attribution clipboard URL for a link. Use on a button or
+ * link the user taps to go install the app.
+ *
+ * The web SDK intentionally does **not** record the click: when the user
+ * navigates to the link it resolves through the server, which is the single
+ * counter for web clicks. (To record a click that never passes through the
+ * resolver — e.g. server-side — call `POST /v1/lifecycle/click` directly.)
  */
 export function click(linkId: string, opts?: RiftClickOptions): void {
-  // Clipboard write — must happen while we have the user gesture.
-  if (typeof navigator !== "undefined" && navigator.clipboard) {
-    const domain = opts?.domain || _domain || (typeof location !== "undefined" ? location.hostname : null);
-    if (domain) {
-      navigator.clipboard.writeText("https://" + domain + "/" + linkId).catch(() => {});
-    }
-  }
-
-  if (!_publishableKey) {
-    console.warn("Rift: call Rift.init('pk_live_...') before Rift.click()");
-    return;
-  }
-
-  const url = _baseUrl + "/v1/lifecycle/click?key=" + encodeURIComponent(_publishableKey);
-  const body = JSON.stringify({ link_id: linkId });
-
-  if (navigator.sendBeacon) {
-    navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
-  } else {
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-      keepalive: true,
-    }).catch(() => {});
-  }
+  copyLinkToClipboard(linkId, opts?.domain);
 }
 
 /**

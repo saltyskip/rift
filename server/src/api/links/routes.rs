@@ -604,10 +604,11 @@ async fn do_resolve(
         .into_response();
     }
 
-    // DEPRECATED (issue #197): `?redirect=1` skips the landing page and goes
-    // straight to the platform destination. Superseded by `redirect_mode = Auto`
-    // (no query param needed; preserves the mobile trampoline + clipboard that
-    // this path skips). Kept working for existing callers during deprecation.
+    // `?redirect=1` skips the landing page and goes straight to the platform
+    // destination — the SDK `Rift.click()` flow (which has already stamped the
+    // clipboard with a user gesture at the source). On iOS the App Store URL
+    // opens the app if installed, else the store; desktop goes to web. Distinct
+    // from `redirect_mode = Auto`, which is gated on a `Sec-Fetch-User` signal.
     if redirect {
         if let Some(url) = explicit_redirect_target(&link, os, link_id) {
             return Redirect::temporary(&url).into_response();
@@ -898,15 +899,15 @@ pub(crate) fn append_query_param(url: &str, key: &str, value: &str) -> String {
     format!("{url}{sep}{key}={}", urlencoding(value))
 }
 
-/// Destination for the explicit `?redirect=1` path.
+/// Destination for the explicit `?redirect=1` path (the SDK `Rift.click()`
+/// flow, which has already stamped the clipboard with a user gesture at the
+/// source, so deferred attribution is handled before this redirect). Returns
+/// the OS-appropriate store/web URL with its attribution param.
 ///
-/// **Deprecated** — superseded by `redirect_mode = Auto` (issue #197), which
-/// auto-redirects without a query param and, on mobile, preserves the
-/// Universal/App-Link trampoline + clipboard that `?redirect=1` skips (so it's
-/// better for attribution). Behavior here is intentionally **frozen** to the
-/// historical shape (bare `web_url`, no `rift_link`) so existing callers that
-/// parse the destination aren't broken during the deprecation window — do not
-/// "fix" the divergence from `auto_redirect_target`.
+/// Intentionally returns a **bare** `web_url` on the desktop fallback (no
+/// `rift_link`) to preserve historical behavior for callers that parse the
+/// destination — this divergence from `auto_redirect_target` is deliberate, not
+/// drift.
 fn explicit_redirect_target(link: &Link, os: Os, link_id: &str) -> Option<String> {
     match os {
         Os::Ios => link.ios_store_url.clone(),
