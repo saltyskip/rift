@@ -1,82 +1,81 @@
 # Deep Link Behavior
 
-How Rift links behave depending on where the link is hosted, the user's platform, and whether the app is installed.
+How Rift links resolve across platforms, depending on where the link is clicked and whether the app is installed.
 
-## Recommended Link Configuration
+## Core principles
+
+1. **App installed → the OS opens the app before Rift is involved.** Every path on your verified domain is a Universal Link (iOS/macOS) / App Link (Android) — Rift serves the `apple-app-site-association` and `assetlinks.json` automatically. A tap from anywhere external (Messages, email, social, another site) opens the app directly; the resolver never runs.
+2. **App not installed → the request reaches the Rift resolver,** which decides per platform: a zero-flash redirect, or the landing page.
+3. **`redirect_mode` controls the bounce** (see below). Crawlers and clients with no user-activation signal always get the landing page, so link unfurls/previews are never broken.
+
+## Recommended link configuration
 
 | Field | Value | Purpose |
 |-------|-------|---------|
-| `ios_store_url` | App Store URL | Fallback for iOS users without the app |
-| `android_store_url` | Play Store URL | Fallback for Android users without the app |
-| `web_url` | Your website or store page | Desktop fallback |
-| App registered | `POST /v1/apps` with bundle_id + team_id (iOS), package_name + sha256 (Android) | Enables Universal Links / App Links |
-| Custom domain | Verified via `POST /v1/domains` | AASA and assetlinks.json served automatically |
-| Publishable key | Created via `POST /v1/auth/publishable-keys` | Required for `Rift.click()` on your website |
+| `ios_store_url` | App Store URL | iOS fallback (no app) |
+| `android_store_url` | Play Store URL | Android fallback (no app) |
+| `macos_store_url` | Mac App Store URL | macOS fallback (no app) |
+| `windows_store_url` | Microsoft Store URL | Windows fallback (no app) |
+| `web_url` | Your site / store page | Desktop & unknown fallback |
+| `redirect_mode` | `auto` (default) or `off` | Auto-bounce eligible visitors vs. always show the landing page |
+| App registered | `POST /v1/apps` (bundle/team id, package/sha256) | Enables Universal Links / App Links |
+| Custom domain | Verified via `POST /v1/domains` | AASA + assetlinks.json served automatically |
+
+## `redirect_mode`
+
+- **`auto`** (new links default to this) — eligible visitors are bounced straight to their destination; everyone else lands. Tenant-wide default is `default_redirect_mode`; a per-link `redirect_mode` overrides it. Existing links with no value behave as `off`.
+- **`off`** — always show the landing page (visitor taps to continue).
+
+The auto-bounce (a `307`) only fires for a **human navigation** — detected by the `Sec-Fetch-User: ?1` request header. Crawlers/bots and clients that don't send it fall through to the landing page (which carries the OpenGraph/JSON-LD for unfurls). No bot allowlist is involved.
 
 ---
 
-## 1. Link is on your domain
+## Matrix — external click (the common case)
 
-The download button on your website uses `<a href="https://go.yourcompany.com/link-id">` with `Rift.click()` on the onClick handler. The `<a>` tag should include `?redirect=1` so the landing page skips its UI and goes straight to the store.
+Link clicked somewhere that isn't your domain: a message, email, social post, another website.
 
-### iOS
+### App **installed**
 
-| App Installed | What Happens | Click Tracked |
-|---------------|-------------|---------------|
-| Yes | Universal Link fires. App opens directly. Landing page never loads. | ✅ sendBeacon from your website |
-| No | Landing page loads. Copies link URL to clipboard. Immediately redirects to App Store. | ✅ sendBeacon + server-side |
+| Platform | What happens | Click + attribution |
+|----------|-------------|---------------------|
+| **iOS** | Universal Link → **app opens directly** (Rift not hit) | The app reads the URL → `link_id` → `POST /v1/lifecycle/attribute`, and records the touch via `POST /v1/lifecycle/click`. Deterministic. |
+| **Android** | App Link → **app opens directly** | same |
+| **macOS** | Opens the Mac app *only if* the Mac app's ID is in the AASA; otherwise reaches Rift → Mac App Store | clipboard (best-effort) |
+| **Windows** | No web→app association → reaches Rift → `307` Microsoft Store | MS Store `cid` |
 
-### Android
+### App **not installed** (`redirect_mode = auto`, human navigation)
 
-| App Installed | What Happens | Click Tracked |
-|---------------|-------------|---------------|
-| Yes | App Link fires (if assetlinks.json configured). App opens directly. | ✅ sendBeacon from your website |
-| No | Landing page loads. Appends install referrer to Play Store URL. Immediately redirects to Play Store. | ✅ sendBeacon + server-side |
+| Platform | What happens | Attribution (credited on later install) |
+|----------|-------------|------------------------------------------|
+| **iOS** | **Lands** → tap "Get" → App Store | **Clipboard** — stamped on the tap; the app reads the pasteboard on first launch |
+| **Android** | **`307` → Play Store** (`?referrer=rift_link`) — no landing page | **Play install referrer** (survives the redirect) |
+| **macOS** | **Lands** → tap → Mac App Store | **Clipboard** (best-effort) |
+| **Windows** | **`307` → Microsoft Store** (`?cid`) | **MS Store `cid`** |
+| **Linux / other** | **`307` → `web_url`** (`?rift_link`) | web query |
 
-### Desktop
-
-| What Happens | Click Tracked |
-|-------------|---------------|
-| Landing page loads. Immediately redirects to `web_url`. | ✅ sendBeacon + server-side |
-
----
-
-## 2. Link is NOT on your domain
-
-The link is shared externally — in an email, text message, social media post, chat, etc. There is no `Rift.click()` because rift.js is not loaded on external platforms. No `?redirect=1` — the full landing page is shown.
-
-### iOS
-
-| App Installed | What Happens | Click Tracked |
-|---------------|-------------|---------------|
-| Yes | Universal Link fires. App opens directly. Landing page never loads. | ❌ Not tracked (no JS, no server request) |
-| No | Landing page loads. Shows branded page with App Store button. Copies link URL to clipboard for deferred deep linking. | ✅ Server-side |
-
-### Android
-
-| App Installed | What Happens | Click Tracked |
-|---------------|-------------|---------------|
-| Yes | App Link fires (if configured). App opens directly. | ❌ Not tracked |
-| No | Landing page loads. Shows branded page with Play Store button. Play Store URL includes install referrer for deferred deep linking. | ✅ Server-side |
-
-### Desktop
-
-| What Happens | Click Tracked |
-|-------------|---------------|
-| Landing page loads. Shows branded page with download button linking to `web_url`. | ✅ Server-side |
+**Why iOS/macOS land but Android/Windows bounce:** Apple stores carry no install referrer, so deferred attribution depends on the **clipboard**, and the browser only allows a clipboard write inside a **user-gesture tap** — hence the landing button. Android's Play **referrer** and the Microsoft Store **`cid`** ride the store URL and survive a plain `307`, so no tap (and no landing) is needed. macOS also lands so the page can correct an **iPad** (which reports as a Mac via its User-Agent) to the iOS App Store.
 
 ---
 
-## Edge Cases
+## On your own domain
 
-### User types or pastes the URL in the address bar
+A button on `https://go.yourcompany.com/...` with `Rift.click()` on the handler. Same-domain taps don't fire Universal/App Links, so the click reaches Rift. Add `?redirect=1` to the `<a href>` to skip the landing page and go straight to the destination — `Rift.click()` has already stamped the clipboard at the tap, and on iOS the App Store URL opens the app if installed. (`?redirect=1` is the explicit, gesture-backed path; `redirect_mode=auto` is the implicit one for everywhere else.)
 
-Universal Links and App Links do NOT fire from the address bar on any platform. The landing page always loads and shows the full branded page. Click is tracked server-side.
+The web SDK does **not** record the click — the navigation hits the resolver, which is the single counter (see below).
 
-### In-app browsers (Twitter, Instagram, LinkedIn)
+---
 
-Universal Links are unreliable in in-app browsers. The landing page will usually load. On iOS, a Smart App Banner (`<meta name="apple-itunes-app">`) can prompt the user to open in the real app. Click is tracked server-side.
+## Click tracking & attribution
 
-### External link with app installed — click not tracked
+- **The resolver records every click, once**, at resolve time — before any redirect/landing branch. It is the single source of truth for web clicks.
+- **The web SDK never records clicks.** Auto-track only stamps the clipboard; `Rift.click()` is clipboard-only. (For a click that never passes through the resolver — e.g. server-side — call `POST /v1/lifecycle/click` directly; the mobile SDK uses it when the app is opened directly by a Universal/App Link.)
+- **Attribution channels:** deterministic via the URL the OS hands an installed app; **Android** Play referrer; **Windows** MS Store `cid`; **web** `rift_link`; **iOS/macOS** clipboard (deferred, gesture-required).
 
-When the app opens via Universal Link from an external source, neither sendBeacon nor the server records the click. To close this gap, the mobile SDK should send a retroactive click when the app opens via a Universal Link (i.e., the app receives a URL via `application(_:continue:restorationHandler:)` on iOS or the intent handler on Android).
+---
+
+## Edge cases
+
+- **URL typed/pasted in the address bar** — Universal/App Links don't fire; the landing page loads (no auto-bounce without `Sec-Fetch-User`).
+- **In-app browsers** (Instagram, Facebook, TikTok, X) — Universal/App Links are unreliable; the user usually reaches the landing page. Many of these webviews also omit `Sec-Fetch-User`, so they land rather than bounce — which gives an installed user a second chance to open the app via the landing button.
+- **iPad in desktop mode** — reports a Mac User-Agent. macOS requests with an iOS target land so the page can detect touch and route the iPad to the **iOS** App Store; a real Mac gets the Mac App Store. (If a tenant has an alternate domain configured, a *not-installed* iPad can fall through to `web_url` — a known limitation of header-only detection.)
+- **macOS / Windows don't auto-launch an installed desktop app** — there's no desktop deep-link/trampoline in v1 (macOS Universal Links + a `windows_deep_link` are deferred); installed desktop users get the store listing's "Open" button.
