@@ -5,6 +5,34 @@
 
 use serde::Serialize;
 
+/// Detected visitor operating system (see `core::platform` for detection).
+/// `Other` is the catch-all (Linux/ChromeOS/bots/unknown) and routes to the
+/// web fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Os {
+    Ios,
+    Android,
+    Mac,
+    Windows,
+    Other,
+}
+
+impl Os {
+    /// Stable label stored in click events and surfaced in JSON. The
+    /// `ios`/`android`/`other` values are **byte-identical** to the legacy
+    /// `Platform` strings so historical analytics keep grouping correctly;
+    /// `macos`/`windows` are additive new buckets.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Os::Ios => "ios",
+            Os::Android => "android",
+            Os::Mac => "macos",
+            Os::Windows => "windows",
+            Os::Other => "other",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ClickEventPayload {
     pub tenant_id: String,

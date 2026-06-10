@@ -7,6 +7,8 @@ use crate::core::public_id::{AffiliateId, TenantId};
 use crate::core::threat_feed::ThreatFeed;
 use crate::services::affiliates::repo::AffiliatesRepository;
 use crate::services::app_users::repo::AppUsersRepository;
+use crate::services::auth::tenants::models::RedirectMode;
+use crate::services::auth::tenants::repo::TenantsRepository;
 use crate::services::billing::quota::QuotaChecker;
 use crate::services::billing::service::TierResolver;
 use crate::services::domains::repo::DomainsRepository;
@@ -30,6 +32,10 @@ pub struct LinksServiceDeps {
     /// reinstalled / new_device). Optional for the same reason as
     /// `app_users_repo`.
     pub install_events_repo: Option<Arc<dyn InstallEventsRepository>>,
+    /// Read-only access to the owning tenant's settings — used at link-create
+    /// time to stamp the tenant's `default_redirect_mode`. Optional so
+    /// reduced-feature builds boot; absence falls back to `RedirectMode::Auto`.
+    pub tenants_repo: Option<Arc<dyn TenantsRepository>>,
     pub threat_feed: ThreatFeed,
     pub public_url: String,
     pub quota: Option<Arc<dyn QuotaChecker>>,
@@ -105,6 +111,12 @@ pub struct Link {
     /// Play Store link for Android.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub android_store_url: Option<String>,
+    /// Mac App Store link for macOS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub macos_store_url: Option<String>,
+    /// Microsoft Store link for Windows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows_store_url: Option<String>,
     /// Arbitrary metadata (campaign name, source, etc.).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Document>,
@@ -128,6 +140,9 @@ pub struct Link {
     /// Public social preview fields for rendered landing pages.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub social_preview: Option<SocialPreview>,
+    /// Auto-redirect behavior. `None` (legacy links) resolves to `Off`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redirect_mode: Option<RedirectMode>,
 }
 
 /// Click event stored in the `click_events` time series collection.
@@ -294,11 +309,14 @@ pub struct CreateLinkInput {
     pub web_url: Option<String>,
     pub ios_store_url: Option<String>,
     pub android_store_url: Option<String>,
+    pub macos_store_url: Option<String>,
+    pub windows_store_url: Option<String>,
     pub metadata: Option<Document>,
     pub affiliate_id: Option<AffiliateId>,
     pub expires_at: Option<DateTime>,
     pub agent_context: Option<AgentContext>,
     pub social_preview: Option<SocialPreview>,
+    pub redirect_mode: Option<RedirectMode>,
 }
 
 /// Fluent builder for `CreateLinkInput`. Setters accept `Option<T>` directly
@@ -321,11 +339,14 @@ impl CreateLinkInput {
             web_url: None,
             ios_store_url: None,
             android_store_url: None,
+            macos_store_url: None,
+            windows_store_url: None,
             metadata: None,
             affiliate_id: None,
             expires_at: None,
             agent_context: None,
             social_preview: None,
+            redirect_mode: None,
         }
     }
 
@@ -354,6 +375,16 @@ impl CreateLinkInput {
         self
     }
 
+    pub fn macos_store_url(mut self, v: Option<String>) -> Self {
+        self.macos_store_url = v;
+        self
+    }
+
+    pub fn windows_store_url(mut self, v: Option<String>) -> Self {
+        self.windows_store_url = v;
+        self
+    }
+
     pub fn metadata(mut self, v: Option<Document>) -> Self {
         self.metadata = v;
         self
@@ -376,6 +407,11 @@ impl CreateLinkInput {
 
     pub fn social_preview(mut self, v: Option<SocialPreview>) -> Self {
         self.social_preview = v;
+        self
+    }
+
+    pub fn redirect_mode(mut self, v: Option<RedirectMode>) -> Self {
+        self.redirect_mode = v;
         self
     }
 }
@@ -409,6 +445,14 @@ pub struct CreateLinkRequest {
     #[serde(default)]
     #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
     pub android_store_url: Option<String>,
+    /// Mac App Store link for macOS.
+    #[serde(default)]
+    #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
+    pub macos_store_url: Option<String>,
+    /// Microsoft Store link for Windows.
+    #[serde(default)]
+    #[schema(example = "https://apps.microsoft.com/detail/9NBLGGH4NNS1")]
+    pub windows_store_url: Option<String>,
     /// Arbitrary key-value metadata.
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
@@ -424,6 +468,10 @@ pub struct CreateLinkRequest {
     /// Public Open Graph/Twitter preview data rendered on Rift landing pages.
     #[serde(default)]
     pub social_preview: Option<SocialPreview>,
+    /// Auto-redirect behavior (`auto` / `off`). Omit to inherit the tenant
+    /// default (new links default to `auto`).
+    #[serde(default)]
+    pub redirect_mode: Option<RedirectMode>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -464,6 +512,14 @@ pub struct UpdateLinkRequest {
     #[serde(default)]
     #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
     pub android_store_url: Option<String>,
+    /// Mac App Store link for macOS.
+    #[serde(default)]
+    #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
+    pub macos_store_url: Option<String>,
+    /// Microsoft Store link for Windows.
+    #[serde(default)]
+    #[schema(example = "https://apps.microsoft.com/detail/9NBLGGH4NNS1")]
+    pub windows_store_url: Option<String>,
     /// Arbitrary key-value metadata.
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
@@ -473,6 +529,9 @@ pub struct UpdateLinkRequest {
     /// Public Open Graph/Twitter preview data rendered on Rift landing pages.
     #[serde(default)]
     pub social_preview: Option<SocialPreview>,
+    /// Auto-redirect behavior (`auto` / `off`). Omit to leave unchanged.
+    #[serde(default)]
+    pub redirect_mode: Option<RedirectMode>,
 }
 
 /// Deserializes a field that can be absent, null, or present.
@@ -515,6 +574,14 @@ pub struct LinkDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
     pub android_store_url: Option<String>,
+    /// Mac App Store URL for macOS users without the app installed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
+    pub macos_store_url: Option<String>,
+    /// Microsoft Store URL for Windows users without the app installed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://apps.microsoft.com/detail/9NBLGGH4NNS1")]
+    pub windows_store_url: Option<String>,
     /// When this link was created (RFC 3339).
     #[schema(example = "2025-06-15T10:30:00Z")]
     pub created_at: String,
@@ -527,6 +594,9 @@ pub struct LinkDetail {
     /// Open Graph / Twitter preview metadata rendered on Rift landing pages.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub social_preview: Option<SocialPreview>,
+    /// Auto-redirect behavior for this link (`auto` / `off`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_mode: Option<RedirectMode>,
 }
 
 // ── Bulk Create ──
@@ -558,6 +628,14 @@ pub struct BulkLinkTemplate {
     #[serde(default)]
     #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
     pub android_store_url: Option<String>,
+    /// Mac App Store link for macOS applied to every link in the batch.
+    #[serde(default)]
+    #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
+    pub macos_store_url: Option<String>,
+    /// Microsoft Store link for Windows applied to every link in the batch.
+    #[serde(default)]
+    #[schema(example = "https://apps.microsoft.com/detail/9NBLGGH4NNS1")]
+    pub windows_store_url: Option<String>,
     /// Arbitrary key-value metadata copied onto every link in the batch.
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
@@ -571,6 +649,10 @@ pub struct BulkLinkTemplate {
     /// Open Graph / Twitter preview data applied to every link in the batch.
     #[serde(default)]
     pub social_preview: Option<SocialPreview>,
+    /// Auto-redirect behavior applied to every link in the batch (`auto` / `off`).
+    /// Omit to inherit the tenant default (new links default to `auto`).
+    #[serde(default)]
+    pub redirect_mode: Option<RedirectMode>,
 }
 
 /// Bulk create request. Exactly one of `custom_ids` or `count` must be set.
@@ -714,6 +796,12 @@ pub struct ResolvedLink {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(example = "https://play.google.com/store/apps/details?id=com.tablefour.app")]
     pub android_store_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://apps.apple.com/app/tablefour/id1234567890")]
+    pub macos_store_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(example = "https://apps.microsoft.com/detail/9NBLGGH4NNS1")]
+    pub windows_store_url: Option<String>,
     pub metadata: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<AgentContext>,

@@ -32,6 +32,8 @@ impl LinksRepository for MockLinksRepo {
             web_url: input.web_url,
             ios_store_url: input.ios_store_url,
             android_store_url: input.android_store_url,
+            macos_store_url: input.macos_store_url,
+            windows_store_url: input.windows_store_url,
             metadata: input.metadata,
             affiliate_id: input.affiliate_id,
             created_at: DateTime::now(),
@@ -40,6 +42,7 @@ impl LinksRepository for MockLinksRepo {
             expires_at: input.expires_at,
             agent_context: input.agent_context,
             social_preview: input.social_preview,
+            redirect_mode: input.redirect_mode,
         };
         links.push(link.clone());
         Ok(link)
@@ -85,6 +88,8 @@ impl LinksRepository for MockLinksRepo {
                 web_url: input.web_url,
                 ios_store_url: input.ios_store_url,
                 android_store_url: input.android_store_url,
+                macos_store_url: input.macos_store_url,
+                windows_store_url: input.windows_store_url,
                 metadata: input.metadata,
                 affiliate_id: input.affiliate_id,
                 created_at: now,
@@ -93,6 +98,7 @@ impl LinksRepository for MockLinksRepo {
                 expires_at: input.expires_at,
                 agent_context: input.agent_context,
                 social_preview: input.social_preview,
+                redirect_mode: input.redirect_mode,
             })
             .collect();
         links.extend(new_links.iter().cloned());

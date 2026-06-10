@@ -37,6 +37,24 @@ pub enum SubscriptionStatus {
     Canceled,
 }
 
+/// Whether a link auto-redirects eligible visitors to the platform destination
+/// or always shows the landing page. Lives here (the foundational tenants
+/// domain) so both `TenantDoc` (tenant-wide default) and `Link` (per-link
+/// override) can share one type. See `core::platform` for the routing tiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, utoipa::ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum RedirectMode {
+    /// Auto-redirect eligible visitors straight to the destination: a zero-flash
+    /// 307 for desktop Tier-1 targets with a user-activation signal; the landing
+    /// page (which preserves unfurls + the clipboard tap) for everything else.
+    Auto,
+    /// Always show the landing page; the visitor taps to continue. The safe
+    /// fallback for legacy links that predate this field.
+    #[default]
+    Off,
+}
+
 // ── DB Document ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +85,11 @@ pub struct TenantDoc {
     pub comp_tier: Option<PlanTier>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comp_until: Option<bson::DateTime>,
+
+    /// Tenant-wide default for new links' `redirect_mode`. `None` ⇒ links
+    /// default to `Auto` at create time. Per-link `redirect_mode` overrides it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_redirect_mode: Option<RedirectMode>,
 }
 
 impl Default for TenantDoc {
@@ -84,6 +107,7 @@ impl Default for TenantDoc {
             stripe_subscription_id: None,
             comp_tier: None,
             comp_until: None,
+            default_redirect_mode: None,
         }
     }
 }

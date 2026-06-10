@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use super::models::*;
 use super::repo::LinksRepository;
+use crate::core::platform::Os;
 use crate::core::public_id::{AffiliateId, TenantId};
 use crate::core::threat_feed::ThreatFeed;
 use crate::core::validation;
@@ -12,6 +13,8 @@ use crate::services::affiliates::repo::AffiliatesRepository;
 use crate::services::app_users::models::AppUserUpsert;
 use crate::services::app_users::repo::AppUsersRepository;
 use crate::services::auth::permissions::{AuthContext, Permission, ResourceScope};
+use crate::services::auth::tenants::models::RedirectMode;
+use crate::services::auth::tenants::repo::TenantsRepository;
 use crate::services::billing::quota::{QuotaChecker, Resource};
 use crate::services::billing::service::TierResolver;
 use crate::services::domains::models::DomainRole;
@@ -41,6 +44,8 @@ pub struct LinksService {
     app_users_repo: Option<Arc<dyn AppUsersRepository>>,
     /// Owner of the server-derived install lifecycle stream.
     install_events_repo: Option<Arc<dyn InstallEventsRepository>>,
+    /// Tenant settings lookup for create-time `redirect_mode` defaulting.
+    tenants_repo: Option<Arc<dyn TenantsRepository>>,
     threat_feed: ThreatFeed,
     public_url: String,
     quota: Option<Arc<dyn QuotaChecker>>,
@@ -55,11 +60,36 @@ impl LinksService {
             affiliates_repo: deps.affiliates_repo,
             app_users_repo: deps.app_users_repo,
             install_events_repo: deps.install_events_repo,
+            tenants_repo: deps.tenants_repo,
             threat_feed: deps.threat_feed,
             public_url: deps.public_url,
             quota: deps.quota,
             tiers: deps.tiers,
         }
+    }
+
+    /// Create-time `redirect_mode` for a new link: the explicit request value if
+    /// given, else the tenant's `default_redirect_mode`, else `Auto` (new links
+    /// auto-redirect by default). Stamped at creation so existing links — which
+    /// have no stored value — keep resolving to `Off` and stay unchanged.
+    async fn resolve_create_redirect_mode(
+        &self,
+        tenant_id: &TenantId,
+        requested: Option<RedirectMode>,
+    ) -> RedirectMode {
+        if let Some(mode) = requested {
+            return mode;
+        }
+        let tenant_default = match &self.tenants_repo {
+            Some(repo) => repo
+                .find_by_id(tenant_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|t| t.default_redirect_mode),
+            None => None,
+        };
+        tenant_default.unwrap_or(RedirectMode::Auto)
     }
 
     /// Orchestrate a `/lifecycle/identify` call:
@@ -406,6 +436,8 @@ impl LinksService {
             req.android_deep_link.as_deref(),
             req.ios_store_url.as_deref(),
             req.android_store_url.as_deref(),
+            req.macos_store_url.as_deref(),
+            req.windows_store_url.as_deref(),
         )?;
 
         if let Some(ref web_url) = req.web_url {
@@ -432,17 +464,24 @@ impl LinksService {
         });
         let expires_at = expires_at_dt.map(|dt| dt.try_to_rfc3339_string().unwrap_or_default());
 
+        let redirect_mode = self
+            .resolve_create_redirect_mode(&tenant_id, req.redirect_mode)
+            .await;
+
         let input = CreateLinkInput::new(tenant_id, link_id.clone())
             .ios_deep_link(req.ios_deep_link)
             .android_deep_link(req.android_deep_link)
             .web_url(req.web_url)
             .ios_store_url(req.ios_store_url)
             .android_store_url(req.android_store_url)
+            .macos_store_url(req.macos_store_url)
+            .windows_store_url(req.windows_store_url)
             .metadata(metadata)
             .affiliate_id(resolved_affiliate_id)
             .expires_at(expires_at_dt)
             .agent_context(req.agent_context)
-            .social_preview(req.social_preview);
+            .social_preview(req.social_preview)
+            .redirect_mode(Some(redirect_mode));
 
         self.links_repo.create_link(input).await.map_err(|e| {
             if e.contains("E11000") {
@@ -515,6 +554,8 @@ impl LinksService {
             req.template.android_deep_link.as_deref(),
             req.template.ios_store_url.as_deref(),
             req.template.android_store_url.as_deref(),
+            req.template.macos_store_url.as_deref(),
+            req.template.windows_store_url.as_deref(),
         )?;
         if let Some(ref web_url) = req.template.web_url {
             if let Some(reason) = self.threat_feed.check_url(web_url).await {
@@ -618,6 +659,11 @@ impl LinksService {
         // template as `Option<T>` fields, so we construct the struct
         // directly instead of unwrap-then-rewrap through the builder.
         let template = &req.template;
+        // Stamp the create-time redirect_mode once for the whole batch — bulk
+        // bypasses the builder, so this is the only place it gets set here.
+        let redirect_mode = self
+            .resolve_create_redirect_mode(&tenant_id, template.redirect_mode)
+            .await;
         let inputs: Vec<CreateLinkInput> = link_ids
             .iter()
             .map(|id| CreateLinkInput {
@@ -628,11 +674,14 @@ impl LinksService {
                 web_url: template.web_url.clone(),
                 ios_store_url: template.ios_store_url.clone(),
                 android_store_url: template.android_store_url.clone(),
+                macos_store_url: template.macos_store_url.clone(),
+                windows_store_url: template.windows_store_url.clone(),
                 metadata: metadata_doc.clone(),
                 affiliate_id: resolved_affiliate_id,
                 expires_at: None,
                 agent_context: template.agent_context.clone(),
                 social_preview: template.social_preview.clone(),
+                redirect_mode: Some(redirect_mode),
             })
             .collect();
 
@@ -763,6 +812,8 @@ impl LinksService {
             android_dl,
             req.ios_store_url.as_deref(),
             req.android_store_url.as_deref(),
+            req.macos_store_url.as_deref(),
+            req.windows_store_url.as_deref(),
         )?;
 
         if let Some(ref web_url) = req.web_url {
@@ -809,6 +860,8 @@ impl LinksService {
             ("web_url", req.web_url.as_ref()),
             ("ios_store_url", req.ios_store_url.as_ref()),
             ("android_store_url", req.android_store_url.as_ref()),
+            ("macos_store_url", req.macos_store_url.as_ref()),
+            ("windows_store_url", req.windows_store_url.as_ref()),
         ]
         .into_iter()
         .filter_map(|(k, v)| v.map(|s| (k.to_string(), Bson::String(s.clone()))));
@@ -830,6 +883,14 @@ impl LinksService {
         .filter_map(|(k, v)| v.map(|d| (k.to_string(), Bson::Document(d))));
 
         update.extend(string_fields.chain(doc_fields));
+
+        // redirect_mode is an enum, not a string/document — set it directly when
+        // provided (serializes to "auto"/"off").
+        if let Some(mode) = req.redirect_mode {
+            if let Ok(bson) = mongodb::bson::to_bson(&mode) {
+                update.insert("redirect_mode", bson);
+            }
+        }
 
         if update.is_empty() && unset.is_empty() {
             return Err(LinkError::EmptyUpdate);
@@ -866,7 +927,7 @@ impl LinksService {
         &self,
         tenant_id: &TenantId,
         link_id: &str,
-        user_agent: &str,
+        os: Os,
     ) -> Result<String, LinkError> {
         let link = self
             .links_repo
@@ -875,15 +936,15 @@ impl LinksService {
             .map_err(LinkError::Internal)?
             .ok_or(LinkError::NotFound)?;
 
-        let ua = user_agent.to_lowercase();
-        let redirect_url = if ua.contains("iphone") || ua.contains("ipad") || ua.contains("ipod") {
-            link.ios_store_url.as_deref().or(link.web_url.as_deref())
-        } else if ua.contains("android") {
-            link.android_store_url
+        // The alternate domain is an iOS/Android Universal/App-Link trampoline;
+        // desktop and unknown clients fall back to the web URL.
+        let redirect_url = match os {
+            Os::Ios => link.ios_store_url.as_deref().or(link.web_url.as_deref()),
+            Os::Android => link
+                .android_store_url
                 .as_deref()
-                .or(link.web_url.as_deref())
-        } else {
-            link.web_url.as_deref()
+                .or(link.web_url.as_deref()),
+            Os::Mac | Os::Windows | Os::Other => link.web_url.as_deref(),
         };
 
         redirect_url
@@ -928,10 +989,13 @@ impl LinksService {
             web_url: link.web_url.clone(),
             ios_store_url: link.ios_store_url.clone(),
             android_store_url: link.android_store_url.clone(),
+            macos_store_url: link.macos_store_url.clone(),
+            windows_store_url: link.windows_store_url.clone(),
             created_at: link.created_at.try_to_rfc3339_string().unwrap_or_default(),
             affiliate_id: link.affiliate_id,
             agent_context: link.agent_context.clone(),
             social_preview: link.social_preview.clone(),
+            redirect_mode: link.redirect_mode,
         }
     }
 
@@ -1101,12 +1165,15 @@ pub fn validate_custom_id(id: &str) -> Result<(), LinkError> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn validate_link_urls(
     web_url: Option<&str>,
     ios_deep_link: Option<&str>,
     android_deep_link: Option<&str>,
     ios_store_url: Option<&str>,
     android_store_url: Option<&str>,
+    macos_store_url: Option<&str>,
+    windows_store_url: Option<&str>,
 ) -> Result<(), LinkError> {
     if let Some(v) = web_url {
         validation::validate_web_url(v)
@@ -1127,6 +1194,14 @@ pub fn validate_link_urls(
     if let Some(v) = android_store_url {
         validation::validate_store_url(v)
             .map_err(|e| LinkError::InvalidUrl(format!("android_store_url: {e}")))?;
+    }
+    if let Some(v) = macos_store_url {
+        validation::validate_store_url(v)
+            .map_err(|e| LinkError::InvalidUrl(format!("macos_store_url: {e}")))?;
+    }
+    if let Some(v) = windows_store_url {
+        validation::validate_store_url(v)
+            .map_err(|e| LinkError::InvalidUrl(format!("windows_store_url: {e}")))?;
     }
     Ok(())
 }

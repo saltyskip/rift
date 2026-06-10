@@ -1,11 +1,14 @@
 use super::*;
 use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::secret_keys::repo::KeyScope;
+use crate::services::auth::tenants::models::{RedirectMode, SubscriptionUpdate, TenantDoc};
+use crate::services::auth::tenants::repo::TenantsRepository;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::links::models::BulkInsertError;
 use crate::services::links::repo::LinksRepository;
 use async_trait::async_trait;
 use mongodb::bson::{oid::ObjectId, DateTime, Document};
+use std::sync::Arc;
 use std::sync::Mutex;
 
 /// Build a Full-scope `AuthContext` for tests. The macro-injected scope
@@ -65,6 +68,8 @@ fn make_link(tenant_id: ObjectId, link_id: &str) -> Link {
         web_url: Some("https://example.com".to_string()),
         ios_store_url: None,
         android_store_url: None,
+        macos_store_url: None,
+        windows_store_url: None,
         metadata: None,
         affiliate_id: None,
         created_at: DateTime::now(),
@@ -73,6 +78,7 @@ fn make_link(tenant_id: ObjectId, link_id: &str) -> Link {
         expires_at: None,
         agent_context: None,
         social_preview: None,
+        redirect_mode: None,
     }
 }
 
@@ -92,6 +98,8 @@ impl LinksRepository for MockLinksRepo {
             web_url: input.web_url,
             ios_store_url: input.ios_store_url,
             android_store_url: input.android_store_url,
+            macos_store_url: input.macos_store_url,
+            windows_store_url: input.windows_store_url,
             metadata: input.metadata,
             affiliate_id: input.affiliate_id,
             created_at: DateTime::now(),
@@ -100,6 +108,7 @@ impl LinksRepository for MockLinksRepo {
             expires_at: input.expires_at,
             agent_context: input.agent_context,
             social_preview: input.social_preview,
+            redirect_mode: input.redirect_mode,
         };
         links.push(link.clone());
         Ok(link)
@@ -147,6 +156,8 @@ impl LinksRepository for MockLinksRepo {
                 web_url: input.web_url,
                 ios_store_url: input.ios_store_url,
                 android_store_url: input.android_store_url,
+                macos_store_url: input.macos_store_url,
+                windows_store_url: input.windows_store_url,
                 metadata: input.metadata,
                 affiliate_id: input.affiliate_id,
                 created_at: now,
@@ -155,6 +166,7 @@ impl LinksRepository for MockLinksRepo {
                 expires_at: input.expires_at,
                 agent_context: input.agent_context,
                 social_preview: input.social_preview,
+                redirect_mode: input.redirect_mode,
             })
             .collect();
         links.extend(new_links.iter().cloned());
@@ -389,6 +401,20 @@ impl DomainsRepository for MockDomainsRepo {
 }
 
 fn make_service(links: Vec<Link>, has_verified_domain: bool) -> LinksService {
+    make_service_inner(links, has_verified_domain, None)
+}
+
+/// Build a service whose tenant lookup returns a tenant with the given
+/// `default_redirect_mode` — exercises create-time stamping inheritance.
+fn make_service_with_tenant_default(default: Option<RedirectMode>) -> LinksService {
+    make_service_inner(vec![], true, Some(Arc::new(MockTenantsRepo { default })))
+}
+
+fn make_service_inner(
+    links: Vec<Link>,
+    has_verified_domain: bool,
+    tenants_repo: Option<Arc<dyn TenantsRepository>>,
+) -> LinksService {
     let repo = Arc::new(MockLinksRepo::with_links(links));
     let domains = Arc::new(MockDomainsRepo {
         has_verified: has_verified_domain,
@@ -399,11 +425,117 @@ fn make_service(links: Vec<Link>, has_verified_domain: bool) -> LinksService {
         affiliates_repo: None,
         app_users_repo: None,
         install_events_repo: None,
+        tenants_repo,
         threat_feed: ThreatFeed::new(),
         public_url: "https://riftl.ink".to_string(),
         quota: None,
         tiers: None,
     })
+}
+
+/// Minimal `TenantsRepository` for tests: `find_by_id` returns a default tenant
+/// carrying `default_redirect_mode`; the rest are no-ops.
+struct MockTenantsRepo {
+    default: Option<RedirectMode>,
+}
+
+#[async_trait]
+impl TenantsRepository for MockTenantsRepo {
+    async fn create(&self, _doc: &TenantDoc) -> Result<(), String> {
+        Ok(())
+    }
+    async fn find_by_id(
+        &self,
+        _id: &crate::core::public_id::TenantId,
+    ) -> Result<Option<TenantDoc>, String> {
+        Ok(Some(TenantDoc {
+            default_redirect_mode: self.default,
+            ..TenantDoc::default()
+        }))
+    }
+    async fn find_by_stripe_customer_id(
+        &self,
+        _customer_id: &str,
+    ) -> Result<Option<TenantDoc>, String> {
+        Ok(None)
+    }
+    async fn apply_subscription_update(
+        &self,
+        _tenant_id: &crate::core::public_id::TenantId,
+        _update: SubscriptionUpdate,
+    ) -> Result<bool, String> {
+        Ok(true)
+    }
+    async fn clear_subscription(
+        &self,
+        _tenant_id: &crate::core::public_id::TenantId,
+    ) -> Result<bool, String> {
+        Ok(true)
+    }
+}
+
+// ── redirect_mode create-time stamping (issue #195, Block F) ──
+
+async fn created_link_mode(
+    svc: &LinksService,
+    tenant: ObjectId,
+    req: CreateLinkRequest,
+) -> Option<RedirectMode> {
+    let resp = svc.create_link(&ctx(tenant), req).await.unwrap();
+    svc.get_link(&ctx(tenant), &resp.link_id)
+        .await
+        .unwrap()
+        .redirect_mode
+}
+
+fn create_req(redirect_mode: Option<RedirectMode>) -> CreateLinkRequest {
+    CreateLinkRequest {
+        custom_id: None,
+        ios_deep_link: None,
+        android_deep_link: None,
+        web_url: Some("https://example.com".to_string()),
+        ios_store_url: None,
+        android_store_url: None,
+        macos_store_url: None,
+        windows_store_url: None,
+        metadata: None,
+        affiliate_id: None,
+        agent_context: None,
+        social_preview: None,
+        redirect_mode,
+    }
+}
+
+#[tokio::test]
+async fn create_defaults_redirect_mode_to_auto_when_no_tenant_repo() {
+    let svc = make_service(vec![], true);
+    let mode = created_link_mode(&svc, ObjectId::new(), create_req(None)).await;
+    assert_eq!(mode, Some(RedirectMode::Auto), "new links default to Auto");
+}
+
+#[tokio::test]
+async fn create_honors_explicit_redirect_mode_off() {
+    let svc = make_service(vec![], true);
+    let mode = created_link_mode(&svc, ObjectId::new(), create_req(Some(RedirectMode::Off))).await;
+    assert_eq!(mode, Some(RedirectMode::Off), "explicit Off is honored");
+}
+
+#[tokio::test]
+async fn create_inherits_tenant_default_off() {
+    let svc = make_service_with_tenant_default(Some(RedirectMode::Off));
+    let mode = created_link_mode(&svc, ObjectId::new(), create_req(None)).await;
+    assert_eq!(mode, Some(RedirectMode::Off), "inherits tenant default");
+}
+
+#[tokio::test]
+async fn create_explicit_overrides_tenant_default() {
+    let svc = make_service_with_tenant_default(Some(RedirectMode::Off));
+    let mode = created_link_mode(&svc, ObjectId::new(), create_req(Some(RedirectMode::Auto))).await;
+    assert_eq!(
+        mode,
+        Some(RedirectMode::Auto),
+        "explicit request overrides tenant default"
+    );
 }
 
 // ── Tests ──
@@ -419,10 +551,13 @@ async fn create_link_generates_id() {
         web_url: Some("https://example.com".to_string()),
         ios_store_url: None,
         android_store_url: None,
+        macos_store_url: None,
+        windows_store_url: None,
         metadata: None,
         affiliate_id: None,
         agent_context: None,
         social_preview: None,
+        redirect_mode: None,
     };
 
     let resp = svc.create_link(&ctx(tenant_id), req).await.unwrap();
@@ -441,10 +576,13 @@ async fn create_link_custom_id_requires_verified_domain() {
         web_url: Some("https://example.com".to_string()),
         ios_store_url: None,
         android_store_url: None,
+        macos_store_url: None,
+        windows_store_url: None,
         metadata: None,
         affiliate_id: None,
         agent_context: None,
         social_preview: None,
+        redirect_mode: None,
     };
 
     let err = svc.create_link(&ctx(tenant_id), req).await.unwrap_err();
@@ -462,10 +600,13 @@ async fn create_link_custom_id_with_verified_domain() {
         web_url: Some("https://example.com".to_string()),
         ios_store_url: None,
         android_store_url: None,
+        macos_store_url: None,
+        windows_store_url: None,
         metadata: None,
         affiliate_id: None,
         agent_context: None,
         social_preview: None,
+        redirect_mode: None,
     };
 
     let resp = svc.create_link(&ctx(tenant_id), req).await.unwrap();
@@ -484,10 +625,13 @@ async fn create_link_invalid_custom_id() {
         web_url: None,
         ios_store_url: None,
         android_store_url: None,
+        macos_store_url: None,
+        windows_store_url: None,
         metadata: None,
         affiliate_id: None,
         agent_context: None,
         social_preview: None,
+        redirect_mode: None,
     };
 
     let err = svc.create_link(&ctx(tenant_id), req).await.unwrap_err();
@@ -507,10 +651,13 @@ async fn create_link_duplicate() {
         web_url: Some("https://example.com".to_string()),
         ios_store_url: None,
         android_store_url: None,
+        macos_store_url: None,
+        windows_store_url: None,
         metadata: None,
         affiliate_id: None,
         agent_context: None,
         social_preview: None,
+        redirect_mode: None,
     };
 
     // First create should succeed (random ID won't collide with "EXISTING")
@@ -599,9 +746,12 @@ async fn update_link_success() {
         web_url: Some("https://updated.com".to_string()),
         ios_store_url: None,
         android_store_url: None,
+        macos_store_url: None,
+        windows_store_url: None,
         metadata: None,
         agent_context: None,
         social_preview: None,
+        redirect_mode: None,
     };
 
     let detail = svc
@@ -622,9 +772,12 @@ async fn update_link_not_found() {
         web_url: Some("https://example.com".to_string()),
         ios_store_url: None,
         android_store_url: None,
+        macos_store_url: None,
+        windows_store_url: None,
         metadata: None,
         agent_context: None,
         social_preview: None,
+        redirect_mode: None,
     };
 
     let err = svc
@@ -646,9 +799,12 @@ async fn update_link_empty() {
         web_url: None,
         ios_store_url: None,
         android_store_url: None,
+        macos_store_url: None,
+        windows_store_url: None,
         metadata: None,
         agent_context: None,
         social_preview: None,
+        redirect_mode: None,
     };
 
     let err = svc
@@ -685,10 +841,13 @@ fn empty_bulk_template() -> BulkLinkTemplate {
         web_url: Some("https://example.com".to_string()),
         ios_store_url: None,
         android_store_url: None,
+        macos_store_url: None,
+        windows_store_url: None,
         metadata: None,
         affiliate_id: None,
         agent_context: None,
         social_preview: None,
+        redirect_mode: None,
     }
 }
 
