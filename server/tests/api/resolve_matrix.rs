@@ -613,22 +613,66 @@ async fn auto_macos_with_ios_target_lands_even_without_mac_store() {
 }
 
 #[tokio::test]
-async fn auto_mobile_never_307s() {
+async fn auto_ios_lands_with_activation() {
+    // iOS lands: Apple deferred attribution needs the clipboard tap.
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;
     create_matrix_link(&app, &key, &tenant_id, "test-link", None).await;
 
     let client = no_redirect_client();
-    for ua in [IOS_UA, ANDROID_UA] {
-        let resp = client
-            .get(app.url("/r/test-link"))
-            .header("User-Agent", ua)
-            .header("Sec-Fetch-User", ACTIVATION)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200, "mobile always lands (ua={ua})");
-    }
+    let resp = client
+        .get(app.url("/r/test-link"))
+        .header("User-Agent", IOS_UA)
+        .header("Sec-Fetch-User", ACTIVATION)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "iOS lands (clipboard tap)");
+}
+
+#[tokio::test]
+async fn auto_android_307s_to_play_with_referrer() {
+    // Android is Tier-1: installed users are intercepted by the App Link before
+    // Rift, so whoever reaches the resolver is not-installed → 307 to Play with
+    // the install referrer (which survives the redirect). No landing needed.
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    create_matrix_link(&app, &key, &tenant_id, "test-link", None).await;
+
+    let client = no_redirect_client();
+    let resp = client
+        .get(app.url("/r/test-link"))
+        .header("User-Agent", ANDROID_UA)
+        .header("Sec-Fetch-User", ACTIVATION)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 307, "Android + activation → 307 to Play");
+    let loc = resp.headers().get("location").unwrap().to_str().unwrap();
+    assert!(loc.contains("play.google.com"), "→ Play Store: {loc}");
+    assert!(
+        loc.contains("referrer=") && loc.contains("rift_link%3Dtest-link"),
+        "carries install referrer: {loc}"
+    );
+}
+
+#[tokio::test]
+async fn auto_android_without_activation_lands() {
+    // No Sec-Fetch-User (e.g. an in-app webview) → fall through to the landing
+    // page, which gives an installed user a second App-Link shot via the button.
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    create_matrix_link(&app, &key, &tenant_id, "test-link", None).await;
+
+    let client = no_redirect_client();
+    let resp = client
+        .get(app.url("/r/test-link"))
+        .header("User-Agent", ANDROID_UA)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "Android without activation lands");
 }
 
 #[tokio::test]
