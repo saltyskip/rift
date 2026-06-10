@@ -940,14 +940,26 @@ fn has_user_activation(headers: &HeaderMap) -> bool {
 }
 
 /// Destination for the zero-flash auto-redirect (307), or `None` if the request
-/// must fall through to the landing page. Only **desktop Tier-1** targets —
-/// where the identifier rides the URL and no gesture is needed — are eligible:
-/// Microsoft Store (`cid`) and the web fallback (`rift_link`). Mobile always
-/// lands (Universal/App-Link trampoline + clipboard tap); macOS → Mac App Store
-/// is Tier-2 (clipboard) so it lands too.
+/// must fall through to the landing page. Tier-1 targets — where the identifier
+/// rides the URL and no user gesture is needed — get the 307:
+/// - **Android** → Play Store with `?referrer=rift_link` (the install referrer
+///   survives the redirect). Installed users are intercepted by the App Link on
+///   the associated domain *before* reaching Rift, so whoever hits the resolver
+///   is effectively not-installed — there's no app-open to protect.
+/// - **Windows** → Microsoft Store (`?cid`), else web (`?rift_link`).
+///
+/// **iOS** and **macOS** land instead: Apple stores carry no install referrer,
+/// so deferred attribution depends on the clipboard, which needs a user-gesture
+/// tap (the landing button). macOS also lands to let the page correct an iPad
+/// (which reports as Mac) to the iOS App Store.
 fn auto_redirect_target(link: &Link, os: Os, link_id: &str) -> Option<String> {
     match os {
-        Os::Ios | Os::Android => None,
+        Os::Ios => None,
+        Os::Android => link
+            .android_store_url
+            .as_deref()
+            .map(|u| append_query_param(u, "referrer", &format!("rift_link={link_id}")))
+            .or_else(|| web_redirect_target(link, link_id)),
         Os::Windows => link
             .windows_store_url
             .as_deref()
