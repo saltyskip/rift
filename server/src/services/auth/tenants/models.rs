@@ -5,6 +5,7 @@ use mongodb::bson;
 use serde::{Deserialize, Serialize};
 
 use crate::core::public_id::TenantId;
+use crate::services::landing::models::LandingTheme;
 
 // ── Plan / billing enums ──
 
@@ -90,6 +91,11 @@ pub struct TenantDoc {
     /// default to `Auto` at create time. Per-link `redirect_mode` overrides it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_redirect_mode: Option<RedirectMode>,
+
+    /// Tenant-wide branding for rendered landing pages. `None` ⇒ Rift defaults
+    /// (`LandingTheme::default()`). Set via `PUT /v1/tenant/branding`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub landing_theme: Option<LandingTheme>,
 }
 
 impl Default for TenantDoc {
@@ -108,6 +114,7 @@ impl Default for TenantDoc {
             comp_tier: None,
             comp_until: None,
             default_redirect_mode: None,
+            landing_theme: None,
         }
     }
 }
@@ -124,3 +131,23 @@ pub struct SubscriptionUpdate {
     pub stripe_customer_id: Option<String>,
     pub stripe_subscription_id: Option<String>,
 }
+
+/// Errors from tenant-settings operations. `Invalid` maps to 400, `Storage` to 500.
+#[derive(Debug)]
+pub enum TenantError {
+    /// Input failed validation (e.g. bad hex color, URL, or over-length field).
+    Invalid(String),
+    /// Persistence failure talking to the database.
+    Storage(String),
+}
+
+impl std::fmt::Display for TenantError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TenantError::Invalid(m) => write!(f, "{m}"),
+            TenantError::Storage(m) => write!(f, "{m}"),
+        }
+    }
+}
+
+impl std::error::Error for TenantError {}

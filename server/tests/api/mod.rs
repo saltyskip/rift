@@ -2,6 +2,7 @@ mod affiliate_credentials;
 mod affiliates;
 mod apps;
 mod auth;
+mod branding;
 mod domains;
 mod health;
 mod links;
