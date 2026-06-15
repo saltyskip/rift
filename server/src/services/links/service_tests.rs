@@ -472,6 +472,14 @@ impl TenantsRepository for MockTenantsRepo {
     ) -> Result<bool, String> {
         Ok(true)
     }
+
+    async fn set_landing_theme(
+        &self,
+        _tenant_id: &crate::core::public_id::TenantId,
+        _theme: &crate::services::landing::models::LandingTheme,
+    ) -> Result<bool, String> {
+        Ok(true)
+    }
 }
 
 // ── redirect_mode create-time stamping (issue #195, Block F) ──

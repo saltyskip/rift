@@ -10,6 +10,7 @@ use crate::core::public_id::TenantId;
 pub use super::models::{
     BillingMethod, PlanTier, SubscriptionStatus, SubscriptionUpdate, TenantDoc,
 };
+use crate::services::landing::models::LandingTheme;
 
 // ── Trait ──
 
@@ -37,6 +38,14 @@ pub trait TenantsRepository: Send + Sync {
     /// End-of-subscription path for `customer.subscription.deleted`. Drops
     /// the tenant back to Free and clears Stripe identifiers.
     async fn clear_subscription(&self, tenant_id: &TenantId) -> Result<bool, String>;
+
+    /// Replace the tenant's landing-page branding. Returns `true` if a tenant
+    /// matched. Validation happens in the service layer before this is called.
+    async fn set_landing_theme(
+        &self,
+        tenant_id: &TenantId,
+        theme: &LandingTheme,
+    ) -> Result<bool, String>;
 }
 
 // ── Repository ──
@@ -157,6 +166,23 @@ impl TenantsRepository for TenantsRepo {
         let result = self
             .tenants
             .update_one(doc! { "_id": tenant_id }, update)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(result.matched_count == 1)
+    }
+
+    async fn set_landing_theme(
+        &self,
+        tenant_id: &TenantId,
+        theme: &LandingTheme,
+    ) -> Result<bool, String> {
+        let theme_bson = bson::to_bson(theme).map_err(|e| e.to_string())?;
+        let result = self
+            .tenants
+            .update_one(
+                doc! { "_id": tenant_id },
+                doc! { "$set": { "landing_theme": theme_bson } },
+            )
             .await
             .map_err(|e| e.to_string())?;
         Ok(result.matched_count == 1)

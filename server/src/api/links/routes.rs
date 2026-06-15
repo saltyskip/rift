@@ -15,6 +15,7 @@ use crate::core::platform::{detect_os, Os};
 use crate::core::webhook_dispatcher::ClickEventPayload;
 use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::tenants::models::RedirectMode;
+use crate::services::auth::tenants::repo::TenantsRepository;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::landing::models::LandingTheme;
@@ -644,10 +645,9 @@ async fn do_resolve(
         lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
 
     if has_platform_destinations {
-        // Brand config for the landing page. Phase 1 uses Rift defaults (App
-        // branding is intentionally not consumed); Phase 2 resolves this from
-        // tenant-level config with per-link content overrides.
-        let theme = LandingTheme::default();
+        // Brand config: the tenant's stored LandingTheme, else Rift defaults.
+        // (Per-link content — social_preview — is overlaid in the renderer.)
+        let theme = resolve_landing_theme(state.tenants_repo.as_deref(), &link.tenant_id).await;
 
         // Look up alternate domain for the "Open in App" button.
         let alternate_domain = if let Some(domains_repo) = &state.domains_repo {
@@ -814,6 +814,23 @@ fn compute_link_status(link: &Link) -> &'static str {
         LinkStatus::Flagged => "flagged",
         LinkStatus::Disabled => "disabled",
     }
+}
+
+/// Resolve a tenant's landing-page branding, falling back to Rift defaults when
+/// unset or unavailable. Always returns a usable theme so rendering never fails.
+async fn resolve_landing_theme(
+    tenants_repo: Option<&dyn TenantsRepository>,
+    tenant_id: &crate::core::public_id::TenantId,
+) -> LandingTheme {
+    let Some(repo) = tenants_repo else {
+        return LandingTheme::default();
+    };
+    repo.find_by_id(tenant_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|t| t.landing_theme)
+        .unwrap_or_default()
 }
 
 async fn lookup_tenant_domain(

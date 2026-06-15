@@ -5,6 +5,7 @@ use rift::core::public_id::TenantId;
 use rift::services::auth::tenants::repo::{
     BillingMethod, PlanTier, SubscriptionStatus, SubscriptionUpdate, TenantDoc, TenantsRepository,
 };
+use rift::services::landing::models::LandingTheme;
 
 #[derive(Default)]
 pub struct MockTenantsRepo {
@@ -84,6 +85,20 @@ impl TenantsRepository for MockTenantsRepo {
             t.current_period_start = None;
             t.current_period_end = None;
             t.stripe_subscription_id = None;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    async fn set_landing_theme(
+        &self,
+        tenant_id: &TenantId,
+        theme: &LandingTheme,
+    ) -> Result<bool, String> {
+        let mut guard = self.tenants.lock().unwrap();
+        if let Some(t) = guard.iter_mut().find(|t| t.id.as_ref() == Some(tenant_id)) {
+            t.landing_theme = Some(theme.clone());
             Ok(true)
         } else {
             Ok(false)

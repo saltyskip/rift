@@ -6,6 +6,7 @@ pub mod oauth;
 pub mod publishable_keys;
 pub mod secret_keys;
 pub mod sessions;
+pub mod tenants;
 pub mod users;
 
 use axum::Router;
@@ -17,6 +18,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
     secret_keys::router(state.clone())
         .merge(publishable_keys::router(state.clone()))
         .merge(users::router(state.clone()))
+        .merge(tenants::router(state.clone()))
         .merge(sessions::router(state))
         .merge(oauth::router())
 }

@@ -13,6 +13,7 @@ use crate::services::auth::secret_keys::repo::SecretKeysRepository;
 use crate::services::auth::secret_keys::service::SecretKeysService;
 use crate::services::auth::sessions::service::SessionsService;
 use crate::services::auth::tenants::repo::TenantsRepository;
+use crate::services::auth::tenants::service::TenantsService;
 use crate::services::auth::usage::repo::UsageRepository;
 use crate::services::auth::users::service::UsersService;
 use crate::services::billing::repos::stripe_webhook_dedup::StripeWebhookDedupRepository;
@@ -54,6 +55,7 @@ pub struct AppState {
     pub webhooks_service: Option<Arc<WebhooksService>>,
     pub affiliates_service: Option<Arc<AffiliatesService>>,
     pub users_service: Option<Arc<UsersService>>,
+    pub tenants_service: Option<Arc<TenantsService>>,
     pub secret_keys_service: Option<Arc<SecretKeysService>>,
     pub sessions_service: Option<Arc<SessionsService>>,
     /// OAuth federation (GitHub + Google signin). `None` when neither

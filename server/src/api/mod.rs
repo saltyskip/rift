@@ -49,6 +49,8 @@ use crate::app::AppState;
         auth::users::routes::invite_user,
         auth::users::routes::list_users,
         auth::users::routes::delete_user,
+        auth::tenants::routes::get_branding,
+        auth::tenants::routes::update_branding,
         // Domains — custom domain setup
         domains::routes::create_domain,
         domains::routes::list_domains,
@@ -110,6 +112,11 @@ use crate::app::AppState;
     components(schemas(
         health::models::HealthResponse,
         crate::error::ErrorResponse,
+        crate::services::landing::models::LandingTheme,
+        crate::services::landing::models::Template,
+        crate::services::landing::models::ColorScheme,
+        crate::services::landing::models::FontPreset,
+        crate::services::landing::models::CornerStyle,
         crate::services::links::models::CreateLinkRequest,
         crate::services::links::models::CreateLinkResponse,
         crate::services::links::models::BulkCreateLinksRequest,

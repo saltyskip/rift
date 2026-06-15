@@ -41,6 +41,14 @@ impl TenantsRepository for MockTenants {
     async fn clear_subscription(&self, _tenant_id: &TenantId) -> Result<bool, String> {
         Ok(true)
     }
+
+    async fn set_landing_theme(
+        &self,
+        _tenant_id: &TenantId,
+        _theme: &crate::services::landing::models::LandingTheme,
+    ) -> Result<bool, String> {
+        Ok(true)
+    }
 }
 
 #[derive(Default)]

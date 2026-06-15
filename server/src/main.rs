@@ -576,6 +576,7 @@ async fn run_server(cfg: Config) {
         webhooks_service,
         affiliates_service,
         users_service,
+        tenants_service,
         secret_keys_service,
         sessions_service,
         oauth_service,

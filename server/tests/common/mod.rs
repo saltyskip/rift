@@ -200,6 +200,7 @@ pub async fn spawn_app() -> TestApp {
                 None,
             ),
         )),
+        tenants_service: Some(tenants_service.clone()),
         secret_keys_service: Some(Arc::new(
             rift::services::auth::secret_keys::service::SecretKeysService::new(
                 secret_keys_repo.clone() as Arc<dyn SecretKeysRepository>,
