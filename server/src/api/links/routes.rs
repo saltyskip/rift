@@ -17,6 +17,7 @@ use crate::services::auth::permissions::AuthContext;
 use crate::services::auth::tenants::models::RedirectMode;
 use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
+use crate::services::landing::models::LandingTheme;
 use crate::services::links::models::LinkError;
 use crate::services::links::models::*;
 
@@ -643,34 +644,10 @@ async fn do_resolve(
         lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
 
     if has_platform_destinations {
-        // Fetch app branding from apps_repo, preferring the detected platform.
-        let (app_name, icon_url, theme_color) = if let Some(apps_repo) = &state.apps_repo {
-            let preferred = match os {
-                Os::Android => "android",
-                _ => "ios",
-            };
-            let fallback = match os {
-                Os::Android => "ios",
-                _ => "android",
-            };
-            let app = apps_repo
-                .find_by_tenant_platform(&link.tenant_id, preferred)
-                .await
-                .ok()
-                .flatten()
-                .or(apps_repo
-                    .find_by_tenant_platform(&link.tenant_id, fallback)
-                    .await
-                    .ok()
-                    .flatten());
-            (
-                app.as_ref().and_then(|a| a.app_name.clone()),
-                app.as_ref().and_then(|a| a.icon_url.clone()),
-                app.as_ref().and_then(|a| a.theme_color.clone()),
-            )
-        } else {
-            (None, None, None)
-        };
+        // Brand config for the landing page. Phase 1 uses Rift defaults (App
+        // branding is intentionally not consumed); Phase 2 resolves this from
+        // tenant-level config with per-link content overrides.
+        let theme = LandingTheme::default();
 
         // Look up alternate domain for the "Open in App" button.
         let alternate_domain = if let Some(domains_repo) = &state.domains_repo {
@@ -688,9 +665,7 @@ async fn do_resolve(
             os,
             link: &link,
             link_id,
-            app_name: app_name.as_deref(),
-            icon_url: icon_url.as_deref(),
-            theme_color: theme_color.as_deref(),
+            theme: &theme,
             social_preview: link.social_preview.as_ref(),
             agent_context: link.agent_context.as_ref(),
             link_status,

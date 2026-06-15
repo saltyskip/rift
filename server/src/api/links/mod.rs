@@ -1,5 +1,6 @@
 pub mod landing;
 pub mod models;
+pub mod palette;
 pub mod qr;
 pub mod routes;
 
