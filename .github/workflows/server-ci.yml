@@ -5,6 +5,11 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # Manual one-click deploy of any branch to sandbox:
+  #   gh workflow run server-ci.yml --ref <branch>
+  # (or the "Run workflow" button in the Actions tab). Runs lint + test, then
+  # deploy-sandbox only — deploy-prod stays gated to pushes on main.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -63,7 +68,7 @@ jobs:
   deploy-sandbox:
     name: Deploy to Sandbox
     needs: [lint, test]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
