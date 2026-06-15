@@ -121,11 +121,6 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         })
         .unwrap_or_default();
 
-    // Preview image rendered as a hero banner (previously only in OG tags).
-    let hero_html = preview_image
-        .map(|img| format!(r#"<img class="hero" src="{}" alt="" />"#, html_escape(img)))
-        .unwrap_or_default();
-
     let icon_html = theme
         .icon_url
         .as_deref()
@@ -194,7 +189,6 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         .split.solo .side-human {{ width:100%; border-right:none; }}
         .split.solo .side-agent {{ display:none; }}
         .human-inner {{ text-align:center; max-width:360px; width:100%; }}
-        .hero {{ width:100%; height:160px; object-fit:cover; border-radius:var(--radius); margin-bottom:22px; border:1px solid var(--border); }}
         .icon {{ width:72px; height:72px; border-radius:18px; margin-bottom:18px; box-shadow:0 6px 24px rgba(0,0,0,0.35); }}
         .brand {{ font-size:11px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--accent); margin-bottom:18px; }}
         .human-inner h1 {{ font-size:26px; font-weight:700; line-height:1.25; margin-bottom:10px; letter-spacing:-0.01em; }}
@@ -248,7 +242,6 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
 <div class="{layout_class}">
     <div class="side-human">
         <div class="human-inner">
-            {hero_html}
             {icon_html}
             <div class="brand">{app_name_escaped}</div>
             {title_html}
@@ -346,7 +339,6 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         og_image_tag = og_image_tag,
         json_ld = json_ld,
         css_vars = css_vars,
-        hero_html = hero_html,
         icon_html = icon_html,
         app_name_escaped = html_escape(app_name_display),
         cta_label_escaped = html_escape(&cta_label),

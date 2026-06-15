@@ -147,7 +147,7 @@ async fn resolve_ios_deep_link_shows_smart_landing() {
 }
 
 #[tokio::test]
-async fn resolve_landing_renders_preview_hero_image() {
+async fn resolve_landing_keeps_og_image_meta_without_visible_hero() {
     let app = common::spawn_app().await;
     let (key, tenant_id) = common::seed_api_key(&app).await;
     common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
@@ -182,9 +182,12 @@ async fn resolve_landing_renders_preview_hero_image() {
 
     assert_eq!(resp.status(), 200);
     let body = resp.text().await.unwrap();
-    // Preview image is now rendered as a hero (previously only an OG meta tag).
-    assert!(body.contains(r#"<img class="hero""#));
+    // The OG image still drives social unfurls via meta tags...
+    assert!(body.contains(r#"property="og:image""#));
     assert!(body.contains("https://cdn.example.com/promo-banner.jpg"));
+    // ...but it is NOT rendered as a visible hero (OG images are small and
+    // look poor stretched as a banner — see the logo/brand-led layout).
+    assert!(!body.contains(r#"class="hero""#));
 }
 
 #[tokio::test]
