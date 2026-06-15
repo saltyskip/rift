@@ -224,6 +224,12 @@ cargo test   # All tests pass
 - If an import is unused, remove it — don't `#[allow(unused_imports)]`
 - Run `cargo fmt` before committing to avoid formatting failures in CI
 
+**Final test ordering.** The full `cargo test` run is slow. After `cargo fmt --check`
+and `cargo clippy` pass, **push the branch and open the PR first, then run the final
+`cargo test` locally.** This lets remote CI run the suite in parallel with your local
+run instead of serializing them. (Only the final full test run gets this treatment —
+fast/targeted tests during development still run before pushing as normal.)
+
 ## Testing
 
 Tests must live in **separate files**, not inline in source files. This keeps source files focused on production code and keeps PR diffs reviewable.
