@@ -141,6 +141,50 @@ async fn resolve_ios_deep_link_shows_smart_landing() {
     assert!(body.contains("apps.apple.com"));
     // Deep link data is still in JSON-LD for agents/crawlers.
     assert!(body.contains("myapp://product/42"));
+    // The Default template drives the palette through CSS custom properties.
+    assert!(body.contains(":root"));
+    assert!(body.contains("--accent:"));
+}
+
+#[tokio::test]
+async fn resolve_landing_renders_preview_hero_image() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "promo",
+            "ios_deep_link": "myapp://promo",
+            "ios_store_url": "https://apps.apple.com/app/id999",
+            "social_preview": {
+                "title": "Summer Sale",
+                "description": "50% off everything",
+                "image_url": "https://cdn.example.com/promo-banner.jpg"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .get(app.url("/r/promo"))
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+        )
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    // Preview image is now rendered as a hero (previously only an OG meta tag).
+    assert!(body.contains(r#"<img class="hero""#));
+    assert!(body.contains("https://cdn.example.com/promo-banner.jpg"));
 }
 
 #[tokio::test]
