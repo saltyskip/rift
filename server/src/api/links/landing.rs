@@ -851,7 +851,7 @@ fn build_agent_panel(ctx: &LandingPageContext) -> String {
     // Footer
     if !ctx.theme.hide_powered_by {
         html.push_str(r#"<div class="agent-footer">"#);
-        html.push_str(r#"<p class="powered">Powered by <a href="https://riftl.ink">Rift</a> &mdash; Deep links for humans and agents</p>"#);
+        html.push_str(r#"<p class="powered"><a href="https://riftl.ink" target="_blank" rel="noopener">Powered by Rift</a> &mdash; Deep links for humans and agents</p>"#);
         html.push_str(r#"<p class="hint">AI agents: request with Accept: application/json for structured data</p>"#);
         html.push_str("</div>");
     }
