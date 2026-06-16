@@ -12,9 +12,12 @@ use mongodb::bson::DateTime;
 use serde_json::json;
 
 use super::palette::{derive_palette, DerivedPalettes, Palette};
+use super::qr::qr_svg;
 use super::routes::{append_query_param, html_escape};
 use crate::core::platform::Os;
-use crate::services::landing::models::{CornerStyle, FontPreset, LandingTheme, DEFAULT_ACCENT};
+use crate::services::landing::models::{
+    ButtonFill, CornerStyle, Elevation, FontPreset, LandingTheme, DEFAULT_ACCENT,
+};
 use crate::services::links::models::{AgentContext, Link, SocialPreview};
 
 // ── Public surface ──
@@ -23,6 +26,8 @@ pub(crate) struct LandingPageContext<'a> {
     pub os: Os,
     pub link: &'a Link,
     pub link_id: &'a str,
+    /// Canonical public URL of this link, encoded into the desktop QR code.
+    pub link_url: &'a str,
     /// Resolved brand config — the renderer's sole branding input.
     pub theme: &'a LandingTheme,
     pub social_preview: Option<&'a SocialPreview>,
@@ -47,7 +52,32 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         theme.theme_color.as_deref().unwrap_or(DEFAULT_ACCENT),
         theme.color_scheme,
     );
-    let css_vars = build_css_vars(&palettes, theme.font, theme.corner_style);
+    // Font: a Google Fonts family (loaded via <link>) layered over the preset's
+    // system-font fallback stack. font_family is validated to letters/digits/
+    // spaces, so it's safe in both the URL and the CSS value.
+    let fallback_stack = font_stack(theme.font);
+    let font_value = match theme.font_family.as_deref() {
+        Some(f) => format!("'{f}', {fallback_stack}"),
+        None => fallback_stack.to_string(),
+    };
+    let font_link = theme
+        .font_family
+        .as_deref()
+        .map(|f| {
+            let enc = f.replace(' ', "+");
+            format!(
+                r#"    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family={enc}:wght@400;500;600;700&display=swap" rel="stylesheet">"#
+            )
+        })
+        .unwrap_or_default();
+    let css_vars = build_css_vars(&palettes, &font_value, theme.corner_style);
+
+    // Composable button styling — each axis maps to a CSS class.
+    let btn_fill = button_fill_class(theme.button.fill);
+    let elev_class = elevation_class(theme.button.elevation);
+    let btn_radius = button_radius_class(theme.button.radius);
 
     let metadata_fallback = if ctx.social_preview.is_none() {
         social_preview_from_metadata(link.metadata.as_ref())
@@ -167,6 +197,9 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
 
     let expiry_html = expiry_notice(link);
 
+    // Desktop-only QR: a desktop visitor to an app page wants it on their phone.
+    let qr_block = build_qr_block(ctx.link_url);
+
     let agent_description = ctx.agent_context.and_then(|ac| ac.description.as_deref());
 
     let meta_desc_tag = agent_description
@@ -191,6 +224,7 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{font_link}
     <title>{og_title} — Rift</title>
     <meta property="og:title" content="{og_title_escaped}" />
     <meta property="og:description" content="{og_desc_escaped}" />
@@ -209,19 +243,31 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         .side-human, .side-agent {{ min-width:0; }}
         /* ── Human side (60%): brand showcase on a localized accent spotlight ── */
         .side-human {{ position:relative; overflow:hidden; width:60%; display:flex; align-items:center; justify-content:center; padding:48px 40px; border-right:1px solid var(--border);
-            background:radial-gradient(90% 65% at 50% 36%, color-mix(in srgb, var(--accent) 24%, transparent) 0%, color-mix(in srgb, var(--accent) 5%, transparent) 30%, transparent 60%), var(--bg); }}
+            background:radial-gradient(85% 60% at 50% 36%, color-mix(in srgb, var(--accent) 16%, transparent) 0%, color-mix(in srgb, var(--accent) 4%, transparent) 32%, transparent 62%), var(--bg); }}
         .side-human::before {{ content:""; position:absolute; inset:0; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px); background-size:22px 22px; -webkit-mask-image:radial-gradient(70% 60% at 50% 40%, #000, transparent 78%); mask-image:radial-gradient(70% 60% at 50% 40%, #000, transparent 78%); }}
         .side-human::after {{ content:""; position:absolute; inset:0; pointer-events:none; background:radial-gradient(140% 130% at 50% 40%, transparent 52%, rgba(0,0,0,0.45) 100%); }}
         .side-agent {{ width:40%; background:var(--surface); padding:36px 28px; display:flex; flex-direction:column; overflow-y:auto; }}
-        .split.solo .side-human {{ width:100%; border-right:none; }}
+        .split.solo .side-human {{ width:100%; border-right:none; padding:48px 64px; }}
         .split.solo .side-agent {{ display:none; }}
+        /* Solo mode (no agent panel) becomes a horizontal two-column hero so the
+           full width is used instead of one tall centered stack. */
+        @media (min-width:900px) {{
+            .split.solo .human-inner {{ display:grid; grid-template-columns:1fr auto; gap:72px; align-items:center; max-width:940px; text-align:left; }}
+            .split.solo .hero-content {{ text-align:left; }}
+            .split.solo .eyebrow {{ margin-bottom:22px; }}
+            .split.solo .tile-wrap {{ margin:0 0 24px; }}
+            .split.solo .subtitle {{ margin:0 0 32px; max-width:38ch; }}
+            .split.solo .cta-row {{ align-items:flex-start; }}
+            .split.solo .qr-block {{ margin-top:0; }}
+        }}
         .human-inner {{ position:relative; z-index:1; text-align:center; max-width:400px; width:100%; }}
         .eyebrow {{ display:inline-flex; align-items:center; gap:8px; font-size:11px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:var(--text-muted); margin-bottom:26px; }}
         .eyebrow .spark {{ width:5px; height:5px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px 1px var(--accent-glow); }}
         .tile-wrap {{ position:relative; width:104px; height:104px; margin:0 auto 30px; }}
-        .tile-wrap::before {{ content:""; position:absolute; inset:-26px; background:radial-gradient(closest-side, var(--accent-glow), transparent 72%); filter:blur(8px); opacity:0.7; z-index:-1; }}
-        .tile {{ position:relative; width:100%; height:100%; border-radius:24px; background:linear-gradient(160deg, var(--surface), var(--bg)); display:grid; place-items:center; overflow:hidden;
-            box-shadow:0 0 0 1px var(--border), 0 1px 0 0 rgba(255,255,255,0.08) inset, 0 0 0 6px color-mix(in srgb, var(--accent) 7%, transparent), 0 18px 50px -12px var(--accent-glow), 0 30px 60px -20px rgba(0,0,0,0.7); }}
+        .tile-wrap.elev-glow::before {{ content:""; position:absolute; inset:-26px; background:radial-gradient(closest-side, var(--accent-glow), transparent 72%); filter:blur(8px); opacity:0.7; z-index:-1; }}
+        .tile {{ position:relative; width:100%; height:100%; border-radius:24px; background:linear-gradient(160deg, var(--surface), var(--bg)); display:grid; place-items:center; overflow:hidden; box-shadow:0 0 0 1px var(--border); }}
+        .tile-wrap.elev-soft .tile {{ box-shadow:0 0 0 1px var(--border), 0 16px 40px -20px rgba(0,0,0,0.7); }}
+        .tile-wrap.elev-glow .tile {{ box-shadow:0 0 0 1px var(--border), 0 1px 0 0 rgba(255,255,255,0.08) inset, 0 0 0 6px color-mix(in srgb, var(--accent) 7%, transparent), 0 18px 50px -16px var(--accent-glow), 0 30px 60px -24px rgba(0,0,0,0.7); }}
         .tile::after {{ content:""; position:absolute; inset:0; background:linear-gradient(180deg, rgba(255,255,255,0.10), transparent 42%); pointer-events:none; }}
         .tile img {{ width:72px; height:72px; object-fit:contain; filter:drop-shadow(0 6px 16px var(--accent-glow)); }}
         .monogram {{ font-size:42px; font-weight:700; color:var(--accent); letter-spacing:-0.02em; }}
@@ -229,17 +275,34 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         .human-inner .subtitle {{ margin:0 auto 32px; font-size:16px; line-height:1.5; color:var(--text-muted); max-width:34ch; }}
         .cta-row {{ display:flex; flex-direction:column; align-items:center; gap:12px; }}
         .btn {{ appearance:none; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:9px; font-weight:600; font-size:16px; letter-spacing:-0.01em; border-radius:var(--radius-btn); transition:transform .18s ease, box-shadow .25s ease; }}
-        .btn-primary {{ color:var(--accent-text); padding:15px 34px; background:linear-gradient(180deg, var(--accent-bright), var(--accent-deep));
-            box-shadow:0 0 0 1px rgba(255,255,255,0.16) inset, 0 1px 0 0 rgba(255,255,255,0.30) inset, 0 12px 30px -8px var(--accent-glow), 0 2px 6px rgba(0,0,0,0.4); }}
-        .btn-primary:hover {{ transform:translateY(-2px); box-shadow:0 0 0 1px rgba(255,255,255,0.20) inset, 0 1px 0 0 rgba(255,255,255,0.36) inset, 0 18px 44px -8px var(--accent-glow), 0 2px 6px rgba(0,0,0,0.4); }}
+        .btn-primary {{ padding:15px 34px; }}
+        .btn-primary:hover {{ transform:translateY(-2px); }}
         .btn-primary:active {{ transform:translateY(0); }}
         .btn-primary .chev {{ transition:transform .2s ease; }}
         .btn-primary:hover .chev {{ transform:translateX(3px); }}
+        /* Button — composable fill */
+        .fill-solid {{ background:var(--accent); color:var(--accent-text); }}
+        .fill-gradient {{ background:linear-gradient(180deg, var(--accent-bright), var(--accent-deep)); color:var(--accent-text); }}
+        .fill-tint {{ background:color-mix(in srgb, var(--accent) 16%, transparent); color:var(--accent-bright); }}
+        .fill-outline {{ background:transparent; color:var(--accent); border:1.5px solid color-mix(in srgb, var(--accent) 55%, transparent); }}
+        /* Button — composable elevation */
+        .btn-primary.elev-soft {{ box-shadow:0 10px 26px -14px rgba(0,0,0,0.75); }}
+        .btn-primary.elev-glow {{ box-shadow:0 8px 24px -12px var(--accent-glow), 0 1px 2px rgba(0,0,0,0.3); }}
+        .btn-primary.elev-glow:hover {{ box-shadow:0 14px 32px -12px var(--accent-glow), 0 1px 2px rgba(0,0,0,0.3); }}
+        /* Button — composable radius override */
+        .btn.rad-sharp {{ border-radius:4px; }}
+        .btn.rad-rounded {{ border-radius:12px; }}
+        .btn.rad-pill {{ border-radius:999px; }}
         .btn-ghost {{ color:var(--text-muted); padding:13px 26px; background:color-mix(in srgb, var(--text) 3%, transparent); border:1px solid var(--border); }}
         .btn-ghost:hover {{ color:var(--text); border-color:var(--text-muted); }}
         .sub {{ color:var(--text-muted); font-size:12px; margin-top:4px; }}
         .expiry {{ font-size:12px; color:var(--text-muted); margin-top:18px; }}
         .expiry.expired {{ color:#f59e0b; font-weight:600; }}
+        .qr-block {{ margin-top:40px; display:flex; flex-direction:column; align-items:center; gap:12px; }}
+        .qr-card {{ background:#fff; padding:14px; border-radius:16px; box-shadow:0 0 0 1px var(--border), 0 16px 40px -16px rgba(0,0,0,0.7); }}
+        .qr-card svg {{ display:block; width:140px; height:140px; }}
+        .qr-label {{ display:inline-flex; align-items:center; gap:8px; font-size:11px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:var(--text-muted); }}
+        .qr-label .spark {{ width:5px; height:5px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px 1px var(--accent-glow); }}
         .badge {{ display:inline-flex; align-items:center; gap:8px; background:color-mix(in srgb, var(--accent) 10%, transparent); border:1px solid color-mix(in srgb, var(--accent) 28%, transparent); border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; color:var(--accent); margin-bottom:8px; width:fit-content; }}
         .badge svg {{ flex-shrink:0; stroke:currentColor; }}
         .agent-tagline {{ font-size:13px; color:var(--text-muted); margin-bottom:24px; }}
@@ -277,6 +340,7 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
             .side-agent {{ width:100%; padding:28px 20px; }}
             .cta-row {{ width:100%; }}
             .btn {{ width:100%; max-width:340px; }}
+            .qr-block {{ display:none; }}
         }}
     </style>
 </head>
@@ -284,16 +348,19 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
 <div class="{layout_class}">
     <div class="side-human">
         <div class="human-inner">
-            {eyebrow_html}
-            <div class="tile-wrap"><div class="tile">{tile_inner}</div></div>
-            <h1>{headline_escaped}</h1>
-            {desc_html}
-            <div class="cta-row">
-                <a id="open-btn" class="btn btn-primary" href="#"><span id="cta-text">{cta_label_escaped}</span><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.5 3.5L10 8l-4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-                {ghost_html}
-                <p class="sub" id="fallback-msg"></p>
+            <div class="hero-content">
+                {eyebrow_html}
+                <div class="tile-wrap {elev_class}"><div class="tile">{tile_inner}</div></div>
+                <h1>{headline_escaped}</h1>
+                {desc_html}
+                <div class="cta-row">
+                    <a id="open-btn" class="btn btn-primary {btn_fill} {elev_class} {btn_radius}" href="#"><span id="cta-text">{cta_label_escaped}</span><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.5 3.5L10 8l-4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+                    {ghost_html}
+                    <p class="sub" id="fallback-msg"></p>
+                </div>
+                {expiry_html}
             </div>
-            {expiry_html}
+            {qr_block}
         </div>
     </div>
     <div class="side-agent">
@@ -385,6 +452,10 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         og_image_tag = og_image_tag,
         json_ld = json_ld,
         css_vars = css_vars,
+        font_link = font_link,
+        btn_fill = btn_fill,
+        elev_class = elev_class,
+        btn_radius = btn_radius,
         eyebrow_html = eyebrow_html,
         tile_inner = tile_inner,
         headline_escaped = headline_escaped,
@@ -393,6 +464,7 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         desc_html = desc_html,
         ghost_html = ghost_html,
         expiry_html = expiry_html,
+        qr_block = qr_block,
         layout_class = layout_class,
         agent_panel = agent_panel,
         platform_js = platform_js,
@@ -408,12 +480,11 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
 
 /// Emit the `:root` custom-property block (plus an optional
 /// `prefers-color-scheme: light` override) from a derived palette.
-fn build_css_vars(palettes: &DerivedPalettes, font: FontPreset, corners: CornerStyle) -> String {
+fn build_css_vars(palettes: &DerivedPalettes, font_value: &str, corners: CornerStyle) -> String {
     let (radius_card, radius_btn) = corner_radii(corners);
-    let font_stack = font_stack(font);
     let root = render_palette_vars(&palettes.root);
     let mut css = format!(
-        ":root {{ {root} --font:{font_stack}; --radius:{radius_card}; --radius-btn:{radius_btn}; }}"
+        ":root {{ {root} --font:{font_value}; --radius:{radius_card}; --radius-btn:{radius_btn}; }}"
     );
     if let Some(light) = &palettes.prefers_light {
         let light_vars = render_palette_vars(light);
@@ -439,6 +510,33 @@ fn font_stack(font: FontPreset) -> &'static str {
             "ui-rounded,'SF Pro Rounded','Hiragino Maru Gothic ProN',system-ui,sans-serif"
         }
         FontPreset::Mono => "ui-monospace,'SF Mono','Cascadia Code',Menlo,monospace",
+    }
+}
+
+fn button_fill_class(fill: ButtonFill) -> &'static str {
+    match fill {
+        ButtonFill::Solid => "fill-solid",
+        ButtonFill::Tint => "fill-tint",
+        ButtonFill::Outline => "fill-outline",
+        ButtonFill::Gradient => "fill-gradient",
+    }
+}
+
+fn elevation_class(elevation: Elevation) -> &'static str {
+    match elevation {
+        Elevation::Flat => "elev-flat",
+        Elevation::Soft => "elev-soft",
+        Elevation::Glow => "elev-glow",
+    }
+}
+
+/// Per-button radius override; empty string means inherit the theme's `--radius-btn`.
+fn button_radius_class(radius: Option<CornerStyle>) -> &'static str {
+    match radius {
+        Some(CornerStyle::Sharp) => "rad-sharp",
+        Some(CornerStyle::Rounded) => "rad-rounded",
+        Some(CornerStyle::Pill) => "rad-pill",
+        None => "",
     }
 }
 
@@ -479,6 +577,17 @@ fn availability_eyebrow(link: &Link) -> String {
         (false, false) => return String::new(),
     };
     format!(r#"<span class="eyebrow"><span class="spark"></span>{label}</span>"#)
+}
+
+/// Desktop "Scan to install" QR card. Encodes the link's own URL so scanning
+/// it on a phone runs the same resolve flow. Empty if QR generation fails.
+fn build_qr_block(link_url: &str) -> String {
+    match qr_svg(link_url) {
+        Some(svg) => format!(
+            r#"<div class="qr-block"><div class="qr-card">{svg}</div><div class="qr-label"><span class="spark"></span>Scan to install on your phone</div></div>"#
+        ),
+        None => String::new(),
+    }
 }
 
 /// Human-readable expiry line, or empty when the link never expires.

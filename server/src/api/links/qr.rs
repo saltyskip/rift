@@ -316,6 +316,31 @@ async fn fetch_logo(url: &str) -> Result<LogoImage, String> {
     Ok(LogoImage { png_bytes })
 }
 
+/// Render a plain, high-contrast (dark-on-white) SVG QR for inline embedding on
+/// the landing page. Returns `None` on failure so the caller simply omits the
+/// QR rather than breaking the page. Kept dark-on-white — not brand-tinted — so
+/// scannability never depends on the tenant's color choice.
+pub(crate) fn qr_svg(url: &str) -> Option<String> {
+    let dark = Color::from_hex("#101013").ok()?;
+    let light = Color::from_hex("#ffffff").ok()?;
+    let qr = QRCodeStyling::builder()
+        .data(url)
+        .size(200)
+        .margin(8)
+        .shape(ShapeType::Square)
+        .qr_options(QROptions::new().with_error_correction_level(ErrorCorrectionLevel::M))
+        .dots_options(DotsOptions::new(DotType::Rounded).with_color(dark))
+        .corners_square_options(
+            CornersSquareOptions::new(CornerSquareType::ExtraRounded).with_color(dark),
+        )
+        .corners_dot_options(CornersDotOptions::new(CornerDotType::Dot).with_color(dark))
+        .background_options(BackgroundOptions::new(light))
+        .build()
+        .ok()?;
+    let bytes = qr.render(OutputFormat::Svg).ok()?;
+    String::from_utf8(bytes).ok()
+}
+
 fn render_qr(
     url: &str,
     options: &QrRenderOptions,

@@ -661,10 +661,14 @@ async fn do_resolve(
             None
         };
 
+        // Canonical URL of this link — encoded into the desktop QR.
+        let link_url = canonical_link_url(state, &link).await;
+
         let html = render_smart_landing_page(&LandingPageContext {
             os,
             link: &link,
             link_id,
+            link_url: &link_url,
             theme: &theme,
             social_preview: link.social_preview.as_ref(),
             agent_context: link.agent_context.as_ref(),
