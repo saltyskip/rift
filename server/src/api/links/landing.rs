@@ -78,6 +78,12 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     let btn_fill = button_fill_class(theme.button.fill);
     let elev_class = elevation_class(theme.button.elevation);
     let btn_radius = button_radius_class(theme.button.radius);
+    // Optionally hide the CTA on desktop (QR-only acquisition flow).
+    let hide_cta_class = if theme.hide_cta_on_desktop {
+        "hide-cta-desktop"
+    } else {
+        ""
+    };
 
     let metadata_fallback = if ctx.social_preview.is_none() {
         social_preview_from_metadata(link.metadata.as_ref())
@@ -342,12 +348,16 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
             .btn {{ width:100%; max-width:340px; }}
             .qr-block {{ display:none; }}
         }}
+        /* QR-only acquisition flow: hide the CTA on desktop, leaving the QR. */
+        @media (min-width:768px) {{
+            .human-inner.hide-cta-desktop .cta-row {{ display:none; }}
+        }}
     </style>
 </head>
 <body>
 <div class="{layout_class}">
     <div class="side-human">
-        <div class="human-inner">
+        <div class="human-inner {hide_cta_class}">
             <div class="hero-content">
                 {eyebrow_html}
                 <div class="tile-wrap {elev_class}"><div class="tile">{tile_inner}</div></div>
@@ -456,6 +466,7 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         btn_fill = btn_fill,
         elev_class = elev_class,
         btn_radius = btn_radius,
+        hide_cta_class = hide_cta_class,
         eyebrow_html = eyebrow_html,
         tile_inner = tile_inner,
         headline_escaped = headline_escaped,

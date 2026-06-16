@@ -160,6 +160,10 @@ pub struct LandingTheme {
     /// Hide the "Powered by Rift" footer (paid tiers).
     #[serde(default)]
     pub hide_powered_by: bool,
+    /// Hide the CTA buttons on desktop, leaving only the QR — pushes desktop
+    /// visitors to scan and install on their phone (acquisition links).
+    #[serde(default)]
+    pub hide_cta_on_desktop: bool,
     /// Show the machine-readable agent panel (the 40% side).
     #[serde(default = "default_true")]
     pub show_agent_panel: bool,
@@ -185,6 +189,7 @@ impl Default for LandingTheme {
             tagline: None,
             cta_label: None,
             hide_powered_by: false,
+            hide_cta_on_desktop: false,
             show_agent_panel: true,
         }
     }
