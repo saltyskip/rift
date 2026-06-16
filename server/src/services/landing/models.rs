@@ -62,6 +62,51 @@ pub enum CornerStyle {
     Pill,
 }
 
+/// How the CTA button is filled. One axis of the composable [`ButtonStyle`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ButtonFill {
+    #[default]
+    Solid,
+    /// Low-opacity brand tint.
+    Tint,
+    /// Transparent with a brand border.
+    Outline,
+    /// Brand gradient (bright → deep).
+    Gradient,
+}
+
+/// Depth treatment shared by the CTA button and the app tile, so the page's
+/// elevation reads as one coherent property rather than per-element opinions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum Elevation {
+    /// No shadow.
+    Flat,
+    /// Soft neutral drop shadow.
+    Soft,
+    /// Accent-tinted glow.
+    #[default]
+    Glow,
+}
+
+/// Composable CTA button styling — assembled from orthogonal properties rather
+/// than chosen from named presets, so brands compose their own look while every
+/// axis stays a constrained enum (no arbitrary CSS).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+pub struct ButtonStyle {
+    #[serde(default)]
+    pub fill: ButtonFill,
+    #[serde(default)]
+    pub elevation: Elevation,
+    /// Corner radius; `None` inherits the theme's `corner_style`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<CornerStyle>,
+}
+
 /// Brand configuration for a tenant's landing pages. Phase 1: held in code with
 /// a `Default` impl. Phase 2: persisted on `TenantDoc`, with per-link content
 /// overrides layered on top.
@@ -79,12 +124,21 @@ pub struct LandingTheme {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "#FF6B35")]
     pub theme_color: Option<String>,
-    /// Typeface preset (allowlist).
+    /// Typeface preset — the system-font fallback stack when no `font_family`
+    /// is set (or while a web font loads).
     #[serde(default)]
     pub font: FontPreset,
+    /// Google Fonts family name (e.g. "Inter", "Space Grotesk"). Loaded from
+    /// Google Fonts when set; falls back to the `font` preset's stack.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Space Grotesk")]
+    pub font_family: Option<String>,
     /// Corner treatment for cards and the CTA button.
     #[serde(default)]
     pub corner_style: CornerStyle,
+    /// Composable CTA button styling (fill / elevation / radius).
+    #[serde(default)]
+    pub button: ButtonStyle,
     /// Brand display name shown in the CTA and header. `None` ⇒ "App".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(example = "TableFour")]
@@ -122,7 +176,9 @@ impl Default for LandingTheme {
             color_scheme: ColorScheme::default(),
             theme_color: None,
             font: FontPreset::default(),
+            font_family: None,
             corner_style: CornerStyle::default(),
+            button: ButtonStyle::default(),
             brand_name: None,
             icon_url: None,
             logo_url: None,
