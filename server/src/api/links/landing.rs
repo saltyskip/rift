@@ -269,7 +269,7 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         .tile-wrap.elev-soft .tile {{ box-shadow:0 0 0 1px var(--border), 0 16px 40px -20px rgba(0,0,0,0.7); }}
         .tile-wrap.elev-glow .tile {{ box-shadow:0 0 0 1px var(--border), 0 1px 0 0 rgba(255,255,255,0.08) inset, 0 0 0 6px color-mix(in srgb, var(--accent) 7%, transparent), 0 18px 50px -16px var(--accent-glow), 0 30px 60px -24px rgba(0,0,0,0.7); }}
         .tile::after {{ content:""; position:absolute; inset:0; background:linear-gradient(180deg, rgba(255,255,255,0.10), transparent 42%); pointer-events:none; }}
-        .tile img {{ width:72px; height:72px; object-fit:contain; filter:drop-shadow(0 6px 16px var(--accent-glow)); }}
+        .tile img {{ display:block; width:100%; height:100%; object-fit:cover; border-radius:inherit; }}
         .monogram {{ font-size:42px; font-weight:700; color:var(--accent); letter-spacing:-0.02em; }}
         .human-inner h1 {{ margin:0 0 12px; font-size:clamp(28px,3.4vw,40px); font-weight:700; line-height:1.05; letter-spacing:-0.03em; color:var(--text); }}
         .human-inner .subtitle {{ margin:0 auto 32px; font-size:16px; line-height:1.5; color:var(--text-muted); max-width:34ch; }}
