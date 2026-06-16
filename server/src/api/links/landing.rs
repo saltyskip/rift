@@ -121,27 +121,48 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         })
         .unwrap_or_default();
 
-    let icon_html = theme
+    // App tile: the brand icon, else a monogram of the brand initials so a
+    // logo-less tenant never renders a blank tile.
+    let tile_inner = theme
         .icon_url
         .as_deref()
         .map(|url| {
             format!(
-                r#"<img class="icon" src="{}" alt="{}" />"#,
+                r#"<img src="{}" alt="{}" />"#,
                 html_escape(url),
                 html_escape(app_name_display),
             )
         })
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            format!(
+                r#"<span class="monogram">{}</span>"#,
+                monogram(app_name_display)
+            )
+        });
 
-    let title_html = preview_title
-        .map(|t| format!(r#"<h1>{}</h1>"#, html_escape(t)))
-        .unwrap_or_default();
+    // Headline: a per-link campaign title if set, else the brand name.
+    let headline_escaped = html_escape(preview_title.unwrap_or(app_name_display));
+
+    // Eyebrow: which platforms this link targets, derived from its destinations.
+    let eyebrow_html = availability_eyebrow(link);
 
     let desc_html = theme
         .tagline
         .as_deref()
         .or(preview_description)
         .map(|d| format!(r#"<p class="subtitle">{}</p>"#, html_escape(d)))
+        .unwrap_or_default();
+
+    // Secondary "Visit website" affordance when the link has a web destination.
+    let ghost_html = link
+        .web_url
+        .as_deref()
+        .map(|url| {
+            format!(
+                r#"<a class="btn btn-ghost" href="{}">Visit website</a>"#,
+                html_escape(url)
+            )
+        })
         .unwrap_or_default();
 
     let expiry_html = expiry_notice(link);
@@ -182,22 +203,42 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
     <style>
         {css_vars}
         *,*::before,*::after {{ box-sizing:border-box; margin:0; padding:0; }}
-        body {{ font-family:var(--font); background:var(--bg); color:var(--text); min-height:100vh; display:flex; flex-direction:column; }}
+        html {{ overflow-x:hidden; }}
+        body {{ font-family:var(--font); background:var(--bg); color:var(--text); min-height:100vh; display:flex; flex-direction:column; overflow-x:hidden; max-width:100%; }}
         .split {{ display:flex; flex:1; min-height:100vh; }}
-        .side-human {{ width:60%; display:flex; align-items:center; justify-content:center; padding:48px 40px; border-right:1px solid var(--border); }}
+        .side-human, .side-agent {{ min-width:0; }}
+        /* ── Human side (60%): brand showcase on a localized accent spotlight ── */
+        .side-human {{ position:relative; overflow:hidden; width:60%; display:flex; align-items:center; justify-content:center; padding:48px 40px; border-right:1px solid var(--border);
+            background:radial-gradient(90% 65% at 50% 36%, color-mix(in srgb, var(--accent) 24%, transparent) 0%, color-mix(in srgb, var(--accent) 5%, transparent) 30%, transparent 60%), var(--bg); }}
+        .side-human::before {{ content:""; position:absolute; inset:0; pointer-events:none; background-image:radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px); background-size:22px 22px; -webkit-mask-image:radial-gradient(70% 60% at 50% 40%, #000, transparent 78%); mask-image:radial-gradient(70% 60% at 50% 40%, #000, transparent 78%); }}
+        .side-human::after {{ content:""; position:absolute; inset:0; pointer-events:none; background:radial-gradient(140% 130% at 50% 40%, transparent 52%, rgba(0,0,0,0.45) 100%); }}
         .side-agent {{ width:40%; background:var(--surface); padding:36px 28px; display:flex; flex-direction:column; overflow-y:auto; }}
         .split.solo .side-human {{ width:100%; border-right:none; }}
         .split.solo .side-agent {{ display:none; }}
-        .human-inner {{ text-align:center; max-width:360px; width:100%; }}
-        .icon {{ width:72px; height:72px; border-radius:18px; margin-bottom:18px; box-shadow:0 6px 24px rgba(0,0,0,0.35); }}
-        .brand {{ font-size:11px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:var(--accent); margin-bottom:18px; }}
-        .human-inner h1 {{ font-size:26px; font-weight:700; line-height:1.25; margin-bottom:10px; letter-spacing:-0.01em; }}
-        .human-inner .subtitle {{ font-size:15px; line-height:1.5; color:var(--text-muted); margin-bottom:32px; }}
-        .btn {{ display:inline-flex; align-items:center; gap:8px; background:var(--accent); color:var(--accent-text); font-size:16px; font-weight:600; padding:15px 44px; border-radius:var(--radius-btn); text-decoration:none; box-shadow:0 8px 28px var(--accent-glow); transition:transform .12s ease, box-shadow .12s ease; }}
-        .btn:hover {{ transform:translateY(-1px); box-shadow:0 12px 36px var(--accent-glow); }}
-        .btn:active {{ transform:translateY(0); }}
-        .sub {{ color:var(--text-muted); font-size:12px; margin-top:16px; }}
-        .expiry {{ font-size:12px; color:var(--text-muted); margin-top:16px; }}
+        .human-inner {{ position:relative; z-index:1; text-align:center; max-width:400px; width:100%; }}
+        .eyebrow {{ display:inline-flex; align-items:center; gap:8px; font-size:11px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:var(--text-muted); margin-bottom:26px; }}
+        .eyebrow .spark {{ width:5px; height:5px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px 1px var(--accent-glow); }}
+        .tile-wrap {{ position:relative; width:104px; height:104px; margin:0 auto 30px; }}
+        .tile-wrap::before {{ content:""; position:absolute; inset:-26px; background:radial-gradient(closest-side, var(--accent-glow), transparent 72%); filter:blur(8px); opacity:0.7; z-index:-1; }}
+        .tile {{ position:relative; width:100%; height:100%; border-radius:24px; background:linear-gradient(160deg, var(--surface), var(--bg)); display:grid; place-items:center; overflow:hidden;
+            box-shadow:0 0 0 1px var(--border), 0 1px 0 0 rgba(255,255,255,0.08) inset, 0 0 0 6px color-mix(in srgb, var(--accent) 7%, transparent), 0 18px 50px -12px var(--accent-glow), 0 30px 60px -20px rgba(0,0,0,0.7); }}
+        .tile::after {{ content:""; position:absolute; inset:0; background:linear-gradient(180deg, rgba(255,255,255,0.10), transparent 42%); pointer-events:none; }}
+        .tile img {{ width:72px; height:72px; object-fit:contain; filter:drop-shadow(0 6px 16px var(--accent-glow)); }}
+        .monogram {{ font-size:42px; font-weight:700; color:var(--accent); letter-spacing:-0.02em; }}
+        .human-inner h1 {{ margin:0 0 12px; font-size:clamp(28px,3.4vw,40px); font-weight:700; line-height:1.05; letter-spacing:-0.03em; color:var(--text); }}
+        .human-inner .subtitle {{ margin:0 auto 32px; font-size:16px; line-height:1.5; color:var(--text-muted); max-width:34ch; }}
+        .cta-row {{ display:flex; flex-direction:column; align-items:center; gap:12px; }}
+        .btn {{ appearance:none; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:9px; font-weight:600; font-size:16px; letter-spacing:-0.01em; border-radius:var(--radius-btn); transition:transform .18s ease, box-shadow .25s ease; }}
+        .btn-primary {{ color:var(--accent-text); padding:15px 34px; background:linear-gradient(180deg, var(--accent-bright), var(--accent-deep));
+            box-shadow:0 0 0 1px rgba(255,255,255,0.16) inset, 0 1px 0 0 rgba(255,255,255,0.30) inset, 0 12px 30px -8px var(--accent-glow), 0 2px 6px rgba(0,0,0,0.4); }}
+        .btn-primary:hover {{ transform:translateY(-2px); box-shadow:0 0 0 1px rgba(255,255,255,0.20) inset, 0 1px 0 0 rgba(255,255,255,0.36) inset, 0 18px 44px -8px var(--accent-glow), 0 2px 6px rgba(0,0,0,0.4); }}
+        .btn-primary:active {{ transform:translateY(0); }}
+        .btn-primary .chev {{ transition:transform .2s ease; }}
+        .btn-primary:hover .chev {{ transform:translateX(3px); }}
+        .btn-ghost {{ color:var(--text-muted); padding:13px 26px; background:color-mix(in srgb, var(--text) 3%, transparent); border:1px solid var(--border); }}
+        .btn-ghost:hover {{ color:var(--text); border-color:var(--text-muted); }}
+        .sub {{ color:var(--text-muted); font-size:12px; margin-top:4px; }}
+        .expiry {{ font-size:12px; color:var(--text-muted); margin-top:18px; }}
         .expiry.expired {{ color:#f59e0b; font-weight:600; }}
         .badge {{ display:inline-flex; align-items:center; gap:8px; background:color-mix(in srgb, var(--accent) 10%, transparent); border:1px solid color-mix(in srgb, var(--accent) 28%, transparent); border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; color:var(--accent); margin-bottom:8px; width:fit-content; }}
         .badge svg {{ flex-shrink:0; stroke:currentColor; }}
@@ -232,9 +273,10 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         .agent-footer .hint {{ font-size:10px; color:var(--text-muted); opacity:0.7; margin-top:6px; }}
         @media (max-width:767px) {{
             .split {{ flex-direction:column; min-height:auto; }}
-            .side-human {{ width:100%; border-right:none; border-bottom:1px solid var(--border); padding:56px 24px; min-height:55vh; }}
+            .side-human {{ width:100%; border-right:none; border-bottom:1px solid var(--border); padding:56px 24px; min-height:60vh; }}
             .side-agent {{ width:100%; padding:28px 20px; }}
-            .human-inner h1 {{ font-size:23px; }}
+            .cta-row {{ width:100%; }}
+            .btn {{ width:100%; max-width:340px; }}
         }}
     </style>
 </head>
@@ -242,12 +284,15 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
 <div class="{layout_class}">
     <div class="side-human">
         <div class="human-inner">
-            {icon_html}
-            <div class="brand">{app_name_escaped}</div>
-            {title_html}
+            {eyebrow_html}
+            <div class="tile-wrap"><div class="tile">{tile_inner}</div></div>
+            <h1>{headline_escaped}</h1>
             {desc_html}
-            <a id="open-btn" class="btn" href="#">{cta_label_escaped}</a>
-            <p class="sub" id="fallback-msg"></p>
+            <div class="cta-row">
+                <a id="open-btn" class="btn btn-primary" href="#"><span id="cta-text">{cta_label_escaped}</span><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.5 3.5L10 8l-4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+                {ghost_html}
+                <p class="sub" id="fallback-msg"></p>
+            </div>
             {expiry_html}
         </div>
     </div>
@@ -265,6 +310,7 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         var ctaLabel = "{cta_label_js}";
 
         var btn = document.getElementById("open-btn");
+        var ctaText = document.getElementById("cta-text");
         var msg = document.getElementById("fallback-msg");
 
         // iPadOS desktop mode reports a Mac User-Agent / Sec-CH-UA-Platform, so
@@ -289,43 +335,43 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
             // a corrected iPad never falls through to the Mac App Store.
             if (alternateUrl) {{
                 btn.href = alternateUrl;
-                btn.textContent = ctaLabel;
+                ctaText.textContent =ctaLabel;
             }} else if (iosStoreUrl) {{
                 btn.href = iosStoreUrl;
-                btn.textContent = "Get {app_name_escaped}";
+                ctaText.textContent ="Get {app_name_escaped}";
             }} else if (webUrl) {{
                 btn.href = webUrl;
-                btn.textContent = "Continue";
+                ctaText.textContent ="Continue";
             }}
         }} else if (platform === "android") {{
             if (alternateUrl) {{
                 // Cross-domain hop triggers App Links. If app installed → opens.
                 // If not → alternate domain redirects to the Play Store.
                 btn.href = alternateUrl;
-                btn.textContent = ctaLabel;
+                ctaText.textContent =ctaLabel;
             }} else if (storeUrl) {{
                 btn.href = storeUrl;
-                btn.textContent = "Get {app_name_escaped}";
+                ctaText.textContent ="Get {app_name_escaped}";
             }} else if (webUrl) {{
                 btn.href = webUrl;
-                btn.textContent = "Continue";
+                ctaText.textContent ="Continue";
             }}
         }} else if (platform === "macos" || platform === "windows") {{
             // Desktop with a native store: prefer the store, fall back to web.
             if (storeUrl) {{
                 btn.href = storeUrl;
-                btn.textContent = "Get {app_name_escaped}";
+                ctaText.textContent ="Get {app_name_escaped}";
             }} else if (webUrl) {{
                 btn.href = webUrl;
-                btn.textContent = "Continue";
+                ctaText.textContent ="Continue";
             }}
         }} else {{
             if (webUrl) {{
                 btn.href = webUrl;
-                btn.textContent = "Continue";
+                ctaText.textContent ="Continue";
             }} else if (storeUrl) {{
                 btn.href = storeUrl;
-                btn.textContent = "Get {app_name_escaped}";
+                ctaText.textContent ="Get {app_name_escaped}";
             }}
         }}
     }})();
@@ -339,11 +385,13 @@ pub(crate) fn render_smart_landing_page(ctx: &LandingPageContext) -> String {
         og_image_tag = og_image_tag,
         json_ld = json_ld,
         css_vars = css_vars,
-        icon_html = icon_html,
+        eyebrow_html = eyebrow_html,
+        tile_inner = tile_inner,
+        headline_escaped = headline_escaped,
         app_name_escaped = html_escape(app_name_display),
         cta_label_escaped = html_escape(&cta_label),
-        title_html = title_html,
         desc_html = desc_html,
+        ghost_html = ghost_html,
         expiry_html = expiry_html,
         layout_class = layout_class,
         agent_panel = agent_panel,
@@ -378,8 +426,8 @@ fn build_css_vars(palettes: &DerivedPalettes, font: FontPreset, corners: CornerS
 
 fn render_palette_vars(p: &Palette) -> String {
     format!(
-        "--bg:{}; --surface:{}; --border:{}; --text:{}; --text-muted:{}; --accent:{}; --accent-text:{}; --accent-glow:{};",
-        p.bg, p.surface, p.border, p.text, p.text_muted, p.accent, p.accent_text, p.accent_glow
+        "--bg:{}; --surface:{}; --border:{}; --text:{}; --text-muted:{}; --accent:{}; --accent-bright:{}; --accent-deep:{}; --accent-text:{}; --accent-glow:{};",
+        p.bg, p.surface, p.border, p.text, p.text_muted, p.accent, p.accent_bright, p.accent_deep, p.accent_text, p.accent_glow
     )
 }
 
@@ -401,6 +449,36 @@ fn corner_radii(corners: CornerStyle) -> (&'static str, &'static str) {
         CornerStyle::Rounded => ("14px", "10px"),
         CornerStyle::Pill => ("16px", "999px"),
     }
+}
+
+/// Up-to-two uppercase initials from the brand name, for the monogram fallback
+/// when a tenant has no icon. Falls back to a bullet so the tile is never blank.
+fn monogram(brand: &str) -> String {
+    let initials: String = brand
+        .split_whitespace()
+        .filter_map(|w| w.chars().next())
+        .take(2)
+        .collect::<String>()
+        .to_uppercase();
+    if initials.is_empty() {
+        "&bull;".to_string()
+    } else {
+        html_escape(&initials)
+    }
+}
+
+/// "Available on iOS / Android / iOS & Android", derived from the link's
+/// destinations. Empty when the link has no app destinations.
+fn availability_eyebrow(link: &Link) -> String {
+    let ios = link.ios_deep_link.is_some() || link.ios_store_url.is_some();
+    let android = link.android_deep_link.is_some() || link.android_store_url.is_some();
+    let label = match (ios, android) {
+        (true, true) => "Available on iOS &amp; Android",
+        (true, false) => "Available on iOS",
+        (false, true) => "Available on Android",
+        (false, false) => return String::new(),
+    };
+    format!(r#"<span class="eyebrow"><span class="spark"></span>{label}</span>"#)
 }
 
 /// Human-readable expiry line, or empty when the link never expires.

@@ -22,6 +22,10 @@ pub(crate) struct Palette {
     pub text: String,
     pub text_muted: String,
     pub accent: String,
+    /// Lighter tone of the accent (gradient top, hover, accent text on dark).
+    pub accent_bright: String,
+    /// Darker tone of the accent (CTA gradient floor).
+    pub accent_deep: String,
     /// Text/icon color that sits *on* the accent (the CTA button label).
     pub accent_text: String,
     /// `rgba(...)` glow used for the button shadow.
@@ -47,6 +51,10 @@ pub(crate) fn derive_palette(theme_color: &str, scheme: ColorScheme) -> DerivedP
         .unwrap_or((13, 148, 136));
     let accent_rgb = clamp_accent(rgb);
     let accent = to_hex(accent_rgb);
+    // Lighter/darker tones for the gradient CTA, derived by shifting lightness.
+    let (ah, as_, al) = rgb_to_hsl(accent_rgb);
+    let accent_bright = to_hex(hsl_to_rgb((ah, as_, (al + 0.14).min(0.82))));
+    let accent_deep = to_hex(hsl_to_rgb((ah, as_, (al - 0.16).max(0.20))));
     let accent_text = if relative_luminance(accent_rgb) > 0.45 {
         "#0a0a0a".to_string()
     } else {
@@ -82,6 +90,8 @@ pub(crate) fn derive_palette(theme_color: &str, scheme: ColorScheme) -> DerivedP
             text: text.to_string(),
             text_muted: text_muted.to_string(),
             accent: accent.clone(),
+            accent_bright: accent_bright.clone(),
+            accent_deep: accent_deep.clone(),
             accent_text: accent_text.clone(),
             accent_glow: accent_glow.clone(),
         }
