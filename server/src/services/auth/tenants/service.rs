@@ -84,6 +84,18 @@ fn validate_landing_theme(theme: &LandingTheme) -> Result<(), String> {
     if let Some(cta) = &theme.cta_label {
         validate_cta(cta).map_err(|e| format!("cta_label: {e}"))?;
     }
+    if let Some(family) = &theme.font_family {
+        // A Google Fonts family name goes into a URL + CSS; allow only letters,
+        // digits, and spaces so it can't inject into either.
+        let ok = !family.is_empty()
+            && family.len() <= 50
+            && family
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == ' ');
+        if !ok {
+            return Err("font_family must be a Google Fonts name (letters, digits, spaces)".into());
+        }
+    }
     if theme
         .brand_name
         .as_deref()
