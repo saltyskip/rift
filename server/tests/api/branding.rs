@@ -102,3 +102,68 @@ async fn put_branding_rejects_invalid_color() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["code"], "invalid_branding");
 }
+
+/// A per-link `landing_theme` override merges over the tenant theme — here it
+/// hides the agent panel on one link while another (no override) keeps it.
+#[tokio::test]
+async fn per_link_override_hides_agent_panel() {
+    let app = common::spawn_app().await;
+    let (key, tenant_id) = common::seed_api_key(&app).await;
+    common::seed_verified_domain(&app, &tenant_id, "go.example.com").await;
+    // Tenant default keeps the agent panel on (show_agent_panel defaults true).
+
+    // Link WITH a per-link override hiding the agent panel.
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "hidden",
+            "ios_deep_link": "app://x",
+            "ios_store_url": "https://apps.apple.com/app/id1",
+            "landing_theme": { "show_agent_panel": false }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Control link with no override → inherits the tenant theme (panel shown).
+    app.client
+        .post(app.url("/v1/links"))
+        .header("Authorization", format!("Bearer {key}"))
+        .json(&serde_json::json!({
+            "custom_id": "shown",
+            "ios_deep_link": "app://x",
+            "ios_store_url": "https://apps.apple.com/app/id1"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)";
+    let hidden = app
+        .client
+        .get(app.url("/r/hidden"))
+        .header("User-Agent", ua)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let shown = app
+        .client
+        .get(app.url("/r/shown"))
+        .header("User-Agent", ua)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+
+    // The override removed the agent panel for this link only.
+    assert!(!hidden.contains("Machine-Readable Link"));
+    assert!(hidden.contains("split solo"));
+    // The control link still shows it.
+    assert!(shown.contains("Machine-Readable Link"));
+}

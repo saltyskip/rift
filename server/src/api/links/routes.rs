@@ -645,9 +645,13 @@ async fn do_resolve(
         lookup_tenant_domain(state.domains_repo.as_deref(), &link.tenant_id).await;
 
     if has_platform_destinations {
-        // Brand config: the tenant's stored LandingTheme, else Rift defaults.
-        // (Per-link content — social_preview — is overlaid in the renderer.)
-        let theme = resolve_landing_theme(state.tenants_repo.as_deref(), &link.tenant_id).await;
+        // Brand config: the tenant's stored LandingTheme, else Rift defaults,
+        // then per-link overrides merged on top. (Per-link content —
+        // social_preview — is overlaid separately in the renderer.)
+        let mut theme = resolve_landing_theme(state.tenants_repo.as_deref(), &link.tenant_id).await;
+        if let Some(ov) = &link.landing_theme {
+            theme = theme.merged_with(ov);
+        }
 
         // Look up alternate domain for the "Open in App" button.
         let alternate_domain = if let Some(domains_repo) = &state.domains_repo {
@@ -773,6 +777,7 @@ fn link_error_to_response(err: LinkError) -> Response {
         | LinkError::InvalidMetadata(_)
         | LinkError::InvalidAgentContext(_)
         | LinkError::InvalidSocialPreview(_)
+        | LinkError::InvalidLandingTheme(_)
         | LinkError::ThreatDetected(_)
         | LinkError::NoVerifiedDomain
         | LinkError::EmptyUpdate

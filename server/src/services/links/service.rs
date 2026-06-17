@@ -21,6 +21,7 @@ use crate::services::domains::models::DomainRole;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::install_events::models::InstallContext;
 use crate::services::install_events::repo::InstallEventsRepository;
+use crate::services::landing::models::LandingThemeOverride;
 
 // ── Service ──
 
@@ -448,6 +449,7 @@ impl LinksService {
 
         validate_agent_context(&req.agent_context)?;
         validate_social_preview(&req.social_preview)?;
+        validate_landing_theme_override(&req.landing_theme)?;
 
         if let Some(ref meta) = req.metadata {
             validation::validate_metadata(meta).map_err(LinkError::InvalidMetadata)?;
@@ -481,7 +483,8 @@ impl LinksService {
             .expires_at(expires_at_dt)
             .agent_context(req.agent_context)
             .social_preview(req.social_preview)
-            .redirect_mode(Some(redirect_mode));
+            .redirect_mode(Some(redirect_mode))
+            .landing_theme(req.landing_theme);
 
         self.links_repo.create_link(input).await.map_err(|e| {
             if e.contains("E11000") {
@@ -682,6 +685,7 @@ impl LinksService {
                 agent_context: template.agent_context.clone(),
                 social_preview: template.social_preview.clone(),
                 redirect_mode: Some(redirect_mode),
+                landing_theme: None,
             })
             .collect();
 
@@ -828,6 +832,10 @@ impl LinksService {
 
         validate_agent_context(&req.agent_context)?;
         validate_social_preview(&req.social_preview)?;
+        // `Some(inner)` (set or clear) validates the inner override; absent skips.
+        if let Some(inner) = &req.landing_theme {
+            validate_landing_theme_override(inner)?;
+        }
 
         let mut update = mongodb::bson::Document::new();
         let mut unset = mongodb::bson::Document::new();
@@ -889,6 +897,19 @@ impl LinksService {
         if let Some(mode) = req.redirect_mode {
             if let Ok(bson) = mongodb::bson::to_bson(&mode) {
                 update.insert("redirect_mode", bson);
+            }
+        }
+
+        // landing_theme: absent → leave; null → clear; object → replace.
+        match &req.landing_theme {
+            None => {}
+            Some(None) => {
+                unset.insert("landing_theme", "");
+            }
+            Some(Some(ov)) => {
+                if let Ok(doc) = mongodb::bson::to_document(ov) {
+                    update.insert("landing_theme", doc);
+                }
             }
         }
 
@@ -996,6 +1017,7 @@ impl LinksService {
             agent_context: link.agent_context.clone(),
             social_preview: link.social_preview.clone(),
             redirect_mode: link.redirect_mode,
+            landing_theme: link.landing_theme.clone(),
         }
     }
 
@@ -1202,6 +1224,45 @@ pub fn validate_link_urls(
     if let Some(v) = windows_store_url {
         validation::validate_store_url(v)
             .map_err(|e| LinkError::InvalidUrl(format!("windows_store_url: {e}")))?;
+    }
+    Ok(())
+}
+
+/// Validate the constrained fields of a per-link branding override. Mirrors the
+/// tenant-theme validation in `auth::tenants::service` (kept local to avoid a
+/// cross-domain dependency); enum fields are type-checked at deserialize.
+fn validate_landing_theme_override(ov: &Option<LandingThemeOverride>) -> Result<(), LinkError> {
+    let Some(ov) = ov else {
+        return Ok(());
+    };
+    let inv = LinkError::InvalidLandingTheme;
+    if let Some(c) = &ov.theme_color {
+        validation::validate_hex_color(c).map_err(|e| inv(format!("theme_color: {e}")))?;
+    }
+    if let Some(u) = &ov.icon_url {
+        validation::validate_web_url(u).map_err(|e| inv(format!("icon_url: {e}")))?;
+    }
+    if let Some(u) = &ov.logo_url {
+        validation::validate_web_url(u).map_err(|e| inv(format!("logo_url: {e}")))?;
+    }
+    if let Some(c) = &ov.cta_label {
+        validation::validate_cta(c).map_err(|e| inv(format!("cta_label: {e}")))?;
+    }
+    if let Some(f) = &ov.font_family {
+        let ok = !f.is_empty()
+            && f.len() <= 50
+            && f.chars().all(|c| c.is_ascii_alphanumeric() || c == ' ');
+        if !ok {
+            return Err(inv(
+                "font_family must be a Google Fonts name (letters, digits, spaces)".into(),
+            ));
+        }
+    }
+    if ov.brand_name.as_deref().is_some_and(|s| s.len() > 80) {
+        return Err(inv("brand_name must be 80 characters or fewer".into()));
+    }
+    if ov.tagline.as_deref().is_some_and(|s| s.len() > 200) {
+        return Err(inv("tagline must be 200 characters or fewer".into()));
     }
     Ok(())
 }

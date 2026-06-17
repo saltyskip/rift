@@ -79,6 +79,7 @@ fn make_link(tenant_id: ObjectId, link_id: &str) -> Link {
         agent_context: None,
         social_preview: None,
         redirect_mode: None,
+        landing_theme: None,
     }
 }
 
@@ -109,6 +110,7 @@ impl LinksRepository for MockLinksRepo {
             agent_context: input.agent_context,
             social_preview: input.social_preview,
             redirect_mode: input.redirect_mode,
+            landing_theme: input.landing_theme,
         };
         links.push(link.clone());
         Ok(link)
@@ -167,6 +169,7 @@ impl LinksRepository for MockLinksRepo {
                 agent_context: input.agent_context,
                 social_preview: input.social_preview,
                 redirect_mode: input.redirect_mode,
+                landing_theme: input.landing_theme,
             })
             .collect();
         links.extend(new_links.iter().cloned());
@@ -511,6 +514,7 @@ fn create_req(redirect_mode: Option<RedirectMode>) -> CreateLinkRequest {
         agent_context: None,
         social_preview: None,
         redirect_mode,
+        landing_theme: None,
     }
 }
 
@@ -566,6 +570,7 @@ async fn create_link_generates_id() {
         agent_context: None,
         social_preview: None,
         redirect_mode: None,
+        landing_theme: None,
     };
 
     let resp = svc.create_link(&ctx(tenant_id), req).await.unwrap();
@@ -591,6 +596,7 @@ async fn create_link_custom_id_requires_verified_domain() {
         agent_context: None,
         social_preview: None,
         redirect_mode: None,
+        landing_theme: None,
     };
 
     let err = svc.create_link(&ctx(tenant_id), req).await.unwrap_err();
@@ -615,6 +621,7 @@ async fn create_link_custom_id_with_verified_domain() {
         agent_context: None,
         social_preview: None,
         redirect_mode: None,
+        landing_theme: None,
     };
 
     let resp = svc.create_link(&ctx(tenant_id), req).await.unwrap();
@@ -640,6 +647,7 @@ async fn create_link_invalid_custom_id() {
         agent_context: None,
         social_preview: None,
         redirect_mode: None,
+        landing_theme: None,
     };
 
     let err = svc.create_link(&ctx(tenant_id), req).await.unwrap_err();
@@ -666,6 +674,7 @@ async fn create_link_duplicate() {
         agent_context: None,
         social_preview: None,
         redirect_mode: None,
+        landing_theme: None,
     };
 
     // First create should succeed (random ID won't collide with "EXISTING")
@@ -760,6 +769,7 @@ async fn update_link_success() {
         agent_context: None,
         social_preview: None,
         redirect_mode: None,
+        landing_theme: None,
     };
 
     let detail = svc
@@ -786,6 +796,7 @@ async fn update_link_not_found() {
         agent_context: None,
         social_preview: None,
         redirect_mode: None,
+        landing_theme: None,
     };
 
     let err = svc
@@ -813,6 +824,7 @@ async fn update_link_empty() {
         agent_context: None,
         social_preview: None,
         redirect_mode: None,
+        landing_theme: None,
     };
 
     let err = svc
