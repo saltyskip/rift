@@ -13,6 +13,7 @@ use crate::services::billing::quota::QuotaChecker;
 use crate::services::billing::service::TierResolver;
 use crate::services::domains::repo::DomainsRepository;
 use crate::services::install_events::repo::InstallEventsRepository;
+use crate::services::landing::models::LandingThemeOverride;
 use crate::services::links::repo::LinksRepository;
 
 /// Construction-time dependencies for [`super::service::LinksService`].
@@ -143,6 +144,10 @@ pub struct Link {
     /// Auto-redirect behavior. `None` (legacy links) resolves to `Off`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub redirect_mode: Option<RedirectMode>,
+    /// Per-link landing-page branding overrides, merged over the tenant theme
+    /// at render time. `None` ⇒ inherit the tenant theme entirely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub landing_theme: Option<LandingThemeOverride>,
 }
 
 /// Click event stored in the `click_events` time series collection.
@@ -317,6 +322,7 @@ pub struct CreateLinkInput {
     pub agent_context: Option<AgentContext>,
     pub social_preview: Option<SocialPreview>,
     pub redirect_mode: Option<RedirectMode>,
+    pub landing_theme: Option<LandingThemeOverride>,
 }
 
 /// Fluent builder for `CreateLinkInput`. Setters accept `Option<T>` directly
@@ -347,6 +353,7 @@ impl CreateLinkInput {
             agent_context: None,
             social_preview: None,
             redirect_mode: None,
+            landing_theme: None,
         }
     }
 
@@ -414,6 +421,11 @@ impl CreateLinkInput {
         self.redirect_mode = v;
         self
     }
+
+    pub fn landing_theme(mut self, v: Option<LandingThemeOverride>) -> Self {
+        self.landing_theme = v;
+        self
+    }
 }
 
 // ── API Request / Response Models ──
@@ -472,6 +484,10 @@ pub struct CreateLinkRequest {
     /// default (new links default to `auto`).
     #[serde(default)]
     pub redirect_mode: Option<RedirectMode>,
+    /// Per-link landing-page branding overrides, merged over the tenant theme.
+    /// Each field is optional; omit to inherit the tenant's value.
+    #[serde(default)]
+    pub landing_theme: Option<LandingThemeOverride>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -532,6 +548,11 @@ pub struct UpdateLinkRequest {
     /// Auto-redirect behavior (`auto` / `off`). Omit to leave unchanged.
     #[serde(default)]
     pub redirect_mode: Option<RedirectMode>,
+    /// Per-link landing-page branding overrides (full replace of the override
+    /// object). Omit to leave unchanged; send `null` to clear all overrides.
+    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[schema(value_type = Option<LandingThemeOverride>)]
+    pub landing_theme: Option<Option<LandingThemeOverride>>,
 }
 
 /// Deserializes a field that can be absent, null, or present.
@@ -597,6 +618,9 @@ pub struct LinkDetail {
     /// Auto-redirect behavior for this link (`auto` / `off`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub redirect_mode: Option<RedirectMode>,
+    /// Per-link landing-page branding overrides, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub landing_theme: Option<LandingThemeOverride>,
 }
 
 // ── Bulk Create ──
@@ -901,6 +925,7 @@ pub enum LinkError {
     InvalidMetadata(String),
     InvalidAgentContext(String),
     InvalidSocialPreview(String),
+    InvalidLandingTheme(String),
     ThreatDetected(String),
     LinkIdTaken(String),
     NotFound,
@@ -955,6 +980,7 @@ impl fmt::Display for LinkError {
             Self::InvalidMetadata(e) => write!(f, "{e}"),
             Self::InvalidAgentContext(e) => write!(f, "{e}"),
             Self::InvalidSocialPreview(e) => write!(f, "{e}"),
+            Self::InvalidLandingTheme(e) => write!(f, "{e}"),
             Self::ThreatDetected(e) => write!(f, "{e}"),
             Self::LinkIdTaken(id) => write!(f, "'{id}' is already taken"),
             Self::NotFound => write!(f, "Link not found"),
@@ -999,6 +1025,7 @@ impl LinkError {
             Self::InvalidMetadata(_) => "invalid_metadata",
             Self::InvalidAgentContext(_) => "invalid_agent_context",
             Self::InvalidSocialPreview(_) => "invalid_social_preview",
+            Self::InvalidLandingTheme(_) => "invalid_landing_theme",
             Self::ThreatDetected(_) => "threat_detected",
             Self::LinkIdTaken(_) => "link_id_taken",
             Self::NotFound => "not_found",

@@ -113,6 +113,7 @@ use crate::app::AppState;
         health::models::HealthResponse,
         crate::error::ErrorResponse,
         crate::services::landing::models::LandingTheme,
+        crate::services::landing::models::LandingThemeOverride,
         crate::services::landing::models::Template,
         crate::services::landing::models::ColorScheme,
         crate::services::landing::models::FontPreset,

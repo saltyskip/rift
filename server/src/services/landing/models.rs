@@ -194,3 +194,98 @@ impl Default for LandingTheme {
         }
     }
 }
+
+impl LandingTheme {
+    /// Merge a per-link [`LandingThemeOverride`] on top of this (tenant) theme:
+    /// `Some` fields replace, `None` fields inherit.
+    pub fn merged_with(mut self, ov: &LandingThemeOverride) -> Self {
+        if let Some(v) = ov.template {
+            self.template = v;
+        }
+        if let Some(v) = ov.color_scheme {
+            self.color_scheme = v;
+        }
+        if let Some(v) = &ov.theme_color {
+            self.theme_color = Some(v.clone());
+        }
+        if let Some(v) = ov.font {
+            self.font = v;
+        }
+        if let Some(v) = &ov.font_family {
+            self.font_family = Some(v.clone());
+        }
+        if let Some(v) = ov.corner_style {
+            self.corner_style = v;
+        }
+        if let Some(v) = ov.button {
+            self.button = v;
+        }
+        if let Some(v) = &ov.brand_name {
+            self.brand_name = Some(v.clone());
+        }
+        if let Some(v) = &ov.icon_url {
+            self.icon_url = Some(v.clone());
+        }
+        if let Some(v) = &ov.logo_url {
+            self.logo_url = Some(v.clone());
+        }
+        if let Some(v) = &ov.tagline {
+            self.tagline = Some(v.clone());
+        }
+        if let Some(v) = &ov.cta_label {
+            self.cta_label = Some(v.clone());
+        }
+        if let Some(v) = ov.hide_powered_by {
+            self.hide_powered_by = v;
+        }
+        if let Some(v) = ov.hide_cta_on_desktop {
+            self.hide_cta_on_desktop = v;
+        }
+        if let Some(v) = ov.show_agent_panel {
+            self.show_agent_panel = v;
+        }
+        self
+    }
+}
+
+/// Per-link overrides that merge over the tenant [`LandingTheme`] at render
+/// time — `Some` replaces the tenant value, `None` inherits it. Lets a single
+/// link tweak branding (e.g. hide the agent panel on an acquisition link)
+/// without a separate tenant.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+pub struct LandingThemeOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<Template>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_scheme: Option<ColorScheme>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "#FF6B35")]
+    pub theme_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<FontPreset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Space Grotesk")]
+    pub font_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corner_style: Option<CornerStyle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub button: Option<ButtonStyle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brand_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tagline: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(example = "Open App")]
+    pub cta_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hide_powered_by: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hide_cta_on_desktop: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_agent_panel: Option<bool>,
+}

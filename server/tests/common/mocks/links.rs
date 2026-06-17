@@ -43,6 +43,7 @@ impl LinksRepository for MockLinksRepo {
             agent_context: input.agent_context,
             social_preview: input.social_preview,
             redirect_mode: input.redirect_mode,
+            landing_theme: input.landing_theme,
         };
         links.push(link.clone());
         Ok(link)
@@ -99,6 +100,7 @@ impl LinksRepository for MockLinksRepo {
                 agent_context: input.agent_context,
                 social_preview: input.social_preview,
                 redirect_mode: input.redirect_mode,
+                landing_theme: input.landing_theme,
             })
             .collect();
         links.extend(new_links.iter().cloned());
