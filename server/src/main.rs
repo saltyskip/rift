@@ -203,13 +203,14 @@ async fn run_server(cfg: Config) {
         sessions_repo,
         app_users_repo,
         install_events_repo,
+        agent_actions_repo,
     ) = if cfg.mongo_uri.is_empty() {
         tracing::warn!(
             "MONGO_URI not set — auth, links, domains, apps, webhooks, sdk_keys, conversions, and affiliates disabled"
         );
         (
             None, None, None, None, None, None, None, None, None, None, None, None, None, None,
-            None, None, None,
+            None, None, None, None,
         )
     } else {
         match core::db::connect(&cfg.mongo_uri, &cfg.mongo_db).await {
@@ -270,6 +271,8 @@ async fn run_server(cfg: Config) {
                 > = Arc::new(
                     crate::services::install_events::repo::InstallEventsRepo::new(&database).await,
                 );
+                let agent_actions: Arc<dyn crate::services::agents::repo::AgentActionsRepository> =
+                    Arc::new(crate::services::agents::repo::AgentActionsRepo::new(&database).await);
                 (
                     Some(tenants),
                     Some(users),
@@ -288,6 +291,7 @@ async fn run_server(cfg: Config) {
                     Some(sessions),
                     Some(app_users),
                     Some(install_events),
+                    Some(agent_actions),
                 )
             }
             None => {
@@ -296,7 +300,7 @@ async fn run_server(cfg: Config) {
                 );
                 (
                     None, None, None, None, None, None, None, None, None, None, None, None, None,
-                    None, None, None, None,
+                    None, None, None, None, None,
                 )
             }
         }
@@ -541,6 +545,14 @@ async fn run_server(cfg: Config) {
         ))
     });
 
+    let agents_service = agent_actions_repo.as_ref().map(|r| {
+        Arc::new(crate::services::agents::service::AgentsService::new(
+            r.clone(),
+            tier_resolver.clone(),
+            quota_service.clone(),
+        ))
+    });
+
     let analytics_service = match (&links_repo, &install_events_repo) {
         (Some(l), Some(ie)) => Some(Arc::new(
             crate::services::analytics::service::AnalyticsService::new(
@@ -583,6 +595,7 @@ async fn run_server(cfg: Config) {
         conversions_service,
         billing_service,
         tokens_service,
+        agents_service,
     });
     // quota_service is consumed by the per-domain services above; it's
     // intentionally not stored in AppState (no route-level callers).

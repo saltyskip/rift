@@ -1,4 +1,5 @@
 pub mod affiliates;
+pub mod agents;
 pub mod analytics;
 pub mod apps;
 pub mod auth;
@@ -100,6 +101,8 @@ use crate::app::AppState;
         conversions::routes::get_source,
         conversions::routes::delete_source,
         conversions::routes::sdk_track_conversion,
+        // Agents — ingestion of instrumented MCP tool calls (Agent Layer v0)
+        agents::routes::record_action,
         // Billing — plan status, Stripe checkout, webhooks
         billing::routes::get_billing_status,
         billing::routes::create_stripe_checkout,
@@ -196,6 +199,8 @@ use crate::app::AppState;
         crate::services::conversions::models::SourceDetail,
         crate::api::conversions::models::SdkConversionRequest,
         crate::services::conversions::models::ListSourcesResponse,
+        crate::services::agents::models::RecordActionRequest,
+        crate::services::agents::models::RecordActionResponse,
         crate::api::billing::models::BillingStatusResponse,
         crate::api::billing::models::LimitsView,
         crate::api::billing::models::CheckoutSessionResponse,
@@ -223,6 +228,7 @@ use crate::app::AppState;
         (name = "Sources", description = "Configured webhook receivers that produce conversion events"),
         (name = "Affiliates", description = "Named partners with scoped credentials that mint links pinned to their affiliate"),
         (name = "Billing", description = "Plan status, upgrades, and subscription lifecycle"),
+        (name = "Agents", description = "Agent Layer — ingestion of instrumented MCP tool calls for cross-agent attribution"),
         (name = "System", description = "Health checks and operational endpoints"),
     )
 )]
@@ -241,7 +247,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                     { "name": "Configuration", "tags": ["Domains", "Apps", "Tenant"] },
                     { "name": "Links", "tags": ["Links", "Lifecycle"] },
                     { "name": "Analytics", "tags": ["Analytics"] },
-                    { "name": "Integrations", "tags": ["Webhooks", "Sources", "Affiliates"] },
+                    { "name": "Integrations", "tags": ["Webhooks", "Sources", "Affiliates", "Agents"] },
                     { "name": "Billing", "tags": ["Billing"] },
                     { "name": "System", "tags": ["System"] },
                 ]),
@@ -265,6 +271,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(apps::router(state.clone()))
         .merge(webhooks::router(state.clone()))
         .merge(conversions::router(state.clone()))
+        .merge(agents::router(state.clone()))
         .merge(affiliates::router(state.clone()))
         .merge(billing::router(state.clone()))
         .merge(openapi_json)

@@ -20,9 +20,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod models;
 pub use models::{
-    AffiliateId, AppId, AppUserId, AuthSessionId, ConversionEventId, DomainId, InstallEventId,
-    LinkInternalId, OAuthSessionId, ParseIdError, PublishableKeyId, SecretKeyId, SourceId,
-    TenantId, UserId, WebhookId,
+    AffiliateId, AgentActionId, AppId, AppUserId, AuthSessionId, ConversionEventId, DomainId,
+    InstallEventId, JourneyToken, LinkInternalId, OAuthSessionId, ParseIdError, PublishableKeyId,
+    SecretKeyId, SourceId, TenantId, UserId, WebhookId,
 };
 
 /// Implemented by zero-sized marker types to declare a resource's prefix and schema name.
@@ -391,6 +391,23 @@ pub struct WebhookIdMarker;
 impl IdPrefix for WebhookIdMarker {
     const PREFIX: &'static str = "wh";
     const SCHEMA_NAME: &'static str = "WebhookId";
+}
+
+crate::impl_container!(AgentActionIdMarker);
+pub struct AgentActionIdMarker;
+impl IdPrefix for AgentActionIdMarker {
+    // `aae` = agent action event — one captured tool call on an instrumented MCP server.
+    const PREFIX: &'static str = "aae";
+    const SCHEMA_NAME: &'static str = "AgentActionId";
+}
+
+crate::impl_container!(JourneyTokenMarker);
+pub struct JourneyTokenMarker;
+impl IdPrefix for JourneyTokenMarker {
+    // `rj` = rift journey — a single-use token carried in a handoff link that binds
+    // a later install/conversion back to the agent action that produced it.
+    const PREFIX: &'static str = "rj";
+    const SCHEMA_NAME: &'static str = "JourneyToken";
 }
 
 #[cfg(test)]
