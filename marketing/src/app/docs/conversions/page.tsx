@@ -140,7 +140,7 @@ rift.trackConversion(
             <CodeBlock lang="json">{`{
   "sources": [
     {
-      "id": "66a1b2c3d4e5f6a7b8c9d0e1",
+      "id": "src_66a1b2c3d4e5f6a7b8c9d0e1",
       "name": "default",
       "source_type": "custom",
       "webhook_url": "https://api.riftl.ink/w/a1b2c3d4e5f6...",
@@ -166,7 +166,7 @@ rift.trackConversion(
               doc for the full pattern:
             </p>
             <CodeBlock lang="swift">{`// iOS
-try? await rift.setUserId("usr_abc123")`}</CodeBlock>
+try? await rift.setUserId(userId: "usr_abc123")`}</CodeBlock>
             <CodeBlock lang="kotlin">{`// Android
 rift.setUserId("usr_abc123")`}</CodeBlock>
             <p>

@@ -115,7 +115,9 @@ rift links create \\
             <ul className="list-disc pl-5 space-y-1">
               <li><strong className="text-[#fafafa]">iOS</strong> — attempts to open the deep link, falls back to the App Store</li>
               <li><strong className="text-[#fafafa]">Android</strong> — attempts to open the deep link, falls back to the Play Store</li>
-              <li><strong className="text-[#fafafa]">Desktop</strong> — redirects to the web URL</li>
+              <li><strong className="text-[#fafafa]">macOS</strong> — Mac App Store (if configured), else web URL</li>
+              <li><strong className="text-[#fafafa]">Windows</strong> — Microsoft Store (if configured), else web URL</li>
+              <li><strong className="text-[#fafafa]">Other desktop</strong> — redirects to the web URL</li>
             </ul>
             <p>
               The landing page includes your app branding (from app registration) and OG tags from <code>social_preview</code>

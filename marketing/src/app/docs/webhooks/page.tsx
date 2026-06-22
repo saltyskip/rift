@@ -43,7 +43,7 @@ export default function WebhooksPage() {
   }'`}</CodeBlock>
             <p>Response:</p>
             <CodeBlock lang="json">{`{
-  "id": "6650a1b2c3d4e5f6a7b8c9d0",
+  "id": "wh_6650a1b2c3d4e5f6a7b8c9d0",
   "url": "https://yourserver.com/rift-webhook",
   "events": ["click", "attribute", "identify", "conversion"],
   "secret": "a1b2c3d4...64-char-hex-string",
@@ -117,6 +117,8 @@ export default function WebhooksPage() {
     "install_id": "device-uuid-123",
     "first_touch_link_id": "summer-sale",
     "first_touch_link_metadata": { "bonus_type": "welcome" },
+    "last_touch_link_id": "summer-sale",
+    "last_touch_link_metadata": { "bonus_type": "welcome" },
     "timestamp": "2026-03-24T15:07:00Z"
   }
 }`}</CodeBlock>
@@ -138,9 +140,9 @@ export default function WebhooksPage() {
   "event": "conversion",
   "timestamp": "2026-03-24T15:10:00Z",
   "data": {
-    "event_id": "66a1b2c3d4e5f6a7b8c9d0e1",
+    "event_id": "cev_66a1b2c3d4e5f6a7b8c9d0e1",
     "tenant_id": "6650a1b2c3d4e5f6a7b8c9d0",
-    "source_id": "66a1b2c3d4e5f6a7b8c9d0e2",
+    "source_id": "src_66a1b2c3d4e5f6a7b8c9d0e2",
     "first_touch_link_id": "summer-sale",
     "last_touch_link_id": "summer-sale",
     "conversion_type": "deposit",

@@ -218,10 +218,11 @@ export default function WebSdkPage() {
               <code className="text-[#2dd4bf] bg-[#2dd4bf]/10 px-2 py-1 rounded text-[15px]">Rift.click(linkId, opts?)</code>
             </h3>
             <p className="text-[15px] text-[#a1a1aa]">
-              Manually record a click event for programmatic use cases. Not needed when using domain-based auto-tracking.
-              Fire-and-forget via{" "}
-              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">sendBeacon</code> &mdash;
-              does not block navigation.
+              Stamp the clipboard URL for a link so a freshly-installed app can read it for deferred attribution.
+              Use this on buttons or links where the user intends to install the app. The server records the
+              click when the browser navigates to the link —{" "}
+              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">Rift.click()</code>{" "}
+              itself makes no HTTP call.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-[13px] border border-[#1e1e22] rounded-lg overflow-hidden">
@@ -236,7 +237,7 @@ export default function WebSdkPage() {
                   <tr className="border-b border-[#1e1e22]">
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">linkId</td>
                     <td className="px-4 py-2.5 font-mono">string</td>
-                    <td className="px-4 py-2.5">The link ID to record a click for.</td>
+                    <td className="px-4 py-2.5">The link ID to stamp onto the clipboard for deferred attribution.</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-2.5 font-mono text-[#2dd4bf]">opts.domain</td>
@@ -274,10 +275,9 @@ console.log(link._rift_meta);    // { status, tenant_domain, ... }`}</CodeBlock>
               tag pointing to your Universal Link domain.
             </li>
             <li>
-              When the user clicks the link, the SDK detects it matches your domain and auto-fires a{" "}
-              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">sendBeacon</code> to{" "}
-              <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/lifecycle/click</code>{" "}
-              to record the click. This is fire-and-forget and does not block navigation.
+              When the user clicks the link, the SDK detects it matches your domain and stamps the link URL onto the
+              clipboard for deferred deep linking. The browser then navigates to the link, and the server records
+              the click when it resolves.
             </li>
             <li>
               <strong className="text-[#fafafa]">App installed:</strong> iOS/Android intercepts the tap via Universal Links / App Links
