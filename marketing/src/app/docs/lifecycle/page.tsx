@@ -112,8 +112,18 @@ export default function AttributionPage() {
                     for install attribution
                   </td>
                 </tr>
+                <tr className="border-b border-[#1e1e22]">
+                  <td className="px-4 py-2.5 font-medium text-[#a78bfa]">macOS</td>
+                  <td className="px-4 py-2.5">Mac App Store URL (if configured), else web URL</td>
+                </tr>
+                <tr className="border-b border-[#1e1e22]">
+                  <td className="px-4 py-2.5 font-medium text-[#60a5fa]">Windows</td>
+                  <td className="px-4 py-2.5">
+                    Microsoft Store URL with <code className="text-[#71717a] bg-[#18181b] px-1 py-0.5 rounded text-[12px]">?cid={"{link_id}"}</code> (if configured), else web URL
+                  </td>
+                </tr>
                 <tr>
-                  <td className="px-4 py-2.5 font-medium text-[#f472b6]">Desktop</td>
+                  <td className="px-4 py-2.5 font-medium text-[#f472b6]">Other</td>
                   <td className="px-4 py-2.5">Web URL</td>
                 </tr>
               </tbody>
@@ -151,11 +161,9 @@ Rift.init("pk_live_YOUR_KEY", {
 // For programmatic use (buttons, custom UI):
 Rift.click("summer-sale");`}</CodeBlock>
                   <p>
-                    On click, the SDK fires a{" "}
-                    <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">sendBeacon</code> request
-                    to <code className="text-[#71717a] bg-[#18181b] px-1.5 py-0.5 rounded text-[13px]">POST /v1/lifecycle/click</code> and
-                    copies the link URL to the clipboard. The beacon is fire-and-forget — it
-                    doesn&apos;t block navigation.
+                    On click, the SDK stamps the link URL onto the clipboard for deferred deep linking,
+                    then lets the browser navigate to the link. The server records the click when the
+                    link resolves — the web SDK itself makes no HTTP call.
                   </p>
                   <Callout type="info">
                     The clipboard write is how iOS deferred deep linking works. When the user
@@ -390,7 +398,7 @@ if (linkId != null) {
                   <div className="space-y-3">
                     <CodeBlock lang="swift">{`// Wherever you know the user is signed in
 Task {
-    try? await rift.setUserId("usr_abc123")
+    try? await rift.setUserId(userId: "usr_abc123")
 }`}</CodeBlock>
                     <p className="text-[13px] text-[#71717a] leading-relaxed">
                       <code className="text-[#71717a] bg-[#18181b] px-1 py-0.5 rounded text-[12px]">
@@ -479,6 +487,10 @@ lifecycleScope.launch {
       "bonus_amount_usdc": "20"
     },
     "last_touch_link_id": "summer-sale",
+    "last_touch_link_metadata": {
+      "bonus_type": "welcome",
+      "bonus_amount_usdc": "20"
+    },
     "timestamp": "2026-05-15T12:34:56Z"
   }
 }`}</CodeBlock>
